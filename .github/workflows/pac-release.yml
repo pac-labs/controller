@@ -100,6 +100,7 @@ jobs:
             dist/pac-patch-${{ steps.version.outputs.version }}.zip
             dist/PAC_RELEASE_MANIFEST.json
             dist/pac-packages-seed-${{ steps.version.outputs.version }}.zip
+            dist/PAC_UPDATE_DIFF-${{ steps.version.outputs.version }}.diff
             PAC_CHANGELOG.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

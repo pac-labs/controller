@@ -5,6 +5,7 @@ Outputs:
   dist/pac-full-<version>.zip
   dist/pac-patch-<version>.zip
   dist/PAC_RELEASE_MANIFEST.json
+  dist/PAC_UPDATE_DIFF-<version>.diff when a previous git ref exists
 
 The patch artifact is intentionally a complete, webUI-safe PAC app package.
 PAC's updater replaces project-owned directories from the uploaded root; a
@@ -99,6 +100,18 @@ def changed_files(previous_ref: str | None) -> list[str]:
         return []
     out = run(["git", "diff", "--name-only", f"{previous_ref}..HEAD"], check=False)
     return sorted(line.strip() for line in out.splitlines() if line.strip())
+
+
+def write_update_diff(ver: str, previous_ref: str | None) -> Path:
+    """Write the update diff asset. It is git-style when Git history is available."""
+    out = DIST / f"PAC_UPDATE_DIFF-{ver}.diff"
+    if git_available() and previous_ref:
+        diff = run(["git", "diff", "--binary", f"{previous_ref}..HEAD"], check=False)
+        if diff.strip():
+            out.write_text(diff, encoding="utf-8")
+            return out
+    out.write_text("# No git diff was available for this release build.\n", encoding="utf-8")
+    return out
 
 
 def should_skip(path: Path) -> bool:
@@ -227,6 +240,7 @@ def main() -> int:
     write_zip(full)
     write_zip(patch)
     packages_seed = write_packages_seed_zip(ver)
+    update_diff = write_update_diff(ver, previous_ref)
 
     manifest = {
         "schema": "pac.release.v1",
@@ -238,6 +252,7 @@ def main() -> int:
             "patch": patch.name,
             "changelog": "PAC_CHANGELOG.json",
             "packages_seed": packages_seed.name,
+            "update_diff": update_diff.name,
         },
         "changed_files": changed,
         "changelog_entry": next((e for e in changelog.get("entries", []) if isinstance(e, dict) and str(e.get("version")) == ver), None),

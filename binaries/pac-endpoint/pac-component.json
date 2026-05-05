@@ -3,7 +3,7 @@
   "title": "PAC Endpoint Wrapper",
   "description": "Endpoint-side wrapper binary that connects host capabilities and workspaces to PAC.",
   "kind": "binary",
-  "version": "1.0.97",
+  "version": "1.0.98",
   "maintainers": [
     "pac-labs"
   ],

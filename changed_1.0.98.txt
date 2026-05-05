@@ -1,0 +1,6 @@
+PAC v1.0.98
+
+- Added Apply PAC diff PR workflow for label-gated pull requests containing .pac/diffs/*.diff.
+- Added PAC diff validation script to reject binary patches, path traversal, env/secret files, and self-modification of the privileged apply workflow.
+- Release generation now emits PAC_UPDATE_DIFF-<version>.diff when Git history is available.
+- Added documentation for the diff PR handoff flow.

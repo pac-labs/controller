@@ -3,7 +3,7 @@
   "title": "PAC Endpoint Runner",
   "description": "Small runner used to execute endpoint tasks inside approved workspaces.",
   "kind": "binary",
-  "version": "1.0.97",
+  "version": "1.0.98",
   "maintainers": [
     "pac-labs"
   ],

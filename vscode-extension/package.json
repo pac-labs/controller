@@ -2,7 +2,7 @@
   "name": "pi-agent-vscode",
   "displayName": "Pi Agent",
   "description": "VS Code client scaffold for Pi Agent Control",
-  "version": "1.0.97",
+  "version": "1.0.98",
   "engines": {
     "vscode": "^1.95.0"
   },

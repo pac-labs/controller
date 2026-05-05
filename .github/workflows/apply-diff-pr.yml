@@ -1,0 +1,158 @@
+name: Apply PAC diff PR
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number containing a .pac/diffs/*.diff file"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: pac-apply-diff-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  apply-diff:
+    name: Validate and roll out supplied diff
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (contains(github.event.pull_request.labels.*.name, 'pac-apply-diff') &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))
+    steps:
+      - name: Resolve PR metadata
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.eventName === 'workflow_dispatch'
+              ? Number(core.getInput('pr_number'))
+              : context.payload.pull_request.number;
+            if (!Number.isInteger(prNumber) || prNumber < 1) {
+              core.setFailed(`Invalid PR number: ${prNumber}`);
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+            const allowed = ['OWNER', 'MEMBER', 'COLLABORATOR'].includes(pr.author_association);
+            const hasLabel = pr.labels.some(label => label.name === 'pac-apply-diff');
+            if (!allowed) {
+              core.setFailed(`PR author association ${pr.author_association} is not allowed to apply diffs.`);
+              return;
+            }
+            if (context.eventName !== 'workflow_dispatch' && !hasLabel) {
+              core.setFailed('PR must have label pac-apply-diff.');
+              return;
+            }
+            core.setOutput('number', String(pr.number));
+            core.setOutput('head_repo', pr.head.repo.full_name);
+            core.setOutput('head_ref', pr.head.ref);
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('base_ref', pr.base.ref);
+            core.setOutput('title', pr.title.replace(/[\r\n]+/g, ' '));
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          path: controller
+
+      - name: Checkout PR diff source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.pr.outputs.head_repo }}
+          ref: ${{ steps.pr.outputs.head_sha }}
+          path: incoming
+          fetch-depth: 1
+
+      - name: Select supplied diff
+        id: diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t diffs < <(find incoming/.pac/diffs -maxdepth 1 -type f \( -name '*.diff' -o -name '*.patch' \) 2>/dev/null | sort)
+          if [ "${#diffs[@]}" -ne 1 ]; then
+            echo "Expected exactly one diff file under .pac/diffs/; found ${#diffs[@]}." >&2
+            printf '%s\n' "${diffs[@]}" >&2
+            exit 1
+          fi
+          diff_path="${diffs[0]}"
+          echo "path=$diff_path" >> "$GITHUB_OUTPUT"
+          echo "Selected $diff_path"
+
+      - name: Guard diff scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 controller/scripts/validate-pac-diff.py "${{ steps.diff.outputs.path }}"
+
+      - name: Apply diff to main checkout
+        shell: bash
+        working-directory: controller
+        run: |
+          set -euo pipefail
+          git apply --check --whitespace=fix "${{ github.workspace }}/${{ steps.diff.outputs.path }}"
+          git apply --whitespace=fix "${{ github.workspace }}/${{ steps.diff.outputs.path }}"
+
+      - name: Validate applied tree
+        shell: bash
+        working-directory: controller
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q pi_agent_platform scripts
+          if command -v node >/dev/null 2>&1; then
+            node --check pi_agent_platform/web/app.js
+          fi
+          python3 scripts/generate-pac-release.py --version "$(tr -d '[:space:]' < VERSION)"
+          unzip -t "dist/pac-full-$(tr -d '[:space:]' < VERSION).zip"
+          unzip -t "dist/pac-patch-$(tr -d '[:space:]' < VERSION).zip"
+
+      - name: Commit and push to main
+        shell: bash
+        working-directory: controller
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- .; then
+            echo "No changes after applying diff."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Apply PAC diff from PR #${{ steps.pr.outputs.number }}" -m "${{ steps.pr.outputs.title }}"
+          git push origin HEAD:main
+
+      - name: Comment on PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = Number('${{ steps.pr.outputs.number }}');
+            if (!prNumber) return;
+            const status = '${{ job.status }}';
+            const body = status === 'success'
+              ? 'PAC diff workflow applied the supplied diff to `main` and pushed the result.'
+              : 'PAC diff workflow failed. Check the workflow logs for validation or apply errors.';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body,
+            });

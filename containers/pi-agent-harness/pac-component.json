@@ -3,7 +3,7 @@
   "title": "pi.dev Runtime Container",
   "description": "Container source for the pi.dev runtime used by controller and endpoints.",
   "kind": "container",
-  "version": "1.0.97",
+  "version": "1.0.98",
   "maintainers": [
     "pac-labs"
   ],

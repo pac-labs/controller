@@ -1,6 +1,6 @@
 # PAC Source Versions
 
-Current PAC package version: `1.0.97`
+Current PAC package version: `1.0.98`
 
 Runtime terminology rule:
 

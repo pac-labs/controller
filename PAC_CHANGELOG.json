@@ -1,6 +1,6 @@
 {
   "schema": "pac.changelog.v1",
-  "current_version": "1.0.97",
+  "current_version": "1.0.98",
   "entries": [
     {
       "version": "1.0.49",
@@ -407,6 +407,16 @@
         "Added pac-component.json metadata files for source components so titles, descriptions, maintainers and package data can be indexed.",
         "Source Library API/UI now exposes component metadata in the tree view.",
         "Release workflow now publishes full, patch, changelog, release manifest and package seed artifacts."
+      ]
+    },
+    {
+      "version": "1.0.98",
+      "title": "PAC v1.0.98 - diff pull-request rollout workflow",
+      "changes": [
+        "Added Apply PAC diff PR workflow for label-gated pull requests containing .pac/diffs/*.diff.",
+        "Added PAC diff validation script to reject binary patches, path traversal, env/secret files, and self-modification of the privileged apply workflow.",
+        "Release generation now emits PAC_UPDATE_DIFF-<version>.diff when Git history is available.",
+        "Added documentation for the diff PR handoff flow."
       ]
     }
   ],

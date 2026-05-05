@@ -3,7 +3,7 @@
   "title": "PAC Documentation",
   "description": "Design, runtime, endpoint, and integration documentation shipped with PAC.",
   "kind": "documentation",
-  "version": "1.0.97",
+  "version": "1.0.98",
   "maintainers": [
     "pac-labs"
   ],

@@ -115,7 +115,7 @@ function slashCommandHelpText() {
 async function loadVersion(){
   try {
     const v = await api('/v1/version');
-    document.querySelectorAll('.app-version').forEach(el => el.textContent = 'v' + (v.version || '1.0.97'));
+    document.querySelectorAll('.app-version').forEach(el => el.textContent = 'v' + (v.version || '1.0.98'));
   } catch (_) {}
 }
 

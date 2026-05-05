@@ -3,7 +3,7 @@
   "title": "PAC Scripts",
   "description": "Operational and build scripts used by the controller and wrappers.",
   "kind": "script-collection",
-  "version": "1.0.97",
+  "version": "1.0.98",
   "maintainers": [
     "pac-labs"
   ],

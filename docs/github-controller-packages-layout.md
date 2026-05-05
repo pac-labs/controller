@@ -32,7 +32,7 @@ Each package/component can include `pac-component.json` with metadata:
   "title": "PAC Wrapper",
   "description": "PAC-side wrapper around the pi.dev runtime.",
   "kind": "binary",
-  "version": "1.0.97",
+  "version": "1.0.98",
   "maintainers": ["pac-labs"],
   "repository": "https://github.com/pac-labs/packages",
   "source_path": "binaries/pac-agent",

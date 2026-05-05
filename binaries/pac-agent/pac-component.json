@@ -3,7 +3,7 @@
   "title": "PAC Wrapper",
   "description": "PAC-side wrapper around the pi.dev runtime for controller and endpoint integration.",
   "kind": "binary",
-  "version": "1.0.97",
+  "version": "1.0.98",
   "maintainers": [
     "pac-labs"
   ],

@@ -3,7 +3,7 @@
   "title": "Zed MCP Binary",
   "description": "Packaged MCP helper binary for editor integration.",
   "kind": "binary",
-  "version": "1.0.97",
+  "version": "1.0.98",
   "maintainers": [
     "pac-labs"
   ],
