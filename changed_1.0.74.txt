@@ -1,0 +1,6 @@
+v1.0.75
+
+- Added a session slash-command lookup table.
+- /command <tool> and direct /rg, /fd, /jq, /git, /delta, /bat, /bad and /just route to endpoint named-tool execution.
+- /compact and /subagent are represented as agent/controller skills instead of requiring endpoint binaries.
+- Added docs for slash command/plugin model.

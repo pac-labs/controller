@@ -1,0 +1,6 @@
+v1.0.79
+
+- Moved global Events into a bell-opened drawer instead of a permanent side pane.
+- Changed the top downloads action to a down-arrow download icon.
+- Tightened Source Library sizing so only the file tree and editor panes scroll.
+- Made the Source Library tree expand folders in place like a normal file manager.

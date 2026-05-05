@@ -1,0 +1,16 @@
+{
+  "id": "pac-agent",
+  "title": "PAC Wrapper",
+  "description": "PAC-side wrapper around the pi.dev runtime for controller and endpoint integration.",
+  "kind": "binary",
+  "version": "1.0.97",
+  "maintainers": [
+    "pac-labs"
+  ],
+  "repository": "https://github.com/pac-labs/packages",
+  "source_path": "binaries/pac-agent",
+  "tags": [
+    "pac",
+    "pi.dev"
+  ]
+}

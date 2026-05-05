@@ -1,0 +1,170 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+from pathlib import Path
+from threading import Lock
+from typing import Iterable
+
+from .models import Event, Session, Task, Runner, RunnerJob, RunnerJobStatus
+from .platform_home import pacp_path
+
+
+class SQLiteStore:
+    def __init__(self, db_path: str | None = None) -> None:
+        self.db_path = Path(db_path) if db_path else pacp_path('state.db')
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = Lock()
+        self._init()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _init(self) -> None:
+        with self._connect() as conn:
+            conn.execute('pragma journal_mode=WAL')
+            conn.execute('create table if not exists sessions (id text primary key, payload text not null, updated_at text not null)')
+            conn.execute('create table if not exists tasks (id text primary key, session_id text not null, payload text not null, updated_at text not null)')
+            conn.execute('create index if not exists idx_tasks_session on tasks(session_id)')
+            conn.execute('create table if not exists events (id text primary key, session_id text not null, task_id text, payload text not null, created_at text not null)')
+            conn.execute('create table if not exists runners (id text primary key, payload text not null, updated_at text not null)')
+            conn.execute('create table if not exists runner_jobs (id text primary key, runner_id text not null, status text not null, payload text not null, updated_at text not null)')
+            conn.execute('create index if not exists idx_runner_jobs_runner_status on runner_jobs(runner_id, status, updated_at)')
+            conn.execute('create index if not exists idx_events_session_created on events(session_id, created_at)')
+
+    def add_session(self, session: Session) -> Session:
+        session.touch()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'insert or replace into sessions(id, payload, updated_at) values (?, ?, ?)',
+                (session.id, session.model_dump_json(), session.updated_at.isoformat()),
+            )
+        return session
+
+    def get_session(self, session_id: str) -> Session | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from sessions where id = ?', (session_id,)).fetchone()
+        return Session.model_validate_json(row['payload']) if row else None
+
+    def list_sessions(self) -> list[Session]:
+        with self._connect() as conn:
+            rows = conn.execute('select payload from sessions order by updated_at desc').fetchall()
+        return [Session.model_validate_json(r['payload']) for r in rows]
+
+    def add_task(self, task: Task) -> Task:
+        task.touch()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'insert or replace into tasks(id, session_id, payload, updated_at) values (?, ?, ?, ?)',
+                (task.id, task.session_id, task.model_dump_json(), task.updated_at.isoformat()),
+            )
+        return task
+
+    def get_task(self, task_id: str) -> Task | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from tasks where id = ?', (task_id,)).fetchone()
+        return Task.model_validate_json(row['payload']) if row else None
+
+    def list_tasks(self, session_id: str | None = None) -> list[Task]:
+        with self._connect() as conn:
+            if session_id:
+                rows = conn.execute('select payload from tasks where session_id = ? order by updated_at desc', (session_id,)).fetchall()
+            else:
+                rows = conn.execute('select payload from tasks order by updated_at desc').fetchall()
+        return [Task.model_validate_json(r['payload']) for r in rows]
+
+    def add_event(self, event: Event) -> Event:
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'insert or replace into events(id, session_id, task_id, payload, created_at) values (?, ?, ?, ?, ?)',
+                (event.id, event.session_id, event.task_id, event.model_dump_json(), event.created_at.isoformat()),
+            )
+        return event
+
+    def get_events(self, session_id: str, after_id: str | None = None, limit: int = 500) -> list[Event]:
+        with self._connect() as conn:
+            if after_id:
+                marker = conn.execute('select created_at from events where id = ?', (after_id,)).fetchone()
+                if marker:
+                    rows = conn.execute(
+                        'select payload from events where session_id = ? and created_at > ? order by created_at asc limit ?',
+                        (session_id, marker['created_at'], limit),
+                    ).fetchall()
+                else:
+                    rows = conn.execute('select payload from events where session_id = ? order by created_at asc limit ?', (session_id, limit)).fetchall()
+            else:
+                rows = conn.execute('select payload from events where session_id = ? order by created_at asc limit ?', (session_id, limit)).fetchall()
+        return [Event.model_validate_json(r['payload']) for r in rows]
+
+
+    def list_recent_events(self, limit: int = 200) -> list[Event]:
+        with self._connect() as conn:
+            rows = conn.execute('select payload from events order by created_at desc limit ?', (limit,)).fetchall()
+        return [Event.model_validate_json(r['payload']) for r in rows]
+
+    def add_runner(self, runner: Runner) -> Runner:
+        runner.touch()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'insert or replace into runners(id, payload, updated_at) values (?, ?, ?)',
+                (runner.id, runner.model_dump_json(), runner.updated_at.isoformat()),
+            )
+        return runner
+
+    def get_runner(self, runner_id: str) -> Runner | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from runners where id = ?', (runner_id,)).fetchone()
+        return Runner.model_validate_json(row['payload']) if row else None
+
+    def list_runners(self) -> list[Runner]:
+        with self._connect() as conn:
+            rows = conn.execute('select payload from runners order by updated_at desc').fetchall()
+        return [Runner.model_validate_json(r['payload']) for r in rows]
+
+    def delete_runner(self, runner_id: str) -> bool:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute('delete from runners where id = ?', (runner_id,))
+        return cur.rowcount > 0
+
+    def add_runner_job(self, job: RunnerJob) -> RunnerJob:
+        job.touch()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'insert or replace into runner_jobs(id, runner_id, status, payload, updated_at) values (?, ?, ?, ?, ?)',
+                (job.id, job.runner_id, job.status.value if hasattr(job.status, 'value') else str(job.status), job.model_dump_json(), job.updated_at.isoformat()),
+            )
+        return job
+
+    def get_runner_job(self, job_id: str) -> RunnerJob | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from runner_jobs where id = ?', (job_id,)).fetchone()
+        return RunnerJob.model_validate_json(row['payload']) if row else None
+
+    def list_runner_jobs(self, runner_id: str | None = None, status: str | None = None) -> list[RunnerJob]:
+        with self._connect() as conn:
+            if runner_id and status:
+                rows = conn.execute('select payload from runner_jobs where runner_id = ? and status = ? order by updated_at desc', (runner_id, status)).fetchall()
+            elif runner_id:
+                rows = conn.execute('select payload from runner_jobs where runner_id = ? order by updated_at desc', (runner_id,)).fetchall()
+            elif status:
+                rows = conn.execute('select payload from runner_jobs where status = ? order by updated_at desc', (status,)).fetchall()
+            else:
+                rows = conn.execute('select payload from runner_jobs order by updated_at desc').fetchall()
+        return [RunnerJob.model_validate_json(r['payload']) for r in rows]
+
+    def claim_next_runner_job(self, runner_id: str) -> RunnerJob | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute('select id, payload from runner_jobs where runner_id = ? and status = ? order by updated_at asc limit 1', (runner_id, RunnerJobStatus.queued.value)).fetchone()
+            if not row:
+                return None
+            job = RunnerJob.model_validate_json(row['payload'])
+            job.status = RunnerJobStatus.claimed
+            job.claimed_at = __import__('pi_agent_platform.core.models', fromlist=['now_utc']).now_utc()
+            job.touch()
+            conn.execute('update runner_jobs set status = ?, payload = ?, updated_at = ? where id = ?', (job.status.value, job.model_dump_json(), job.updated_at.isoformat(), job.id))
+            return job
+
+
+store = SQLiteStore()

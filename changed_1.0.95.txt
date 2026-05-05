@@ -1,0 +1,8 @@
+v1.0.95
+
+- Added controller pi.dev bootstrap path for the local PAC endpoint.
+- Builds and installs the PAC wrapper binary to ~/.pacp/bin when missing.
+- Installs/checks the local pi.dev container image when missing.
+- Treats the PAC wrapper + pi.dev image as the hard requirements for the main server session.
+- Added Settings/Endpoint actions to start controller pi.dev bootstrap and show wrapper/image health.
+- Updated local endpoint discovery to report PAC wrapper availability and required tools.

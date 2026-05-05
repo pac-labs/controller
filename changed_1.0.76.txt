@@ -1,0 +1,6 @@
+v1.0.76
+
+- Redesigned Source library into a dark editor-like source workspace.
+- Kept source folders as a browseable tree while showing buildable binaries and containers with inline version pills and a right-side build icon.
+- Moved feature/platform/source update upload and preview controls into Settings -> Updates so update handling lives in one place.
+- Kept downloads/prune controls in the source workspace as the compiler output area.

@@ -1,0 +1,16 @@
+{
+  "id": "pi-dev-runtime",
+  "title": "pi.dev Runtime Container",
+  "description": "Container source for the pi.dev runtime used by controller and endpoints.",
+  "kind": "container",
+  "version": "1.0.97",
+  "maintainers": [
+    "pac-labs"
+  ],
+  "repository": "https://github.com/pac-labs/packages",
+  "source_path": "containers/pi-agent-harness",
+  "tags": [
+    "pac",
+    "pi.dev"
+  ]
+}

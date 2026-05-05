@@ -1,0 +1,3 @@
+v1.0.71
+- Removed redundant dashboard endpoint and task status cards.
+- Integrated session composer controls into one editor-style panel with a compact context menu.

@@ -1,0 +1,5 @@
+PAC v1.0.53
+
+- Made endpoint feature status chips more compact so they read as chips instead of large labels.
+- Added stronger Pi harness local install pre-flight diagnostics for missing scripts, source folder, and container runtime availability.
+- Ensured Pi harness install events include a stage and actionable stderr/stdout data when the build fails.

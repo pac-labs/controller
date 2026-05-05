@@ -1,0 +1,63 @@
+name: Seed PAC packages repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      packages_repo:
+        description: "Target packages repository"
+        required: false
+        default: "pac-labs/packages"
+        type: string
+  push:
+    branches:
+      - main
+    paths:
+      - VERSION
+      - binaries/**
+      - containers/**
+      - plugins/**
+      - scripts/**
+      - docs/**
+      - .github/workflows/seed-packages.yml
+      - scripts/generate-package-repo.py
+
+permissions:
+  contents: read
+
+jobs:
+  seed-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout controller
+        uses: actions/checkout@v4
+        with:
+          path: controller
+
+      - name: Checkout packages
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.packages_repo || 'pac-labs/packages' }}
+          token: ${{ secrets.PAC_PACKAGES_TOKEN }}
+          path: packages
+
+      - name: Generate package repository contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < controller/VERSION)"
+          python3 controller/scripts/generate-package-repo.py --source controller --out packages --version "$version"
+
+      - name: Commit package repository changes
+        shell: bash
+        working-directory: packages
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- .; then
+            echo "No package changes to publish."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Seed PAC packages from controller ${GITHUB_SHA::7}"
+          git push

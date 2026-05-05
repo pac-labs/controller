@@ -1,0 +1,2759 @@
+
+const PROVIDER_PRESETS = {
+  'openai': {name:'openai', type:'openai', base_url:'https://api.openai.com/v1', api_key_env:'OPENAI_API_KEY'},
+  'openai-codex': {name:'openai-codex', type:'openai-codex', base_url:'https://api.openai.com/v1', api_key_env:'OPENAI_API_KEY'},
+  'anthropic': {name:'anthropic', type:'anthropic', base_url:'https://api.anthropic.com/v1', api_key_env:'ANTHROPIC_API_KEY'},
+  'minimax': {name:'minimax', type:'minimax', base_url:'https://api.minimax.io/anthropic/v1', api_key_env:'MINIMAX_API_KEY'},
+  'gemini': {name:'gemini', type:'gemini', base_url:'https://generativelanguage.googleapis.com/v1beta', api_key_env:'GEMINI_API_KEY'},
+  'groq': {name:'groq', type:'groq', base_url:'https://api.groq.com/openai/v1', api_key_env:'GROQ_API_KEY'},
+  'openrouter': {name:'openrouter', type:'openrouter', base_url:'https://openrouter.ai/api/v1', api_key_env:'OPENROUTER_API_KEY'},
+  'deepseek': {name:'deepseek', type:'deepseek', base_url:'https://api.deepseek.com/v1', api_key_env:'DEEPSEEK_API_KEY'},
+  'mistral': {name:'mistral', type:'mistral', base_url:'https://api.mistral.ai/v1', api_key_env:'MISTRAL_API_KEY'},
+  'lmstudio': {name:'lmstudio', type:'lmstudio', base_url:'http://localhost:1234/v1', api_key_env:''},
+  'ollama': {name:'ollama', type:'ollama', base_url:'http://localhost:11434', api_key_env:''},
+  'vllm': {name:'vllm', type:'vllm', base_url:'http://localhost:8000/v1', api_key_env:''},
+  'custom-openai': {name:'custom-openai', type:'openai-compatible', base_url:'', api_key_env:''},
+  'custom-anthropic': {name:'custom-anthropic', type:'anthropic-compatible', base_url:'', api_key_env:''},
+};
+function applyProviderPreset(key) {
+  const preset = PROVIDER_PRESETS[key];
+  if (!preset) return;
+  if (!providerName.value.trim()) providerName.value = preset.name;
+  providerType.value = preset.type;
+  providerBaseUrl.value = preset.base_url || '';
+  providerApiKeyEnv.value = preset.api_key_env || '';
+  if (!providerTimeout.value) providerTimeout.value = 30;
+  setModalStatus('providerModalStatus', `${preset.name} preset loaded`);
+}
+
+let config = null;
+let selectedSession = null;
+let selectedSourcePath = null;
+let selectedSourceFolder = '';
+let selectedBinaryArtifactFilter = '';
+let sourceOpenTabs = [];
+let sourceFileState = new Map();
+let selectedSourceEntry = '';
+let sourceExpandedDirs = new Set(['']);
+let sourceTreeCache = new Map();
+let source = null;
+let globalEventSeen = new Set();
+let globalEventFilter = 'all';
+let globalEventPoll = null;
+let eventsRailPinned = false;
+let editingEndpointId = null;
+let commandEndpointId = null;
+let eventsFetchFailureCount = 0;
+let eventsFetchLastNotice = null;
+let sessionThinkingGroup = null;
+let sessionEventSeen = new Set();
+let sessionMessageSeen = new Set();
+let sessionPendingRows = new Map();
+
+const SESSION_SLASH_COMMANDS = {
+  command: {kind:'tool', label:'/command <tool> [args]', description:'Run a registered endpoint tool on the locked host endpoint. Example: /command rg TODO'},
+  rg: {kind:'tool', tool:'rg', label:'/rg <pattern> [path]', description:'Run ripgrep on the endpoint workspace.'},
+  fd: {kind:'tool', tool:'fd', label:'/fd <pattern>', description:'Find files with fd on the endpoint workspace.'},
+  jq: {kind:'tool', tool:'jq', label:'/jq <filter>', description:'Run jq on JSON input or files.'},
+  git: {kind:'tool', tool:'git', label:'/git <args>', description:'Run git in the endpoint workspace.'},
+  delta: {kind:'tool', tool:'delta', label:'/delta [args]', description:'Render diffs with delta on the endpoint.'},
+  bat: {kind:'tool', tool:'bat', label:'/bat <file>', description:'Preview a file with bat or batcat.'},
+  bad: {kind:'tool', tool:'bat', label:'/bad <file>', description:'Typo alias for /bat.'},
+  just: {kind:'tool', tool:'just', label:'/just <recipe>', description:'Run a just recipe in the endpoint workspace.'},
+  compact: {kind:'session', label:'/compact', description:'Compact the session context/history before the next model turn.'},
+  subagent: {kind:'pi.dev', label:'/subagent <instruction>', description:'Create a scoped subagent task for one specific objective.'},
+  help: {kind:'help', label:'/help', description:'Show available slash commands.'},
+};
+function shellSplit(input) {
+  const out = [];
+  let cur = '';
+  let quote = null;
+  let esc = false;
+  for (const ch of String(input || '')) {
+    if (esc) { cur += ch; esc = false; continue; }
+    if (ch === '\\') { esc = true; continue; }
+    if (quote) { if (ch === quote) quote = null; else cur += ch; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (/\s/.test(ch)) { if (cur) { out.push(cur); cur = ''; } continue; }
+    cur += ch;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+function parseSessionSlashCommand(raw) {
+  const text = String(raw || '').trim();
+  if (!text.startsWith('/')) return null;
+  const parts = shellSplit(text.slice(1));
+  const verb = (parts.shift() || '').toLowerCase();
+  const spec = SESSION_SLASH_COMMANDS[verb];
+  if (!spec) return {kind:'unknown', verb, prompt:text, error:`Unknown slash command: /${verb}. Use /help.`};
+  if (spec.kind === 'help') {
+    return {kind:'help', verb, prompt:'Show slash command help'};
+  }
+  if (spec.kind === 'session' && verb === 'compact') {
+    return {kind:'compact', verb, prompt:'Compact session context', metadata:{slash_command:'compact', context_action:'compact'}};
+  }
+  if (spec.kind === 'pi.dev' && verb === 'subagent') {
+    const instruction = parts.join(' ').trim();
+    return {kind:'subagent', verb, prompt: instruction ? `Subagent: ${instruction}` : 'Subagent task', metadata:{slash_command:'subagent', subagent:true, subagent_instruction:instruction}};
+  }
+  if (verb === 'command') {
+    const tool = (parts.shift() || '').trim();
+    if (!tool) return {kind:'unknown', verb, prompt:text, error:'Usage: /command <tool> [args]'};
+    return {kind:'tool', verb, tool, args:parts, prompt:`Run endpoint tool: ${tool} ${parts.join(' ')}`.trim(), metadata:{slash_command:'command', tool_name:tool, args:parts, tool_invocation:true}};
+  }
+  if (spec.kind === 'tool') {
+    return {kind:'tool', verb, tool:spec.tool || verb, args:parts, prompt:`Run endpoint tool: ${spec.tool || verb} ${parts.join(' ')}`.trim(), metadata:{slash_command:verb, tool_name:spec.tool || verb, args:parts, tool_invocation:true}};
+  }
+  return null;
+}
+function slashCommandHelpText() {
+  return Object.values(SESSION_SLASH_COMMANDS).map(c => `${c.label} — ${c.description}`).join('\n');
+}
+
+
+async function loadVersion(){
+  try {
+    const v = await api('/v1/version');
+    document.querySelectorAll('.app-version').forEach(el => el.textContent = 'v' + (v.version || '1.0.97'));
+  } catch (_) {}
+}
+
+
+function eventCategory(type) {
+  const t = String(type || '').toLowerCase();
+  if (t.includes('source') && (t.includes('saved') || t.includes('initialized') || t.includes('built') || t.includes('completed'))) return 'completed';
+  if (t.includes('reconnecting') || t.includes('updating') || t.includes('unavailable') || t.includes('attention')) return 'attention';
+  if (t.includes('failed') || t.includes('stderr') || t.includes('rejected') || t.includes('error')) return 'failed';
+  if (t.includes('approval') || t.includes('full_control')) return 'attention';
+  if (t.includes('completed') || t === 'result' || t.includes('approved')) return 'completed';
+  if (t.includes('started') || t.includes('running') || t.includes('tool') || t.includes('stdout') || t.includes('thinking') || t.includes('model')) return 'running';
+  return 'running';
+}
+function prettyEventType(type) {
+  return String(type || 'event').replaceAll('_',' ');
+}
+function formatEventTime(value) {
+  if (!value) return '';
+  try { return new Date(value).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'}); } catch { return ''; }
+}
+function normalizeEvent(type, payload) {
+  if (payload && typeof payload === 'object' && payload.type) return payload;
+  return {id:`local_${Date.now()}_${Math.random()}`, type, message:String(payload || ''), created_at:new Date().toISOString(), session_id:selectedSession?.id || null};
+}
+
+function eventTone(type) {
+  const cat = eventCategory(type);
+  if (cat === 'completed') return 'ok';
+  if (cat === 'failed') return 'danger';
+  if (cat === 'attention') return 'warn';
+  return 'info';
+}
+function appendText(parent, tag, className, text) {
+  if (text == null || text === '') return null;
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  el.textContent = String(text);
+  parent.appendChild(el);
+  return el;
+}
+function normalizeTimelineBlock(event) {
+  const data = event?.data && typeof event.data === 'object' ? event.data : {};
+  const block = data.timeline || data.card || data.block || null;
+  if (block && typeof block === 'object') return block;
+  return null;
+}
+function renderTimelineBlock(card, event, block) {
+  const body = document.createElement('div');
+  body.className = 'timeline-card-body';
+  const title = block.title || event.message || prettyEventType(event.type);
+  appendText(body, 'div', 'timeline-title', title);
+  if (block.summary || (event.message && block.title)) appendText(body, 'div', 'timeline-summary', block.summary || event.message);
+  const fields = block.fields || block.meta;
+  if (fields && typeof fields === 'object' && !Array.isArray(fields)) {
+    const grid = document.createElement('div');
+    grid.className = 'timeline-fields';
+    Object.entries(fields).forEach(([key, value]) => {
+      if (value == null || value === '') return;
+      const item = document.createElement('div');
+      appendText(item, 'span', 'timeline-field-key', key);
+      appendText(item, 'span', 'timeline-field-value', value);
+      grid.appendChild(item);
+    });
+    if (grid.children.length) body.appendChild(grid);
+  }
+  const steps = Array.isArray(block.steps) ? block.steps : [];
+  if (steps.length) {
+    const list = document.createElement('div');
+    list.className = 'timeline-steps';
+    steps.forEach(step => {
+      const row = document.createElement('div');
+      const status = String(step.status || 'info').toLowerCase();
+      row.className = `timeline-step ${status}`;
+      appendText(row, 'span', 'timeline-step-status', status);
+      const text = document.createElement('div');
+      appendText(text, 'b', '', step.label || step.title || 'Step');
+      appendText(text, 'small', '', step.detail || step.message || '');
+      row.appendChild(text);
+      list.appendChild(row);
+    });
+    body.appendChild(list);
+  }
+  if (block.code || block.output || block.diff) {
+    const pre = document.createElement('pre');
+    pre.className = 'timeline-code';
+    pre.textContent = String(block.code || block.output || block.diff);
+    body.appendChild(pre);
+  }
+  if (Array.isArray(block.links) && block.links.length) {
+    const links = document.createElement('div');
+    links.className = 'timeline-links';
+    block.links.forEach(link => {
+      const a = document.createElement('a');
+      a.href = String(link.href || link.url || '#');
+      a.textContent = String(link.label || link.href || link.url || 'link');
+      a.target = '_blank';
+      a.rel = 'noreferrer';
+      links.appendChild(a);
+    });
+    body.appendChild(links);
+  }
+  card.appendChild(body);
+}
+function sessionEventRole(event) {
+  const t = String(event?.type || '').toLowerCase();
+  if (t.includes('user_message') || t === 'user') return 'user';
+  if (t.includes('result') || t.includes('assistant_message')) return 'assistant';
+  if (t.includes('task_queued') || t.includes('prompt')) return 'user';
+  if (t.includes('failed') || t.includes('error') || t.includes('stderr') || t.includes('rejected')) return 'error';
+  if (t.includes('tool') || t.includes('command') || t.includes('runner') || t.includes('stdout')) return 'tool';
+  if (t.includes('thinking') || t.includes('pi.dev') || t.includes('model')) return 'assistant';
+  return event?.task_id ? 'assistant' : 'system';
+}
+function isInternalSessionEvent(event) {
+  const t = String(event?.type || '').toLowerCase();
+  if (t.includes('user_message')) return false;
+  if (t.includes('result') || t.includes('assistant_message')) return false;
+  // Only tool/command activity belongs in the ChatGPT-like thought panel.
+  // Lifecycle/model chatter is intentionally hidden from the visible session.
+  return t.includes('tool') || t.includes('command') || t.includes('runner') ||
+    t.includes('stdout') || t.includes('stderr') || t.includes('approval') ||
+    t.includes('web_search') || t.includes('web_fetch') || t.includes('artifact_saved');
+}
+function sessionEventDetailsText(event, block) {
+  const data = event?.data && typeof event.data === 'object' ? event.data : {};
+  const lines = [];
+  lines.push(`${prettyEventType(event?.type)} ${formatEventTime(event?.created_at)}`.trim());
+  const metaLines = sessionEventMetaLines(event);
+  if (metaLines.length) lines.push('', ...metaLines);
+  const main = timelineText(event, block);
+  if (main) lines.push('', main);
+  if (Object.keys(data).length) lines.push('', 'Details:', JSON.stringify(data, null, 2));
+  return lines.join('\n');
+}
+function sessionLifecycleEventIsNoise(event) {
+  const t = String(event?.type || '').toLowerCase();
+  const msg = String(event?.message || '').toLowerCase();
+  return t === 'agent_loop_started' || t === 'agent_stop' || t === 'agent_thinking' ||
+    t === 'model_response' || t === 'task_queued' || t === 'task_started' ||
+    t === 'task_completed' || t === 'context_compacted' || t === 'full_control_enabled' ||
+    msg === 'agent loop started' || msg === 'agent stopped';
+}
+function sessionThinkingLine(event, block) {
+  const data = event?.data && typeof event.data === 'object' ? event.data : {};
+  const type = prettyEventType(event?.type);
+  const text = timelineText(event, block);
+  const concise = data.tool ? `Used ${data.tool}` : data.command ? `Ran command` : text ? String(text).split('\n')[0] : type;
+  return `${formatEventTime(event?.created_at)} · ${concise}`.trim();
+}
+function toolActivityTitle(item) {
+  const event = item?.event || {};
+  const data = event.data && typeof event.data === 'object' ? event.data : {};
+  const t = String(event.type || '').toLowerCase();
+  if (data.tool) return String(data.tool);
+  if (data.command) return 'exec_command';
+  if (t.includes('web_search')) return 'search_web';
+  if (t.includes('web_fetch')) return 'fetch_web';
+  if (t.includes('artifact')) return 'artifact';
+  if (t.includes('stdout') || t.includes('stderr')) return 'exec_output';
+  if (t.includes('approval')) return 'approval';
+  return prettyEventType(event.type || 'tool');
+}
+function toolActivityBody(item) {
+  const event = item?.event || {};
+  const block = item?.block;
+  const data = event.data && typeof event.data === 'object' ? event.data : {};
+  const lines = [];
+  const text = timelineText(event, block);
+  if (data.command) lines.push(`$ ${data.command}`);
+  if (data.input) lines.push(typeof data.input === 'string' ? data.input : JSON.stringify(data.input, null, 2));
+  if (text && !lines.includes(text)) lines.push(text);
+  if (data.output && !String(text).includes(String(data.output))) lines.push(String(data.output));
+  if (data.stderr) lines.push(`stderr:\n${data.stderr}`);
+  if (data.exit_code != null) lines.push(`exit code: ${data.exit_code}`);
+  if (!lines.length && event.message) lines.push(event.message);
+  return lines.join('\n').trim();
+}
+function sessionThinkingDetailsHtml(events) {
+  const rows = (events || []).filter(item => item?.event && isInternalSessionEvent(item.event));
+  if (!rows.length) return '<div class="tool-activity-empty">No tool activity was recorded for this answer.</div>';
+  return `<div class="tool-activity-list">${rows.map((item) => {
+    const title = escapeHtml(toolActivityTitle(item));
+    const time = escapeHtml(formatEventTime(item.event?.created_at));
+    const body = escapeHtml(toolActivityBody(item));
+    const status = item.event?.data?.exit_code != null ? `exit ${escapeHtml(String(item.event.data.exit_code))}` : prettyEventType(item.event?.type);
+    return `<details class="tool-activity-item"><summary><span class="tool-activity-icon">⌁</span><span class="tool-activity-title">${title}</span><span class="tool-activity-status">${escapeHtml(status)}</span><span class="tool-activity-time">${time}</span></summary>${body ? `<pre>${body}</pre>` : ''}</details>`;
+  }).join('')}</div>`;
+}
+function openSessionThinkingModal(group) {
+  const modal = document.getElementById('sessionEventModal');
+  if (!modal || !group) return;
+  const title = document.getElementById('sessionEventModalTitle');
+  const body = document.getElementById('sessionEventModalBody');
+  if (title) title.textContent = 'Tool activity';
+  if (body) {
+    body.className = 'modal-scroll-output tool-activity-modal';
+    body.innerHTML = sessionThinkingDetailsHtml(group.events || []);
+  }
+  modal.hidden = false;
+}
+function ensureSessionThinkingGroup(event) {
+  if (!sessionThinkingGroup || sessionThinkingGroup.closed) {
+    sessionThinkingGroup = {events: [], startedAt: sessionEventDate(event), endedAt: null, row: null, closed: false};
+  }
+  if (!sessionThinkingGroup.startedAt) sessionThinkingGroup.startedAt = sessionEventDate(event);
+  return sessionThinkingGroup;
+}
+function flushSessionThinkingGroup(endEvent) {
+  const el = document.getElementById('events');
+  const group = sessionThinkingGroup;
+  if (!el || !group || group.closed || !group.events.length) return;
+  group.closed = true;
+  group.endedAt = endEvent ? sessionEventDate(endEvent) : new Date();
+  const started = group.startedAt || sessionEventDate(group.events[0].event);
+  const ended = group.endedAt || started;
+  const toolCount = (group.events || []).filter(item => item?.event && isInternalSessionEvent(item.event)).length;
+  if (!toolCount) return;
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'thought-line';
+  row.innerHTML = `<span>Thought for ${escapeHtml(formatDurationMs(ended.getTime() - started.getTime()))}</span><span class="thought-tool-count">${toolCount} tool ${toolCount === 1 ? 'step' : 'steps'}</span>`;
+  row.onclick = () => openSessionThinkingModal(group);
+  row.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') openSessionThinkingModal(group); };
+  group.row = row;
+  el.appendChild(row);
+}
+function openSessionEventModal(event, block) {
+  const modal = document.getElementById('sessionEventModal');
+  if (!modal) return;
+  const title = document.getElementById('sessionEventModalTitle');
+  const body = document.getElementById('sessionEventModalBody');
+  if (title) title.textContent = prettyEventType(event?.type || 'reply details');
+  if (body) {
+    body.className = 'modal-scroll-output';
+    body.textContent = sessionEventDetailsText(event, block);
+  }
+  modal.hidden = false;
+}
+function closeSessionEventModal() {
+  const modal = document.getElementById('sessionEventModal');
+  if (modal) modal.hidden = true;
+}
+function timelineText(event, block) {
+  if (block) {
+    const parts = [block.title, block.summary].filter(Boolean);
+    if (Array.isArray(block.steps)) parts.push(...block.steps.map(s => [s.label || s.title, s.detail || s.message].filter(Boolean).join(': ')));
+    if (block.output || block.code || block.diff) parts.push(block.output || block.code || block.diff);
+    return parts.filter(Boolean).join('\n');
+  }
+  const data = event.data && typeof event.data === 'object' ? event.data : {};
+  const lines = [];
+  if (event.message) lines.push(event.message);
+  if (data.command) lines.push(`$ ${data.command}`);
+  if (data.tool) lines.push(`tool: ${data.tool}`);
+  if (data.output) lines.push(String(data.output));
+  if (data.stderr) lines.push(`stderr:\n${data.stderr}`);
+  if (data.exit_code != null) lines.push(`exit code: ${data.exit_code}`);
+  return lines.join('\n').trim();
+}
+
+function sessionEventDate(event) {
+  try { return new Date(event?.created_at || Date.now()); } catch { return new Date(); }
+}
+function formatDurationMs(ms) {
+  const safe = Math.max(0, Number(ms) || 0);
+  if (safe < 1000) return `${Math.round(safe)}ms`;
+  return `${(safe / 1000).toFixed(safe < 10000 ? 1 : 0)}s`;
+}
+function endpointDisplayName(endpointId) {
+  if (!endpointId) return '';
+  const found = (window.__pacEndpoints || []).find(e => e.id === endpointId);
+  return found?.name || endpointId;
+}
+function sessionEventMetaLines(event) {
+  const data = event?.data && typeof event.data === 'object' ? event.data : {};
+  const lines = [];
+  const model = data.model || data.session_model || selectedSession?.model;
+  const endpoint = data.endpoint_name || endpointDisplayName(data.endpoint_id || data.runner_id || selectedSession?.metadata?.preferred_endpoint);
+  const profile = data.agent_profile || selectedSession?.agent_profile;
+  if (model) lines.push(`Model: ${model}`);
+  if (endpoint) lines.push(`Endpoint: ${endpoint}`);
+  if (profile) lines.push(`Profile: ${profile}`);
+  if (data.execution_mode) lines.push(`Execution: ${data.execution_mode}`);
+  if (data.command) lines.push(`Command: ${data.command}`);
+  if (event?.task_id) lines.push(`Task: ${event.task_id}`);
+  return lines;
+}
+function removePendingRow(taskId) {
+  if (!taskId) return;
+  const row = sessionPendingRows.get(taskId);
+  if (row && row.parentElement) row.remove();
+  sessionPendingRows.delete(taskId);
+}
+function addPendingRow(taskId) {
+  const el = document.getElementById('events');
+  if (!el || !taskId || sessionPendingRows.has(taskId)) return;
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'thought-line loading';
+  row.innerHTML = '<span class="tiny-spinner" aria-hidden="true"></span><span>Thinking…</span>';
+  row.onclick = () => {
+    const group = sessionThinkingGroup && !sessionThinkingGroup.closed ? sessionThinkingGroup : {events: [], startedAt: new Date(), endedAt: null};
+    openSessionThinkingModal(group);
+  };
+  sessionPendingRows.set(taskId, row);
+  el.appendChild(row);
+  el.scrollTop = el.scrollHeight;
+}
+function renderSessionTimelineEvent(event) {
+  const el = document.getElementById('events');
+  if (!el || !event) return;
+  if (event.id && sessionEventSeen.has(event.id)) return;
+  if (event.id) sessionEventSeen.add(event.id);
+  const messageKey = `${event.type || ''}:${event.task_id || ''}:${event.message || ''}`;
+  if ((event.type === 'user_message' || event.type === 'result' || event.type === 'assistant_message') && sessionMessageSeen.has(messageKey)) return;
+  if (event.type === 'user_message' || event.type === 'result' || event.type === 'assistant_message') sessionMessageSeen.add(messageKey);
+  const typeLower = String(event.type || '').toLowerCase();
+  if (typeLower.includes('task_completed') || typeLower.includes('task_failed') || typeLower.includes('result')) removePendingRow(event.task_id);
+  if (sessionLifecycleEventIsNoise(event)) return;
+  const empty = el.querySelector('.empty-timeline');
+  if (empty) empty.remove();
+  const block = normalizeTimelineBlock(event);
+  const role = sessionEventRole(event);
+  const internal = isInternalSessionEvent(event);
+  if (internal) {
+    const group = ensureSessionThinkingGroup(event);
+    group.events.push({event, block});
+    if (String(event?.type || '').toLowerCase().includes('task_completed') || String(event?.type || '').toLowerCase().includes('task_failed')) {
+      flushSessionThinkingGroup(event);
+    }
+    while (el.children.length > 250) el.removeChild(el.firstChild);
+    el.scrollTop = el.scrollHeight;
+    return;
+  }
+  flushSessionThinkingGroup(event);
+  const row = document.createElement('article');
+  row.className = `chat-message-row ${role}`;
+  const bubble = document.createElement('div');
+  bubble.className = `chat-bubble ${eventTone(event.type)}`;
+  const meta = document.createElement('div');
+  meta.className = 'chat-bubble-meta';
+  const label = role === 'user' ? 'You' : role === 'error' ? 'Error' : role === 'system' ? 'System' : 'Agent';
+  meta.innerHTML = `<span>${escapeHtml(label)}</span><span>${escapeHtml(formatEventTime(event.created_at))}</span>`;
+  bubble.appendChild(meta);
+  const text = timelineText(event, block);
+  if (text) appendText(bubble, 'div', 'chat-bubble-text', text);
+  if (role === 'assistant') {
+    bubble.tabIndex = 0;
+    bubble.classList.add('selectable-reply');
+    bubble.title = 'Click to see model, endpoint and event details';
+    bubble.onclick = () => openSessionEventModal(event, block);
+    bubble.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') openSessionEventModal(event, block); };
+  }
+  if (role === 'user' && event.task_id) addPendingRow(event.task_id);
+  if (block && (block.fields || block.meta || block.links)) {
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'inline-link-button';
+    more.textContent = 'Open details';
+    more.onclick = () => openSessionEventModal(event, block);
+    bubble.appendChild(more);
+  }
+  row.appendChild(bubble);
+  el.appendChild(row);
+  while (el.children.length > 250) el.removeChild(el.firstChild);
+  el.scrollTop = el.scrollHeight;
+}
+
+function renderGlobalEvent(event, prepend=false) {
+  const list = document.getElementById('globalEvents');
+  if (!list || !event) return;
+  if (event.id && globalEventSeen.has(event.id)) return;
+  if (event.id) globalEventSeen.add(event.id);
+  const cat = eventCategory(event.type);
+  if (globalEventFilter !== 'all' && globalEventFilter !== cat && !(globalEventFilter === 'attention' && cat === 'failed')) return;
+  const empty = list.querySelector('.empty-events');
+  if (empty) empty.remove();
+  const card = document.createElement('div');
+  card.className = `event-card ${cat}`;
+  const details = event.data && typeof event.data === 'object' ? event.data : {};
+  const metaParts = [event.session_id, event.task_id, details.build_id ? `build ${details.build_id}` : null].filter(Boolean);
+  const meta = metaParts.join(' · ');
+  const formatDetails = (value, prefix='') => {
+    if (value == null) return [];
+    if (typeof value === 'string') return value ? [value] : [];
+    if (Array.isArray(value)) return value.flatMap((item, idx) => formatDetails(item, `${prefix}${idx}. `));
+    if (typeof value === 'object') {
+      const lines = [];
+      Object.entries(value).forEach(([key, val]) => {
+        const label = prefix ? `${prefix}${key}` : key;
+        if (val == null || val === '') return;
+        if (typeof val === 'object') lines.push(...formatDetails(val, `${label}.`));
+        else lines.push(`${label}: ${String(val)}`);
+      });
+      return lines;
+    }
+    return [`${prefix}${String(value)}`];
+  };
+  const logChunks = [];
+  if (Array.isArray(details.logs)) logChunks.push(details.logs.filter(Boolean).join('\n---\n'));
+  if (details.stdout) logChunks.push(`stdout\n${details.stdout}`);
+  if (details.stderr) logChunks.push(`stderr\n${details.stderr}`);
+  if (details.error) logChunks.push(`error: ${details.error}`);
+  if (details.output_tail) logChunks.push(details.output_tail);
+  if (details.pi_container) logChunks.push(formatDetails(details.pi_container).join('\n'));
+  if (details.details) logChunks.push(formatDetails(details.details).join('\n'));
+  const logText = logChunks.filter(Boolean).join('\n---\n');
+  card.innerHTML = `<div class="event-card-header"><span class="event-kind"><span class="event-dot"></span>${prettyEventType(event.type)}</span><span class="event-time">${formatEventTime(event.created_at)}</span></div><div class="event-message"></div>${meta ? `<div class="event-meta"></div>` : ''}${logText ? '<details class="event-details"><summary>Details</summary><pre></pre></details>' : ''}`;
+  card.querySelector('.event-message').textContent = event.message || '';
+  const metaEl = card.querySelector('.event-meta');
+  if (metaEl) metaEl.textContent = meta;
+  const pre = card.querySelector('.event-details pre');
+  if (pre) pre.textContent = logText;
+  if (list.firstChild) list.insertBefore(card, list.firstChild); else list.appendChild(card);
+  while (list.children.length > 120) list.removeChild(list.lastChild);
+  list.scrollTop = 0;
+}
+async function loadGlobalEvents(reset=false) {
+  const list = document.getElementById('globalEvents');
+  if (!list) return;
+  if (reset) { globalEventSeen = new Set(); list.innerHTML = '<div class="empty-events">No events yet.</div>'; }
+  try {
+    const events = await api('/v1/events/recent?limit=100');
+    eventsFetchFailureCount = 0;
+    eventsFetchLastNotice = null;
+    const existing = list.querySelector('.events-fetch-error');
+    if (existing) existing.remove();
+    if (reset) list.innerHTML = '';
+    [...events].reverse().forEach(e => renderGlobalEvent(e));
+    if (!list.children.length) list.innerHTML = '<div class="empty-events">No events yet.</div>';
+  } catch (e) {
+    eventsFetchFailureCount += 1;
+    const msg = String(e.message || e);
+    const failed = eventsFetchFailureCount >= 10;
+    const type = failed ? 'events_fetch_failed' : 'events_reconnecting';
+    const message = failed ? 'Events could not reconnect after several attempts.' : 'PAC is reconnecting after an update or restart.';
+    const signature = `${type}:${eventsFetchFailureCount}:${msg}`;
+    if (eventsFetchLastNotice !== signature) {
+      eventsFetchLastNotice = signature;
+      const existing = list.querySelector('.events-fetch-error');
+      if (existing) existing.remove();
+      const cls = failed ? 'failed' : 'attention';
+      const html = `<div class="event-card ${cls} events-fetch-error"><div class="event-card-header"><span class="event-kind"><span class="event-dot"></span>${prettyEventType(type)}</span><span class="event-time">${formatEventTime(new Date().toISOString())}</span></div><div class="event-message"></div><div class="event-meta"></div></div>`;
+      list.insertAdjacentHTML('afterbegin', html);
+      const card = list.querySelector('.events-fetch-error');
+      if (card) {
+        card.querySelector('.event-message').textContent = message;
+        card.querySelector('.event-meta').textContent = `attempt ${eventsFetchFailureCount}/10 · ${msg}`;
+      }
+    }
+  }
+}
+function setupEventsRail() {
+  const rail = document.getElementById('eventsRail');
+  const open = document.getElementById('openEventsPanel');
+  const close = document.getElementById('closeEventsPanel');
+  const pin = document.getElementById('pinEventsPanel');
+  const showRail = async () => {
+    if (!rail) return;
+    rail.hidden = false;
+    requestAnimationFrame(() => rail.classList.add('open'));
+    await loadGlobalEvents(true).catch(()=>{});
+  };
+  const hideRail = () => {
+    if (!rail) return;
+    rail.classList.remove('open');
+    window.setTimeout(() => { if (!rail.classList.contains('open')) rail.hidden = true; }, 190);
+  };
+  if (open && rail) open.onclick = async (ev) => { ev.stopPropagation(); await showRail(); };
+  if (close && rail) close.onclick = (ev) => { ev.stopPropagation(); eventsRailPinned = false; rail.classList.remove('pinned'); if (pin) pin.setAttribute('aria-pressed', 'false'); hideRail(); };
+  if (pin && rail) pin.onclick = (ev) => {
+    ev.stopPropagation();
+    eventsRailPinned = !eventsRailPinned;
+    rail.classList.toggle('pinned', eventsRailPinned);
+    pin.setAttribute('aria-pressed', eventsRailPinned ? 'true' : 'false');
+    pin.title = eventsRailPinned ? 'Events pinned open' : 'Keep events open';
+  };
+  document.addEventListener('pointerdown', (ev) => {
+    if (!rail || rail.hidden || eventsRailPinned) return;
+    if (rail.contains(ev.target) || open?.contains(ev.target)) return;
+    hideRail();
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && rail && !rail.hidden && !eventsRailPinned) hideRail();
+  });
+  document.querySelectorAll('.event-chip').forEach(chip => {
+    chip.onclick = async () => {
+      document.querySelectorAll('.event-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      globalEventFilter = chip.dataset.eventFilter || 'all';
+      await loadGlobalEvents(true);
+    };
+  });
+  const clear = document.getElementById('clearEventPanel');
+  if (clear) clear.onclick = () => { globalEventSeen = new Set(); const list=document.getElementById('globalEvents'); if(list) list.innerHTML='<div class="empty-events">Cleared visible events.</div>'; };
+  if (!globalEventPoll) globalEventPoll = setInterval(() => loadGlobalEvents(false).catch(()=>{}), 3500);
+}
+
+function setupTabs() {
+  document.querySelectorAll('.tab').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.tab).classList.add('active');
+    };
+  });
+}
+
+function tokenHeaders() {
+  const t = document.getElementById('token').value.trim();
+  return t ? {Authorization: `Bearer ${t}`} : {};
+}
+async function api(path, opts = {}) {
+  opts.headers = {...(opts.headers || {}), ...tokenHeaders()};
+  if (opts.body && !(opts.body instanceof FormData) && !opts.headers['Content-Type']) opts.headers['Content-Type'] = 'application/json';
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
+  return r.json();
+}
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]));
+}
+function opt(select, value, label) { const o = document.createElement('option'); o.value=value; o.textContent=label || value; select.appendChild(o); }
+function fillSelects() {
+  for (const id of ['agentProfile','workspaceProfile']) { const el=document.getElementById(id); if(el) el.innerHTML = ''; }
+  if (document.getElementById('taskRunner')) document.getElementById('taskRunner').innerHTML = '<option value="">PAC/local</option>'; 
+  document.getElementById('modelOverride').innerHTML = '<option value="">profile default</option>';
+  if (document.getElementById('taskModel')) document.getElementById('taskModel').innerHTML = '<option value="">session model</option>';
+  if (document.getElementById('sessionEndpoint')) document.getElementById('sessionEndpoint').innerHTML = '<option value="">select endpoint</option>';
+  if (document.getElementById('sessionTopSelect')) document.getElementById('sessionTopSelect').innerHTML = '<option value="">Select session</option>';
+  document.getElementById('permissionOverride').innerHTML = '<option value="">profile default</option>';
+  if (document.getElementById('profileModel')) profileModel.innerHTML = '';
+  if (document.getElementById('profileContextProfile')) profileContextProfile.innerHTML = '';
+  if (document.getElementById('profilePermission')) profilePermission.innerHTML = '';
+  if (document.getElementById('profileTools') && profileTools.tagName === 'SELECT') profileTools.innerHTML = '';
+  if (document.getElementById('runnerTools') && runnerTools.tagName === 'SELECT') runnerTools.innerHTML = '';
+  if (document.getElementById('runnerDefaultWorkspace')) runnerDefaultWorkspace.innerHTML = '<option value="">auto</option>';
+  if (document.getElementById('workspaceEndpoint')) workspaceEndpoint.innerHTML = '<option value="">none</option>';
+  if (document.getElementById('toolPackage')) toolPackage.innerHTML = '<option value="">none</option>';
+  Object.entries(config.agent_profiles || {}).forEach(([k,p]) => { if (p?.model && modelAvailability(p.model).ok) { opt(agentProfile,k); const wd=document.getElementById('workspaceDefaultProfile'); if (wd) opt(wd,k); } });
+  Object.keys(config.workspaces || {}).forEach(k => { if (document.getElementById('workspaceProfile')) opt(workspaceProfile,k); if (document.getElementById('runnerDefaultWorkspace')) opt(runnerDefaultWorkspace,k); });
+  Object.keys(config.models || {}).forEach(k => { if (modelAvailability(k).ok) { opt(modelOverride,k); if (document.getElementById('taskModel')) opt(taskModel,k); } if (document.getElementById('profileModel')) opt(profileModel,k, `${k}${modelAvailability(k).ok ? '' : ' (not available)'}`); });
+  if (document.getElementById('modelProvider')) { modelProvider.innerHTML=''; Object.keys(config.providers || {}).forEach(k => opt(modelProvider,k)); }
+  fillModelEndpointOptions();
+  Object.keys(config.permission_profiles || {}).forEach(k => { opt(permissionOverride,k); if (document.getElementById('profilePermission')) opt(profilePermission,k); });
+  Object.keys(config.context_profiles || {}).forEach(k => { if (document.getElementById('profileContextProfile')) opt(profileContextProfile,k); });
+  Object.keys(config.tool_packages || {}).forEach(k => { if (document.getElementById('toolPackage')) opt(toolPackage,k); });
+  Object.entries(config.tools || {}).forEach(([k,t]) => {
+    const label = `${k}${t.package ? ' · '+t.package : ''}${t.enabled === false ? ' (disabled)' : ''}`;
+    if (document.getElementById('profileTools') && profileTools.tagName === 'SELECT') opt(profileTools,k,label);
+    if (document.getElementById('runnerTools') && runnerTools.tagName === 'SELECT') opt(runnerTools,k,label);
+  });
+}
+function emitUiEvent(type, message, data=null) {
+  renderGlobalEvent({
+    id: `${type}_${Date.now()}_${Math.random()}`,
+    type,
+    message: message || prettyEventType(type),
+    created_at: new Date().toISOString(),
+    session_id: 'system',
+    data: data ? {details: data} : {},
+  }, true);
+}
+function showInline(id, obj) {
+  if (id === 'modelFormResult') {
+    const message = typeof obj === 'string' ? obj : (obj?.message || obj?.status || 'Model action completed');
+    emitUiEvent('model_action', message, obj);
+    const el = document.getElementById(id);
+    if (el) { el.textContent = ''; el.hidden = true; }
+    return;
+  }
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.hidden = false;
+  if (typeof obj === 'string') { el.textContent = obj; } else { el.textContent = obj?.message || obj?.status || 'Done. Details were added to Events.'; emitUiEvent('ui_action_completed', el.textContent, obj); }
+}
+function paneError(message, details=null) {
+  renderGlobalEvent({
+    id: `ui_error_${Date.now()}_${Math.random()}`,
+    type: 'ui_error',
+    message: message || 'Request failed',
+    created_at: new Date().toISOString(),
+    data: details ? {details} : {},
+  }, true);
+}
+async function runWithPaneError(fn, message='Action failed') {
+  try { return await fn(); }
+  catch (e) { paneError(message, e.message || String(e)); return null; }
+}
+
+function modelAvailability(name) {
+  const m = config.models?.[name];
+  if (!m) return {ok:false, reason:'not configured'};
+  const p = config.providers?.[m.provider];
+  if (!p) return {ok:false, reason:`missing provider ${m.provider}`};
+  if (p.enabled === false || p.status === 'disabled' || p.status === 'failed') return {ok:false, reason:`provider ${p.status || 'disabled'}`};
+  const live = p.cached_models || [];
+  if (live.length) {
+    const wanted = String(m.model || name);
+    const ids = live.map(x => String(x.id || x.name || x.model || '')).filter(Boolean);
+    if (!ids.includes(wanted)) return {ok:false, reason:`not returned by provider (${wanted})`};
+  }
+  return {ok:true, reason:'available'};
+}
+
+function csv(value) { return (value || '').split(',').map(x => x.trim()).filter(Boolean); }
+function modelSummaryLine(model) {
+  const bits = [];
+  if (model.object) bits.push(model.object);
+  if (model.owned_by) bits.push(`owner: ${model.owned_by}`);
+  if (model.size) bits.push(`size: ${model.size}`);
+  return bits.join(' · ');
+}
+async function fetchProviderModels(name) {
+  try { return await api(`/v1/providers/${name}/models`); }
+  catch (e) { return {ok:false, error:e.message, models:[]}; }
+}
+function providerStatus(p) {
+  if (p.enabled === false) return 'disabled';
+  return p.status || 'unknown';
+}
+function providerStatusClass(status) {
+  if (status === 'connected') return 'ok';
+  if (status === 'failed') return 'failed';
+  if (status === 'disabled') return '';
+  return 'attention';
+}
+async function toggleProvider(name, enabled) {
+  await api(`/v1/providers/${name}/toggle`, {method:'POST', body:JSON.stringify({enabled})});
+  await loadConfig();
+  const el = document.getElementById('providerFormResult');
+  if (el) el.textContent = '';
+}
+async function deleteProvider(name) {
+  if (!confirm(`Delete provider '${name}'? Models using this provider will also be removed.`)) return;
+  await api(`/v1/providers/${name}`, {method:'DELETE'});
+  await loadConfig();
+  showInline('providerFormResult', `Deleted provider ${name}`);
+}
+async function inspectLmStudioProvider(name) {
+  const r = await api(`/v1/providers/${name}/lmstudio/inspect`);
+  showInline('providerFormResult', r);
+  await loadConfig();
+}
+async function showLmStudioCompanionScript(name) {
+  const r = await api(`/v1/providers/${name}/lmstudio/companion-script`);
+  const text = r.script || '';
+  const blob = new Blob([text], {type:'text/x-python'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `pac-lmstudio-companion-${name}.py`; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  showInline('providerFormResult', `Companion script generated for ${name}. Run it manually on the LM Studio host.`);
+}
+async function lmStudioLoadModel(name) {
+  const model = prompt('Model id to load, for example openai/gpt-oss-20b');
+  if (!model) return;
+  const context = prompt('Context length', '16384');
+  const r = await api(`/v1/providers/${name}/lmstudio/load`, {method:'POST', body:JSON.stringify({model, context_length:Number(context||0)||undefined, flash_attention:true, echo_load_config:true})});
+  showInline('providerFormResult', r);
+  await loadConfig();
+}
+async function lmStudioUnloadModel(name) {
+  const instance_id = prompt('Instance id / loaded model id to unload');
+  if (!instance_id) return;
+  const r = await api(`/v1/providers/${name}/lmstudio/unload`, {method:'POST', body:JSON.stringify({instance_id})});
+  showInline('providerFormResult', r);
+  await loadConfig();
+}
+async function lmStudioDownloadModel(name) {
+  const model = prompt('Model id to download, for example ibm/granite-4-micro');
+  if (!model) return;
+  const r = await api(`/v1/providers/${name}/lmstudio/download`, {method:'POST', body:JSON.stringify({model})});
+  showInline('providerFormResult', r);
+}
+function renderProviders() {
+  const el = document.getElementById('providers'); if (!el) return; el.innerHTML = '';
+  for (const [name,p] of Object.entries(config.providers || {})) {
+    const status = providerStatus(p);
+    const row = document.createElement('div'); row.className='row provider-row';
+    row.innerHTML = `<div class="provider-main"><b>${name}</b> <span class="pill ${providerStatusClass(status)}">${status}</span><br><span class="muted">${p.type} ${p.base_url || ''}</span>${p.last_error ? `<br><span class="muted failed-text">${p.last_error}</span>` : ''}<div class="remote-models muted" id="providerModels_${name}">${p.enabled === false ? 'provider disabled' : 'checking endpoint…'}</div></div>`;
+    const actions = document.createElement('div'); actions.className='provider-actions button-row';
+    const label = document.createElement('label'); label.className='switch'; label.title='Connect/disconnect provider';
+    const input = document.createElement('input'); input.type='checkbox'; input.checked = p.enabled !== false && status === 'connected';
+    const slider = document.createElement('span'); slider.className='switch-slider';
+    input.onchange = async(ev)=>{ ev.stopPropagation(); input.disabled=true; try { await toggleProvider(name, input.checked); } catch(e){ alert(e.message); input.checked=false; } finally { input.disabled=false; } };
+    label.appendChild(input); label.appendChild(slider);
+    if (p.type === 'lmstudio') {
+      const inspect=document.createElement('button'); inspect.textContent='Inspect'; inspect.className='ghost-button'; inspect.onclick=(ev)=>{ ev.stopPropagation(); inspectLmStudioProvider(name).catch(e=>alert(e.message)); };
+      const script=document.createElement('button'); script.textContent='Companion script'; script.className='ghost-button'; script.onclick=(ev)=>{ ev.stopPropagation(); showLmStudioCompanionScript(name).catch(e=>alert(e.message)); };
+      const load=document.createElement('button'); load.textContent='Load model'; load.className='ghost-button'; load.onclick=(ev)=>{ ev.stopPropagation(); lmStudioLoadModel(name).catch(e=>alert(e.message)); };
+      const unload=document.createElement('button'); unload.textContent='Unload'; unload.className='ghost-button'; unload.onclick=(ev)=>{ ev.stopPropagation(); lmStudioUnloadModel(name).catch(e=>alert(e.message)); };
+      const download=document.createElement('button'); download.textContent='Download model'; download.className='ghost-button'; download.onclick=(ev)=>{ ev.stopPropagation(); lmStudioDownloadModel(name).catch(e=>alert(e.message)); };
+      actions.appendChild(inspect); actions.appendChild(script); actions.appendChild(load); actions.appendChild(unload); actions.appendChild(download);
+    }
+    const edit=document.createElement('button'); edit.textContent='Edit'; edit.onclick=(ev)=>{ ev.stopPropagation(); openProviderModal(name); };
+    const del=document.createElement('button'); del.textContent='Delete'; del.className='danger-button'; del.onclick=(ev)=>{ ev.stopPropagation(); deleteProvider(name).catch(e=>alert(e.message)); };
+    actions.appendChild(label); actions.appendChild(edit); actions.appendChild(del); row.appendChild(actions); el.appendChild(row);
+    if (p.enabled !== false) refreshProviderModelPreview(name).catch(()=>{});
+  }
+}
+async function refreshProviderModelPreview(name) {
+  const target = document.getElementById(`providerModels_${name}`);
+  if (!target) return;
+  const result = await fetchProviderModels(name);
+  if (!result.ok) { target.textContent = `model list unavailable: ${result.error || result.response?.error || 'unknown error'}`; return; }
+  const models = result.models || [];
+  target.textContent = models.length ? `server models: ${models.slice(0,5).map(m => m.id || m.name).join(', ')}${models.length > 5 ? ` +${models.length-5} more` : ''}` : 'server returned no models';
+}
+function renderModels() {
+  const el = document.getElementById('models'); if (!el) return; el.innerHTML = '';
+  const configured = document.createElement('div');
+  configured.innerHTML = '<h3>Configured models</h3>';
+  for (const [name,m] of Object.entries(config.models || {})) {
+    const wrap=document.createElement('div'); wrap.className='model-card clickable-row';
+    { const av = modelAvailability(name); wrap.innerHTML = `<code>${name} ${av.ok ? '' : '[not available]'}\nprovider: ${m.provider}\nmodel id: ${m.model || '-'}\nexecution endpoint: ${endpointName(m.runs_on)}\ncontext: ${m.context_window}\nmax out: ${m.max_output_tokens}${av.ok ? '' : `\nreason: ${av.reason}`}</code>`; }
+    wrap.onclick=()=>openModelModal(name);
+    const actions=document.createElement('div'); actions.className='button-row';
+    const edit=document.createElement('button'); edit.textContent='Edit'; edit.onclick=(ev)=>{ ev.stopPropagation(); openModelModal(name); };
+    const b=document.createElement('button'); b.textContent='Test model'; b.className='ghost-button'; b.onclick=async(ev)=>{ ev.stopPropagation(); const r=await api(`/v1/models/${name}/test`,{method:'POST'}); showInline('modelFormResult', {model:name, ...r}); };
+    actions.appendChild(edit); actions.appendChild(b);
+    const provider = config.providers?.[m.provider || ''];
+    if (provider?.type === 'lmstudio') {
+      const load=document.createElement('button'); load.textContent='Load in LM Studio'; load.className='ghost-button'; load.onclick=(ev)=>{ ev.stopPropagation(); loadLmStudioModelByName(name).catch(e=>alert(e.message)); };
+      actions.appendChild(load);
+    }
+    wrap.appendChild(actions); configured.appendChild(wrap);
+  }
+  el.appendChild(configured);
+  const live = document.createElement('div');
+  live.innerHTML = '<h3>Live server models</h3><div id="liveModels" class="remote-models">Loading live model lists…</div>';
+  el.appendChild(live);
+  renderLiveModels().catch(()=>{});
+}
+async function renderLiveModels() {
+  const live = document.getElementById('liveModels');
+  if (!live) return;
+  const providers = Object.keys(config.providers || {});
+  if (!providers.length) { live.textContent = 'No providers configured.'; return; }
+  const chunks = [];
+  for (const name of providers) {
+    const result = await fetchProviderModels(name);
+    if (!result.ok) { chunks.push(`<div class="remote-provider failed"><b>${name}</b><br><span>${result.error || result.response?.error || 'model listing failed'}</span></div>`); continue; }
+    const models = result.models || [];
+    const rows = models.map(m => {
+      const id = m.id || m.name;
+      const key = `${name}-${String(id).replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase()}`.replace(/^-+|-+$/g,'');
+      const configured = !!config.models?.[key] || Object.values(config.models || {}).some(x => x.provider === name && (x.model || '') === id);
+      return `<li><button class="link-button" data-provider="${escapeHtml(name)}" data-model="${escapeHtml(id)}" data-key="${escapeHtml(key)}">${escapeHtml(id)}</button><button class="ghost-button mini-button" data-add-live-model="1" data-provider="${escapeHtml(name)}" data-model="${escapeHtml(id)}" data-key="${escapeHtml(key)}">${configured ? 'Edit' : 'Configure'}</button><span class="muted">${escapeHtml(modelSummaryLine(m))}</span></li>`;
+    }).join('');
+    chunks.push(`<div class="remote-provider"><b>${escapeHtml(name)}</b> <span class="pill ${models.length ? 'ok' : ''}">${models.length} models</span><ul>${rows || '<li class="muted">No models returned</li>'}</ul></div>`);
+  }
+  live.innerHTML = chunks.join('');
+  live.querySelectorAll('button[data-model]').forEach(btn => {
+    btn.onclick = () => {
+      modelProvider.value = btn.dataset.provider;
+      modelId.value = btn.dataset.model;
+      modelName.value = btn.dataset.key || btn.dataset.model.replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase();
+      modelRunsOn.value = '';
+    };
+  });
+  live.querySelectorAll('button[data-add-live-model]').forEach(btn => {
+    btn.onclick = async () => {
+      openModelModal();
+      modelProvider.value = btn.dataset.provider;
+      modelId.value = btn.dataset.model;
+      modelName.value = btn.dataset.key || btn.dataset.model.replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase();
+      modelRunsOn.value = '';
+      setModalStatus('modelModalStatus', 'Review and save this model.');
+    };
+  });
+}
+function selectedToolNames() {
+  const sel = document.getElementById('profileTools');
+  if (!sel) return [];
+  if (sel.tagName === 'SELECT') return Array.from(sel.selectedOptions).map(o => o.value).filter(Boolean);
+  return csv(sel.value);
+}
+function setSelectedToolNames(names) {
+  const sel = document.getElementById('profileTools');
+  if (!sel) return;
+  const wanted = new Set(names || []);
+  if (sel.tagName === 'SELECT') Array.from(sel.options).forEach(o => { o.selected = wanted.has(o.value); });
+  else sel.value = (names || []).join(', ');
+}
+function renderTools() {
+  const pkgEl = document.getElementById('toolPackagesOverview');
+  if (pkgEl) {
+    pkgEl.innerHTML = Object.entries(config.tool_packages || {}).map(([name,p]) => `<div class="row"><div><b>${escapeHtml(name)}</b> <span class="pill ${p.enabled !== false ? 'ok-pill' : ''}">${p.enabled !== false ? 'enabled':'disabled'}</span><br><span class="muted">${escapeHtml(p.description || '')}</span><br><span class="muted">tools: ${escapeHtml((p.tools || []).join(', ') || '-')}</span></div></div>`).join('') || '<div class="muted">No tool packages configured.</div>';
+  }
+  const pluginEl = document.getElementById('pluginsOverview');
+  if (pluginEl) {
+    pluginEl.innerHTML = Object.entries(config.plugins || {}).map(([name,p]) => `<div class="row"><div><b>${escapeHtml(name)}</b> <span class="pill">${escapeHtml(p.kind || 'plugin')}</span><br><span class="muted">${escapeHtml(p.description || '')}</span><br><span class="muted">requires: ${escapeHtml((p.requires_tools || []).join(', ') || '-')}</span></div></div>`).join('') || '<div class="muted">No plugins configured.</div>';
+  }
+  const el = document.getElementById('toolsOverview'); if (!el) return; el.innerHTML = '';
+  for (const [name,t] of Object.entries(config.tools || {})) {
+    const row=document.createElement('div'); row.className='row clickable-row';
+    row.innerHTML = `<div><b>${escapeHtml(name)}</b> <span class="pill ${t.enabled ? 'ok-pill' : ''}">${t.enabled ? 'enabled':'disabled'}</span>${t.package ? ` <span class="pill">${escapeHtml(t.package)}</span>` : ''}<br><span class="muted">${escapeHtml(t.description || '')}</span><br><span class="muted">binaries: ${escapeHtml((t.binaries || []).join(', ') || '-')}</span><br><span class="muted">approval: ${escapeHtml((t.approval_required_patterns || []).join(', ') || '-')}</span></div>`;
+    row.onclick=()=>fillToolForm(name);
+    el.appendChild(row);
+  }
+}
+
+function endpointName(id) {
+  if (!id) return 'PAC/local';
+  const r = (window.__pacEndpoints || []).find(x => x.id === id);
+  return r ? `${r.name || r.id} (${r.status || 'unknown'})` : id;
+}
+function selectedRunnerToolNames() {
+  const sel = document.getElementById('runnerTools');
+  if (!sel) return [];
+  return Array.from(sel.selectedOptions || []).map(o => o.value).filter(Boolean);
+}
+function setSelectedRunnerToolNames(names) {
+  const sel = document.getElementById('runnerTools');
+  if (!sel) return;
+  const wanted = new Set(names || []);
+  Array.from(sel.options || []).forEach(o => { o.selected = wanted.has(o.value); });
+  updateRunnerToolPackagePreview();
+}
+function packageNamesForTools(names) {
+  const selected = new Set(names || []);
+  return Object.entries(config?.tool_packages || {}).filter(([_,pkg]) => (pkg.tools || []).length && (pkg.tools || []).every(t => selected.has(t))).map(([name]) => name);
+}
+function endpointPiContainer(r) {
+  return r.metadata?.agent_runtime?.pi_container || r.capabilities?.pi_container || {};
+}
+
+function endpointFeatureChips(r, effectiveTools = []) {
+  const caps = r.capabilities || {};
+  const tools = caps.tools || {};
+  const pi = endpointPiContainer(r) || {};
+  const enablement = r.metadata?.agent_enablement || {};
+  const chips = [];
+  const add = (label, state, required=false, title='') => {
+    const cls = state === 'available' ? 'ok-pill' : (required ? 'required-missing-pill' : 'optional-missing-pill');
+    const text = state === 'available' ? label : `${label} missing`;
+    chips.push(`<span class="pill feature-pill ${cls}" title="${escapeHtml(title || text)}">${escapeHtml(text)}</span>`);
+  };
+  add('commands', (r.status === 'online' || r.metadata?.local_control_plane) ? 'available' : 'missing', true, 'Endpoint must be reachable for queued commands.');
+  add('workspace', r.metadata?.default_workspace ? 'available' : 'missing', true, 'Every endpoint should have a default workspace.');
+  add('pi.dev', pi.available ? 'available' : 'missing', true, pi.reason || 'Required for pi.dev container sessions on this endpoint.');
+  add('PAC wrapper', (enablement.node_available && enablement.pi_available) ? 'available' : 'missing', !!(enablement.requested || enablement.required), enablement.detail || 'Required when this endpoint runs pi.dev workloads.');
+  add('container runtime', (caps.container_runtimes || []).length ? 'available' : 'missing', true, 'Required to build/run the pi.dev and containerized tooling.');
+  if (caps.gpu?.available || (caps.gpu?.devices || []).length) add('GPU', 'available', false, 'Detected endpoint hardware.');
+  (effectiveTools || []).slice(0, 8).forEach(name => {
+    const toolState = tools[name]?.available ? 'available' : 'missing';
+    add(name, toolState, true, `Configured endpoint tool: ${name}`);
+  });
+  if ((effectiveTools || []).length > 8) chips.push(`<span class="pill feature-pill">+${(effectiveTools || []).length - 8} tools</span>`);
+  return chips.join('');
+}
+
+function endpointRuntimeLines(r) {
+  const runtime = r.metadata?.agent_runtime || {};
+  const lines = [];
+  lines.push(`state: ${runtime.status || r.status || 'unknown'}`);
+  if (runtime.kind) lines.push(`kind: ${runtime.kind}`);
+  if (runtime.version || r.metadata?.runner_version || r.metadata?.endpoint_version) lines.push(`version: ${runtime.version || r.metadata?.runner_version || r.metadata?.endpoint_version}`);
+  if (runtime.detail) lines.push(`detail: ${runtime.detail}`);
+  const pi = endpointPiContainer(r);
+  if (pi) {
+    lines.push(`pi image: ${pi.image || '-'}`);
+    lines.push(`pi image available: ${pi.available ? 'yes' : 'no'}`);
+    if (pi.runtime) lines.push(`container runtime: ${pi.runtime}`);
+    if (pi.reason) lines.push(`reason: ${pi.reason}`);
+    if (pi.hint) lines.push(`hint: ${pi.hint}`);
+    if (pi.build_command) lines.push(`build: ${pi.build_command}`);
+  }
+  return lines.join('\n');
+}
+function updateRunnerToolPackagePreview() {
+  const el = document.getElementById('runnerToolPackagePreview');
+  if (!el) return;
+  const names = selectedRunnerToolNames();
+  const packages = packageNamesForTools(names);
+  const toolPills = names.map(n => `<span class="pill ok-pill">${escapeHtml(n)}</span>`).join('');
+  const packagePills = packages.map(n => `<span class="pill ok-pill">${escapeHtml(n)} package</span>`).join('');
+  el.innerHTML = packagePills + toolPills || '<span class="muted">No endpoint tools selected.</span>';
+}
+function fillModelEndpointOptions(endpoints = window.__pacEndpoints || []) {
+  const sel = document.getElementById('modelRunsOn');
+  if (!sel || sel.tagName !== 'SELECT') return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">PAC/local</option>';
+  (endpoints || []).forEach(r => opt(sel, r.id, `${r.name || r.id} (${r.status || 'unknown'})`));
+  if (current && !Array.from(sel.options).some(o => o.value === current)) opt(sel, current, current);
+  sel.value = current || '';
+}
+function setModalStatus(id, value='') {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+function openProviderModal(name='') {
+  if (name) fillProviderForm(name); else {
+    providerName.value=''; if (document.getElementById('providerPreset')) providerPreset.value='custom-openai'; providerType.value='openai-compatible'; providerBaseUrl.value=''; providerApiKeyEnv.value=''; providerApiKey.value=''; providerTimeout.value=30;
+  }
+  setModalStatus('providerModalStatus');
+  const modal = document.getElementById('providerModal');
+  if (modal) modal.hidden = false;
+  setTimeout(()=>document.getElementById('providerName')?.focus(), 0);
+}
+function closeProviderModal() { const modal = document.getElementById('providerModal'); if (modal) modal.hidden = true; }
+function openModelModal(name='') {
+  fillModelEndpointOptions();
+  if (name) fillModelForm(name); else {
+    modelName.value=''; modelProvider.value=modelProvider.options[0]?.value || ''; modelId.value=''; modelRunsOn.value=''; modelContextWindow.value=4096; modelMaxOutput.value=1024;
+    modelSupportsVision.checked=false; modelSupportsJson.checked=false; modelSupportsStreaming.checked=true; fillLmStudioRuntimeFields({});
+  }
+  updateLmStudioModelControls();
+  setModalStatus('modelModalStatus');
+  const modal = document.getElementById('modelModal');
+  if (modal) modal.hidden = false;
+  setTimeout(()=>document.getElementById('modelName')?.focus(), 0);
+}
+function closeModelModal() { const modal = document.getElementById('modelModal'); if (modal) modal.hidden = true; }
+
+function fillProviderForm(name) {
+  const p = config.providers?.[name]; if (!p) return;
+  if (document.getElementById('providerPreset')) providerPreset.value='';
+  providerName.value = name; providerType.value = p.type || 'openai-compatible'; providerBaseUrl.value = p.base_url || '';
+  providerApiKeyEnv.value = p.api_key_env || ''; providerApiKey.value = p.api_key || ''; providerTimeout.value = p.timeout_seconds || 30;
+}
+function fillModelForm(name) {
+  const m = config.models?.[name]; if (!m) return;
+  modelName.value=name; modelProvider.value=m.provider || ''; modelId.value=m.model || ''; modelRunsOn.value=m.runs_on || '';
+  modelContextWindow.value=m.context_window || 4096; modelMaxOutput.value=m.max_output_tokens || 1024;
+  modelSupportsVision.checked=!!m.capabilities?.supports_vision; modelSupportsJson.checked=!!m.capabilities?.supports_json;
+  modelSupportsStreaming.checked=m.capabilities?.supports_streaming !== false;
+  fillLmStudioRuntimeFields(m.extra?.lmstudio_runtime || {});
+  updateLmStudioModelControls();
+}
+
+function currentModelProvider() {
+  return config.providers?.[modelProvider?.value || ''] || null;
+}
+function updateLmStudioModelControls() {
+  const box = document.getElementById('lmStudioModelControls');
+  if (!box) return;
+  const provider = currentModelProvider();
+  box.hidden = !provider || provider.type !== 'lmstudio';
+}
+function numberOrNull(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+function fillLmStudioRuntimeFields(runtime) {
+  const r = runtime || {};
+  if (document.getElementById('lmModelContextLength')) lmModelContextLength.value = r.context_length || '';
+  if (document.getElementById('lmModelGpuOffload')) lmModelGpuOffload.value = r.gpu_offload ?? '';
+  if (document.getElementById('lmModelEvalBatch')) lmModelEvalBatch.value = r.eval_batch_size || '';
+  if (document.getElementById('lmModelTemperature')) lmModelTemperature.value = r.temperature ?? '';
+  if (document.getElementById('lmModelTopP')) lmModelTopP.value = r.top_p ?? '';
+  if (document.getElementById('lmModelSeed')) lmModelSeed.value = r.seed ?? '';
+  if (document.getElementById('lmModelFlashAttention')) lmModelFlashAttention.checked = r.flash_attention !== false;
+  if (document.getElementById('lmModelKvGpu')) lmModelKvGpu.checked = r.offload_kv_cache_to_gpu !== false;
+  if (document.getElementById('lmModelEchoLoadConfig')) lmModelEchoLoadConfig.checked = r.echo_load_config !== false;
+}
+function collectLmStudioRuntimeFields() {
+  const runtime = {
+    context_length: numberOrNull(document.getElementById('lmModelContextLength')?.value),
+    gpu_offload: numberOrNull(document.getElementById('lmModelGpuOffload')?.value),
+    eval_batch_size: numberOrNull(document.getElementById('lmModelEvalBatch')?.value),
+    temperature: numberOrNull(document.getElementById('lmModelTemperature')?.value),
+    top_p: numberOrNull(document.getElementById('lmModelTopP')?.value),
+    seed: numberOrNull(document.getElementById('lmModelSeed')?.value),
+    flash_attention: !!document.getElementById('lmModelFlashAttention')?.checked,
+    offload_kv_cache_to_gpu: !!document.getElementById('lmModelKvGpu')?.checked,
+    echo_load_config: !!document.getElementById('lmModelEchoLoadConfig')?.checked,
+  };
+  Object.keys(runtime).forEach(k => { if (runtime[k] === null) delete runtime[k]; });
+  return runtime;
+}
+function fillToolForm(name) {
+  const t = config.tools?.[name]; if (!t) return;
+  toolName.value=name; toolDescription.value=t.description || ''; toolBinaries.value=(t.binaries || []).join(', ');
+  toolApprovalPatterns.value=(t.approval_required_patterns || []).join(', '); toolSocket.value=t.socket || ''; if (document.getElementById('toolPackage')) toolPackage.value=t.package || ''; if (document.getElementById('toolInstallHint')) toolInstallHint.value=t.install_hint || ''; toolEnabled.checked=t.enabled !== false;
+}
+async function persistConfigAndReload(messageId, message) {
+  await api('/v1/config',{method:'PUT',body:JSON.stringify({config})});
+  await loadConfig();
+  showInline(messageId, message || 'Saved');
+}
+
+
+
+function renderFeaturePackPreview(result) {
+  const box = document.getElementById('featurePackPreview');
+  const apply = document.getElementById('applyFeaturePack');
+  if (!box) return;
+  if (!result || !result.components) {
+    box.innerHTML = '<div class="muted">Upload a PAC patch/full zip or source update zip to preview versions.</div>';
+    if (apply) apply.disabled = true;
+    return;
+  }
+  window.pendingFeaturePackUploadId = result.upload_id;
+  if (apply) apply.disabled = !result.upload_id || !result.components.length;
+  if (result.package_type === 'pac_app_update') {
+    const fromVersion = result.current_version || result.components?.[0]?.from_version || '-';
+    const toVersion = result.target_version || result.root_version || result.components?.[0]?.to_version || '-';
+    const delta = result.changelog?.delta || result.changes || [];
+    const changeHtml = delta.length
+      ? `<div class="update-delta-list">${delta.map(entry => `<div class="update-delta-version"><div class="update-delta-title">${escapeHtml(entry.title || ('PAC v' + entry.version))}</div><ul>${(entry.changes || []).map(change => `<li>${escapeHtml(change)}</li>`).join('')}</ul></div>`).join('')}</div>`
+      : '<div class="muted small-text">No version notes were found inside this zip. The update can still be applied.</div>';
+    const source = result.changelog?.source ? `<span class="muted small-text">Change notes: ${escapeHtml(result.changelog.source)}</span>` : '';
+    box.innerHTML = `<div class="pack-summary strong-summary">PAC application update ready</div><div class="muted small-text">${escapeHtml(result.filename || 'upload')} updates the controller from ${escapeHtml(fromVersion)} to ${escapeHtml(toVersion)}. Apply will install the app patch and restart PAC.</div><table class="compact-table"><thead><tr><th>Update</th><th>From</th><th>To</th><th>Action</th></tr></thead><tbody><tr><td><code>PAC app</code></td><td>${escapeHtml(fromVersion)}</td><td>${escapeHtml(toVersion)}</td><td>install + restart</td></tr></tbody></table><div class="update-delta-heading">Changes included</div>${changeHtml}${source}`;
+    return;
+  }
+  const rows = result.components.map(c => `<tr><td><code>${escapeHtml(c.path)}</code></td><td>${escapeHtml(c.kind)}</td><td>${escapeHtml(c.from_version || 'new')}</td><td>${escapeHtml(c.to_version || '-')}</td><td>${escapeHtml(c.status || '')}</td></tr>`).join('');
+  box.innerHTML = `<div class="pack-summary">${result.component_count || result.components.length} source folder(s) ready from ${escapeHtml(result.filename || 'upload')}</div><table class="compact-table"><thead><tr><th>Source folder</th><th>Kind</th><th>From</th><th>To</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+async function inspectFeaturePack() {
+  const input = document.getElementById('featurePackFile');
+  if (!input || !input.files || !input.files[0]) { paneError('Choose a feature update zip first'); return; }
+  const fd = new FormData();
+  fd.append('file', input.files[0]);
+  emitUiEvent('feature_pack_inspect_started', `Feature update inspection started: ${input.files[0].name}`);
+  const result = await runWithPaneError(() => api('/v1/sources/feature-pack/inspect', {method:'POST', body: fd}), 'Feature update could not be inspected');
+  if (result) { renderFeaturePackPreview(result); emitUiEvent('feature_pack_inspected', result.package_type === 'pac_app_update' ? `PAC app update inspected: ${result.target_version || result.root_version || ''}` : `Feature update inspected: ${(result.components || []).length} source folders`, result); }
+}
+async function applyFeaturePack() {
+  const uploadId = window.pendingFeaturePackUploadId;
+  if (!uploadId) { paneError('Inspect a feature update zip first'); return; }
+  emitUiEvent('feature_pack_apply_started', 'Feature update apply started', {upload_id: uploadId});
+  const result = await runWithPaneError(() => api('/v1/sources/feature-pack/apply', {method:'POST', body: JSON.stringify({upload_id: uploadId})}), 'Feature update could not be applied');
+  if (result) {
+    renderFeaturePackPreview(null);
+    const input = document.getElementById('featurePackFile'); if (input) input.value = '';
+    emitUiEvent('feature_pack_applied', result.package_type === 'pac_app_update' ? 'PAC app update applied; restart scheduled' : `Feature update applied: ${(result.components || []).length} source folders`, result);
+    if (result.package_type !== 'pac_app_update') await renderSources(selectedSourceFolder || '');
+  }
+}
+
+function sourceDirForNewEntry() {
+  if (selectedSourceEntry && sourceFileState.has(selectedSourceEntry)) return selectedSourceEntry.split('/').slice(0, -1).join('/');
+  if (selectedSourceEntry && !sourceFileState.has(selectedSourceEntry)) return selectedSourceEntry;
+  if (selectedSourcePath) return selectedSourcePath.split('/').slice(0, -1).join('/');
+  return selectedSourceFolder || '';
+}
+function sourceFileLabel(path) { return (path || '').split('/').pop() || path || 'untitled'; }
+function markSourceDirty(path, dirty=true) {
+  const state = sourceFileState.get(path);
+  if (!state) return;
+  state.dirty = !!dirty;
+  renderSourceTabs();
+  updateSourceDirtyTreeMarkers();
+}
+function updateSourceDirtyTreeMarkers() {
+  const tree = document.getElementById('sourceTree');
+  if (!tree) return;
+  tree.querySelectorAll('[data-source-path]').forEach(btn => {
+    const p = btn.dataset.sourcePath || '';
+    btn.classList.toggle('source-dirty', !!sourceFileState.get(p)?.dirty);
+  });
+}
+function renderSourceTabs() {
+  const tabs = document.getElementById('sourceTabs');
+  if (!tabs) return;
+  if (!sourceOpenTabs.length) {
+    tabs.innerHTML = '<span class="muted small-text">Open a file from the tree.</span>';
+    return;
+  }
+  tabs.innerHTML = sourceOpenTabs.map(path => {
+    const state = sourceFileState.get(path) || {};
+    const active = path === selectedSourcePath ? ' active' : '';
+    const dirty = state.dirty ? ' dirty' : '';
+    return `<button class="source-tab${active}${dirty}" data-source-tab="${escapeHtml(path)}" title="${escapeHtml(path)}"><span>${escapeHtml(sourceFileLabel(path))}</span>${state.dirty ? '<b>•</b>' : ''}<em data-source-close="${escapeHtml(path)}">×</em></button>`;
+  }).join('');
+  tabs.querySelectorAll('[data-source-tab]').forEach(btn => btn.onclick = (ev) => {
+    if (ev.target?.dataset?.sourceClose) return;
+    activateSourceTab(btn.dataset.sourceTab || '');
+  });
+  tabs.querySelectorAll('[data-source-close]').forEach(btn => btn.onclick = (ev) => {
+    ev.stopPropagation();
+    closeSourceTab(btn.dataset.sourceClose || '');
+  });
+}
+function activateSourceTab(path) {
+  const state = sourceFileState.get(path);
+  const editor = document.getElementById('sourceEditor');
+  if (!state || !editor) return;
+  selectedSourcePath = path;
+  selectedSourceEntry = path;
+  selectedSourceFolder = path.split('/').slice(0, -1).join('/');
+  editor.value = state.content || '';
+  updateSourceActions();
+  renderSourceTabs();
+}
+function closeSourceTab(path) {
+  if (sourceFileState.get(path)?.dirty && !confirm(`${path} has unsaved changes. Close it anyway?`)) return;
+  sourceFileState.delete(path);
+  sourceOpenTabs = sourceOpenTabs.filter(p => p !== path);
+  if (selectedSourcePath === path) {
+    selectedSourcePath = sourceOpenTabs[sourceOpenTabs.length - 1] || null;
+    if (selectedSourcePath) activateSourceTab(selectedSourcePath);
+    else {
+      const editor = document.getElementById('sourceEditor');
+      if (editor) editor.value = '';
+      renderSourceTabs();
+    }
+  } else renderSourceTabs();
+  updateSourceDirtyTreeMarkers();
+}
+function sourceDepth(path) {
+  return (path || '').split('/').filter(Boolean).length;
+}
+function sourceChildRows(items, depth=0) {
+  const rows = [];
+  (items || []).forEach(item => {
+    const isDir = item.type === 'dir';
+    const expanded = isDir && sourceExpandedDirs.has(item.path);
+    const iconClass = isDir ? (expanded ? 'tree-icon tree-folder open' : 'tree-icon tree-folder') : 'tree-icon tree-file';
+    const versionPill = item.source_version ? `<span class="source-version-pill" title="source version">v${escapeHtml(item.source_version)}</span>` : '';
+    const kindLabel = item.component_kind || item.buildable_kind || '';
+    const kindPill = kindLabel ? `<span class="source-kind-pill">${escapeHtml(kindLabel)}</span>` : '';
+    const componentTitle = item.component_title || item.name;
+    const componentHint = item.component_description ? ` title="${escapeHtml(item.component_description)}"` : '';
+    const buildTitle = item.buildable_kind === 'container' ? 'Build container image' : 'Build binaries';
+    const buildButton = item.buildable_kind ? `<button class="source-build-icon" data-build-kind="${escapeHtml(item.buildable_kind)}" data-build-path="${escapeHtml(item.path)}" title="${buildTitle}" aria-label="${buildTitle}">▶</button>` : '';
+    const dirty = sourceFileState.get(item.path)?.dirty ? ' source-dirty' : '';
+    const selected = selectedSourceEntry === item.path ? ' selected' : '';
+    const indent = Math.max(0, depth) * 22;
+    rows.push(`<div class="source-row-wrap ${item.buildable_kind ? 'buildable-source-row' : ''}${selected}" style="--source-depth:${indent}px"><button class="source-row ${isDir ? 'source-dir' : 'source-file'}${dirty}${selected}" data-source-path="${escapeHtml(item.path)}" data-source-type="${item.type}"${componentHint}><span class="source-name"><span class="${iconClass}" aria-hidden="true"></span>${escapeHtml(componentTitle)}${dirty ? '<b class="dirty-dot">•</b>' : ''}</span><span class="source-row-meta">${versionPill}${kindPill}</span></button>${buildButton}</div>`);
+    if (isDir && expanded) {
+      const cached = sourceTreeCache.get(item.path);
+      if (cached?.items?.length) rows.push(...sourceChildRows(cached.items, depth + 1));
+      else if (cached) rows.push(`<div class="muted source-empty-folder nested" style="--source-depth:${(depth + 1) * 14}px">No files in this folder.</div>`);
+      else rows.push(`<div class="muted source-empty-folder nested" style="--source-depth:${(depth + 1) * 14}px">Loading…</div>`);
+    }
+  });
+  return rows;
+}
+function bindSourceTreeEvents(tree) {
+  tree.querySelectorAll('.source-row').forEach(btn => {
+    btn.onclick = async () => {
+      const p = btn.dataset.sourcePath || '';
+      selectedSourceEntry = p;
+      if (btn.dataset.sourceType === 'dir') {
+        selectedSourceFolder = p;
+        if (sourceExpandedDirs.has(p)) sourceExpandedDirs.delete(p); else sourceExpandedDirs.add(p);
+        await renderSources('', {preserveCache:true, focusPath:p});
+      } else {
+        openSourceFile(p);
+      }
+      updateSourceActions();
+    };
+    btn.oncontextmenu = (ev) => openSourceContextMenu(ev, btn.dataset.sourcePath || '', btn.dataset.sourceType || 'file');
+  });
+  tree.querySelectorAll('.source-build-icon').forEach(btn => {
+    btn.onclick = (ev) => {
+      ev.preventDefault(); ev.stopPropagation();
+      selectedSourceFolder = btn.dataset.buildPath || '';
+      selectedSourceEntry = selectedSourceFolder;
+      updateSourceActions();
+      if (btn.dataset.buildKind === 'container') buildSelectedContainerSource();
+      else buildSelectedBinarySource();
+    };
+  });
+}
+function normalizeSourceCachePath(path='') {
+  const value = String(path || '').trim();
+  return (!value || value === '.') ? '' : value.replace(/^\/+/, '');
+}
+async function ensureSourceDirLoaded(path='') {
+  const data = await api(`/v1/sources?path=${encodeURIComponent(path)}`);
+  const cachePath = normalizeSourceCachePath(data.path ?? path);
+  data.path = cachePath;
+  sourceTreeCache.set(cachePath, data);
+  return data;
+}
+async function renderSources(path='', options={}) {
+  const tree = document.getElementById('sourceTree');
+  if (!tree) return;
+  try {
+    const targetPath = options.focusPath !== undefined ? options.focusPath : path;
+    if (!options.preserveCache || !sourceTreeCache.has('')) await ensureSourceDirLoaded('');
+    if (path && !sourceTreeCache.has(path)) await ensureSourceDirLoaded(path);
+    const expanded = Array.from(sourceExpandedDirs).filter(Boolean);
+    for (const dir of expanded) {
+      if (!sourceTreeCache.has(dir)) await ensureSourceDirLoaded(dir);
+    }
+    const rootData = sourceTreeCache.get('') || {items:[]};
+    let rootItems = rootData.items || [];
+    if (!rootItems.length && Array.isArray(rootData.top_level) && rootData.top_level.length) {
+      rootItems = rootData.top_level.map(name => ({name, path:name, type:'dir'}));
+    }
+    const rows = sourceChildRows(rootItems, 0);
+    tree.classList.remove('muted');
+    tree.innerHTML = rows.length ? rows.join('') : '<div class="muted source-empty-folder">No source folders found.</div>';
+    selectedSourceFolder = selectedSourceFolder || targetPath || '';
+    updateSourceActions();
+    renderSourceBuildPanel(sourceTreeCache.get(selectedSourceFolder) || rootData);
+    await syncDownloadsWithSourcePath(selectedSourceFolder || '');
+    bindSourceTreeEvents(tree);
+  } catch (e) {
+    tree.classList.add('muted');
+    tree.textContent = e.message || String(e);
+    paneError('Source list unavailable', e.message || String(e));
+  }
+}
+async function openSourceFile(path) {
+  const editor = document.getElementById('sourceEditor');
+  if (!editor) return;
+  try {
+    const data = await api(`/v1/sources/content?path=${encodeURIComponent(path)}`);
+    selectedSourcePath = data.path;
+    selectedSourceEntry = data.path;
+    selectedSourceFolder = data.path.split('/').slice(0, -1).join('/');
+    if (!sourceOpenTabs.includes(data.path)) sourceOpenTabs.push(data.path);
+    sourceFileState.set(data.path, {content:data.content || '', saved:data.content || '', dirty:false});
+    activateSourceTab(data.path);
+  } catch (e) {
+    paneError('Source file could not be opened', e.message || String(e));
+  }
+}
+async function saveSourceFile(path=selectedSourcePath) {
+  const editor = document.getElementById('sourceEditor');
+  if (!path || !editor) { paneError('No source file selected'); return; }
+  if (path === selectedSourcePath) {
+    const state = sourceFileState.get(path) || {};
+    state.content = editor.value;
+    sourceFileState.set(path, state);
+  }
+  const state = sourceFileState.get(path);
+  const content = state ? state.content : editor.value;
+  const result = await runWithPaneError(() => api('/v1/sources/content', {method:'PUT', body: JSON.stringify({path, content})}), 'Source file could not be saved');
+  if (result) {
+    const current = sourceFileState.get(path) || {};
+    current.saved = content; current.content = content; current.dirty = false;
+    sourceFileState.set(path, current);
+    renderSourceTabs(); updateSourceDirtyTreeMarkers();
+    emitUiEvent('source_file_saved', `Source saved: ${result.path}`, result);
+  }
+}
+async function saveAllSourceFiles() {
+  for (const path of sourceOpenTabs.slice()) if (sourceFileState.get(path)?.dirty) await saveSourceFile(path);
+}
+async function createSourceEntry(type) {
+  const base = sourceDirForNewEntry();
+  const label = type === 'dir' ? 'New folder name' : 'New file name';
+  const name = prompt(label, type === 'dir' ? 'new-folder' : 'new-file.txt');
+  if (!name) return;
+  const path = [base, name].filter(Boolean).join('/');
+  const result = await runWithPaneError(() => api('/v1/sources/entry', {method:'POST', body:JSON.stringify({path, type})}), `Source ${type} could not be created`);
+  if (result) { sourceTreeCache.clear(); if (type === 'dir') sourceExpandedDirs.add(result.path); await renderSources(base); if (type !== 'dir') await openSourceFile(result.path); }
+}
+async function renameSelectedSourceEntry(path=selectedSourceEntry) {
+  if (!path) return paneError('Select a source entry first');
+  const newName = prompt('Rename to', sourceFileLabel(path));
+  if (!newName || newName === sourceFileLabel(path)) return;
+  const result = await runWithPaneError(() => api('/v1/sources/entry/rename', {method:'POST', body:JSON.stringify({path, new_name:newName})}), 'Source entry could not be renamed');
+  if (result) {
+    if (sourceFileState.has(path)) {
+      const state = sourceFileState.get(path); sourceFileState.delete(path); sourceFileState.set(result.new_path, state);
+      sourceOpenTabs = sourceOpenTabs.map(p => p === path ? result.new_path : p);
+      if (selectedSourcePath === path) selectedSourcePath = result.new_path;
+    }
+    selectedSourceEntry = result.new_path;
+    sourceTreeCache.clear(); await renderSources(result.new_path.split('/').slice(0,-1).join('/'));
+    renderSourceTabs();
+  }
+}
+async function deleteSelectedSourceEntry(path=selectedSourceEntry) {
+  if (!path) return paneError('Select a source entry first');
+  if (!confirm(`Delete ${path}?`)) return;
+  const parent = path.split('/').slice(0,-1).join('/');
+  const result = await runWithPaneError(() => api('/v1/sources/entry', {method:'DELETE', body:JSON.stringify({path})}), 'Source entry could not be deleted');
+  if (result) {
+    if (sourceFileState.has(path)) closeSourceTab(path);
+    selectedSourceEntry = parent;
+    sourceTreeCache.clear(); await renderSources(parent);
+  }
+}
+function ensureSourceContextMenu() {
+  let menu = document.getElementById('sourceContextMenu');
+  if (menu) return menu;
+  menu = document.createElement('div');
+  menu.id = 'sourceContextMenu';
+  menu.className = 'source-context-menu';
+  document.body.appendChild(menu);
+  document.addEventListener('click', () => { menu.hidden = true; });
+  return menu;
+}
+function openSourceContextMenu(ev, path, type) {
+  ev.preventDefault(); ev.stopPropagation();
+  selectedSourceEntry = path;
+  const menu = ensureSourceContextMenu();
+  const buildKind = path.startsWith('binaries/') && path.split('/').length === 2 ? 'binary' : (path.startsWith('containers/') && path.split('/').length === 2 ? 'container' : '');
+  menu.innerHTML = `<button data-action="rename">Rename</button>${type === 'file' ? '<button data-action="save">Save file</button>' : ''}<button data-action="delete">Delete</button>${buildKind ? '<button data-action="build">Build</button>' : ''}`;
+  menu.style.left = `${ev.clientX}px`; menu.style.top = `${ev.clientY}px`; menu.hidden = false;
+  menu.querySelectorAll('button').forEach(btn => btn.onclick = async (e) => {
+    e.stopPropagation(); menu.hidden = true;
+    const action = btn.dataset.action;
+    if (action === 'rename') await renameSelectedSourceEntry(path);
+    if (action === 'save') await saveSourceFile(path);
+    if (action === 'delete') await deleteSelectedSourceEntry(path);
+    if (action === 'build') { selectedSourceFolder = path; if (buildKind === 'container') await buildSelectedContainerSource(); else await buildSelectedBinarySource(); }
+  });
+}
+
+
+function selectedBuildFolder(kind) {
+  const path = selectedSourceFolder || '';
+  if (!path) return '';
+  const parts = path.split('/').filter(Boolean);
+  if (!parts.length) return '';
+  if (kind === 'container' && parts[0] !== 'containers') return '';
+  if (kind === 'binary' && parts[0] !== 'binaries') return '';
+  return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : '';
+}
+function sourceBuildKindForPath(path) {
+  const parts = (path || '').split('/').filter(Boolean);
+  if (parts.length < 2) return '';
+  if (parts[0] === 'containers') return 'container';
+  if (parts[0] === 'binaries') return 'binary';
+  return '';
+}
+function updateSourceActions() {
+  const hint = document.getElementById('sourceActionHint');
+  const cf = selectedBuildFolder('container');
+  const bf = selectedBuildFolder('binary');
+  if (hint) hint.textContent = bf ? `Viewing source: ${bf}. Build it from the Source library row.` : (cf ? `Container source: ${cf}. Build it from the Source library row.` : 'Filter by binary source folder.');
+  const title = document.getElementById('sourceBuildPanelTitle');
+  if (title) title.textContent = 'Downloads';
+}
+function renderSourceBuildPanel(data={}) {
+  const hintBox = document.getElementById('sourceBuildResult');
+  if (hintBox && !hintBox.dataset.busy) hintBox.textContent = 'Available downloads are listed by version.';
+  updateSourceActions();
+}
+
+async function syncDownloadsWithSourcePath(path='') {
+  const parts = String(path || '').split('/').filter(Boolean);
+  let project = selectedBinaryArtifactFilter || '';
+  if (parts[0] === 'binaries') {
+    project = parts[1] || '';
+  }
+  selectedBinaryArtifactFilter = project;
+  await loadBinaryFolderFilters().catch(()=>{});
+  await loadSourceBinaryArtifacts(project).catch(e=>paneError('Binary downloads unavailable', e.message));
+}
+
+function setBinaryFolderFilterValue(value) {
+  const filter = document.getElementById('binaryFolderFilter');
+  if (filter && filter.value !== value) filter.value = value || '';
+}
+async function loadBinaryFolderFilters() {
+  const filter = document.getElementById('binaryFolderFilter');
+  if (!filter) return;
+  try {
+    const data = await api('/v1/sources?path=binaries');
+    const folders = (data.items || []).filter(i => i.type === 'dir').map(i => i.name).sort((a,b)=>a.localeCompare(b));
+    const current = selectedBinaryArtifactFilter || '';
+    filter.innerHTML = ['<option value="">All binary folders</option>'].concat(folders.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)).join('');
+    filter.value = folders.includes(current) ? current : '';
+    selectedBinaryArtifactFilter = filter.value;
+  } catch(e) {
+    filter.innerHTML = '<option value="">Binary folders unavailable</option>';
+  }
+}
+function binaryVersionFromName(name) {
+  const text = String(name || '');
+  const match = text.match(/(?:^|[-_])v?(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?)(?=$|[-_])/);
+  return match ? match[1] : 'unversioned';
+}
+function binaryPlatformFromName(name, project) {
+  let text = String(name || '');
+  if (project && text.startsWith(project + '-')) text = text.slice(project.length + 1);
+  text = text.replace(/^[0-9]+\.[0-9]+\.[0-9]+[-_]?/, '');
+  const match = text.match(/(linux|darwin|windows|freebsd|openbsd|netbsd)[-_](amd64|arm64|arm|386|ppc64le|s390x)/i);
+  return match ? match[0].replace('_', '/') : text;
+}
+function formatBytes(bytes) {
+  const n = Number(bytes || 0);
+  if (!n) return '0 bytes';
+  if (n < 1024) return `${n} bytes`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+function renderBinaryDownloads(projects) {
+  const el = document.getElementById('sourceBinaryArtifacts');
+  if (!el) return;
+  const grouped = new Map();
+  (projects || []).forEach(project => {
+    (project.artifacts || []).forEach(a => {
+      const version = a.version || (binaryVersionFromName(a.name) === 'unversioned' ? (project.source_version || 'unversioned') : binaryVersionFromName(a.name));
+      const key = `${project.project}::${version}`;
+      if (!grouped.has(key)) grouped.set(key, {project: project.project, version, artifacts: [], sourceVersion: project.source_version || ''});
+      grouped.get(key).artifacts.push(a);
+    });
+  });
+  const groups = Array.from(grouped.values()).sort((a,b) => {
+    const projectCmp = a.project.localeCompare(b.project);
+    if (projectCmp) return projectCmp;
+    return b.version.localeCompare(a.version, undefined, {numeric:true});
+  });
+  if (!groups.length) {
+    el.innerHTML = '<span class="muted">No downloads available yet for this category. Build binaries from the Source library row.</span>';
+    return;
+  }
+  el.innerHTML = groups.map(group => {
+    const links = group.artifacts
+      .sort((a,b)=>String(a.name).localeCompare(String(b.name), undefined, {numeric:true}))
+      .map(a => `<span class="download-artifact"><a class="download-pill" href="${a.download_url}" download title="${escapeHtml(a.name)}"><span>${escapeHtml(binaryPlatformFromName(a.name, group.project))}</span><small>${escapeHtml(formatBytes(a.size))}</small></a><button class="icon-button delete-artifact" data-project="${escapeHtml(group.project)}" data-filename="${escapeHtml(a.name)}" title="Delete this binary">×</button></span>`)
+      .join('');
+    return `<div class="download-version-group"><div class="download-version-title"><b>${escapeHtml(group.project)}</b><span>binary v${escapeHtml(group.version)}</span></div><div class="download-pill-list">${links}</div></div>`;
+  }).join('');
+  el.querySelectorAll('.delete-artifact').forEach(btn => {
+    btn.onclick = () => deleteBinaryArtifact(btn.dataset.project || '', btn.dataset.filename || '').catch(e => paneError('Delete binary failed', e.message));
+  });
+}
+
+async function deleteBinaryArtifact(project, filename) {
+  if (!project || !filename) return;
+  if (!confirm(`Delete binary ${filename}?`)) return;
+  const result = await api(`/v1/sources/binary-artifacts/${encodeURIComponent(project)}/${encodeURIComponent(filename)}`, {method:'DELETE'});
+  setSourceBuildHint(`Deleted ${result.deleted || filename}.`, false);
+  await loadSourceBinaryArtifacts(selectedBinaryArtifactFilter || '').catch(()=>{});
+  await loadGlobalEvents(true).catch(()=>{});
+}
+
+async function pruneBinaryArtifacts(dryRun=false) {
+  const project = selectedBinaryArtifactFilter || '';
+  const label = project ? project : 'all binary folders';
+  if (!dryRun && !confirm(`Keep only the newest binary version for ${label} and delete older versions?`)) return;
+  const result = await api('/v1/sources/binary-artifacts/prune', {method:'POST', body:JSON.stringify({project, keep_versions:1, dry_run:dryRun})});
+  const bytes = formatBytes(result.deleted_bytes || 0);
+  setSourceBuildHint(dryRun ? `Prune preview: ${result.deleted_count || 0} old file(s), ${bytes}.` : `Pruned ${result.deleted_count || 0} old file(s), ${bytes}.`, false);
+  await loadSourceBinaryArtifacts(project).catch(()=>{});
+  await loadGlobalEvents(true).catch(()=>{});
+}
+async function loadSourceBinaryArtifacts(project='') {
+  const el = document.getElementById('sourceBinaryArtifacts');
+  if (!el) return;
+  try {
+    const effectiveProject = project !== undefined && project !== null ? project : selectedBinaryArtifactFilter;
+    setBinaryFolderFilterValue(effectiveProject || '');
+    const qs = effectiveProject ? `?project=${encodeURIComponent(effectiveProject)}` : '';
+    const data = await api(`/v1/sources/binary-artifacts${qs}`);
+    renderBinaryDownloads(data.projects || []);
+  } catch(e) { el.textContent = `Could not load downloads: ${e.message}`; }
+}
+function formatBuildCommand(command) {
+  return Array.isArray(command) ? command.join(' ') : String(command || '');
+}
+function setSourceBuildHint(text, busy=false) {
+  const box = document.getElementById('sourceBuildResult');
+  if (!box) return;
+  box.dataset.busy = busy ? '1' : '';
+  box.textContent = text || 'Available downloads are listed by version.';
+}
+function renderSourceBuildResult(result) {
+  if (!result) { setSourceBuildHint(); return; }
+  if (result.kind === 'binary') {
+    const count = (result.artifacts || []).length;
+    setSourceBuildHint(result.ok ? `${count} file${count === 1 ? '' : 's'} ready to download.` : 'Build failed. Open Events for details.', false);
+  } else if (result.kind === 'container') {
+    setSourceBuildHint(result.ok ? `Container image built: ${result.image || result.folder || ''}` : 'Container build failed. Open Events for details.', false);
+  } else {
+    setSourceBuildHint('Build finished. Open Events for details.', false);
+  }
+}
+async function buildSelectedContainerSource() {
+  const folder = selectedBuildFolder('container');
+  if (!folder) return paneError('Select a buildable folder under containers first');
+  setSourceBuildHint(`Building ${folder} from the folder root…`, true);
+  emitUiEvent('source_container_build_started', `Container build started: ${folder}`, {path: folder});
+  const result = await runWithPaneError(() => api('/v1/sources/build-container', {method:'POST', body:JSON.stringify({path:folder})}), 'Container build failed');
+  if (result) { renderSourceBuildResult(result); emitUiEvent(result.ok ? 'source_container_built' : 'source_container_build_failed', result.ok ? `Container build completed: ${result.image || folder}` : `Container build failed: ${folder}`, result); }
+  await loadGlobalEvents(true).catch(()=>{});
+}
+async function buildSelectedBinarySource() {
+  const folder = selectedBuildFolder('binary');
+  if (!folder) return paneError('Select a buildable folder under binaries first');
+  setSourceBuildHint(`Building ${folder} for supported OS/architecture targets…`, true);
+  emitUiEvent('source_binary_build_started', `Binary build started: ${folder}`, {path: folder});
+  const result = await runWithPaneError(() => api('/v1/sources/build-binary', {method:'POST', body:JSON.stringify({path:folder, server_url:(config.server?.public_url || '').replace(/\/$/, '')})}), 'Binary build failed');
+  if (result) { renderSourceBuildResult(result); emitUiEvent(result.ok ? 'source_binary_built' : 'source_binary_build_failed', result.ok ? `Binary build completed: ${folder}` : `Binary build failed: ${folder}`, result); }
+  if (folder === 'binaries/zed-binary') await loadMcpBuildStatus().catch(()=>{});
+  selectedBinaryArtifactFilter = folder.split('/')[1] || '';
+  await loadBinaryFolderFilters().catch(()=>{});
+  await loadSourceBinaryArtifacts(selectedBinaryArtifactFilter).catch(()=>{});
+  await loadGlobalEvents(true).catch(()=>{});
+}
+
+function workspaceValue(id) { return document.getElementById(id)?.value?.trim() || ''; }
+function workspaceChecked(id) { return !!document.getElementById(id)?.checked; }
+function renderWorkspaces() {
+  const el = document.getElementById('workspaces');
+  if (!el) return;
+  el.innerHTML = '';
+  for (const [name,w] of Object.entries(config.workspaces || {})) {
+    const lifecycle = w.ephemeral ? `ephemeral${w.ttl_hours ? `, ${w.ttl_hours}h TTL` : ''}` : 'persistent';
+    const placement = w.endpoint_id || w.endpoint_selector || 'select at runtime';
+    const data = w.data_bundle_url || w.data_bundle_path || 'none';
+    const row = document.createElement('div'); row.className = 'workspace-card clickable-row';
+    row.innerHTML = `<div class="workspace-card-title"><b>${escapeHtml(name)}</b><span>${escapeHtml(lifecycle)}</span></div>
+      <div class="workspace-card-grid">
+        <div><small>type</small><b>${escapeHtml(w.type || 'local')}</b></div>
+        <div><small>runtime</small><b>${escapeHtml(w.runtime || 'any')}</b></div>
+        <div><small>placement</small><b>${escapeHtml(placement)}</b></div>
+        <div><small>profile</small><b>${escapeHtml(w.default_agent_profile || '-')}</b></div>
+      </div>
+      <code>${escapeHtml(w.description || '')}${w.description ? '\n' : ''}path: ${escapeHtml(w.path || '-')}
+url: ${escapeHtml(w.url || '-')}
+branch: ${escapeHtml(w.branch || '-')}
+container: ${escapeHtml(w.container_image || '-')}
+data zip: ${escapeHtml(data)}
+data path: ${escapeHtml(w.data_mount_path || '-')}
+default: ${w.is_default ? 'yes' : 'no'}</code>`;
+    row.onclick = () => fillWorkspaceForm(name);
+    el.appendChild(row);
+  }
+}
+function fillWorkspaceForm(name) {
+  const w = config.workspaces?.[name]; if (!w) return;
+  workspaceName.value = name;
+  if (document.getElementById('workspaceDescription')) workspaceDescription.value = w.description || '';
+  workspaceType.value = w.type || 'local';
+  if (document.getElementById('workspaceRuntime')) workspaceRuntime.value = w.runtime || 'any';
+  workspacePath.value = w.path || ''; workspaceUrl.value = w.url || ''; workspaceBranch.value = w.branch || '';
+  if (document.getElementById('workspaceContainerImage')) workspaceContainerImage.value = w.container_image || '';
+  workspaceDefaultProfile.value = w.default_agent_profile || '';
+  if (document.getElementById('workspaceEndpoint')) workspaceEndpoint.value = w.endpoint_id || '';
+  if (document.getElementById('workspaceEndpointSelector')) workspaceEndpointSelector.value = w.endpoint_selector || '';
+  if (document.getElementById('workspaceDataUrl')) workspaceDataUrl.value = w.data_bundle_url || '';
+  if (document.getElementById('workspaceDataPath')) workspaceDataPath.value = w.data_bundle_path || '';
+  if (document.getElementById('workspaceDataMount')) workspaceDataMount.value = w.data_mount_path || '';
+  if (document.getElementById('workspaceTtlHours')) workspaceTtlHours.value = w.ttl_hours || '';
+  if (document.getElementById('workspaceEphemeral')) workspaceEphemeral.checked = !!w.ephemeral;
+  if (document.getElementById('workspaceDeleteOnExpire')) workspaceDeleteOnExpire.checked = w.delete_on_expire !== false;
+  if (document.getElementById('workspaceIsDefault')) workspaceIsDefault.checked = !!w.is_default;
+}
+async function saveWorkspaceFromForm() {
+  const name = workspaceName.value.trim();
+  if (!name) return alert('Workspace name is required');
+  const body = {
+    description: workspaceValue('workspaceDescription') || null,
+    type: workspaceType.value || 'local',
+    runtime: workspaceValue('workspaceRuntime') || 'any',
+    path: workspacePath.value.trim() || null,
+    url: workspaceUrl.value.trim() || null,
+    branch: workspaceBranch.value.trim() || null,
+    container_image: workspaceValue('workspaceContainerImage') || null,
+    default_agent_profile: workspaceDefaultProfile.value || null,
+    endpoint_id: document.getElementById('workspaceEndpoint')?.value || null,
+    endpoint_selector: workspaceValue('workspaceEndpointSelector') || null,
+    data_bundle_url: workspaceValue('workspaceDataUrl') || null,
+    data_bundle_path: workspaceValue('workspaceDataPath') || null,
+    data_mount_path: workspaceValue('workspaceDataMount') || null,
+    ephemeral: workspaceChecked('workspaceEphemeral'),
+    ttl_hours: workspaceValue('workspaceTtlHours') || null,
+    delete_on_expire: workspaceChecked('workspaceDeleteOnExpire'),
+    is_default: !!document.getElementById('workspaceIsDefault')?.checked,
+  };
+  await api(`/v1/workspaces/${encodeURIComponent(name)}`, {method:'PUT', body:JSON.stringify(body)});
+  await loadConfig();
+  showInline('workspaceFormResult', `Saved workspace ${name}`);
+}
+async function deleteWorkspaceFromForm() {
+  const name = workspaceName.value.trim();
+  if (!name || !config.workspaces?.[name]) return alert('Select an existing workspace first');
+  if (!confirm(`Delete workspace ${name}?`)) return;
+  await api(`/v1/workspaces/${encodeURIComponent(name)}`, {method:'DELETE'});
+  await loadConfig();
+  showInline('workspaceFormResult', `Deleted workspace ${name}`);
+}
+
+function renderProfiles() {
+  const el = document.getElementById('profiles'); el.innerHTML = '';
+  for (const [name,p] of Object.entries(config.agent_profiles || {})) {
+    const av = p.model ? modelAvailability(p.model) : {ok:false, reason:'no model'};
+    const valid = av.ok;
+    const row = document.createElement('div'); row.className = 'model-card clickable-row';
+    row.innerHTML = `<code>${name} ${valid ? '' : '[not selectable]'}\nmodel: ${p.model}\ncontext: ${p.context_profile || p.context_mode}\npermissions: ${p.permission_profile}\ntools: ${(p.tools||[]).join(', ')}${valid ? '' : `\nreason: ${av.reason}`}</code>`;
+    row.onclick = () => fillProfileForm(name);
+    el.appendChild(row);
+  }
+}
+function fillProfileForm(name) {
+  const p = config.agent_profiles?.[name]; if (!p) return;
+  profileName.value = name; profileModel.value = p.model || ''; profileContextProfile.value = p.context_profile || 'medium'; profileContextMode.value = p.context_mode || 'medium';
+  profilePermission.value = p.permission_profile || 'ask-first'; setSelectedToolNames(p.tools || []); profileSystemPrompt.value = p.system_prompt || 'You are a careful remote coding and infrastructure agent.';
+}
+
+function formatBytes(value) {
+  const n = Number(value || 0);
+  if (!n) return '-';
+  const units = ['B','KB','MB','GB','TB','PB'];
+  let v = n, i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v >= 10 || i === 0 ? v.toFixed(0) : v.toFixed(1)} ${units[i]}`;
+}
+function firstValue(...values) { return values.find(v => v !== undefined && v !== null && String(v) !== '') ?? '-'; }
+function endpointHardware(r) {
+  const c = r.capabilities || {};
+  const hw = c.hardware || {};
+  const cpu = firstValue(hw.cpu?.model, c.cpu?.model, hw.cpu_model);
+  const cores = firstValue(hw.cpu?.logical_cores, c.cpu?.logical_cores, c.cpu?.cores);
+  const ram = firstValue(hw.memory?.total_bytes ? formatBytes(hw.memory.total_bytes) : null, c.memory?.total_bytes ? formatBytes(c.memory.total_bytes) : null, hw.ram);
+  const disk = firstValue(hw.disk?.total_bytes ? formatBytes(hw.disk.total_bytes) : null, c.disk?.total_bytes ? formatBytes(c.disk.total_bytes) : null, hw.disk);
+  const gpuRaw = c.gpu?.devices?.length ? c.gpu.devices.map(g => g.name || g.raw || 'GPU').join(', ') : (c.gpu?.raw || (c.gpu?.available ? 'available' : '-'));
+  return {cpu, cores, ram, disk, gpu: gpuRaw};
+}
+function compactContainerLine(c) {
+  const names = Array.isArray(c.Names) ? c.Names.join(', ') : (c.Names || c.names || c.Name || c.name || '-');
+  const image = c.Image || c.image || '-';
+  const state = c.State || c.state || c.Status || c.status || '';
+  return `${names} · ${image}${state ? ` · ${state}` : ''}`;
+}
+async function loadRunners() {
+  const endpoints = await api('/v1/endpoints');
+  window.__pacEndpoints = endpoints;
+  fillModelEndpointOptions(endpoints);
+  if (document.getElementById('workspaceEndpoint')) { workspaceEndpoint.innerHTML = '<option value="">none</option>'; endpoints.forEach(r => opt(workspaceEndpoint, r.id, `${r.name || r.id} (${r.status || 'unknown'})`)); }
+  if (document.getElementById('taskRunner')) { taskRunner.innerHTML = '<option value="">PAC/local</option>'; endpoints.forEach(r => opt(taskRunner, r.id, `${r.name} (${r.status})`)); }
+  if (document.getElementById('sessionEndpoint')) { sessionEndpoint.innerHTML = '<option value="">select endpoint</option>'; endpoints.forEach(r => opt(sessionEndpoint, r.id, `${r.name} (${r.status})`)); }
+  const summaries = [document.getElementById('runnerSummary'), document.getElementById('runnerSummaryEndpoints')].filter(Boolean);
+  if (summaries.length) {
+    const online = endpoints.filter(r => r.status === 'online').length;
+    const gpu = endpoints.filter(r => r.capabilities?.gpu?.available || r.capabilities?.gpu?.devices?.length).length;
+    const html = `<div class="metric"><b>${endpoints.length}</b><span>endpoints</span></div><div class="metric"><b>${online}</b><span>online</span></div><div class="metric"><b>${gpu}</b><span>GPU hosts</span></div>`;
+    summaries.forEach(summary => summary.innerHTML = html);
+  }
+  const el = document.getElementById('runners'); if (!el) return;
+  el.innerHTML = endpoints.length ? '' : '<div class="muted">No endpoints yet. Add the local host or register a remote endpoint.</div>';
+  endpoints.forEach(r => {
+    const hw = endpointHardware(r);
+    const configuredTools = r.metadata?.agent_tools || [];
+    const discoveredTools = r.capabilities?.tools ? Object.entries(r.capabilities.tools).filter(([_,v])=>v.available).map(([k])=>k) : [];
+    const effectiveTools = configuredTools.length ? configuredTools : discoveredTools;
+    const tools = effectiveTools.length ? effectiveTools.join(', ') : '-';
+    const packages = (r.metadata?.tool_packages || packageNamesForTools(effectiveTools)).join(', ') || '-';
+    const defaultWorkspace = r.metadata?.default_workspace || Object.entries(config.workspaces || {}).find(([_,w]) => w.endpoint_id === r.id && w.is_default)?.[0] || '-';
+    const modelLinks = Object.entries(config.models || {}).filter(([_,m]) => m.runs_on === r.id).map(([k])=>k).join(', ');
+    const containers = (r.containers || []).slice(0,4).map(compactContainerLine).join('\n');
+    const card=document.createElement('article'); card.className='endpoint-card';
+    const localBadge = r.metadata?.local_control_plane ? ' <span class="pill">local</span>' : '';
+    const version = r.metadata?.runner_version || r.metadata?.endpoint_version || r.metadata?.agent_runtime?.version || '-';
+    const runtimeLines = endpointRuntimeLines(r);
+    const lastSeen = r.last_seen_at ? new Date(r.last_seen_at).toLocaleString() : 'never';
+    const updateStatus = r.metadata?.update_status ? `<span class="pill">update ${escapeHtml(r.metadata.update_status)}</span>` : '';
+    const maintenanceStatus = r.metadata?.maintenance_status ? `<span class="pill">maint ${escapeHtml(r.metadata.maintenance_status)}</span>` : '';
+    const enablement = r.metadata?.agent_enablement || {};
+    const nodeText = enablement.node_available ? (enablement.node_version || 'available') : 'missing';
+    const wrapperText = enablement.pac_wrapper_available ? 'installed' : 'missing';
+    const agentClass = enablement.status === 'ready' ? 'ok-pill' : (enablement.status === 'blocked' ? 'warn-pill' : '');
+    const piContainer = endpointPiContainer(r);
+    const piMissing = piContainer && piContainer.available === false;
+    const featureChips = endpointFeatureChips(r, effectiveTools);
+    card.innerHTML = `<div class="endpoint-head"><div><h3>${escapeHtml(r.name)}</h3><div class="muted small-text">${escapeHtml(r.id)}</div></div><div><span class="pill ${r.status === 'online' ? 'ok-pill' : ''}">${escapeHtml(r.status)}</span>${localBadge}</div></div>
+      <div class="endpoint-features">${featureChips}</div>
+      <div class="endpoint-meta"><span>execution environment</span><span>v ${escapeHtml(version)}</span><span>${escapeHtml((r.labels||[]).join(', ') || 'no labels')}</span><span>seen ${escapeHtml(lastSeen)}</span></div>
+      <div class="endpoint-meta"><span class="pill ${agentClass}">pi.dev ${escapeHtml(enablement.status || 'disabled')}</span><span>wrapper ${escapeHtml(wrapperText)}</span><span>${enablement.required ? 'required' : 'optional'}</span><span>commands controller-queued</span></div>
+      <div class="hardware-grid"><div><b>CPU</b><span>${escapeHtml(hw.cpu)}</span><small>${escapeHtml(hw.cores)} threads</small></div><div><b>GPU</b><span>${escapeHtml(hw.gpu)}</span></div><div><b>RAM</b><span>${escapeHtml(hw.ram)}</span></div><div><b>Disk</b><span>${escapeHtml(hw.disk)}</span></div></div>
+      <details><summary>Runtime details</summary><pre>${escapeHtml(runtimeLines)}</pre><div class="muted small-text">pi.dev: ${escapeHtml(enablement.detail || '-')}</div><div class="muted small-text">tools: ${escapeHtml(tools)}</div><div class="muted small-text">packages: ${escapeHtml(packages)}</div><div class="muted small-text">workspace: ${escapeHtml(defaultWorkspace)}</div><div class="muted small-text">models: ${escapeHtml(modelLinks || '-')}</div><pre>${escapeHtml(containers || 'No running containers reported.')}</pre></details>
+      <div class="endpoint-state">${updateStatus}${maintenanceStatus}${piMissing ? '<span class="pill warn-pill">pi.dev missing</span>' : ''}</div>`;
+    const actions = document.createElement('div'); actions.className = 'button-row endpoint-actions';
+    const edit=document.createElement('button'); edit.textContent='Edit endpoint'; edit.className='ghost-button'; edit.onclick=()=>openEndpointModal(r.id); actions.appendChild(edit);
+    const cmd=document.createElement('button'); cmd.textContent='Command'; cmd.className='ghost-button'; cmd.disabled = r.status !== 'online' && !r.metadata?.local_control_plane; cmd.onclick=()=>openEndpointCommandModal(r.id); actions.appendChild(cmd);
+    const nodeBtn=document.createElement('button'); nodeBtn.textContent='Install Node.js'; nodeBtn.className='ghost-button'; nodeBtn.disabled = enablement.node_available || (r.status !== 'online' && !r.metadata?.local_control_plane); nodeBtn.onclick=async()=>{ if(confirm(`Install Node.js on ${r.name}?`)){ const res=await api(`/v1/endpoints/${r.id}/install-node`,{method:'POST', body:JSON.stringify({method:'auto'})}); if(localDiscovery) localDiscovery.textContent='Node.js install requested. Details are in Events.'; emitUiEvent('endpoint_node_install_requested', `Node.js install requested: ${r.name}`, res); await loadRunners(); await loadGlobalEvents(true).catch(()=>{}); } }; actions.appendChild(nodeBtn);
+    if (r.metadata?.local_control_plane) { const boot=document.createElement('button'); boot.textContent='Build/install controller pi.dev'; boot.className='ghost-button'; boot.onclick=async()=>{ boot.disabled=true; boot.textContent='Starting…'; const res=await api('/v1/controller-harness/bootstrap',{method:'POST'}); emitUiEvent('controller_pi_dev_bootstrap_requested', 'Controller pi.dev bootstrap started', res); await loadGlobalEvents(true).catch(()=>{}); await loadRunners(); }; actions.appendChild(boot); }
+    const piBtn=document.createElement('button'); piBtn.textContent='Install pi.dev'; piBtn.className='ghost-button'; piBtn.disabled = !piMissing || (r.status !== 'online' && !r.metadata?.local_control_plane); piBtn.onclick=async()=>{ const image = piContainer.image || 'localhost/pi-agent-harness:stage11'; piBtn.disabled=true; piBtn.textContent='Installing pi.dev…'; const res=await api(`/v1/endpoints/${r.id}/install-pi-harness`,{method:'POST', body:JSON.stringify({image, runtime:'auto'})}); if(localDiscovery) localDiscovery.textContent='pi.dev install started. Watch Events for completion or failure.'; emitUiEvent('endpoint_pi_harness_install_requested', `pi.dev install started: ${r.name}`, res); await loadRunners(); await loadGlobalEvents(true).catch(()=>{}); }; actions.appendChild(piBtn);
+    const upd=document.createElement('button'); upd.textContent='Update'; upd.disabled = r.status !== 'online' || !!r.metadata?.local_control_plane;
+    upd.onclick=async()=>{ if(confirm(`Queue software update for ${r.name}?`)){ await api(`/v1/endpoints/${r.id}/update`,{method:'POST', body:JSON.stringify({restart:true})}); await loadRunners(); } };
+    actions.appendChild(upd);
+    const maint=document.createElement('button'); maint.textContent='Maintenance'; maint.disabled = r.status !== 'online'; maint.className='ghost-button';
+    maint.onclick=async()=>{ if(confirm(`Run safe PAC maintenance cleanup on ${r.name}?`)){ await api(`/v1/endpoints/${r.id}/maintenance`,{method:'POST', body:JSON.stringify({max_age_hours:24,dry_run:false,remove_containers:true,remove_workspaces:true,remove_temp_artifacts:true,prune_images:false})}); await loadRunners(); await loadGlobalEvents(true).catch(()=>{}); } };
+    actions.appendChild(maint);
+    const dry=document.createElement('button'); dry.textContent='Dry run'; dry.disabled = r.status !== 'online'; dry.className='ghost-button';
+    dry.onclick=async()=>{ await api(`/v1/endpoints/${r.id}/maintenance`,{method:'POST', body:JSON.stringify({max_age_hours:24,dry_run:true,remove_containers:true,remove_workspaces:true,remove_temp_artifacts:true,prune_images:false})}); await loadRunners(); await loadGlobalEvents(true).catch(()=>{}); };
+    actions.appendChild(dry);
+    const del=document.createElement('button'); del.textContent='Delete'; del.className='danger-button';
+    del.onclick=async()=>{ if(confirm(`Delete endpoint ${r.name}?`)){ await api(`/v1/endpoints/${r.id}`,{method:'DELETE'}); await loadRunners(); } };
+    actions.appendChild(del);
+    card.appendChild(actions);
+    el.appendChild(card);
+  });
+}
+
+
+
+function renderStatCards(metrics) {
+  const el = document.getElementById('dashboardStats');
+  if (!el) return;
+  const stats = [
+    ['Sessions', metrics.sessions_total, `${metrics.sessions_active || 0} active`],
+    ['Tasks', metrics.tasks_total, `${metrics.tasks_running || 0} running/queued`],
+    ['Completed', metrics.tasks_completed, 'tasks done'],
+    ['Failed', metrics.tasks_failed, 'tasks failed'],
+    ['Approvals', metrics.approvals_pending, 'pending'],
+    ['Endpoints', metrics.endpoints_total, `${metrics.endpoints_online || 0} online`],
+  ];
+  el.innerHTML = stats.map(([label,value,hint]) => `<div class="metric"><b>${value ?? 0}</b><span>${label}</span><small>${hint}</small></div>`).join('');
+}
+function renderBarChart(id, rows, emptyText) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const entries = Object.entries(rows || {}).filter(([_,v]) => Number(v) > 0);
+  if (!entries.length) { el.textContent = emptyText || 'No data yet.'; return; }
+  const max = Math.max(...entries.map(([_,v]) => Number(v) || 0), 1);
+  el.innerHTML = entries.map(([label,value]) => `<div class="bar-row"><span>${escapeHtml(label)}</span><div class="bar-track"><i style="width:${Math.max(6, Math.round((Number(value)/max)*100))}%"></i></div><b>${value}</b></div>`).join('');
+}
+function renderEventActivity(points) {
+  const el = document.getElementById('eventActivityChart');
+  if (!el) return;
+  const rows = points || [];
+  const max = Math.max(...rows.map(p => Number(p.count) || 0), 1);
+  el.innerHTML = `<div class="spark-bars">${rows.map(p => `<div class="spark-col" title="${escapeHtml(p.date)}: ${p.count}"><i style="height:${Math.max(8, Math.round((Number(p.count || 0)/max)*100))}%"></i><span>${escapeHtml(String(p.date || '').slice(5))}</span></div>`).join('')}</div>`;
+}
+async function loadDashboardMetrics() {
+  try {
+    const metrics = await api('/v1/metrics/summary');
+    renderStatCards(metrics);
+    renderBarChart('taskStatusChart', metrics.task_status, 'No tasks have run yet.');
+    renderEventActivity(metrics.events_by_day);
+  } catch (e) {
+    const el = document.getElementById('dashboardStats');
+    if (el) el.innerHTML = `<div class="muted">Could not load metrics: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function openEndpointModal(id='') {
+  editingEndpointId = id || null;
+  const modal = document.getElementById('endpointModal');
+  const status = document.getElementById('endpointModalStatus');
+  const title = document.getElementById('endpointModalTitle');
+  if (status) status.textContent = '';
+  if (title) title.textContent = editingEndpointId ? 'Edit endpoint' : 'Add remote endpoint';
+  const endpoint = editingEndpointId ? (window.__pacEndpoints || []).find(r => r.id === editingEndpointId) : null;
+  if (endpoint) {
+    runnerName.value = endpoint.name || '';
+    runnerLabels.value = (endpoint.labels || []).join(',');
+    runnerEndpoint.value = endpoint.endpoint || '';
+    setSelectedRunnerToolNames(endpoint.metadata?.agent_tools || []);
+    if (document.getElementById('runnerDefaultWorkspace')) runnerDefaultWorkspace.value = endpoint.metadata?.default_workspace || '';
+    if (document.getElementById('runnerAgentEnabled')) runnerAgentEnabled.checked = !!(endpoint.metadata?.agent_requested || endpoint.metadata?.agent_enabled);
+  } else {
+    runnerName.value = 'gpu-workstation-01';
+    runnerLabels.value = 'linux,gpu,endpoint';
+    runnerEndpoint.value = '';
+    setSelectedRunnerToolNames([]);
+    if (document.getElementById('runnerDefaultWorkspace')) runnerDefaultWorkspace.value = '';
+    if (document.getElementById('runnerAgentEnabled')) runnerAgentEnabled.checked = false;
+  }
+  if (modal) { modal.hidden = false; setTimeout(() => document.getElementById('runnerName')?.focus(), 0); }
+}
+function closeEndpointModal() {
+  const modal = document.getElementById('endpointModal');
+  if (modal) modal.hidden = true;
+}
+function openSessionModal() {
+  const modal = document.getElementById('sessionModal');
+  if (modal) { modal.hidden = false; setTimeout(() => document.getElementById('sessionName')?.focus(), 0); }
+}
+function closeSessionModal() {
+  const modal = document.getElementById('sessionModal');
+  if (modal) modal.hidden = true;
+}
+function switchToTab(tabId) {
+  const btn = document.querySelector(`.tab[data-tab="${tabId}"]`);
+  if (btn) btn.click();
+}
+
+function renderZedConfigExamples() {
+  const publicUrl = (config.server?.public_url || 'https://localhost').replace(/\/$/, '');
+  const local = {
+    context_servers: {
+      pac: {
+        source: 'custom',
+        command: 'C:/tools/pac.exe',
+        args: ['--base-url', publicUrl],
+        env: {}
+      }
+    }
+  };
+  const remote = {
+    context_servers: {
+      pac: {
+        source: 'custom',
+        command: 'npx',
+        args: ['-y', 'mcp-remote', `${publicUrl}/mcp`, '--insecure'],
+        env: {}
+      }
+    }
+  };
+  const localEl = document.getElementById('zedMcpConfigLocal');
+  const remoteEl = document.getElementById('zedMcpConfigRemote');
+  if (localEl) localEl.textContent = JSON.stringify(local, null, 2);
+  if (remoteEl) remoteEl.textContent = JSON.stringify(remote, null, 2);
+}
+
+
+async function loadServiceModeStatus() {
+  const info = document.getElementById('serviceModeInfo');
+  if (!info) return;
+  try {
+    const svc = await api('/v1/admin/service/status');
+    const rows = {
+      'Configured mode': svc.configured_mode || '-',
+      'System service': svc.system_unit_exists ? `present / ${svc.system_active || '-'}` : `missing / ${svc.system_active || '-'}`,
+      'User service': svc.user_unit_exists ? `present / ${svc.user_active || '-'}` : `missing / ${svc.user_active || '-'}`,
+      'Port': svc.port || '-',
+      'Host switch allowed now': svc.can_manage_host_now ? 'yes' : 'needs sudo/manual command',
+      'System unit': svc.system_unit || '-',
+      'User unit': svc.user_unit || '-',
+    };
+    info.innerHTML = Object.entries(rows).map(([k,v]) => `<div><span>${k}</span><code>${escapeHtml(String(v))}</code></div>`).join('');
+    const result = document.getElementById('serviceModeResult');
+    if (result && svc.manual_host_command) result.textContent = `Host service manual command if sudo is needed:\n${svc.manual_host_command}`;
+  } catch (e) {
+    info.innerHTML = `<div><span>Status</span><code>Could not load service status: ${escapeHtml(e.message)}</code></div>`;
+  }
+}
+
+async function setServiceMode(mode) {
+  const result = document.getElementById('serviceModeResult');
+  if (mode === 'host' && !confirm('Switch PAC to host/system service? This requires sudo/root or passwordless sudo, uses port 443, and will restart PAC.')) return;
+  if (mode === 'user' && !confirm('Switch PAC to user service? This will move PAC back to the user systemd service, use 8443, and restart PAC.')) return;
+  if (result) result.textContent = `Switching PAC to ${mode} service mode…`;
+  const payload = await api('/v1/admin/service/mode', {method:'POST', body:JSON.stringify({mode})});
+  if (result) result.textContent = payload?.message || payload?.status || `Service mode ${mode} requested. Details are in Events.`; emitUiEvent('service_mode_changed', result ? result.textContent : 'Service mode changed', payload);
+  if (payload.restart_scheduled) scheduleHiddenReloadAfterRestart(18);
+  await loadServiceModeStatus();
+  await loadControllerHarnessStatus();
+}
+
+async function loadTlsStatus() {
+  const el = document.getElementById('tlsInfo');
+  if (!el) return;
+  try {
+    const tls = await api('/v1/tls/status');
+    const rows = {
+      'CA': tls.ca_exists ? 'present' : 'missing',
+      'CA valid until': tls.ca_valid_until || '-',
+      'Server cert': tls.server_cert_exists ? 'present' : 'missing',
+      'Server valid until': tls.server_valid_until || '-',
+      'mDNS name': tls.mdns_hostname || 'admin.pac.local',
+      'mDNS URL': tls.mdns_url || '-',
+      'mDNS enabled': tls.mdns?.enabled === false ? 'no' : 'yes',
+      'mDNS state': tls.mdns_status?.state || '-',
+      'mDNS message': tls.mdns_status?.message || '-',
+      'Port 443': tls.port_443?.configured ? 'configured' : 'not configured',
+      'CA file': tls.ca_cert_file || '-',
+      'Server cert file': tls.server_cert_file || '-',
+      'Details': tls.details_file || '-',
+    };
+    el.innerHTML = Object.entries(rows).map(([k,v]) => `<div><span>${k}</span><code>${escapeHtml(v)}</code></div>`).join('');
+  } catch (e) {
+    el.innerHTML = `<div><span>Status</span><code>Could not load TLS status: ${escapeHtml(e.message)}</code></div>`;
+  }
+}
+
+function renderSystemInfo() {
+  const pacp = config.pacp || {};
+  const rows = {
+    'PAC home': pacp.home || '-',
+    'Config': pacp.config_path || '-',
+    'Single-instance lock': pacp.single_instance_lock || '-',
+    'Public URL': config.server?.public_url || '-',
+    'Workspace root': config.server?.default_workspace_root || '-',
+  };
+  for (const id of ['systemInfo','pacpInfo']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.innerHTML = Object.entries(rows).map(([k,v]) => `<div><span>${k}</span><code>${v}</code></div>`).join('');
+  }
+}
+
+
+function fillHarnessSelects() {
+  const profileSel = document.getElementById('harnessAgentProfile');
+  const modelSel = document.getElementById('harnessModel');
+  const permSel = document.getElementById('harnessPermission');
+  if (profileSel) { profileSel.innerHTML = '<option value="">none</option>'; Object.keys(config.agent_profiles || {}).forEach(name => opt(profileSel, name, name)); }
+  if (modelSel) { modelSel.innerHTML = '<option value="">profile default</option>'; Object.keys(config.models || {}).forEach(name => opt(modelSel, name, name)); }
+  if (permSel) { permSel.innerHTML = ''; Object.keys(config.permission_profiles || {'ask-first':{}}).forEach(name => opt(permSel, name, name)); }
+}
+
+function renderControllerHarnessSettings(status=null) {
+  fillHarnessSelects();
+  const h = config.controller_harness || {};
+  const setVal = (id, value) => { const el = document.getElementById(id); if (el) el.value = value ?? ''; };
+  const setChecked = (id, value) => { const el = document.getElementById(id); if (el) el.checked = !!value; };
+  setChecked('harnessEnabled', h.enabled !== false);
+  setChecked('harnessAutoBootstrap', h.auto_bootstrap !== false);
+  setChecked('harnessAutoBuildWrapper', h.auto_build_wrapper !== false);
+  setChecked('harnessAutoInstallPiDev', h.auto_install_pi_dev !== false);
+  setChecked('harnessAutoSession', h.auto_create_session !== false);
+  setChecked('harnessExposeTools', h.expose_platform_tools !== false);
+  setVal('harnessSessionName', h.session_name || 'PAC controller pi.dev');
+  setVal('harnessWorkspaceProfile', h.workspace_profile || 'agent-control');
+  setVal('harnessAgentProfile', h.agent_profile || 'main-pi-dev');
+  setVal('harnessModel', h.model || '');
+  setVal('harnessPermission', h.permission_profile || 'ask-first');
+  setVal('harnessContextMode', h.context_mode || 'medium');
+  setVal('harnessRunnerId', h.runner_id || 'local-PAC');
+  const box = document.getElementById('controllerHarnessStatus');
+  if (box) {
+    const session = status?.session;
+    const runner = status?.runner;
+    const rows = {
+      'State': status ? (status.ok ? 'ready' : 'needs setup') : 'not checked',
+      'Message': status?.message || 'Saved settings are shown below.',
+      'Runner': runner?.name || h.runner_id || '-',
+      'Session': session?.name || '-',
+      'Model': session?.model || h.model || 'profile default',
+      'Workspace': session?.workspace_path || '-',
+      'PAC wrapper': runner?.capabilities?.pac_wrapper?.available ? (runner.capabilities.pac_wrapper.path || 'available') : (runner?.capabilities?.pac_wrapper?.reason || 'missing'),
+      'pi.dev image': runner?.capabilities?.pi_container?.available ? (runner.capabilities.pi_container.image || 'available') : (runner?.capabilities?.pi_container?.reason || 'missing'),
+    };
+    box.innerHTML = Object.entries(rows).map(([k,v]) => `<div><span>${k}</span><code>${escapeHtml(String(v))}</code></div>`).join('');
+  }
+}
+
+async function loadControllerHarnessStatus() {
+  try {
+    const status = await api('/v1/controller-harness');
+    renderControllerHarnessSettings(status);
+    return status;
+  } catch (e) {
+    renderControllerHarnessSettings({ok:false, message:e.message});
+    return null;
+  }
+}
+
+async function saveControllerHarnessSettings() {
+  const result = document.getElementById('controllerHarnessResult');
+  const payload = {
+    enabled: !!document.getElementById('harnessEnabled')?.checked,
+    auto_bootstrap: !!document.getElementById('harnessAutoBootstrap')?.checked,
+    auto_build_wrapper: !!document.getElementById('harnessAutoBuildWrapper')?.checked,
+    auto_install_pi_dev: !!document.getElementById('harnessAutoInstallPiDev')?.checked,
+    auto_create_session: !!document.getElementById('harnessAutoSession')?.checked,
+    expose_platform_tools: !!document.getElementById('harnessExposeTools')?.checked,
+    session_name: document.getElementById('harnessSessionName')?.value?.trim() || 'PAC controller pi.dev',
+    workspace_profile: document.getElementById('harnessWorkspaceProfile')?.value?.trim() || 'agent-control',
+    agent_profile: document.getElementById('harnessAgentProfile')?.value || 'main-pi-dev',
+    model: document.getElementById('harnessModel')?.value || null,
+    permission_profile: document.getElementById('harnessPermission')?.value || 'ask-first',
+    context_mode: document.getElementById('harnessContextMode')?.value || 'medium',
+    runner_id: document.getElementById('harnessRunnerId')?.value?.trim() || 'local-PAC',
+  };
+  const status = await api('/v1/controller-harness/settings', {method:'POST', body:JSON.stringify(payload)});
+  if (result) result.textContent = status.message || 'Controller pi.dev settings saved.';
+  await loadConfig();
+  await loadSessions();
+  if (status?.session?.id) { selectedSession = status.session; }
+  await loadGlobalEvents(true).catch(()=>{});
+}
+
+
+async function bootstrapControllerHarness() {
+  const result = document.getElementById('controllerHarnessResult');
+  if (result) result.textContent = 'Starting controller pi.dev bootstrap…';
+  const status = await api('/v1/controller-harness/bootstrap', {method:'POST'});
+  if (result) result.textContent = status.message || 'Controller pi.dev bootstrap started.';
+  await loadGlobalEvents(true).catch(()=>{});
+  await loadRunners().catch(()=>{});
+}
+
+async function openControllerHarnessSession() {
+  const status = await loadControllerHarnessStatus();
+  if (status?.session?.id) { switchToTab('sessions-tab'); await selectSession(status.session.id); }
+  else showInline('controllerHarnessResult', status?.message || 'pi.dev session is not available yet. Select a model/profile first.');
+}
+
+function renderEndpointConnectionSettings() {
+  const urlInput = document.getElementById('endpointPublicUrl');
+  const mdnsInput = document.getElementById('endpointMdnsEnabled');
+  if (urlInput) urlInput.value = config.server?.public_url || '';
+  if (mdnsInput) mdnsInput.checked = config.mdns?.enabled !== false;
+}
+
+async function saveEndpointConnectionSettings() {
+  const result = document.getElementById('endpointConnectionResult');
+  const publicUrl = (document.getElementById('endpointPublicUrl')?.value || '').trim();
+  const mdnsEnabled = !!document.getElementById('endpointMdnsEnabled')?.checked;
+  if (!publicUrl) return paneError('Enter the controller URL endpoints should use');
+  const payload = await api('/v1/server/connection', {method:'POST', body:JSON.stringify({public_url: publicUrl, mdns_enabled: mdnsEnabled})});
+  if (result) result.textContent = payload.message || 'Endpoint connection settings saved.';
+  await loadConfig();
+  await loadGlobalEvents(true).catch(()=>{});
+}
+
+async function loadConfig() {
+  config = await api('/v1/config');
+  fillSelects(); renderWorkspaces(); renderProfiles(); renderProviders(); renderModels(); renderTools();
+  document.getElementById('configEditor').value = JSON.stringify(config, null, 2);
+  renderSystemInfo();
+  renderControllerHarnessSettings();
+  renderEndpointConnectionSettings();
+  renderZedConfigExamples();
+  renderSources();
+  await loadTlsStatus();
+  await loadServiceModeStatus();
+  await loadControllerHarnessStatus();
+}
+async function loadSessions() {
+  const sessions = await api('/v1/sessions');
+  const dashboard = document.getElementById('sessions');
+  const picker = document.getElementById('sessionTopSelect');
+  if (dashboard) dashboard.innerHTML = '';
+  if (picker) picker.innerHTML = '<option value="">Select session</option>';
+  if (!sessions.length) {
+    if (dashboard) dashboard.innerHTML = '<div class="muted">No sessions yet. Create one from the Sessions page.</div>';
+    if (picker) picker.innerHTML = '<option value="">No sessions yet</option>';
+    return;
+  }
+  sessions.slice().reverse().forEach(s => {
+    if (picker) {
+      const label = `${s.name || s.id} · ${s.agent_profile || 'profile'} · ${s.model || 'model'}`;
+      opt(picker, s.id, label);
+    }
+    if (dashboard) {
+      const row = document.createElement('div'); row.className='row session-row';
+      row.innerHTML = `<div><b>${s.name || s.id}</b> <span class="pill">${s.status || 'created'}</span><br><span class="muted">${s.agent_profile || '-'} / ${s.model} / ${s.permission_profile}</span><br><span class="muted">${s.workspace_path || ''}</span></div>`;
+      const b=document.createElement('button'); b.textContent='Open'; b.onclick=()=>{ switchToTab('sessions-tab'); selectSession(s.id); };
+      row.appendChild(b); dashboard.appendChild(row);
+    }
+  });
+  if (picker && selectedSession?.id) picker.value = selectedSession.id;
+}
+async function selectSession(id) {
+  selectedSession = await api(`/v1/sessions/${id}`);
+  const preferredEndpoint = selectedSession.metadata?.preferred_endpoint || '';
+  const endpointName = (window.__pacEndpoints || []).find(e => e.id === preferredEndpoint)?.name || preferredEndpoint || 'PAC/local';
+  document.getElementById('selectedSession').innerHTML = `<span class="session-lock-dot"></span><span>Profile: ${escapeHtml(selectedSession.agent_profile || 'default')}</span><span>Endpoint: ${escapeHtml(endpointName)}</span><span>Mode: ${escapeHtml(selectedSession.metadata?.execution_mode || (selectedSession.metadata?.agent_enabled === false ? 'direct model' : 'pi.dev'))}</span><span>Model: ${escapeHtml(selectedSession.model || '')}</span><span>${escapeHtml(selectedSession.workspace_path || '')}</span>`;
+  if (document.getElementById('sessionTopSelect')) sessionTopSelect.value = selectedSession.id;
+  if (document.getElementById('taskRunner')) taskRunner.value = preferredEndpoint || '';
+  if (document.getElementById('sessionEndpointLock')) sessionEndpointLock.textContent = `Profile: ${selectedSession.agent_profile || 'default'} · endpoint: ${endpointName} · model: ${selectedSession.model || 'session default'}`;
+  const timeline = document.getElementById('events');
+  if (timeline) timeline.innerHTML = '<div class="empty-timeline">Waiting for session events.</div>';
+  sessionThinkingGroup = null;
+  sessionEventSeen = new Set();
+  sessionMessageSeen = new Set();
+  sessionPendingRows = new Map();
+  try {
+    const snapshot = await api(`/v1/sessions/${id}/events/snapshot?limit=120`);
+    if (timeline) timeline.innerHTML = snapshot.length ? '' : '<div class="empty-timeline">No session events yet.</div>';
+    sessionThinkingGroup = null;
+    snapshot.forEach(ev => renderSessionTimelineEvent(ev));
+  } catch (_) {}
+  if (source) source.close();
+  // EventSource cannot set auth headers, so auth-enabled deployments should use the snapshot refresh path or put UI/API behind same auth proxy.
+  source = new EventSource(`/v1/sessions/${id}/events`);
+  source.onmessage = e => { try { appendEvent('message', JSON.parse(e.data)); } catch { appendEvent('message', e.data); } };
+  ['user_message','agent_routing','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','full_control_enabled'].forEach(t => source.addEventListener(t, e => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
+}
+function appendEvent(type, payload) {
+  const event = normalizeEvent(type, payload);
+  renderSessionTimelineEvent(event);
+  renderGlobalEvent(event);
+  loadApprovals().catch(()=>{});
+}
+async function loadApprovals() {
+  const tasks = await api('/v1/tasks/pending-approvals');
+  const el = document.getElementById('approvals'); el.innerHTML = '';
+  tasks.forEach(t => {
+    const row=document.createElement('div'); row.className='row';
+    row.innerHTML=`<div><b>${t.command || t.prompt}</b><br><span class="muted">${t.session_id}</span></div>`;
+    const a=document.createElement('button'); a.textContent='Approve'; a.onclick=async()=>{await api(`/v1/tasks/${t.id}/approve`,{method:'POST'}); await loadApprovals();};
+    const r=document.createElement('button'); r.textContent='Reject'; r.onclick=async()=>{await api(`/v1/tasks/${t.id}/reject?reason=Rejected`,{method:'POST'}); await loadApprovals();};
+    row.append(a,r); el.appendChild(row);
+  });
+}
+document.getElementById('refresh').onclick=()=>init();
+document.getElementById('createSession').onclick=async()=>{
+  const btn = document.getElementById('createSession');
+  const status = document.getElementById('sessionCreateStatus');
+  try {
+    if (btn) btn.disabled = true;
+    if (status) status.textContent = 'Creating…';
+    const workspaceType = document.getElementById('sessionWorkspaceType')?.value || 'profile';
+    const workspace = workspaceType === 'git' ? {type:'git', url:sessionWorkspaceUrl.value.trim(), branch:sessionWorkspaceBranch.value.trim() || null, path:sessionWorkspacePath.value.trim() || null} : (workspaceType === 'local' ? {type:'local', path:sessionWorkspacePath.value.trim() || null} : {type:'profile', profile:workspaceProfile.value || null});
+    const endpointId = document.getElementById('sessionEndpoint')?.value || '';
+    if (!endpointId) throw new Error('Select the endpoint this session should use.');
+    const body={name:sessionName.value || 'web-session', agent_profile:agentProfile.value || null, workspace, tools:[], metadata:{preferred_endpoint:endpointId, endpoint_locked:true, agent_enabled:true, execution_mode:'pi.dev'}};
+    if (modelOverride.value) body.model=modelOverride.value;
+    if (permissionOverride.value) body.permission_profile=permissionOverride.value;
+    if (contextMode.value) body.context_mode=contextMode.value;
+    const s=await api('/v1/sessions',{method:'POST',body:JSON.stringify(body)});
+    if (status) status.textContent = 'Created.';
+    closeSessionModal();
+    await loadSessions(); await loadDashboardMetrics(); switchToTab('sessions-tab'); await selectSession(s.id);
+  } catch (e) {
+    if (status) status.textContent = `Failed: ${e.message}`;
+    await loadGlobalEvents(true).catch(()=>{});
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+};
+async function sendSessionComposer(){
+  if(!selectedSession) return alert('select a session first');
+  const rawPrompt = (taskPrompt.value || '').trim();
+  if(!rawPrompt) return;
+  const parsedSlash = parseSessionSlashCommand(rawPrompt);
+  if (parsedSlash?.error) return alert(parsedSlash.error);
+  if (parsedSlash?.kind === 'help') {
+    alert(slashCommandHelpText());
+    return;
+  }
+  let prompt = parsedSlash?.prompt || rawPrompt;
+  let command = '';
+  const metadata={};
+  if (parsedSlash?.metadata) Object.assign(metadata, parsedSlash.metadata);
+  const runnerChoice = selectedSession.metadata?.preferred_endpoint || taskRunner.value || '';
+  if(runnerChoice){
+    metadata.runner_id=runnerChoice;
+    const isToolInvocation = Boolean(metadata.tool_name);
+    metadata.execution_mode = isToolInvocation ? 'host' : ((taskExecution.value === 'container' || taskExecution.value === 'pi_container') ? taskExecution.value : 'pi_container');
+    if(taskImage.value) metadata.container_image=taskImage.value;
+    if (isToolInvocation) command = `tool:${metadata.tool_name}`;
+  }
+  if (parsedSlash?.kind === 'compact') {
+    metadata.execution_mode = 'pi_container';
+  }
+  if (parsedSlash?.kind === 'subagent') {
+    metadata.execution_mode = 'pi_container';
+    metadata.agent_profile = selectedSession.agent_profile || selectedSession.metadata?.agent_profile || null;
+  }
+  if (document.getElementById('taskModel')?.value) metadata.model = taskModel.value;
+  taskPrompt.value='';
+  taskCommand.value='';
+  autosizeSessionPrompt();
+  const created = await api(`/v1/sessions/${selectedSession.id}/tasks`,{method:'POST',body:JSON.stringify({prompt:prompt || rawPrompt,command,metadata})});
+  if (created && created.id) {
+    const localEvent = {
+      id: `local_user_${created.id}`,
+      session_id: selectedSession.id,
+      task_id: created.id,
+      type: 'user_message',
+      message: rawPrompt,
+      created_at: created.created_at || new Date().toISOString(),
+      data: {role:'user', model: metadata.model || selectedSession.model, endpoint_id: metadata.runner_id || selectedSession.metadata?.preferred_endpoint, command, execution_mode: metadata.execution_mode, slash_command: metadata.slash_command, tool_name: metadata.tool_name, args: metadata.args, stored:true, pi_dev_enabled:selectedSession.metadata?.agent_enabled !== false, routing:'pi.dev'}
+    };
+    renderSessionTimelineEvent(localEvent);
+  }
+}
+
+const composerAddContextBtn = document.getElementById('composerAddContext');
+const composerContextMenu = document.getElementById('composerContextMenu');
+if (composerAddContextBtn && composerContextMenu) {
+  composerAddContextBtn.onclick = (ev) => { ev.stopPropagation(); composerContextMenu.hidden = !composerContextMenu.hidden; };
+  composerContextMenu.onclick = (ev) => ev.stopPropagation();
+  document.addEventListener('click', () => { composerContextMenu.hidden = true; });
+}
+
+const sessionTopSelect = document.getElementById('sessionTopSelect');
+if (sessionTopSelect) sessionTopSelect.onchange = () => { if (sessionTopSelect.value) { switchToTab('sessions-tab'); selectSession(sessionTopSelect.value); } };
+
+function openContainerDestinationModal() {
+  const modal = document.getElementById('containerDestinationModal');
+  const input = document.getElementById('containerDestinationImage');
+  if (input) input.value = document.getElementById('taskImage')?.value || '';
+  if (modal) modal.hidden = false;
+  setTimeout(() => input?.focus(), 20);
+}
+function closeContainerDestinationModal() { const modal = document.getElementById('containerDestinationModal'); if (modal) modal.hidden = true; }
+const taskExecutionSelect = document.getElementById('taskExecution');
+if (taskExecutionSelect) taskExecutionSelect.onchange = () => { if (taskExecutionSelect.value === 'container') openContainerDestinationModal(); };
+const closeContainerDestinationBtn = document.getElementById('closeContainerDestinationModal');
+if (closeContainerDestinationBtn) closeContainerDestinationBtn.onclick = closeContainerDestinationModal;
+const saveContainerDestinationBtn = document.getElementById('saveContainerDestination');
+if (saveContainerDestinationBtn) saveContainerDestinationBtn.onclick = () => {
+  const image = (document.getElementById('containerDestinationImage')?.value || '').trim();
+  if (!image) return alert('Container image is required for container destination.');
+  if (document.getElementById('taskImage')) taskImage.value = image;
+  if (document.getElementById('taskExecution')) taskExecution.value = 'container';
+  const hint = document.getElementById('sessionEndpointLock');
+  if (hint) hint.textContent = `${hint.textContent.split(' · container:')[0]} · container: ${image}`;
+  closeContainerDestinationModal();
+};
+const clearContainerDestinationBtn = document.getElementById('clearContainerDestination');
+if (clearContainerDestinationBtn) clearContainerDestinationBtn.onclick = () => {
+  if (document.getElementById('taskImage')) taskImage.value = '';
+  if (document.getElementById('taskExecution')) taskExecution.value = 'host';
+  closeContainerDestinationModal();
+};
+const runTaskBtn = document.getElementById('runTask');
+
+function autosizeSessionPrompt() {
+  const el = document.getElementById('taskPrompt');
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = Math.min(160, Math.max(28, el.scrollHeight)) + 'px';
+}
+
+if (runTaskBtn) runTaskBtn.onclick=()=>sendSessionComposer().catch(e=>alert(e.message));
+const taskPromptInput = document.getElementById('taskPrompt');
+if (taskPromptInput) { taskPromptInput.addEventListener('input', autosizeSessionPrompt); taskPromptInput.addEventListener('keydown', (ev) => { if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') { ev.preventDefault(); sendSessionComposer().catch(e=>alert(e.message)); } }); autosizeSessionPrompt(); }
+const taskCommandInput = document.getElementById('taskCommand');
+if (taskCommandInput) taskCommandInput.addEventListener('keydown', (ev) => { if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') { ev.preventDefault(); sendSessionComposer().catch(e=>alert(e.message)); } });
+async function openGitDiffModal(){
+  if(!selectedSession) return;
+  const modal = document.getElementById('gitDiffModal');
+  const pre = document.getElementById('gitDiffBody');
+  if (pre) pre.textContent = 'Checking for workspace changes…';
+  if (modal) modal.hidden = false;
+  try {
+    const d=await api(`/v1/sessions/${selectedSession.id}/diff`);
+    const text = (d.diff || '').trim();
+    if (pre) pre.textContent = text || 'No git changes detected for this session workspace.';
+  } catch(e) { if (pre) pre.textContent = `Unable to load git diff: ${e.message}`; }
+}
+function closeGitDiffModal(){ const modal = document.getElementById('gitDiffModal'); if (modal) modal.hidden = true; }
+const loadDiffBtn = document.getElementById('loadDiff');
+if (loadDiffBtn) loadDiffBtn.onclick=()=>openGitDiffModal();
+document.getElementById('saveConfig').onclick=async()=>{ const body={config:JSON.parse(configEditor.value)}; await api('/v1/config',{method:'PUT',body:JSON.stringify(body)}); await init(); };
+if (document.getElementById('saveEndpointConnection')) document.getElementById('saveEndpointConnection').onclick=()=>saveEndpointConnectionSettings().catch(e=>paneError('Saving endpoint URL failed', e.message));
+if (document.getElementById('saveControllerHarness')) document.getElementById('saveControllerHarness').onclick=()=>saveControllerHarnessSettings().catch(e=>paneError('Saving controller pi.dev failed', e.message));
+if (document.getElementById('bootstrapControllerHarness')) document.getElementById('bootstrapControllerHarness').onclick=()=>bootstrapControllerHarness().catch(e=>paneError('Starting controller pi.dev bootstrap failed', e.message));
+if (document.getElementById('openControllerHarnessSession')) document.getElementById('openControllerHarnessSession').onclick=()=>openControllerHarnessSession().catch(e=>paneError('Opening controller pi.dev failed', e.message));
+if (document.getElementById('providerPreset')) providerPreset.onchange=()=>applyProviderPreset(providerPreset.value);
+if (document.getElementById('saveProvider')) saveProvider.onclick=()=>saveProviderFromForm().catch(e=>paneError('Provider save failed', e.message));
+if (document.getElementById('connectProviderForm')) connectProviderForm.onclick=()=>connectProviderFromForm().catch(e=>paneError('Provider connect failed', e.message));
+if (document.getElementById('saveModel')) saveModel.onclick=()=>saveModelFromForm().catch(e=>paneError('Model save failed', e.message));
+if (document.getElementById('testModelForm')) testModelForm.onclick=()=>testModelFromForm().catch(e=>paneError('Model test failed', e.message));
+if (document.getElementById('modelProvider')) modelProvider.onchange=()=>updateLmStudioModelControls();
+if (document.getElementById('loadLmStudioModel')) loadLmStudioModel.onclick=()=>loadLmStudioModelFromForm().catch(e=>paneError('LM Studio load failed', e.message));
+if (document.getElementById('unloadLmStudioModel')) unloadLmStudioModel.onclick=()=>unloadLmStudioModelFromForm().catch(e=>paneError('LM Studio unload failed', e.message));
+if (document.getElementById('inspectLmStudioModel')) inspectLmStudioModel.onclick=()=>inspectLmStudioModelFromForm().catch(e=>paneError('LM Studio inspect failed', e.message));
+if (document.getElementById('runnerTools')) runnerTools.addEventListener('change', updateRunnerToolPackagePreview);
+document.querySelectorAll('[data-source-root]').forEach(btn => btn.addEventListener('click', () => renderSources(btn.dataset.sourceRoot || '')));
+const inspectFeaturePackBtn = document.getElementById('inspectFeaturePack'); if (inspectFeaturePackBtn) inspectFeaturePackBtn.addEventListener('click', inspectFeaturePack);
+const applyFeaturePackBtn = document.getElementById('applyFeaturePack'); if (applyFeaturePackBtn) applyFeaturePackBtn.addEventListener('click', applyFeaturePack);
+document.querySelectorAll('[data-source-open]').forEach(btn => btn.addEventListener('click', () => { switchToTab('sources-tab'); openSourceFile(btn.dataset.sourceOpen || ''); renderSources((btn.dataset.sourceOpen || '').split('/').slice(0,-1).join('/')); }));
+const saveSourceBtn = document.getElementById('saveSourceFile');
+if (saveSourceBtn) saveSourceBtn.onclick = () => saveSourceFile();
+const sourceEditorInput = document.getElementById('sourceEditor');
+if (sourceEditorInput) {
+  sourceEditorInput.addEventListener('input', () => {
+    if (!selectedSourcePath) return;
+    const state = sourceFileState.get(selectedSourcePath) || {saved:'', content:''};
+    state.content = sourceEditorInput.value;
+    state.dirty = state.content !== (state.saved || '');
+    sourceFileState.set(selectedSourcePath, state);
+    renderSourceTabs();
+    updateSourceDirtyTreeMarkers();
+  });
+  sourceEditorInput.addEventListener('keydown', (ev) => {
+    if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 's') { ev.preventDefault(); saveSourceFile().catch(e=>paneError('Source file could not be saved', e.message)); }
+  });
+}
+const sourceMenuBtn = document.getElementById('sourceFileMenuButton');
+const sourceMenu = document.getElementById('sourceFileMenu');
+if (sourceMenuBtn && sourceMenu) {
+  sourceMenuBtn.onclick = (ev) => { ev.stopPropagation(); sourceMenu.hidden = !sourceMenu.hidden; };
+  sourceMenu.onclick = ev => ev.stopPropagation();
+  document.addEventListener('click', () => { sourceMenu.hidden = true; });
+}
+const sourceMenuSave = document.getElementById('sourceMenuSave');
+if (sourceMenuSave) sourceMenuSave.onclick = () => saveSourceFile().catch(e=>paneError('Source file could not be saved', e.message));
+const sourceMenuSaveAll = document.getElementById('sourceMenuSaveAll');
+if (sourceMenuSaveAll) sourceMenuSaveAll.onclick = () => saveAllSourceFiles().catch(e=>paneError('Source files could not be saved', e.message));
+const newSourceFileBtn = document.getElementById('newSourceFile');
+if (newSourceFileBtn) newSourceFileBtn.onclick = () => createSourceEntry('file').catch(e=>paneError('Source file could not be created', e.message));
+const newSourceFolderBtn = document.getElementById('newSourceFolder');
+if (newSourceFolderBtn) newSourceFolderBtn.onclick = () => createSourceEntry('dir').catch(e=>paneError('Source folder could not be created', e.message));
+const renameSourceBtn = document.getElementById('renameSourceEntry');
+if (renameSourceBtn) renameSourceBtn.onclick = () => renameSelectedSourceEntry().catch(e=>paneError('Source entry could not be renamed', e.message));
+const deleteSourceBtn = document.getElementById('deleteSourceEntry');
+if (deleteSourceBtn) deleteSourceBtn.onclick = () => deleteSelectedSourceEntry().catch(e=>paneError('Source entry could not be deleted', e.message));
+if (document.getElementById('saveTool')) saveTool.onclick=()=>saveToolFromForm().catch(e=>paneError('Tool save failed', e.message));
+if (document.getElementById('saveProfile')) saveProfile.onclick=()=>saveProfileFromForm().catch(e=>paneError('Profile save failed', e.message));
+if (document.getElementById('saveWorkspace')) saveWorkspace.onclick=()=>saveWorkspaceFromForm().catch(e=>paneError('Workspace save failed', e.message));
+if (document.getElementById('deleteProfile')) deleteProfile.onclick=()=>deleteProfileFromForm().catch(e=>paneError('Profile delete failed', e.message));
+if (document.getElementById('deleteWorkspace')) deleteWorkspace.onclick=()=>deleteWorkspaceFromForm().catch(e=>paneError('Workspace delete failed', e.message));
+if (document.getElementById('deleteTool')) deleteTool.onclick=()=>deleteToolFromForm().catch(e=>paneError('Tool delete failed', e.message));
+if (document.getElementById('uploadStagePackage')) uploadStagePackage.onclick=()=>uploadStagePackageFromForm().catch(e=>{ showInline('stagePackageResult', `Failed: ${e.message}`); paneError('Package upload failed', e.message); });
+if (document.getElementById('restartPac')) restartPac.onclick=()=>restartPacFromForm().catch(e=>{ showInline('stagePackageResult', `Failed: ${e.message}`); paneError('Restart request failed', e.message); });
+if (document.getElementById('refreshTlsStatus')) refreshTlsStatus.onclick=()=>loadTlsStatus().catch(e=>paneError('TLS status failed', e.message));
+if (document.getElementById('setHostService')) setHostService.onclick=()=>setServiceMode('host').catch(e=>paneError('Service mode change failed', e.message));
+if (document.getElementById('setUserService')) setUserService.onclick=()=>setServiceMode('user').catch(e=>paneError('Service mode change failed', e.message));
+
+async function saveProviderFromForm() {
+  if (!providerName.value.trim()) return alert('Provider name is required');
+  config.providers = config.providers || {};
+  let providerBase = providerBaseUrl.value.trim();
+  if ((providerType.value === 'lmstudio' || providerType.value === 'vllm') && providerBase && !providerBase.replace(/\/$/, '').endsWith('/v1')) providerBase = providerBase.replace(/\/$/, '') + '/v1';
+  if ((providerType.value === 'anthropic-compatible' || providerType.value === 'minimax') && providerBase && !providerBase.replace(/\/$/, '').endsWith('/v1')) providerBase = providerBase.replace(/\/$/, '') + '/v1';
+  const pname = providerName.value.trim();
+  const existing = config.providers?.[pname] || {};
+  config.providers[pname] = {
+    ...existing,
+    type: providerType.value,
+    base_url: providerBase || null,
+    api_key_env: providerApiKeyEnv.value.trim() || null,
+    api_key: providerApiKey.value.trim() || null,
+    timeout_seconds: Number(providerTimeout.value || 30),
+    default_headers: existing.default_headers || {},
+    enabled: existing.enabled ?? false,
+    status: existing.status || 'disabled',
+  };
+  await persistConfigAndReload('providerFormResult', `Saved provider ${providerName.value.trim()}`);
+  setModalStatus('providerModalStatus', 'Saved');
+}
+async function saveModelFromForm() {
+  if (!modelName.value.trim()) return alert('Model name is required');
+  if (!modelProvider.value) return alert('Provider is required');
+  config.models = config.models || {};
+  config.models[modelName.value.trim()] = {
+    provider: modelProvider.value,
+    model: modelId.value.trim() || null,
+    runs_on: modelRunsOn.value.trim() || null,
+    context_window: Number(modelContextWindow.value || 4096),
+    max_output_tokens: Number(modelMaxOutput.value || 1024),
+    capabilities: {
+      supports_chat: true,
+      supports_tools: false,
+      supports_vision: !!modelSupportsVision.checked,
+      supports_json: !!modelSupportsJson.checked,
+      supports_streaming: !!modelSupportsStreaming.checked,
+      reasoning: 'none'
+    },
+    extra: currentModelProvider()?.type === 'lmstudio' ? {lmstudio_runtime: collectLmStudioRuntimeFields()} : {},
+  };
+  const savedName = modelName.value.trim();
+  await persistConfigAndReload(null, null);
+  showInline('modelFormResult', {model: savedName, provider: modelProvider.value, model_id: modelId.value.trim() || null, preferred_endpoint: modelRunsOn.value.trim() || null});
+  setModalStatus('modelModalStatus', 'Saved');
+}
+async function saveProfileFromForm() {
+  const name = profileName.value.trim();
+  if (!name) return alert('Profile name is required');
+  if (!profileModel.value || !config.models?.[profileModel.value]) return alert('Choose an existing configured model first');
+  const body = {
+    description: `Session preset for ${profileModel.value}`,
+    model: profileModel.value,
+    context_profile: profileContextProfile.value || null,
+    context_mode: profileContextMode.value || 'medium',
+    permission_profile: profilePermission.value || 'ask-first',
+    tools: selectedToolNames(),
+    system_prompt: profileSystemPrompt.value.trim() || 'You are a careful remote coding and infrastructure agent.',
+    max_runtime_minutes: 60,
+  };
+  const r = await api(`/v1/agent-profiles/${encodeURIComponent(name)}`,{method:'PUT',body:JSON.stringify(body)});
+  config.agent_profiles = config.agent_profiles || {}; config.agent_profiles[name] = r;
+  await loadConfig();
+  showInline('profileFormResult', `Saved profile ${name}`);
+}
+async function deleteProfileFromForm() {
+  const name = profileName.value.trim();
+  if (!name || !config.agent_profiles?.[name]) return alert('Select an existing profile first');
+  if (!confirm(`Delete profile ${name}?`)) return;
+  await api(`/v1/agent-profiles/${encodeURIComponent(name)}`,{method:'DELETE'});
+  await loadConfig();
+  showInline('profileFormResult', `Deleted profile ${name}`);
+}
+async function saveToolFromForm() {
+  if (!toolName.value.trim()) return alert('Tool name is required');
+  config.tools = config.tools || {};
+  config.tools[toolName.value.trim()] = {
+    enabled: !!toolEnabled.checked,
+    description: toolDescription.value.trim() || null,
+    approval_required_patterns: csv(toolApprovalPatterns.value),
+    binaries: csv(toolBinaries.value),
+    socket: toolSocket.value.trim() || null,
+    package: document.getElementById('toolPackage')?.value || null,
+    install_hint: document.getElementById('toolInstallHint')?.value.trim() || null,
+  };
+  await persistConfigAndReload('toolFormResult', `Saved tool ${toolName.value.trim()}`);
+}
+async function deleteToolFromForm() {
+  const name = toolName.value.trim();
+  if (!name || !config.tools?.[name]) return alert('Select an existing tool first');
+  if (!confirm(`Delete tool ${name}? Profiles using it may need updates.`)) return;
+  delete config.tools[name];
+  await persistConfigAndReload('toolFormResult', `Deleted tool ${name}`);
+}
+async function connectProviderFromForm() {
+  await saveProviderFromForm();
+  const name = providerName.value.trim();
+  const r = await api(`/v1/providers/${name}/toggle`,{method:'POST', body:JSON.stringify({enabled:true})});
+  await loadConfig();
+  showInline('providerFormResult', r);
+  if (r.synced_models?.length) showInline('modelFormResult', {provider:name, synced_models:r.synced_models, count:r.synced_models.length});
+}
+
+async function ensureModelSavedForLmStudio() {
+  await saveModelFromForm();
+  const name = modelName.value.trim();
+  const provider = config.providers?.[modelProvider.value];
+  if (!provider || provider.type !== 'lmstudio') throw new Error('This model is not backed by an LM Studio provider.');
+  return name;
+}
+async function loadLmStudioModelByName(name) {
+  const m = config.models?.[name];
+  if (!m) throw new Error('Model not found');
+  const runtime = m.extra?.lmstudio_runtime || {};
+  const r = await api(`/v1/models/${encodeURIComponent(name)}/lmstudio/load`, {method:'POST', body:JSON.stringify({model:m.model, ...runtime})});
+  showInline('modelFormResult', {model:name, lmstudio_load:r});
+  await loadGlobalEvents(true).catch(()=>{});
+  return r;
+}
+async function loadLmStudioModelFromForm() {
+  const name = await ensureModelSavedForLmStudio();
+  const runtime = collectLmStudioRuntimeFields();
+  const r = await api(`/v1/models/${encodeURIComponent(name)}/lmstudio/load`, {method:'POST', body:JSON.stringify({model:modelId.value.trim(), ...runtime})});
+  showInline('modelFormResult', {model:name, lmstudio_load:r});
+  setModalStatus('modelModalStatus', r.ok ? 'LM Studio load requested' : 'LM Studio load failed');
+  await loadGlobalEvents(true).catch(()=>{});
+}
+async function unloadLmStudioModelFromForm() {
+  const name = await ensureModelSavedForLmStudio();
+  const instance_id = prompt('Instance id / loaded model id to unload', modelId.value.trim() || name);
+  if (!instance_id) return;
+  const r = await api(`/v1/models/${encodeURIComponent(name)}/lmstudio/unload`, {method:'POST', body:JSON.stringify({instance_id})});
+  showInline('modelFormResult', {model:name, lmstudio_unload:r});
+  setModalStatus('modelModalStatus', r.ok ? 'LM Studio unload requested' : 'LM Studio unload failed');
+  await loadGlobalEvents(true).catch(()=>{});
+}
+async function inspectLmStudioModelFromForm() {
+  const name = await ensureModelSavedForLmStudio();
+  const r = await api(`/v1/models/${encodeURIComponent(name)}/lmstudio/inspect`);
+  showInline('modelFormResult', {model:name, lmstudio:r});
+  setModalStatus('modelModalStatus', r.ok ? 'LM Studio server reachable' : 'LM Studio inspect failed');
+}
+
+async function testModelFromForm() {
+  await saveModelFromForm();
+  const name = modelName.value.trim();
+  const r = await api(`/v1/models/${name}/test`,{method:'POST'});
+  showInline('modelFormResult', {model:name, ...r});
+}
+
+
+function scheduleHiddenReloadAfterRestart(seconds = 18) {
+  window.__pacRestartReloadTimer = window.__pacRestartReloadTimer || null;
+  if (window.__pacRestartReloadTimer) clearTimeout(window.__pacRestartReloadTimer);
+  const result = document.getElementById('stagePackageResult');
+  if (result) result.textContent += `
+
+PAC is restarting. This page will refresh automatically in ${seconds} seconds.`;
+  window.__pacRestartReloadTimer = setTimeout(() => window.location.reload(), seconds * 1000);
+}
+
+async function uploadStagePackageFromForm() {
+  const input = document.getElementById('stagePackageFile');
+  const result = document.getElementById('stagePackageResult');
+  if (!input || !input.files || !input.files[0]) return alert('Choose a PAC package (.pac or .zip) first');
+  const fd = new FormData();
+  fd.append('file', input.files[0]);
+  const apply = document.getElementById('stageApplyNow')?.checked !== false;
+  const restartAfterUpdate = true;
+  result.textContent = 'Uploading package...';
+  let r = await fetch(`/v1/admin/stage-package?apply_update=${apply ? 'true' : 'false'}&restart_after_update=${restartAfterUpdate ? 'true' : 'false'}`, {
+    method: 'POST',
+    headers: tokenHeaders(),
+    body: fd,
+  });
+  if (r.status === 404) {
+    result.textContent = 'Primary upload endpoint returned 404; retrying compatibility endpoint...';
+    r = await fetch(`/v1/update/upload?apply_update=${apply ? 'true' : 'false'}&restart_after_update=${restartAfterUpdate ? 'true' : 'false'}`, {
+      method: 'POST',
+      headers: tokenHeaders(),
+      body: fd,
+    });
+  }
+  const text = await r.text();
+  if (!r.ok) throw new Error(`${r.status}: ${text}`);
+  let payload;
+  try { payload = JSON.parse(text); } catch { payload = text; }
+  result.textContent = typeof payload === 'string' ? payload : (payload.message || payload.status || 'Package uploaded. Details are in Events.'); if (typeof payload !== 'string') emitUiEvent('package_upload_completed', result.textContent, payload);
+  if (apply && payload && typeof payload === 'object' && payload.restart_scheduled) scheduleHiddenReloadAfterRestart(18);
+  await loadGlobalEvents(true).catch(()=>{});
+}
+async function restartPacFromForm() {
+  if (!confirm('Restart PAC now? If this was started manually, it will exit and you must start it again.')) return;
+  const result = document.getElementById('stagePackageResult');
+  result.textContent = 'Restart requested...';
+  const r = await api('/v1/admin/restart', {method:'POST'});
+  result.textContent = r.message || r.status || 'Restart requested. Details are in Events.'; emitUiEvent('pac_restart_requested', result.textContent, r);
+  scheduleHiddenReloadAfterRestart(18);
+}
+
+
+
+async function loadMcpBuildStatus() {
+  const box = document.getElementById('mcpBuildStatus');
+  if (!box) return;
+  try {
+    const status = await api('/v1/mcp/build/status');
+    const artifacts = status.artifacts || [];
+    const links = artifacts.map(a => `<li><a href="${a.download_url}" download>${a.name}</a> <span class="muted">(${a.size || 0} bytes)</span></li>`).join('');
+    box.innerHTML = `<b>Status:</b> ${status.status || 'unknown'}<br><b>Message:</b> ${escapeHtml(status.message || '')}<br><b>Version:</b> ${status.version || ''}${artifacts.length ? `<br><b>Downloads:</b><ul>${links}</ul>` : '<br><span class="muted">No binaries available yet.</span>'}<br><span class="muted">Build details are recorded in Events.</span>`;
+  } catch (e) {
+    box.textContent = 'Could not load Zed binary status: ' + e.message;
+  }
+}
+async function buildMcpBridgeFromUi() {
+  switchToTab('sources-tab');
+  await renderSources('binaries/zed-binary');
+  selectedSourceFolder = 'binaries/zed-binary';
+  updateSourceActions();
+  await buildSelectedBinarySource();
+}
+
+
+
+
+const binaryFolderFilter = document.getElementById('binaryFolderFilter');
+if (binaryFolderFilter) binaryFolderFilter.onchange = () => {
+  selectedBinaryArtifactFilter = binaryFolderFilter.value || '';
+  loadSourceBinaryArtifacts(selectedBinaryArtifactFilter).catch(e=>paneError('Binary downloads unavailable', e.message));
+};
+
+const openDownloadsModalBtn = document.getElementById('openDownloadsModal');
+const downloadsModal = document.getElementById('downloadsModal');
+const closeDownloadsModalBtn = document.getElementById('closeDownloadsModal');
+if (openDownloadsModalBtn && downloadsModal) openDownloadsModalBtn.onclick = async () => { downloadsModal.hidden = false; await loadSourceBinaryArtifacts(selectedBinaryArtifactFilter || '').catch(e=>paneError('Downloads unavailable', e.message)); };
+if (closeDownloadsModalBtn && downloadsModal) closeDownloadsModalBtn.onclick = () => { downloadsModal.hidden = true; };
+if (downloadsModal) downloadsModal.onclick = (ev) => { if (ev.target === downloadsModal) downloadsModal.hidden = true; };
+
+const openProviderBtn = document.getElementById('openProviderModal');
+if (openProviderBtn) openProviderBtn.onclick = () => openProviderModal();
+const closeProviderBtn = document.getElementById('closeProviderModal');
+if (closeProviderBtn) closeProviderBtn.onclick = closeProviderModal;
+const openModelBtn = document.getElementById('openModelModal');
+if (openModelBtn) openModelBtn.onclick = () => openModelModal();
+const closeModelBtn = document.getElementById('closeModelModal');
+if (closeModelBtn) closeModelBtn.onclick = closeModelModal;
+
+const openSessionBtn = document.getElementById('openSessionModal');
+if (openSessionBtn) openSessionBtn.onclick = openSessionModal;
+const dashboardNewSessionBtn = document.getElementById('dashboardNewSession');
+if (dashboardNewSessionBtn) dashboardNewSessionBtn.onclick = () => { switchToTab('sessions-tab'); openSessionModal(); };
+const closeSessionBtn = document.getElementById('closeSessionModal');
+if (closeSessionBtn) closeSessionBtn.onclick = closeSessionModal;
+const sessionModal = document.getElementById('sessionModal');
+if (sessionModal) sessionModal.onclick = (ev) => { if (ev.target === sessionModal) closeSessionModal(); };
+const dashboardRefreshBtn = document.getElementById('dashboardRefreshMetrics');
+if (dashboardRefreshBtn) dashboardRefreshBtn.onclick = () => loadDashboardMetrics();
+
+async function refreshDashboardMetricsOnStartup() {
+  for (const delay of [0, 300, 900, 1800, 3500]) {
+    setTimeout(() => loadDashboardMetrics().catch(e => { if (delay === 0) paneError('Dashboard metrics could not load', e.message || String(e)); }), delay);
+  }
+}
+async function init(){ setupTabs(); setupEventsRail(); await loadConfig(); await loadSessions(); await loadApprovals(); await loadRunners(); refreshDashboardMetricsOnStartup(); await loadGlobalEvents(true); loadMcpBuildStatus().catch(()=>{}); await loadBinaryFolderFilters().catch(()=>{}); await loadSourceBinaryArtifacts().catch(()=>{}); updateSourceActions(); }
+init().catch(e=>paneError('PAC UI could not load', e.message || String(e)));
+
+const openEndpointBtn = document.getElementById('openEndpointModal');
+if (openEndpointBtn) openEndpointBtn.onclick = openEndpointModal;
+
+function openEndpointCommandModal(id) {
+  commandEndpointId = id;
+  const r = (window.__pacEndpoints || []).find(x => x.id === id);
+  const modal = document.getElementById('endpointCommandModal');
+  if (document.getElementById('endpointCommandTarget')) endpointCommandTarget.value = r ? `${r.name} (${r.id})` : id;
+  if (document.getElementById('endpointCommandMode')) endpointCommandMode.value = 'host';
+  if (document.getElementById('endpointCommandImage')) endpointCommandImage.value = '';
+  if (document.getElementById('endpointCommandWorkspace')) endpointCommandWorkspace.value = '';
+  if (document.getElementById('endpointCommandText')) endpointCommandText.value = 'pwd && ls -la';
+  if (document.getElementById('endpointCommandStatus')) endpointCommandStatus.textContent = '';
+  if (modal) modal.hidden = false;
+}
+function closeEndpointCommandModal() {
+  const modal = document.getElementById('endpointCommandModal');
+  if (modal) modal.hidden = true;
+}
+
+const closeEndpointBtn = document.getElementById('closeEndpointModal');
+if (closeEndpointBtn) closeEndpointBtn.onclick = closeEndpointModal;
+const endpointModal = document.getElementById('endpointModal');
+if (endpointModal) endpointModal.onclick = (ev) => { if (ev.target === endpointModal) closeEndpointModal(); };
+const closeEndpointCommandBtn = document.getElementById('closeEndpointCommandModal');
+if (closeEndpointCommandBtn) closeEndpointCommandBtn.onclick = closeEndpointCommandModal;
+const endpointCommandModal = document.getElementById('endpointCommandModal');
+if (endpointCommandModal) endpointCommandModal.onclick = (ev) => { if (ev.target === endpointCommandModal) closeEndpointCommandModal(); };
+const queueEndpointCommandBtn = document.getElementById('queueEndpointCommand');
+if (queueEndpointCommandBtn) queueEndpointCommandBtn.onclick = async()=>{
+  const status = document.getElementById('endpointCommandStatus');
+  try {
+    queueEndpointCommandBtn.disabled = true;
+    if (status) status.textContent = 'Queued…';
+    const mode = document.getElementById('endpointCommandMode')?.value || 'host';
+    const body = {prompt:'Endpoint command', command:document.getElementById('endpointCommandText')?.value || 'pwd', execution_mode:mode, container_image:document.getElementById('endpointCommandImage')?.value || null, workspace_path:document.getElementById('endpointCommandWorkspace')?.value || null, metadata:{source_endpoint_id:'controller'}};
+    await api(`/v1/endpoints/${encodeURIComponent(commandEndpointId)}/commands`, {method:'POST', body:JSON.stringify(body)});
+    if (status) status.textContent = 'Queued.';
+    closeEndpointCommandModal();
+    await loadGlobalEvents(true).catch(()=>{});
+  } catch(e) { if (status) status.textContent = `Failed: ${e.message}`; } finally { queueEndpointCommandBtn.disabled = false; }
+};
+const addRunnerBtn = document.getElementById('addRunner');
+if (addRunnerBtn) addRunnerBtn.onclick = async()=>{
+  const status = document.getElementById('endpointModalStatus');
+  try {
+    addRunnerBtn.disabled = true;
+    if (status) status.textContent = 'Adding…';
+    const chosenTools = selectedRunnerToolNames(); const body={name:runnerName.value || 'remote-endpoint', labels:runnerLabels.value.split(',').map(x=>x.trim()).filter(Boolean), endpoint:runnerEndpoint.value || null, allow_host_execution:true, allow_container_execution:true, agent_enabled:!!document.getElementById('runnerAgentEnabled')?.checked, metadata:{agent_tools:chosenTools, tool_packages:packageNamesForTools(chosenTools), default_workspace:document.getElementById('runnerDefaultWorkspace')?.value || null}};
+    const path = editingEndpointId ? `/v1/endpoints/${editingEndpointId}` : '/v1/endpoints';
+    const method = editingEndpointId ? 'PUT' : 'POST';
+    await api(path,{method, body:JSON.stringify(body)});
+    if (status) status.textContent = editingEndpointId ? 'Saved.' : 'Added.';
+    closeEndpointModal();
+    await loadRunners(); await loadGlobalEvents(true).catch(()=>{});
+  } catch (e) {
+    if (status) status.textContent = `Failed: ${e.message}`;
+  } finally {
+    addRunnerBtn.disabled = false;
+  }
+};
+const discoverBtn = document.getElementById('discoverLocal');
+if (discoverBtn) discoverBtn.onclick = async()=>{ const r=await api('/v1/endpoints/local/discover'); if(localDiscovery) localDiscovery.textContent='Local host discovery completed. Details are in Events.'; emitUiEvent('local_endpoint_discovered', 'Local host discovery completed', r); };
+const addLocalBtn = document.getElementById('addLocalRunner');
+if (addLocalBtn) addLocalBtn.onclick = async()=>{ const box=document.getElementById('localDiscovery'); try { if(box) box.textContent='Adding local endpoint…'; const r=await api('/v1/endpoints/local',{method:'POST'}); if(box) box.textContent='Local endpoint added. Details are in Events.'; emitUiEvent('local_endpoint_added', 'Local endpoint added', r); await loadRunners(); await loadGlobalEvents(true).catch(()=>{}); } catch(e){ if(box) box.textContent='Local endpoint could not be added. Details are in Events.'; paneError('Local endpoint could not be added', e.message); } };
+
+const updateAllBtn = document.getElementById('updateAllEndpoints');
+if (updateAllBtn) updateAllBtn.onclick = async()=>{
+  if(!confirm('Queue software update for all online remote endpoints?')) return;
+  const result = await api('/v1/endpoints/update-all',{method:'POST'});
+  if(localDiscovery) localDiscovery.textContent = 'Endpoint update requested. Details are in Events.'; emitUiEvent('endpoint_update_all_requested', 'Endpoint update requested', result);
+  await loadRunners();
+};
+
+const maintenanceAllBtn = document.getElementById('maintenanceAllEndpoints');
+if (maintenanceAllBtn) maintenanceAllBtn.onclick = async()=>{
+  if(!confirm('Run safe PAC maintenance cleanup on all online endpoints? This removes only PAC-created stopped containers, stale PAC workspaces, and temporary artifact bundles older than 24 hours.')) return;
+  const result = await api('/v1/endpoints/maintenance-all',{method:'POST', body:JSON.stringify({max_age_hours:24,dry_run:false,remove_containers:true,remove_workspaces:true,remove_temp_artifacts:true,prune_images:false})});
+  if(localDiscovery) localDiscovery.textContent = 'Endpoint maintenance requested. Details are in Events.'; emitUiEvent('endpoint_maintenance_all_requested', 'Endpoint maintenance requested', result);
+  await loadRunners();
+  await loadGlobalEvents(true).catch(()=>{});
+};
+
+const buildMcpBtn = document.getElementById('buildMcpBridge');
+if (buildMcpBtn) buildMcpBtn.onclick = () => buildMcpBridgeFromUi().catch(e=>paneError('Zed binary build failed', e.message));
+const refreshMcpBtn = document.getElementById('refreshMcpBridge');
+if (refreshMcpBtn) refreshMcpBtn.onclick = () => loadMcpBuildStatus();
+
+const closeSessionEventBtn = document.getElementById('closeSessionEventModal');
+if (closeSessionEventBtn) closeSessionEventBtn.onclick = closeSessionEventModal;
+const sessionEventModal = document.getElementById('sessionEventModal');
+if (sessionEventModal) sessionEventModal.onclick = (ev) => { if (ev.target === sessionEventModal) closeSessionEventModal(); };
+const closeGitDiffBtn = document.getElementById('closeGitDiffModal');
+if (closeGitDiffBtn) closeGitDiffBtn.onclick = closeGitDiffModal;
+const gitDiffModal = document.getElementById('gitDiffModal');
+if (gitDiffModal) gitDiffModal.onclick = (ev) => { if (ev.target === gitDiffModal) closeGitDiffModal(); };

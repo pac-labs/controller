@@ -1,0 +1,6 @@
+PAC v1.0.59
+
+- Added explicit endpoint/controller connection settings so endpoints can connect by IP when mDNS is unavailable.
+- Binary builds can now override the compiled PAC server URL per build request.
+- Settings UI includes a controller URL form and mDNS enable toggle.
+- Build output records the compiled server URL used for purpose-built binaries.

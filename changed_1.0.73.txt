@@ -1,0 +1,4 @@
+v1.0.73
+- Made the Sessions composer transparent/dark instead of white.
+- Tightened Sessions panel sizing to avoid slight overflow.
+- Show the agent profile in the session header, selector and status hint.

@@ -1,0 +1,3 @@
+v1.0.59
+- Endpoint binaries can compile in the PAC server URL using PAC_COMPILED_SERVER_URL / PAC_BUILD_SERVER_URL.
+- Endpoint GPU is no longer shown as a missing feature chip; GPU remains hardware info only.

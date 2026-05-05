@@ -1,0 +1,55 @@
+{
+  "name": "pi-agent-vscode",
+  "displayName": "Pi Agent",
+  "description": "VS Code client scaffold for Pi Agent Control",
+  "version": "1.0.97",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "activationEvents": [
+    "onCommand:piAgent.createSession",
+    "onCommand:piAgent.runTask",
+    "onCommand:piAgent.runTaskWait"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "piAgent.createSession",
+        "title": "Pi Agent: Create Remote Session"
+      },
+      {
+        "command": "piAgent.runTask",
+        "title": "Pi Agent: Run Remote Task"
+      },
+      {
+        "command": "piAgent.runTaskWait",
+        "title": "Pi Agent: Run Remote Task and Wait"
+      }
+    ],
+    "configuration": {
+      "title": "Pi Agent",
+      "properties": {
+        "piAgent.baseUrl": {
+          "type": "string",
+          "default": "https://localhost",
+          "description": "PAC - Pi Agent Control API URL"
+        },
+        "piAgent.token": {
+          "type": "string",
+          "default": "",
+          "description": "Optional bearer token when auth.enabled=true"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/vscode": "^1.95.0",
+    "typescript": "^5.7.2"
+  }
+}

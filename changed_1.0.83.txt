@@ -1,0 +1,4 @@
+v1.0.83
+- Restored Source Library tree data by normalizing the root cache key returned as "." to the UI root key.
+- Restored the bottom version footer while preserving full-height Sessions and Source Library layouts.
+- Updated UI cache/version strings to 1.0.83.

@@ -1,0 +1,5 @@
+Controller harness defaults and dynamic settings
+
+- Added a built-in PAC controller harness runner and managed session path.
+- Added controller harness settings for default model/profile/workspace/permission/context.
+- Added a settings UI that maps JSON-backed harness fields to editable HTML controls.

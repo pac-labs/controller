@@ -1,0 +1,6 @@
+PAC v1.0.63
+
+- Added LM Studio native management API actions for load, unload and download.
+- Added LM Studio inspect and companion script generation from provider rows.
+- Added companion report endpoint for manually-run LM Studio host hardware reports.
+- LM Studio chat now uses streaming so active responses do not hit a fixed response timeout.

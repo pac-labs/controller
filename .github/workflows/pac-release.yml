@@ -1,0 +1,105 @@
+name: PAC release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release. Defaults to VERSION file."
+        required: false
+        type: string
+      create_tag:
+        description: "Create/push v<version> tag when missing"
+        required: false
+        default: true
+        type: boolean
+  push:
+    branches:
+      - main
+    paths:
+      - VERSION
+      - VERSION_CURRENT.md
+      - PAC_CHANGELOG.json
+      - changed_*.txt
+      - pi_agent_platform/**
+      - scripts/**
+      - containers/**
+      - binaries/**
+      - mcp/**
+      - deploy/**
+      - config/**
+      - pyproject.toml
+      - requirements.txt
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ inputs.version }}"
+          if [ -z "$version" ]; then
+            version="$(tr -d '[:space:]' < VERSION)"
+          fi
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid PAC version: $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Validate version markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          test "$(tr -d '[:space:]' < VERSION)" = "$version"
+          test "$(tr -d '[:space:]' < VERSION_CURRENT.md)" = "$version"
+
+      - name: Generate release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/generate-pac-release.py --version "${{ steps.version.outputs.version }}"
+          unzip -t "dist/pac-full-${{ steps.version.outputs.version }}.zip"
+          unzip -t "dist/pac-patch-${{ steps.version.outputs.version }}.zip"
+
+      - name: Create tag
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_tag != false }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.version.outputs.tag }}"
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$tag" -m "PAC $tag"
+            git push origin "$tag"
+          fi
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: PAC ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            dist/pac-full-${{ steps.version.outputs.version }}.zip
+            dist/pac-patch-${{ steps.version.outputs.version }}.zip
+            dist/PAC_RELEASE_MANIFEST.json
+            dist/pac-packages-seed-${{ steps.version.outputs.version }}.zip
+            PAC_CHANGELOG.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

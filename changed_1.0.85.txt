@@ -1,0 +1,3 @@
+v1.0.85
+- Added theme-aware monochrome icon masks for Source Library toolbar and tree entries.
+- Kept PAC purple as the main brand accent and preserved the Source Library blue editor palette.

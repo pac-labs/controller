@@ -1,0 +1,5 @@
+PAC v1.0.86
+
+- Split Providers, Profiles, and Workspaces into their own top-level tabs.
+- Kept Models focused on model configuration and model overview.
+- Preserved the existing provider/model/profile/workspace forms and IDs so existing API wiring continues to work.

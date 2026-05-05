@@ -1,0 +1,4 @@
+v1.0.70
+- Session composer uses a ChatGPT-like integrated input surface.
+- Prompt field is empty by default and uses light grey guidance placeholder text.
+- Compact command/model/execution controls sit inside the composer area for editor parity.

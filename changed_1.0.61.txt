@@ -1,0 +1,6 @@
+PAC v1.0.61
+
+- Fixed UI version display/update path.
+- Updated UI fallback version and cache-busted app.js reference.
+- Updated runtime fallback version constants so stale reads do not show old controller versions.
+- Patch package explicitly includes VERSION, VERSION_CURRENT.md, web index/app, runner, and API files.

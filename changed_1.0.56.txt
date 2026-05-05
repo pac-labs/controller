@@ -1,0 +1,8 @@
+PAC v1.0.56
+
+- Added named endpoint tool execution bridge to pac-endpoint.
+- Added required agent endpoint tool discovery: ripgrep/rg, fd, jq, git, delta, bat/batcat, just.
+- Endpoint capabilities now report required/missing tools and bridge readiness.
+- Endpoint command API validates named tool availability before queueing where capability data is available.
+- Source/config defaults now treat the development tool package as the required endpoint agent tool set.
+- Fixed endpoint feature chips so configured-but-missing tools remain red instead of falsely green.

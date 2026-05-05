@@ -1,0 +1,4 @@
+v1.0.89
+- Changed the top-bar bell and download controls to theme-aware black/white SVG icons.
+- Kept purple as the PAC brand accent while avoiding purple tint on utility icons.
+- Kept PAC app updates on the restart/reload path and source/tool packs on the no-restart update path.

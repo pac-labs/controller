@@ -1,0 +1,3 @@
+v1.0.84
+- Increased Source Library nested tree indentation so expanded folders and files visually step inward like a normal file manager tree.
+- Kept the restored tree data, version footer, square/full-height source layout, and existing build/version badges.

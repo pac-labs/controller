@@ -1,0 +1,7 @@
+v1.0.78
+
+- Reworked Sources into a real editor-style two-pane workbench.
+- Removed redundant source category buttons and main Downloads side panel.
+- Added source tabs, dirty indicators, Save/Save all menu, context menu, create/rename/delete source entries.
+- Moved downloads into a top-bar modal with artifact delete/prune actions.
+- Fixed inline build buttons for buildable binary/container source folders.

@@ -1,0 +1,16 @@
+{
+  "id": "pac-endpoint",
+  "title": "PAC Endpoint Wrapper",
+  "description": "Endpoint-side wrapper binary that connects host capabilities and workspaces to PAC.",
+  "kind": "binary",
+  "version": "1.0.97",
+  "maintainers": [
+    "pac-labs"
+  ],
+  "repository": "https://github.com/pac-labs/packages",
+  "source_path": "binaries/pac-endpoint",
+  "tags": [
+    "pac",
+    "pi.dev"
+  ]
+}

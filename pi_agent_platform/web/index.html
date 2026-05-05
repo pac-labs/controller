@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PAC - Pi Agent Control v1.0.97</title>
+  <link rel="icon" type="image/svg+xml" href="/ui/assets/favicon.svg" />
+  <link rel="stylesheet" href="/ui/styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand-block">
+      <img class="brand-logo" src="/ui/assets/pac-logo.svg" alt="PAC logo" />
+      <div class="brand-copy">
+        <h1>PAC</h1>
+        <p>Pi Agent Control — sessions, workspaces, models, endpoints and permissions.</p>
+      </div>
+    </div>
+    <div class="top-actions"><button id="openDownloadsModal" class="top-icon-button monochrome-icon clean-download-icon" title="Downloads" aria-label="Downloads"><span aria-hidden="true"></span></button><button id="openEventsPanel" class="top-icon-button monochrome-icon clean-bell-icon" title="Events" aria-label="Events"><span aria-hidden="true"></span></button><input id="token" placeholder="Bearer token, optional" /><button id="refresh">Refresh</button></div>
+  </header>
+  <nav class="tabs" aria-label="Main navigation">
+    <button class="tab active" data-tab="dashboard">Dashboard</button>
+    <button class="tab" data-tab="sessions-tab">Sessions</button>
+    <button class="tab" data-tab="runners-tab">Endpoints</button>
+    <button class="tab" data-tab="models-tab">Models</button>
+    <button class="tab" data-tab="providers-tab">Providers</button>
+    <button class="tab" data-tab="profiles-tab">Profiles</button>
+    <button class="tab" data-tab="workspaces-tab">Workspaces</button>
+    <button class="tab" data-tab="tools-tab">Tools</button>
+    <button class="tab" data-tab="sources-tab">Source library</button>
+    <button class="tab" data-tab="approvals-tab">Approvals</button>
+    <button class="tab" data-tab="settings-tab">Settings</button>
+  </nav>
+
+  <div class="app-shell">
+  <main class="content-area">
+    <section id="dashboard" class="tab-panel active">
+      <div class="dashboard-grid dashboard-metrics">
+        <section class="card hero wide">
+          <div class="hero-title"><img class="hero-mark" src="/ui/assets/pac-icon.svg" alt="" /><div><h2>Operations dashboard</h2><p class="eyebrow">Real activity • Sessions • Endpoints</p></div></div>
+          <p class="muted">Current PAC state across sessions, endpoints and recent events.</p>
+          <div id="dashboardStats" class="stats-grid"><div class="metric"><b>—</b><span>loading</span></div></div>
+          <div class="button-row"><button id="dashboardNewSession">New session</button><button id="dashboardRefreshMetrics" class="ghost-button">Refresh metrics</button></div>
+        </section>
+        <section class="card"><h2>Event activity</h2><div id="eventActivityChart" class="spark-chart muted">Loading event activity…</div></section>
+        <section class="card"><h2>System</h2><div class="status-strip"><span class="pac-loader" aria-label="active"></span><span class="muted">PAC active</span></div><div id="systemInfo" class="kv"></div></section>
+        <section class="card"><h2>Recent sessions</h2><div id="sessions"></div></section>
+      </div>
+    </section>
+
+    <section id="sessions-tab" class="tab-panel sessions-workspace">
+      <section class="card wide session-chat-card"><div class="session-chat-head integrated-session-head"><div class="session-picker-wrap"><select id="sessionTopSelect" class="session-top-select" title="Select session"><option value="">Select session</option></select><button id="openSessionModal" class="session-plus-button" title="New session" aria-label="New session">+</button></div><div id="selectedSession" class="muted session-lock-summary">No session selected.</div></div><div class="session-chat-layout single"><div class="session-chat-main"><div id="events" class="session-timeline chat-timeline" aria-live="polite"></div><div class="session-composer chatgpt-composer">
+  <div class="composer-input-shell"><textarea id="taskPrompt" rows="1" placeholder="Message the agent, or start with / to run a command…"></textarea></div>
+  <div class="composer-controls integrated editor-like compact-destination-controls">
+    <div class="context-menu-wrap"><button id="composerAddContext" class="composer-icon-button square" type="button" title="Add context" aria-label="Add context">+</button><div id="composerContextMenu" class="composer-context-menu" hidden><b>Context</b><button type="button">▱ Files & Directories</button><button type="button">⌘ Symbols</button><button type="button">◌ Threads</button><button type="button">▣ Rules</button><button type="button">▧ Image</button><button type="button">Ⅰ Selection</button><button type="button">⌁ Branch Diff</button><button type="button" onclick="alert(slashCommandHelpText())">/ Slash commands</button></div></div>
+    <select id="taskModel" title="Model"><option value="">session model</option></select>
+    <select id="taskExecution" title="Destination"><option value="host">endpoint</option><option value="container">container</option><option value="pi_container">pi.dev</option></select>
+    <button id="runTask" class="composer-send-button square" title="Send" aria-label="Send">➤</button>
+  </div>
+  <input id="taskCommand" hidden value="" />
+  <input id="taskImage" hidden placeholder="Container image" />
+  <div class="muted small-text composer-hint" id="sessionEndpointLock">Create a session to lock it to an endpoint. Use /command rg, /rg, /git, /compact or /subagent. Type /help for the lookup table.</div><select id="taskRunner" hidden><option value="">PAC/local</option></select></div></div></div></section>
+    </section>
+
+    <div id="sessionModal" class="modal-backdrop" hidden>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="sessionModalTitle">
+        <div class="section-heading"><div><h2 id="sessionModalTitle">Create session</h2><p class="muted">Pick a profile, workspace and optional overrides.</p></div><button id="closeSessionModal" class="ghost-button">Close</button></div>
+        <div class="form-grid">
+          <label>Name <input id="sessionName" value="web-session" /></label>
+          <label>Profile <select id="agentProfile"></select></label>
+          <label>Workspace <select id="workspaceProfile"></select></label>
+          <label>Workspace mode <select id="sessionWorkspaceType"><option value="profile">saved workspace</option><option value="local">local path</option><option value="git">git repository</option></select></label>
+          <label>Local path <input id="sessionWorkspacePath" placeholder="optional; PAC creates one when empty" /></label>
+          <label>Git URL <input id="sessionWorkspaceUrl" placeholder="https://... or ssh://..." /></label>
+          <label>Git branch <input id="sessionWorkspaceBranch" placeholder="optional" /></label>
+          <label>Endpoint <select id="sessionEndpoint" required><option value="">select endpoint</option></select><small class="muted">A session stays locked to this endpoint.</small></label>
+          <label>Model override <select id="modelOverride"><option value="">profile default</option></select></label>
+          <label>Permission override <select id="permissionOverride"><option value="">profile default</option></select></label>
+          <label>Context <select id="contextMode"><option value="">profile default</option><option>low</option><option>medium</option><option>high</option><option>max</option></select></label>
+        </div>
+        <div class="button-row"><button id="createSession">Create session</button><span id="sessionCreateStatus" class="muted"></span></div>
+      </section>
+    </div>
+
+    <div id="sessionEventModal" class="modal-backdrop" hidden>
+      <section class="modal-card wide-modal" role="dialog" aria-modal="true" aria-labelledby="sessionEventModalTitle">
+        <div class="section-heading"><div><h2 id="sessionEventModalTitle">Tool activity</h2><p class="muted">Tool use is grouped here. Open a step to see exactly what was done.</p></div><button id="closeSessionEventModal" class="ghost-button">Close</button></div>
+        <div id="sessionEventModalBody" class="modal-scroll-output"></div>
+      </section>
+    </div>
+
+    <div id="gitDiffModal" class="modal-backdrop" hidden>
+      <section class="modal-card wide-modal" role="dialog" aria-modal="true" aria-labelledby="gitDiffModalTitle">
+        <div class="section-heading"><div><h2 id="gitDiffModalTitle">Git changes</h2><p class="muted">Shown only when you ask for it, so the session chat stays focused.</p></div><button id="closeGitDiffModal" class="ghost-button">Close</button></div>
+        <pre id="gitDiffBody" class="modal-scroll-output"></pre>
+      </section>
+    </div>
+    <div id="containerDestinationModal" class="modal-backdrop" hidden>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="containerDestinationTitle">
+        <div class="section-heading"><div><h2 id="containerDestinationTitle">Container destination</h2><p class="muted">Choose the container image used for this message.</p></div><button id="closeContainerDestinationModal" class="ghost-button">Close</button></div>
+        <label>Container image <input id="containerDestinationImage" placeholder="ghcr.io/org/image:tag or localhost/image:tag" /></label>
+        <div class="button-row"><button id="saveContainerDestination">Use container</button><button id="clearContainerDestination" class="ghost-button">Use endpoint instead</button></div>
+        <p class="muted small-text">This only sets the destination for the next session messages. The session remains locked to its endpoint.</p>
+      </section>
+    </div>
+
+    <section id="runners-tab" class="tab-panel">
+      <section class="card wide">
+        <div class="section-heading">
+          <div><h2>Endpoints</h2><p class="muted">Compact host inventory, health, versions, containers and maintenance actions.</p></div>
+          <div class="button-row">
+            <button id="openEndpointModal">Add remote endpoint</button>
+            <button id="addLocalRunner" class="ghost-button">Add local endpoint</button>
+            <button id="discoverLocal" class="ghost-button">Discover local host</button>
+          </div>
+        </div>
+        <div id="runnerSummaryEndpoints" class="stats-grid compact-stats"></div>
+        <div class="button-row"><button id="updateAllEndpoints">Update all online endpoints</button><button id="maintenanceAllEndpoints" class="ghost-button">Maintenance all online endpoints</button></div>
+        <div id="runners" class="endpoint-grid"></div>
+        <pre id="localDiscovery" class="compact-output"></pre>
+      </section>
+    </section>
+
+    <div id="endpointModal" class="modal-backdrop" hidden>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="endpointModalTitle">
+        <div class="section-heading"><div><h2 id="endpointModalTitle">Add remote endpoint</h2><p class="muted">Register a remote execution environment. pi.dev wrapper workloads require Node.js on the endpoint.</p></div><button id="closeEndpointModal" class="ghost-button">Close</button></div>
+        <div class="form-grid">
+          <label>Name <input id="runnerName" value="gpu-workstation-01" /></label>
+          <label>Labels <input id="runnerLabels" value="linux,gpu,endpoint" /></label>
+          <label>Endpoint URL <input id="runnerEndpoint" placeholder="optional: https://runner-host:8765" /></label>
+          <label class="checkbox-line"><input id="runnerAgentEnabled" type="checkbox" /> Enable pi.dev workloads</label>
+          <label>Endpoint tools <select id="runnerTools" multiple size="7"></select><small class="muted">Local binaries available to this endpoint.</small></label>
+          <label>Default workspace <select id="runnerDefaultWorkspace"></select><small class="muted">Workspace used when the endpoint runs agent tasks.</small></label>
+          <div class="package-strip"><b>Packages</b><div id="runnerToolPackagePreview" class="pill-list"></div></div>
+        </div>
+        <div class="button-row"><button id="addRunner">Save endpoint</button><span id="endpointModalStatus" class="muted"></span></div>
+      </section>
+    </div>
+
+    <section id="models-tab" class="tab-panel">
+      <div class="dashboard-grid">
+        <section class="card wide">
+          <div class="section-heading">
+            <div><h2>Models</h2><p class="muted">Models connect a provider model ID to the endpoint that should run sessions using it.</p></div>
+            <div class="button-row"><button id="openModelModal">Add model</button></div>
+          </div>
+          <div id="modelFormResult" class="inline-result" hidden></div>
+        </section>
+        <section class="card wide"><h2>Model overview</h2><div id="models"></div></section>
+      </div>
+    </section>
+
+    <section id="providers-tab" class="tab-panel">
+      <div class="dashboard-grid">
+        <section class="card wide">
+          <div class="section-heading">
+            <div><h2>Providers</h2><p class="muted">Providers connect PAC to model APIs and expose live model lists.</p></div>
+            <div class="button-row"><button id="openProviderModal">Add provider</button></div>
+          </div>
+          <div id="providerFormResult" class="inline-result"></div>
+        </section>
+        <section class="card wide"><h2>Provider overview</h2><p class="muted">Provider model lists are fetched live from configured endpoints.</p><div id="providers"></div></section>
+      </div>
+    </section>
+
+    <section id="profiles-tab" class="tab-panel">
+      <div class="dashboard-grid">
+        <section class="card wide"><h2>Profiles</h2><p class="muted">Create session presets here. A profile needs a configured model before it can be selected for a session.</p><div class="form-grid compact-form"><label>Profile name <input id="profileName" placeholder="local-coder" /></label><label>Model <select id="profileModel"></select></label><label>Context profile <select id="profileContextProfile"></select><small class="muted">Token budget preset.</small></label><label>Mode <select id="profileContextMode"><option>low</option><option selected>medium</option><option>high</option><option>max</option></select><small class="muted">Session context size.</small></label><label>Permission profile <select id="profilePermission"></select></label><label>Tools <select id="profileTools" multiple size="7"></select></label></div><label>System prompt <textarea id="profileSystemPrompt" rows="3">You are a careful remote coding and infrastructure agent.</textarea></label><div class="button-row"><button id="saveProfile">Save profile</button><button id="deleteProfile" class="ghost-button">Delete profile</button></div><div id="profileFormResult" class="inline-result"></div><div id="profiles"></div></section>
+      </div>
+    </section>
+
+    <section id="workspaces-tab" class="tab-panel">
+      <div class="dashboard-grid">
+        <section class="card wide workspace-manager"><h2>Workspaces</h2><p class="muted">Create portable workspaces that can be placed on endpoints, populated from zip data, and cleaned up when they expire.</p><div class="form-grid compact-form workspace-form"><label>Workspace name <input id="workspaceName" placeholder="internal-docs-reader" /></label><label>Description <input id="workspaceDescription" placeholder="what this workspace is for" /></label><label>Type <select id="workspaceType"><option value="local">local path</option><option value="git">git checkout</option><option value="container">container workspace</option></select></label><label>Runtime <select id="workspaceRuntime"><option value="any">any endpoint</option><option value="local">host/local</option><option value="container">containerized</option></select></label><label>Path <input id="workspacePath" placeholder="optional local or endpoint path" /></label><label>Git URL <input id="workspaceUrl" placeholder="optional git repository" /></label><label>Branch <input id="workspaceBranch" placeholder="optional" /></label><label>Container image <input id="workspaceContainerImage" placeholder="optional compiler/runtime image" /></label><label>Endpoint <select id="workspaceEndpoint"><option value="">select at runtime</option></select></label><label>Endpoint selector <input id="workspaceEndpointSelector" placeholder="linux,gpu,docs-anywhere" /></label><label>Default profile <select id="workspaceDefaultProfile"><option value="">none</option></select></label><label>Data zip URL <input id="workspaceDataUrl" placeholder="https://.../docs.zip" /></label><label>Data zip path <input id="workspaceDataPath" placeholder="optional path already on endpoint/controller" /></label><label>Data mount/path <input id="workspaceDataMount" placeholder="docs or /workspace/docs" /></label><label>TTL hours <input id="workspaceTtlHours" type="number" min="1" placeholder="empty = no expiry" /></label><label class="checkbox-line"><input id="workspaceEphemeral" type="checkbox" /> Ephemeral workspace</label><label class="checkbox-line"><input id="workspaceDeleteOnExpire" type="checkbox" checked /> Delete data when expired</label><label class="checkbox-line"><input id="workspaceIsDefault" type="checkbox" /> Endpoint default</label></div><div class="button-row"><button id="saveWorkspace">Save workspace</button><button id="deleteWorkspace" class="ghost-button">Delete workspace</button></div><div id="workspaceFormResult" class="inline-result"></div><div id="workspaces" class="workspace-list"></div></section>
+      </div>
+    </section>
+
+
+    <div id="providerModal" class="modal-backdrop" hidden>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="providerModalTitle">
+        <div class="section-heading"><div><h2 id="providerModalTitle">Provider</h2><p class="muted">Configure the API endpoint PAC uses to list and call models.</p></div><button id="closeProviderModal" class="ghost-button">Close</button></div>
+        <div class="form-grid compact-form">
+          <label>Provider name <input id="providerName" placeholder="lmstudio" /></label>
+          <label>Provider preset <select id="providerPreset"><option value="custom-openai">Custom OpenAI-compatible</option><option value="openai">OpenAI</option><option value="openai-codex">OpenAI / Codex</option><option value="anthropic">Anthropic Claude</option><option value="minimax">MiniMax</option><option value="gemini">Google Gemini</option><option value="groq">Groq</option><option value="openrouter">OpenRouter</option><option value="deepseek">DeepSeek</option><option value="mistral">Mistral</option><option value="lmstudio">LM Studio</option><option value="ollama">Ollama</option><option value="vllm">vLLM</option><option value="custom-anthropic">Custom Anthropic-compatible</option></select></label>
+          <label>Type <select id="providerType"><option>openai-compatible</option><option>openai</option><option>openai-codex</option><option>anthropic</option><option>anthropic-compatible</option><option>minimax</option><option>gemini</option><option>lmstudio</option><option>ollama</option><option>vllm</option><option>groq</option><option>openrouter</option><option>deepseek</option><option>mistral</option><option>cohere</option></select></label>
+          <label>Base URL <input id="providerBaseUrl" placeholder="http://host:1234/v1" /></label>
+          <label>API key env <input id="providerApiKeyEnv" placeholder="OPENAI_API_KEY" /></label>
+          <label>API key <input id="providerApiKey" placeholder="optional" type="password" /></label>
+          <label>Timeout seconds <input id="providerTimeout" type="number" value="30" /></label>
+        </div>
+        <div class="button-row"><button id="saveProvider">Save provider</button><button id="connectProviderForm">Connect provider</button><span id="providerModalStatus" class="muted"></span></div>
+      </section>
+    </div>
+
+    <div id="modelModal" class="modal-backdrop" hidden>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modelModalTitle">
+        <div class="section-heading"><div><h2 id="modelModalTitle">Model</h2><p class="muted">Choose the provider model ID and the endpoint that should run sessions using it.</p></div><button id="closeModelModal" class="ghost-button">Close</button></div>
+        <div class="form-grid compact-form">
+          <label>Model name <input id="modelName" placeholder="qwen-coder-local" /></label>
+          <label>Provider <select id="modelProvider"></select></label>
+          <label>Provider model ID <input id="modelId" placeholder="qwen2.5-coder-14b-instruct" /></label>
+          <label>Execution endpoint <select id="modelRunsOn"><option value="">PAC/local</option></select><small class="muted">Endpoint used by default for sessions using this model.</small></label>
+          <label>Context window <input id="modelContextWindow" type="number" value="4096" /></label>
+          <label>Max output tokens <input id="modelMaxOutput" type="number" value="1024" /></label>
+        </div>
+        <div class="check-grid">
+          <label><input id="modelSupportsVision" type="checkbox" /> Vision input</label>
+          <label><input id="modelSupportsJson" type="checkbox" /> JSON output</label>
+          <label><input id="modelSupportsStreaming" type="checkbox" checked /> Streaming output</label>
+        </div>
+        <div id="lmStudioModelControls" class="runtime-panel" hidden>
+          <div class="section-heading compact-heading"><div><h3>LM Studio runtime</h3><p class="muted">Load this model into LM Studio with the context and runtime settings PAC should use interactively.</p></div></div>
+          <div class="form-grid compact-form">
+            <label>Load context length <input id="lmModelContextLength" type="number" placeholder="32768" /></label>
+            <label>GPU offload <input id="lmModelGpuOffload" type="number" placeholder="layers / percent" /></label>
+            <label>Eval batch size <input id="lmModelEvalBatch" type="number" placeholder="512" /></label>
+            <label>Temperature <input id="lmModelTemperature" type="number" step="0.01" placeholder="0.7" /></label>
+            <label>Top P <input id="lmModelTopP" type="number" step="0.01" placeholder="0.95" /></label>
+            <label>Seed <input id="lmModelSeed" type="number" placeholder="optional" /></label>
+          </div>
+          <div class="check-grid">
+            <label><input id="lmModelFlashAttention" type="checkbox" checked /> Flash attention</label>
+            <label><input id="lmModelKvGpu" type="checkbox" checked /> KV cache on GPU</label>
+            <label><input id="lmModelEchoLoadConfig" type="checkbox" checked /> Show applied config</label>
+          </div>
+          <div class="button-row"><button id="loadLmStudioModel" class="ghost-button">Load in LM Studio</button><button id="unloadLmStudioModel" class="ghost-button">Unload</button><button id="inspectLmStudioModel" class="ghost-button">Inspect server</button></div>
+        </div>
+        <div class="button-row"><button id="saveModel">Save model</button><button id="testModelForm" class="ghost-button">Test model</button><span id="modelModalStatus" class="muted"></span></div>
+      </section>
+    </div>
+
+    <section id="tools-tab" class="tab-panel">
+      <div class="dashboard-grid">
+        <section class="card">
+          <h2>Add / update tool</h2>
+          <p class="muted">Tools are local endpoint binaries. Use packages to group tools for development, operations, or other work.</p>
+          <div class="form-grid compact-form">
+            <label>Tool name <input id="toolName" placeholder="web_search" /></label>
+            <label>Description <input id="toolDescription" placeholder="Search online using a text-only backend" /></label>
+            <label>Binaries <input id="toolBinaries" placeholder="lynx, w3m, links2" /></label>
+            <label>Approval patterns <input id="toolApprovalPatterns" placeholder="oc apply, kubectl delete" /></label>
+            <label>Socket <input id="toolSocket" placeholder="/run/podman/podman.sock" /></label>
+            <label>Package <select id="toolPackage"><option value="">none</option></select></label>
+            <label>Install hint <input id="toolInstallHint" placeholder="package or install command" /></label>
+            <label class="checkbox-line"><input id="toolEnabled" type="checkbox" checked /> Enabled</label>
+          </div>
+          <div class="button-row"><button id="saveTool">Save tool</button><button id="deleteTool">Delete tool</button></div>
+          <div id="toolFormResult" class="inline-result"></div>
+        </section>
+        <section class="card wide">
+          <h2>Tool overview</h2>
+          <div id="toolsOverview"></div>
+        </section>
+      </div>
+    </section>
+
+
+    <section id="sources-tab" class="tab-panel source-workbench-panel">
+      <div class="source-workbench-toolbar">
+        <div class="source-menu-wrap">
+          <button id="sourceFileMenuButton" class="ghost-button source-menu-button">File</button>
+          <div id="sourceFileMenu" class="source-file-menu" hidden>
+            <button id="sourceMenuSave" type="button">Save</button>
+            <button id="sourceMenuSaveAll" type="button">Save all</button>
+          </div>
+        </div>
+        <button id="newSourceFile" class="source-toolbar-icon" title="New file" aria-label="New file"><span class="ui-icon icon-new-file" aria-hidden="true"></span></button>
+        <button id="newSourceFolder" class="source-toolbar-icon" title="New folder" aria-label="New folder"><span class="ui-icon icon-new-folder" aria-hidden="true"></span></button>
+        <button id="renameSourceEntry" class="source-toolbar-icon" title="Rename selected" aria-label="Rename selected"><span class="ui-icon icon-rename" aria-hidden="true"></span></button>
+        <button id="deleteSourceEntry" class="source-toolbar-icon danger" title="Delete selected" aria-label="Delete selected"><span class="ui-icon icon-trash" aria-hidden="true"></span></button>
+        <span id="sourceActionHint" class="muted small-text source-toolbar-status">Buildable folders show a version and build button.</span>
+      </div>
+      <div class="source-workbench">
+        <aside class="source-workbench-tree">
+          <div id="sourceTree" class="source-tree source-file-tree muted">Loading sources…</div>
+        </aside>
+        <section class="source-workbench-editor">
+          <div id="sourceTabs" class="source-tabs"><span class="muted small-text">Open a file from the tree.</span></div>
+          <textarea id="sourceEditor" class="source-editor source-code-editor" spellcheck="false" placeholder="Select a source file from the tree…"></textarea>
+          <div id="sourceFormResult" class="inline-result compact-result" hidden></div>
+          <button id="saveSourceFile" hidden>Save file</button>
+        </section>
+      </div>
+    </section>
+
+
+    <div id="downloadsModal" class="modal-backdrop" hidden>
+      <section class="modal-card wide-modal downloads-modal-card" role="dialog" aria-modal="true" aria-labelledby="downloadsModalTitle">
+        <div class="section-heading"><div><h2 id="downloadsModalTitle">Downloads</h2><p class="muted">Built binaries and generated artifacts.</p></div><button id="closeDownloadsModal" class="ghost-button">Close</button></div>
+        <div class="downloads-modal-controls">
+          <label class="field-label" for="binaryFolderFilter">Binary folder</label>
+          <select id="binaryFolderFilter" class="binary-folder-filter"><option value="">All binary folders</option></select>
+          <button id="pruneBinaryArtifacts" class="ghost-button">Keep newest only</button>
+          <button id="previewPruneBinaryArtifacts" class="ghost-button">Preview prune</button>
+        </div>
+        <div id="sourceBuildResult" class="source-build-hint muted">Available downloads are listed by version.</div>
+        <div id="sourceBinaryArtifacts" class="artifact-list download-version-list muted">No downloads available yet.</div>
+      </section>
+    </div>
+
+    <section id="approvals-tab" class="tab-panel">
+      <section class="card wide"><h2>Pending approvals</h2><p class="muted">Full-control sessions bypass approvals, but are still logged in the timeline.</p><div id="approvals"></div></section>
+    </section>
+
+    <section id="settings-tab" class="tab-panel">
+      <div class="settings-cube-grid">
+        <section class="card setting-cube wide">
+          <div class="section-heading compact-heading"><div><h2>Updates</h2><p class="muted">Apply platform updates and feature/source packs from one place.</p></div></div>
+          <div class="feature-pack-actions settings-update-actions">
+            <input id="featurePackFile" type="file" accept=".zip">
+            <button id="inspectFeaturePack" class="ghost-button">Preview update</button>
+            <button id="applyFeaturePack" class="ghost-button" disabled>Apply update</button>
+          </div>
+          <div id="featurePackPreview" class="feature-pack-preview muted">Choose a PAC update or feature pack zip to preview.</div>
+        </section>
+
+        <section class="card setting-cube">
+          <h2>PAC home</h2>
+          <div id="pacpInfo" class="kv compact-kv"></div>
+          <p class="muted">Override with <code>PACP_HOME=/path/to/.pacp</code>. Default is <code>~/.pacp</code>.</p>
+        </section>
+
+
+
+
+
+        <section class="card wide setting-cube">
+          <h2>Controller pi.dev</h2>
+          <p class="muted">Keep one built-in PAC session connected to pi.dev using the PAC platform workspace.</p>
+          <div id="controllerHarnessStatus" class="kv compact-kv"></div>
+          <div class="form-grid compact-form">
+            <label class="checkbox-line"><input id="harnessEnabled" type="checkbox" /> Enable controller pi.dev</label>
+            <label class="checkbox-line"><input id="harnessAutoBootstrap" type="checkbox" /> Build/install local PAC wrapper and pi.dev on startup</label>
+            <label class="checkbox-line"><input id="harnessAutoBuildWrapper" type="checkbox" /> Auto-build missing PAC wrapper binary</label>
+            <label class="checkbox-line"><input id="harnessAutoInstallPiDev" type="checkbox" /> Auto-install missing pi.dev container</label>
+            <label class="checkbox-line"><input id="harnessAutoSession" type="checkbox" /> Always create/keep one session</label>
+            <label>Session name <input id="harnessSessionName" placeholder="PAC controller pi.dev" /></label>
+            <label>Workspace profile <input id="harnessWorkspaceProfile" placeholder="pac-controller" /></label>
+            <label>Profile <select id="harnessAgentProfile"><option value="">none</option></select></label>
+            <label>Model override <select id="harnessModel"><option value="">profile default</option></select></label>
+            <label>Permission profile <select id="harnessPermission"><option value="ask-first">ask-first</option></select></label>
+            <label>Context mode <select id="harnessContextMode"><option>low</option><option>medium</option><option>high</option><option>max</option></select></label>
+            <label>Runner id <input id="harnessRunnerId" placeholder="controller-harness" /></label>
+            <label class="checkbox-line"><input id="harnessExposeTools" type="checkbox" /> Expose platform tools to pi.dev</label>
+          </div>
+          <div class="button-row"><button id="saveControllerHarness">Save pi.dev settings</button><button id="bootstrapControllerHarness" class="ghost-button">Build/install controller pi.dev</button><button id="openControllerHarnessSession" class="ghost-button">Open pi.dev session</button></div>
+          <pre id="controllerHarnessResult" class="inline-result compact-result"></pre>
+        </section>
+
+        <section class="card setting-cube">
+          <h2>Endpoint connection</h2>
+          <p class="muted">Use an explicit controller URL for endpoint binaries when mDNS is unavailable. IP addresses are fine.</p>
+          <div class="form-grid compact-form">
+            <label>Controller URL <input id="endpointPublicUrl" placeholder="https://192.168.1.20:443" /></label>
+            <label class="checkbox-line"><input id="endpointMdnsEnabled" type="checkbox" /> Advertise with mDNS</label>
+          </div>
+          <div class="button-row"><button id="saveEndpointConnection">Save endpoint URL</button></div>
+          <pre id="endpointConnectionResult" class="inline-result compact-result"></pre>
+        </section>
+
+        <section class="card setting-cube">
+          <h2>Service mode</h2>
+          <p class="muted">Run PAC as a user service for simple installs, or as a host/system service for port 443 and machine-wide startup.</p>
+          <div id="serviceModeInfo" class="kv compact-kv"></div>
+          <div class="segmented-control" role="group" aria-label="PAC service mode">
+            <button id="setUserService" class="ghost-button">Use user service</button>
+            <button id="setHostService">Use host service</button>
+          </div>
+          <pre id="serviceModeResult" class="inline-result compact-result"></pre>
+        </section>
+
+        <section class="card setting-cube">
+          <h2>TLS / local CA</h2>
+          <p class="muted">PAC generates a 30-year local root CA, signs the HTTPS server certificate for admin.pac.local, and advertises the admin service over mDNS.</p>
+          <div id="tlsInfo" class="kv compact-kv"></div>
+          <div class="button-row">
+            <button id="refreshTlsStatus">Refresh TLS</button>
+            <a class="button-link" href="/v1/tls/ca.pem" download>Download CA</a>
+          </div>
+        </section>
+
+        <section class="card wide setting-cube">
+          <h2>Configuration editor</h2>
+          <p class="muted">Raw JSON config. Saved server-side as YAML in the PAC home directory.</p>
+          <textarea id="configEditor"></textarea>
+          <button id="saveConfig">Save config</button>
+        </section>
+      </div>
+    </section>
+  </main>
+  <aside id="eventsRail" class="events-rail" aria-label="Events" hidden>
+    <div class="events-rail-header">
+      <div>
+        <h2>Events</h2>
+        <p>Live activity</p>
+      </div>
+      <div class="events-header-actions"><button id="pinEventsPanel" class="ghost-button events-pin-button" title="Keep events open" aria-pressed="false">📌</button><button id="clearEventPanel" class="ghost-button" title="Clear visible events">Clear</button><button id="closeEventsPanel" class="ghost-button" title="Close events">Close</button></div>
+    </div>
+    <div class="events-filter-row">
+      <span class="event-chip active" data-event-filter="all">All</span>
+      <span class="event-chip" data-event-filter="running">Running</span>
+      <span class="event-chip" data-event-filter="completed">Done</span>
+      <span class="event-chip" data-event-filter="attention">Attention</span>
+    </div>
+    <div id="globalEvents" class="events-list"><div class="empty-events">No events yet.</div></div>
+  </aside>
+  </div>
+  <footer class="app-footer"><img src="/ui/assets/pac-icon.svg" alt="" /> <span>PAC Control • Orchestrate • Execute</span><span class="app-version">v1.0.97</span></footer>
+  <script src="/ui/app.js?v=1.0.97"></script>
+</body>
+</html>

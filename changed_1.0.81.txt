@@ -1,0 +1,4 @@
+v1.0.82
+- Restored Source Library tree visibility after the full-height square layout changes.
+- Bumped browser cache key for app.js so the source tree renderer cannot be left on an older cached script.
+- Added a defensive top-level source fallback if the source API returns top_level without items during early initialization.

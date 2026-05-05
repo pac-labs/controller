@@ -1,0 +1,5 @@
+v1.0.93
+- Added the default main-pi-dev profile for the controller-local pi.dev runtime.
+- Added the agent-control workspace for the PAC controller application/source tree.
+- Settings defaults now point the controller pi.dev runtime at main-pi-dev and agent-control.
+- Added documentation for the main pi.dev profile and agent control workspace.

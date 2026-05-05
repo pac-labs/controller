@@ -1,0 +1,7 @@
+PAC v1.0.65
+
+- Reworked Sessions timeline into a chat-style conversation view with thought/tool/system bubbles.
+- Removed JSON-first/cyberpunk session timeline presentation; structured events now render as readable message text with optional details.
+- Added a bottom session composer with message, command mode, command input, model selection, execution mode, and container image fields.
+- Added endpoint selection to session creation and marks sessions as endpoint-locked.
+- Backend now validates endpoint locking and refuses task submissions that try to run on a different endpoint.

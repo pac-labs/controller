@@ -1,0 +1,7 @@
+v1.0.96
+- Added controller pi.dev runtime lifecycle supervision.
+- Starts and monitors the local PAC wrapper process for local-PAC.
+- Starts and checks a persistent pi.dev controller daemon container.
+- Binds the local wrapper registration back into local-PAC instead of creating another endpoint.
+- Controller session now requires wrapper process + pi.dev daemon to be running, not only installed.
+- pi.dev container entrypoint supports daemon mode with heartbeat/status artifacts.

@@ -1,0 +1,3 @@
+v1.0.52
+- Endpoint capability chips now show available features in green, required missing features in red, and optional missing features in orange.
+- Local Pi harness install now runs as a tracked background operation and always emits a completed or failed event, including timeout/startup errors.

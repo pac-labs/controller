@@ -1,0 +1,4 @@
+v1.0.82
+- Update preview now recognizes PAC app full/patch zip packages as controller updates.
+- Applying a PAC app package from the Updates panel installs the app update and schedules restart instead of treating it as only source/binary folders.
+- Source-folder feature packs still preview/apply as additive source updates.

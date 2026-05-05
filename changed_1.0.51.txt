@@ -1,0 +1,6 @@
+PAC v1.0.52
+
+- Added an Install Pi harness action for endpoints when localhost/pi-agent-harness is missing.
+- Local endpoint harness install runs scripts/build-pi-container.sh and records stdout/stderr, exit code, image and re-check status in Events.
+- Remote endpoint harness install queues a host command so the endpoint can build the image locally.
+- Sessions page panels now contain long paths, commands and event output instead of widening the page.
