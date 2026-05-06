@@ -159,7 +159,7 @@
           </div>
           <div id="providerFormResult" class="inline-result"></div>
         </section>
-        <section class="card wide"><h2>Provider overview</h2><p class="muted">Provider model lists are fetched live from configured endpoints.</p><div id="providers"></div></section>
+        <section class="card wide provider-overview-card"><h2>Provider overview</h2><p class="muted">Provider model lists are fetched live from configured endpoints. Device details describe where inference happens, not where PAC tools or workspaces run.</p><div id="providers" class="provider-grid"></div></section>
       </div>
     </section>
 
@@ -187,6 +187,17 @@
           <label>API key env <input id="providerApiKeyEnv" placeholder="OPENAI_API_KEY" /></label>
           <label>API key <input id="providerApiKey" placeholder="optional" type="password" /></label>
           <label>Timeout seconds <input id="providerTimeout" type="number" value="30" /></label>
+          <label>Execution type <select id="providerExecutionType"><option>unknown</option><option>local</option><option>remote</option><option>proxied</option><option>distributed</option></select><small class="muted">Where inference is reached from PAC.</small></label>
+          <label>Provider class <input id="providerClass" placeholder="ollama, lmstudio, vllm, openai" /></label>
+          <label>Device category <select id="providerDeviceCategory"><option>unknown</option><option>cpu</option><option>gpu</option><option>tpu</option><option>remote-cluster</option><option>hybrid</option></select></label>
+          <label>Device vendor <input id="providerDeviceVendor" placeholder="nvidia, amd, apple, cloud" /></label>
+          <label>Device model <input id="providerDeviceModel" placeholder="RTX 4090, M2 Max, H100 pool" /></label>
+          <label>Device memory GB <input id="providerDeviceMemory" type="number" step="0.1" placeholder="24" /></label>
+          <label>Host kind <select id="providerHostKind"><option>unknown</option><option>desktop</option><option>server</option><option>vm</option><option>container</option><option>kubernetes</option><option>edge</option><option>cloud</option></select></label>
+          <label>Host OS <input id="providerHostOs" placeholder="linux, windows, macos" /></label>
+          <label>Host arch <input id="providerHostArch" placeholder="amd64, arm64" /></label>
+          <label>Accelerators <input id="providerAccelerators" placeholder="cuda, rocm, metal" /><small class="muted">Comma-separated runtime hints.</small></label>
+          <label class="checkbox-line"><input id="providerDeviceShared" type="checkbox" /> Device is shared</label>
         </div>
         <div class="button-row"><button id="saveProvider">Save provider</button><button id="connectProviderForm">Connect provider</button><span id="providerModalStatus" class="muted"></span></div>
       </section>

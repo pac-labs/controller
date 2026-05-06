@@ -57,6 +57,28 @@ class AuthConfig(BaseModel):
     oidc_client_id: str | None = None
 
 
+class ProviderDeviceConfig(BaseModel):
+    category: Literal["unknown", "cpu", "gpu", "tpu", "remote-cluster", "hybrid"] = "unknown"
+    vendor: str | None = None
+    model: str | None = None
+    memory_gb: float | None = None
+    shared: bool = False
+
+
+class ProviderHostConfig(BaseModel):
+    kind: Literal["unknown", "desktop", "server", "vm", "container", "kubernetes", "edge", "cloud"] = "unknown"
+    os: str | None = None
+    arch: str | None = None
+
+
+class ProviderRuntimeConfig(BaseModel):
+    execution_type: Literal["unknown", "local", "remote", "proxied", "distributed"] = "unknown"
+    provider_class: str | None = None
+    device: ProviderDeviceConfig = Field(default_factory=ProviderDeviceConfig)
+    host: ProviderHostConfig = Field(default_factory=ProviderHostConfig)
+    accelerators: list[str] = Field(default_factory=list)
+
+
 class ProviderConfig(BaseModel):
     type: Literal["openai", "openai-codex", "openai-compatible", "anthropic", "anthropic-compatible", "minimax", "gemini", "ollama", "lmstudio", "vllm", "groq", "openrouter", "deepseek", "mistral", "cohere"] = "openai-compatible"
     base_url: str | None = None
@@ -70,6 +92,7 @@ class ProviderConfig(BaseModel):
     last_error: str | None = None
     last_checked_at: str | None = None
     cached_models: list[dict[str, Any]] = Field(default_factory=list)
+    runtime: ProviderRuntimeConfig = Field(default_factory=ProviderRuntimeConfig)
 
 
 class ModelCapability(BaseModel):

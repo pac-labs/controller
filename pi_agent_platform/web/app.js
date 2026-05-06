@@ -793,12 +793,86 @@ async function lmStudioDownloadModel(name) {
   const r = await api(`/v1/providers/${name}/lmstudio/download`, {method:'POST', body:JSON.stringify({model})});
   showInline('providerFormResult', r);
 }
+
+function providerRuntime(p) { return p?.runtime || {}; }
+function providerDevice(p) { return providerRuntime(p).device || {}; }
+function providerHost(p) { return providerRuntime(p).host || {}; }
+function fmtProviderDevice(p) {
+  const d = providerDevice(p);
+  const bits = [d.category || 'unknown'];
+  if (d.vendor) bits.push(d.vendor);
+  if (d.model) bits.push(d.model);
+  if (d.memory_gb || d.memoryGB) bits.push(`${d.memory_gb || d.memoryGB}GB`);
+  if (d.shared) bits.push('shared');
+  return bits.filter(Boolean).join(' · ');
+}
+function providerCapabilityPills(p) {
+  const r = providerRuntime(p), d = r.device || {}, h = r.host || {};
+  const accelerators = Array.isArray(r.accelerators) ? r.accelerators : [];
+  const pills = [r.execution_type || r.executionType || 'unknown', d.category || 'unknown-device', h.kind || 'unknown-host', ...accelerators].filter(Boolean);
+  return pills.map(x => `<span class="pill provider-capability-pill">${escapeHtml(String(x))}</span>`).join('');
+}
+function collectProviderRuntimeFields(existing={}) {
+  const mem = Number(document.getElementById('providerDeviceMemory')?.value || 0);
+  return {
+    ...(existing || {}),
+    execution_type: document.getElementById('providerExecutionType')?.value || 'unknown',
+    provider_class: document.getElementById('providerClass')?.value.trim() || null,
+    device: {
+      ...((existing || {}).device || {}),
+      category: document.getElementById('providerDeviceCategory')?.value || 'unknown',
+      vendor: document.getElementById('providerDeviceVendor')?.value.trim() || null,
+      model: document.getElementById('providerDeviceModel')?.value.trim() || null,
+      memory_gb: mem || null,
+      shared: !!document.getElementById('providerDeviceShared')?.checked,
+    },
+    host: {
+      ...((existing || {}).host || {}),
+      kind: document.getElementById('providerHostKind')?.value || 'unknown',
+      os: document.getElementById('providerHostOs')?.value.trim() || null,
+      arch: document.getElementById('providerHostArch')?.value.trim() || null,
+    },
+    accelerators: (document.getElementById('providerAccelerators')?.value || '').split(',').map(x=>x.trim()).filter(Boolean),
+  };
+}
+function fillProviderRuntimeFields(runtime={}) {
+  const d = runtime.device || {}, h = runtime.host || {};
+  const set = (id, val) => { const el=document.getElementById(id); if (el) el.value = val ?? ''; };
+  set('providerExecutionType', runtime.execution_type || runtime.executionType || 'unknown');
+  set('providerClass', runtime.provider_class || runtime.providerClass || '');
+  set('providerDeviceCategory', d.category || 'unknown');
+  set('providerDeviceVendor', d.vendor || '');
+  set('providerDeviceModel', d.model || '');
+  set('providerDeviceMemory', d.memory_gb || d.memoryGB || '');
+  const shared = document.getElementById('providerDeviceShared'); if (shared) shared.checked = !!d.shared;
+  set('providerHostKind', h.kind || 'unknown');
+  set('providerHostOs', h.os || '');
+  set('providerHostArch', h.arch || '');
+  set('providerAccelerators', Array.isArray(runtime.accelerators) ? runtime.accelerators.join(', ') : '');
+}
+
 function renderProviders() {
   const el = document.getElementById('providers'); if (!el) return; el.innerHTML = '';
-  for (const [name,p] of Object.entries(config.providers || {})) {
+  const entries = Object.entries(config.providers || {});
+  if (!entries.length) { el.innerHTML = '<div class="empty-events">No providers configured yet.</div>'; return; }
+  for (const [name,p] of entries) {
     const status = providerStatus(p);
-    const row = document.createElement('div'); row.className='row provider-row';
-    row.innerHTML = `<div class="provider-main"><b>${name}</b> <span class="pill ${providerStatusClass(status)}">${status}</span><br><span class="muted">${p.type} ${p.base_url || ''}</span>${p.last_error ? `<br><span class="muted failed-text">${p.last_error}</span>` : ''}<div class="remote-models muted" id="providerModels_${name}">${p.enabled === false ? 'provider disabled' : 'checking endpoint…'}</div></div>`;
+    const r = providerRuntime(p);
+    const h = providerHost(p);
+    const card = document.createElement('div'); card.className='provider-card';
+    card.innerHTML = `
+      <div class="provider-card-head">
+        <div class="provider-title-block"><h3>${escapeHtml(name)}</h3><span class="muted">${escapeHtml(p.type || 'provider')}</span></div>
+        <span class="pill ${providerStatusClass(status)}">${escapeHtml(status)}</span>
+      </div>
+      <div class="provider-device-panel">
+        <b>${escapeHtml(fmtProviderDevice(p))}</b>
+        <small>${escapeHtml(r.execution_type || r.executionType || 'unknown')} inference · ${escapeHtml(h.kind || 'unknown host')}${h.os ? ` · ${escapeHtml(h.os)}` : ''}${h.arch ? ` · ${escapeHtml(h.arch)}` : ''}</small>
+      </div>
+      <div class="provider-meta-line"><span>${escapeHtml(p.base_url || 'no base URL')}</span></div>
+      <div class="provider-pill-list">${providerCapabilityPills(p)}</div>
+      ${p.last_error ? `<div class="failed-text small-text">${escapeHtml(p.last_error)}</div>` : ''}
+      <div class="remote-models muted" id="providerModels_${name}">${p.enabled === false ? 'provider disabled' : 'checking endpoint…'}</div>`;
     const actions = document.createElement('div'); actions.className='provider-actions button-row';
     const label = document.createElement('label'); label.className='switch'; label.title='Connect/disconnect provider';
     const input = document.createElement('input'); input.type='checkbox'; input.checked = p.enabled !== false && status === 'connected';
@@ -807,15 +881,13 @@ function renderProviders() {
     label.appendChild(input); label.appendChild(slider);
     if (p.type === 'lmstudio') {
       const inspect=document.createElement('button'); inspect.textContent='Inspect'; inspect.className='ghost-button'; inspect.onclick=(ev)=>{ ev.stopPropagation(); inspectLmStudioProvider(name).catch(e=>alert(e.message)); };
-      const script=document.createElement('button'); script.textContent='Companion script'; script.className='ghost-button'; script.onclick=(ev)=>{ ev.stopPropagation(); showLmStudioCompanionScript(name).catch(e=>alert(e.message)); };
-      const load=document.createElement('button'); load.textContent='Load model'; load.className='ghost-button'; load.onclick=(ev)=>{ ev.stopPropagation(); lmStudioLoadModel(name).catch(e=>alert(e.message)); };
-      const unload=document.createElement('button'); unload.textContent='Unload'; unload.className='ghost-button'; unload.onclick=(ev)=>{ ev.stopPropagation(); lmStudioUnloadModel(name).catch(e=>alert(e.message)); };
-      const download=document.createElement('button'); download.textContent='Download model'; download.className='ghost-button'; download.onclick=(ev)=>{ ev.stopPropagation(); lmStudioDownloadModel(name).catch(e=>alert(e.message)); };
-      actions.appendChild(inspect); actions.appendChild(script); actions.appendChild(load); actions.appendChild(unload); actions.appendChild(download);
+      const script=document.createElement('button'); script.textContent='Companion'; script.className='ghost-button'; script.onclick=(ev)=>{ ev.stopPropagation(); showLmStudioCompanionScript(name).catch(e=>alert(e.message)); };
+      const load=document.createElement('button'); load.textContent='Load'; load.className='ghost-button'; load.onclick=(ev)=>{ ev.stopPropagation(); lmStudioLoadModel(name).catch(e=>alert(e.message)); };
+      actions.appendChild(inspect); actions.appendChild(script); actions.appendChild(load);
     }
     const edit=document.createElement('button'); edit.textContent='Edit'; edit.onclick=(ev)=>{ ev.stopPropagation(); openProviderModal(name); };
     const del=document.createElement('button'); del.textContent='Delete'; del.className='danger-button'; del.onclick=(ev)=>{ ev.stopPropagation(); deleteProvider(name).catch(e=>alert(e.message)); };
-    actions.appendChild(label); actions.appendChild(edit); actions.appendChild(del); row.appendChild(actions); el.appendChild(row);
+    actions.appendChild(label); actions.appendChild(edit); actions.appendChild(del); card.appendChild(actions); el.appendChild(card);
     if (p.enabled !== false) refreshProviderModelPreview(name).catch(()=>{});
   }
 }
@@ -1013,7 +1085,7 @@ function setModalStatus(id, value='') {
 }
 function openProviderModal(name='') {
   if (name) fillProviderForm(name); else {
-    providerName.value=''; if (document.getElementById('providerPreset')) providerPreset.value='custom-openai'; providerType.value='openai-compatible'; providerBaseUrl.value=''; providerApiKeyEnv.value=''; providerApiKey.value=''; providerTimeout.value=30;
+    providerName.value=''; if (document.getElementById('providerPreset')) providerPreset.value='custom-openai'; providerType.value='openai-compatible'; providerBaseUrl.value=''; providerApiKeyEnv.value=''; providerApiKey.value=''; providerTimeout.value=30; fillProviderRuntimeFields({});
   }
   setModalStatus('providerModalStatus');
   const modal = document.getElementById('providerModal');
@@ -1039,7 +1111,7 @@ function fillProviderForm(name) {
   const p = config.providers?.[name]; if (!p) return;
   if (document.getElementById('providerPreset')) providerPreset.value='';
   providerName.value = name; providerType.value = p.type || 'openai-compatible'; providerBaseUrl.value = p.base_url || '';
-  providerApiKeyEnv.value = p.api_key_env || ''; providerApiKey.value = p.api_key || ''; providerTimeout.value = p.timeout_seconds || 30;
+  providerApiKeyEnv.value = p.api_key_env || ''; providerApiKey.value = p.api_key || ''; providerTimeout.value = p.timeout_seconds || 30; fillProviderRuntimeFields(p.runtime || {});
 }
 function fillModelForm(name) {
   const m = config.models?.[name]; if (!m) return;
@@ -2414,6 +2486,7 @@ async function saveProviderFromForm() {
     default_headers: existing.default_headers || {},
     enabled: existing.enabled ?? false,
     status: existing.status || 'disabled',
+    runtime: collectProviderRuntimeFields(existing.runtime || {}),
   };
   await persistConfigAndReload('providerFormResult', `Saved provider ${providerName.value.trim()}`);
   setModalStatus('providerModalStatus', 'Saved');
