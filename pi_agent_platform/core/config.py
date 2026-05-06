@@ -180,6 +180,14 @@ class WorkspaceProfile(BaseModel):
     is_default: bool = False
 
 
+class SourceUpdateConfig(BaseModel):
+    enabled: bool = True
+    packages_manifest_url: str = "https://raw.githubusercontent.com/pac-labs/packages/main/packages.json"
+    repository: str = "https://github.com/pac-labs/packages"
+    check_on_startup: bool = True
+    cache_minutes: int = 30
+
+
 class RuntimeConfig(BaseModel):
     mode: str = "local"
     command_timeout_seconds: int = 300
@@ -226,6 +234,7 @@ class AppConfig(BaseModel):
     agent_profiles: dict[str, AgentProfile] = Field(default_factory=dict)
     workspaces: dict[str, WorkspaceProfile] = Field(default_factory=dict)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
+    source_updates: SourceUpdateConfig = Field(default_factory=SourceUpdateConfig)
     controller_harness: ControllerHarnessConfig = Field(default_factory=ControllerHarnessConfig)
 
 

@@ -2,10 +2,14 @@
 """Generate PAC release artifacts for GitHub Releases.
 
 Outputs:
-  dist/pac-full-<version>.zip
-  dist/pac-patch-<version>.zip
+  dist/pac-full.zip
+  dist/pac-patch.zip
   dist/PAC_RELEASE_MANIFEST.json
-  dist/PAC_UPDATE_DIFF-<version>.diff when a previous git ref exists
+  dist/PAC_UPDATE_DIFF.diff when a previous git ref exists
+
+GitHub is the version authority. The workflow writes the generated version into
+VERSION/PAC_CHANGELOG inside the checked-out workspace before this script runs,
+but artifact filenames stay stable to avoid local/manual version skew.
 
 The patch artifact is intentionally a complete, webUI-safe PAC app package.
 PAC's updater replaces project-owned directories from the uploaded root; a
@@ -104,7 +108,7 @@ def changed_files(previous_ref: str | None) -> list[str]:
 
 def write_update_diff(ver: str, previous_ref: str | None) -> Path:
     """Write the update diff asset. It is git-style when Git history is available."""
-    out = DIST / f"PAC_UPDATE_DIFF-{ver}.diff"
+    out = DIST / "PAC_UPDATE_DIFF.diff"
     if git_available() and previous_ref:
         diff = run(["git", "diff", "--binary", f"{previous_ref}..HEAD"], check=False)
         if diff.strip():
@@ -208,7 +212,7 @@ def write_packages_seed_zip(ver: str) -> Path:
         shutil.rmtree(seed_dir)
     seed_dir.mkdir(parents=True, exist_ok=True)
     run([sys.executable, "scripts/generate-package-repo.py", "--source", str(ROOT), "--out", str(seed_dir), "--version", ver])
-    out = DIST / f"pac-packages-seed-{ver}.zip"
+    out = DIST / "pac-packages-seed.zip"
     with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         for p in sorted(seed_dir.rglob("*")):
             if p.is_file() and p.suffix not in EXCLUDE_SUFFIXES and not any(part in EXCLUDES for part in p.relative_to(seed_dir).parts):
@@ -235,8 +239,8 @@ def main() -> int:
     changelog = ensure_changelog(ver)
 
     DIST.mkdir(exist_ok=True)
-    full = DIST / f"pac-full-{ver}.zip"
-    patch = DIST / f"pac-patch-{ver}.zip"
+    full = DIST / "pac-full.zip"
+    patch = DIST / "pac-patch.zip"
     write_zip(full)
     write_zip(patch)
     packages_seed = write_packages_seed_zip(ver)

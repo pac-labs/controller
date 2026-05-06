@@ -73,6 +73,7 @@ jobs:
           ref: main
           fetch-depth: 0
           path: controller
+          token: ${{ secrets.push_token || github.token }}
 
       - name: Checkout PR diff source
         uses: actions/checkout@v4
@@ -121,8 +122,8 @@ jobs:
             node --check pi_agent_platform/web/app.js
           fi
           python3 scripts/generate-pac-release.py --version "$(tr -d '[:space:]' < VERSION)"
-          unzip -t "dist/pac-full-$(tr -d '[:space:]' < VERSION).zip"
-          unzip -t "dist/pac-patch-$(tr -d '[:space:]' < VERSION).zip"
+          unzip -t dist/pac-full.zip
+          unzip -t dist/pac-patch.zip
 
       - name: Commit and push to main
         shell: bash
@@ -133,8 +134,8 @@ jobs:
             echo "No changes after applying diff."
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "pac-sync[bot]"
+          git config user.email "pac-sync[bot]@users.noreply.github.com"
           git add .
           git commit -m "Apply PAC diff from PR #${{ steps.pr.outputs.number }}" -m "${{ steps.pr.outputs.title }}"
           git push origin HEAD:main

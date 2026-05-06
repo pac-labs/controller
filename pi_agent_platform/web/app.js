@@ -2338,6 +2338,8 @@ if (document.getElementById('connectProviderForm')) connectProviderForm.onclick=
 if (document.getElementById('saveModel')) saveModel.onclick=()=>saveModelFromForm().catch(e=>paneError('Model save failed', e.message));
 if (document.getElementById('testModelForm')) testModelForm.onclick=()=>testModelFromForm().catch(e=>paneError('Model test failed', e.message));
 if (document.getElementById('modelProvider')) modelProvider.onchange=()=>updateLmStudioModelControls();
+const checkSourceUpdatesBtn = document.getElementById('checkSourceUpdates');
+if (checkSourceUpdatesBtn) checkSourceUpdatesBtn.onclick = checkSourceOnlineUpdates;
 if (document.getElementById('loadLmStudioModel')) loadLmStudioModel.onclick=()=>loadLmStudioModelFromForm().catch(e=>paneError('LM Studio load failed', e.message));
 if (document.getElementById('unloadLmStudioModel')) unloadLmStudioModel.onclick=()=>unloadLmStudioModelFromForm().catch(e=>paneError('LM Studio unload failed', e.message));
 if (document.getElementById('inspectLmStudioModel')) inspectLmStudioModel.onclick=()=>inspectLmStudioModelFromForm().catch(e=>paneError('LM Studio inspect failed', e.message));
@@ -2658,6 +2660,37 @@ async function refreshDashboardMetricsOnStartup() {
     setTimeout(() => loadDashboardMetrics().catch(e => { if (delay === 0) paneError('Dashboard metrics could not load', e.message || String(e)); }), delay);
   }
 }
+async function checkSourceOnlineUpdates(){
+  const status = document.getElementById('sourceUpdateStatus');
+  const box = document.getElementById('sourceOnlineUpdates');
+  if (status) status.textContent = 'Checking pac-labs/packages…';
+  if (box) box.innerHTML = '<div class="muted">Checking online source module repository…</div>';
+  const result = await runWithPaneError(() => api('/v1/sources/online-updates'), 'Source module update check failed');
+  if (!result) return;
+  if (status) status.textContent = result.ok ? `${result.update_count || 0} update(s) available` : 'check failed';
+  renderSourceOnlineUpdates(result);
+  emitUiEvent(result.ok ? 'source_online_updates_checked' : 'source_online_updates_failed', result.ok ? `Source module updates checked: ${result.update_count || 0} available` : 'Source module update check failed', result);
+}
+
+function renderSourceOnlineUpdates(result){
+  const box = document.getElementById('sourceOnlineUpdates');
+  if (!box) return;
+  if (!result.ok) {
+    box.innerHTML = `<div class="pack-summary warn-summary">Could not check source modules</div><div class="muted small-text">${escapeHtml(result.error || 'Unknown error')}</div>`;
+    return;
+  }
+  const updates = result.updates || [];
+  const repo = result.repository || 'pac-labs/packages';
+  const checked = result.checked_at ? new Date(result.checked_at).toLocaleString() : 'now';
+  if (!updates.length) {
+    box.innerHTML = `<div class="pack-summary strong-summary">Source modules are current</div><div class="muted small-text">Checked ${escapeHtml(repo)} at ${escapeHtml(checked)}.</div>`;
+    return;
+  }
+  const rows = updates.map(u => `<tr><td><code>${escapeHtml(u.source_path || u.id || '-')}</code><div class="muted small-text">${escapeHtml(u.description || '')}</div></td><td>${escapeHtml(u.local_version || 'not installed')}</td><td>${escapeHtml(u.remote_version || result.packages_version || 'latest')}</td><td><span class="pill ${u.status === 'new' ? 'ok-pill' : 'warn-pill'}">${escapeHtml(u.status || 'update')}</span></td></tr>`).join('');
+  box.innerHTML = `<div class="pack-summary strong-summary">${updates.length} source module update(s) available</div><div class="muted small-text">Checked ${escapeHtml(repo)} at ${escapeHtml(checked)}. Apply by downloading/importing the packages release or seed zip.</div><table class="compact-table"><thead><tr><th>Module</th><th>Local</th><th>Online</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+
 async function init(){ setupTabs(); setupEventsRail(); await loadConfig(); await loadSessions(); await loadApprovals(); await loadRunners(); refreshDashboardMetricsOnStartup(); await loadGlobalEvents(true); loadMcpBuildStatus().catch(()=>{}); await loadBinaryFolderFilters().catch(()=>{}); await loadSourceBinaryArtifacts().catch(()=>{}); updateSourceActions(); }
 init().catch(e=>paneError('PAC UI could not load', e.message || String(e)));
 

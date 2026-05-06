@@ -1,0 +1,5 @@
+GitHub-owned versioning and online source module update discovery
+- Release workflow now derives the release version from GitHub tags or explicit workflow input.
+- Release artifacts use stable filenames to avoid local/manual version skew.
+- Added online source module update discovery against pac-labs/packages packages.json.
+- Settings updates panel now shows new/updated source modules separately from app updates.

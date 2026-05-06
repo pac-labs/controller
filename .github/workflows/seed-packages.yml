@@ -12,7 +12,6 @@ on:
     branches:
       - main
     paths:
-      - VERSION
       - binaries/**
       - containers/**
       - plugins/**
@@ -32,19 +31,28 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: controller
+          fetch-depth: 0
 
       - name: Checkout packages
         uses: actions/checkout@v4
         with:
           repository: ${{ inputs.packages_repo || 'pac-labs/packages' }}
-          token: ${{ secrets.PAC_PACKAGES_TOKEN }}
+          token: ${{ secrets.push_token || github.token }}
           path: packages
+          fetch-depth: 0
 
       - name: Generate package repository contents
         shell: bash
         run: |
           set -euo pipefail
-          version="$(tr -d '[:space:]' < controller/VERSION)"
+          cd controller
+          latest="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 || true)"
+          if [ -n "$latest" ]; then
+            version="${latest#v}"
+          else
+            version="$(tr -d '[:space:]' < VERSION 2>/dev/null || echo '0.0.0')"
+          fi
+          cd ..
           python3 controller/scripts/generate-package-repo.py --source controller --out packages --version "$version"
 
       - name: Commit package repository changes
@@ -56,8 +64,8 @@ jobs:
             echo "No package changes to publish."
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "pac-sync[bot]"
+          git config user.email "pac-sync[bot]@users.noreply.github.com"
           git add .
-          git commit -m "Seed PAC packages from controller ${GITHUB_SHA::7}"
+          git commit -m "Sync PAC packages from controller ${GITHUB_SHA::7}"
           git push

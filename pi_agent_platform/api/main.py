@@ -35,7 +35,7 @@ from pi_agent_platform.core.maintenance import run_endpoint_maintenance
 from pi_agent_platform.core.providers import effective_context, model_card, provider_public, test_model, test_provider, list_provider_models, sync_models_from_provider, lmstudio_inspect_provider, lmstudio_load_model, lmstudio_unload_model, lmstudio_download_model, lmstudio_companion_script
 from pi_agent_platform.core.store import store
 from pi_agent_platform.core.artifacts import write_artifact, list_artifacts, task_artifact_dir, safe_artifact_path
-from pi_agent_platform.core.source_library import ensure_source_library, list_tree as source_list_tree, read_text as source_read_text, write_text as source_write_text, make_archive as source_make_archive, build_container as source_build_container, build_binary as source_build_binary, list_binary_artifacts as source_list_binary_artifacts, binary_artifact_path as source_binary_artifact_path, delete_binary_artifact as source_delete_binary_artifact, prune_binary_artifacts as source_prune_binary_artifacts, inspect_feature_pack as source_inspect_feature_pack, apply_feature_pack as source_apply_feature_pack, create_entry as source_create_entry, rename_entry as source_rename_entry, delete_entry as source_delete_entry
+from pi_agent_platform.core.source_library import ensure_source_library, list_tree as source_list_tree, read_text as source_read_text, write_text as source_write_text, make_archive as source_make_archive, build_container as source_build_container, build_binary as source_build_binary, list_binary_artifacts as source_list_binary_artifacts, binary_artifact_path as source_binary_artifact_path, delete_binary_artifact as source_delete_binary_artifact, prune_binary_artifacts as source_prune_binary_artifacts, inspect_feature_pack as source_inspect_feature_pack, apply_feature_pack as source_apply_feature_pack, create_entry as source_create_entry, rename_entry as source_rename_entry, delete_entry as source_delete_entry, fetch_online_package_updates as source_fetch_online_package_updates
 
 
 def _model_available(model_name: str) -> tuple[bool, str | None]:
@@ -1109,6 +1109,7 @@ def get_config(_auth: None = Depends(require_auth)) -> dict[str, Any]:
         'server': config.server.model_dump(),
         'runtime': config.runtime.model_dump(),
         'controller_harness': config.controller_harness.model_dump(),
+        'source_updates': config.source_updates.model_dump(),
         'auth': config.auth.model_dump(exclude={'dev_token'}),
         'tls': config.tls.model_dump() if hasattr(config, 'tls') else {},
         'service': config.service.model_dump() if hasattr(config, 'service') else {'mode': 'user', 'name': 'pacp'},
@@ -1164,6 +1165,7 @@ def update_config(payload: ConfigUpdateRequest, _auth: None = Depends(require_au
         'server': config.server.model_dump(),
         'runtime': config.runtime.model_dump(),
         'controller_harness': config.controller_harness.model_dump(),
+        'source_updates': config.source_updates.model_dump(),
         'auth': config.auth.model_dump(exclude={'dev_token'}),
         'tls': config.tls.model_dump() if hasattr(config, 'tls') else {},
         'service': config.service.model_dump() if hasattr(config, 'service') else {'mode': 'user', 'name': 'pacp'},
@@ -2936,6 +2938,18 @@ def apply_source_feature_pack(background_tasks: BackgroundTasks, payload: Source
         raise HTTPException(status_code=400, detail=str(exc))
     store.add_event(Event(session_id='system', type='feature_pack_applied', message=f'Feature update applied: {len(result.get("components", []))} source folders', data=result))
     path.unlink(missing_ok=True)
+    return result
+
+
+
+
+@app.get('/v1/sources/online-updates')
+def check_source_online_updates(manifest_url: str | None = None, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    url = manifest_url or getattr(config.source_updates, 'packages_manifest_url', None)
+    result = source_fetch_online_package_updates(url)
+    event_type = 'source_online_updates_checked' if result.get('ok') else 'source_online_updates_failed'
+    message = f"Source package updates checked: {result.get('update_count', 0)} available" if result.get('ok') else f"Source package update check failed: {result.get('error', 'unknown error')}"
+    store.add_event(Event(session_id='system', type=event_type, message=message, data=result))
     return result
 
 

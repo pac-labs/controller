@@ -1,0 +1,4 @@
+- Switched controller/package synchronization workflows to use the GitHub `push_token` secret.
+- Added package repository sync during controller release creation.
+- Fixed the diff-apply workflow validation to use stable artifact names.
+- Documented the two-repository sync model and token permissions.

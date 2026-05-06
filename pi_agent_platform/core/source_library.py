@@ -758,3 +758,123 @@ def prune_binary_artifacts(project: str | None = None, keep_versions: int = 1, d
                     continue
             deleted.append(record)
     return {'ok': True, 'dry_run': dry_run, 'keep_versions': keep_versions, 'deleted_count': len(deleted), 'deleted_bytes': sum(int(r.get('size') or 0) for r in deleted), 'deleted': deleted, 'kept_count': len(kept)}
+
+# --- Online source/package update discovery ---------------------------------------
+
+_DEFAULT_PACKAGES_MANIFEST = "https://raw.githubusercontent.com/pac-labs/packages/main/packages.json"
+
+
+def _component_identity_from_path(path: str | None) -> str:
+    return str(path or '').strip().strip('/').replace('\\', '/')
+
+
+def _component_version_tuple(value: str | None) -> tuple[int, int, int, str] | None:
+    if not value:
+        return None
+    match = re.search(r'(\d+)\.(\d+)\.(\d+)(.*)', str(value).strip())
+    if not match:
+        return None
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3)), match.group(4) or '')
+
+
+def _version_is_newer(remote: str | None, local: str | None) -> bool:
+    rv = _component_version_tuple(remote)
+    lv = _component_version_tuple(local)
+    if rv and lv:
+        return rv > lv
+    if remote and not local:
+        return True
+    return bool(remote and local and str(remote) != str(local))
+
+
+def _local_component_inventory() -> dict[str, dict[str, Any]]:
+    ensure_source_library()
+    inventory: dict[str, dict[str, Any]] = {}
+    for root_name in sorted(_FEATURE_TOP_LEVEL):
+        base = source_root() / root_name
+        if not base.exists():
+            continue
+        candidates = [base] if root_name in {'scripts', 'docs'} else [p for p in base.iterdir() if p.is_dir() and not p.name.startswith('.')]
+        for folder in candidates:
+            try:
+                rel = folder.relative_to(source_root()).as_posix()
+            except Exception:
+                continue
+            meta = _read_component_metadata(folder, Path(rel)) or {}
+            version = _read_version_file(folder) or meta.get('version')
+            identity = _component_identity_from_path(meta.get('source_path') or rel)
+            inventory[identity] = {
+                'id': meta.get('id') or identity.replace('/', ':'),
+                'source_path': identity,
+                'title': meta.get('title') or folder.name.replace('-', ' ').title(),
+                'description': meta.get('description'),
+                'kind': meta.get('kind') or root_name,
+                'version': version,
+                'component': meta,
+            }
+    return inventory
+
+
+def fetch_online_package_updates(manifest_url: str | None = None, timeout_seconds: int = 10) -> dict[str, Any]:
+    """Fetch pac-labs/packages manifest and compare with the local source library."""
+    import urllib.request
+    url = (manifest_url or _DEFAULT_PACKAGES_MANIFEST).strip()
+    if not url:
+        url = _DEFAULT_PACKAGES_MANIFEST
+    started = datetime.now(timezone.utc).isoformat()
+    req = urllib.request.Request(url, headers={'User-Agent': 'PAC-source-update-check/1'})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_seconds) as response:
+            raw = response.read(2 * 1024 * 1024)
+            status = getattr(response, 'status', 200)
+    except Exception as exc:
+        return {'ok': False, 'status': 'failed', 'manifest_url': url, 'checked_at': started, 'error': str(exc), 'updates': [], 'update_count': 0}
+    try:
+        manifest = json.loads(raw.decode('utf-8', errors='replace'))
+    except Exception as exc:
+        return {'ok': False, 'status': 'failed', 'manifest_url': url, 'checked_at': started, 'error': f'Invalid packages manifest JSON: {exc}', 'updates': [], 'update_count': 0}
+    local = _local_component_inventory()
+    updates: list[dict[str, Any]] = []
+    components = manifest.get('components') if isinstance(manifest, dict) else []
+    if not isinstance(components, list):
+        components = []
+    for remote in components:
+        if not isinstance(remote, dict):
+            continue
+        source_path = _component_identity_from_path(remote.get('source_path') or remote.get('path') or remote.get('id'))
+        if not source_path:
+            continue
+        local_record = local.get(source_path)
+        remote_version = str(remote.get('version') or manifest.get('version') or '').strip() or None
+        local_version = local_record.get('version') if local_record else None
+        status_text = 'new' if not local_record else ('update' if _version_is_newer(remote_version, local_version) else 'current')
+        if status_text in {'new', 'update'}:
+            updates.append({
+                'status': status_text,
+                'source_path': source_path,
+                'id': remote.get('id') or source_path.replace('/', ':'),
+                'title': remote.get('title') or (local_record or {}).get('title') or Path(source_path).name.replace('-', ' ').title(),
+                'description': remote.get('description') or (local_record or {}).get('description'),
+                'kind': remote.get('kind') or source_path.split('/', 1)[0],
+                'local_version': local_version,
+                'remote_version': remote_version,
+                'repository': remote.get('repository') or manifest.get('repository'),
+                'homepage': remote.get('homepage'),
+                'maintainers': remote.get('maintainers') or [],
+                'tags': remote.get('tags') or [],
+            })
+    return {
+        'ok': True,
+        'status': 'ok',
+        'schema': 'pac.source-updates.v1',
+        'manifest_url': url,
+        'repository': manifest.get('repository') if isinstance(manifest, dict) else None,
+        'packages_version': manifest.get('version') if isinstance(manifest, dict) else None,
+        'checked_at': datetime.now(timezone.utc).isoformat(),
+        'generated_at': manifest.get('generated_at') if isinstance(manifest, dict) else None,
+        'local_count': len(local),
+        'remote_count': len(components),
+        'update_count': len(updates),
+        'updates': sorted(updates, key=lambda r: (r['status'] != 'update', r.get('source_path') or '')),
+    }
+

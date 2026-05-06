@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release. Defaults to VERSION file."
+        description: "Version to release. Empty means bump patch from latest v* tag."
         required: false
         type: string
       create_tag:
@@ -16,8 +16,6 @@ on:
     branches:
       - main
     paths:
-      - VERSION
-      - VERSION_CURRENT.md
       - PAC_CHANGELOG.json
       - changed_*.txt
       - pi_agent_platform/**
@@ -29,6 +27,7 @@ on:
       - config/**
       - pyproject.toml
       - requirements.txt
+      - .github/workflows/**
 
 permissions:
   contents: write
@@ -41,41 +40,46 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.push_token || github.token }}
 
-      - name: Resolve version
+      - name: Resolve GitHub release version
         id: version
         shell: bash
         run: |
           set -euo pipefail
-          version="${{ inputs.version }}"
-          if [ -z "$version" ]; then
-            version="$(tr -d '[:space:]' < VERSION)"
+          requested="${{ inputs.version }}"
+          if [ -n "$requested" ]; then
+            version="$requested"
+          else
+            latest="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 || true)"
+            if [ -z "$latest" ]; then
+              base="$(tr -d '[:space:]' < VERSION 2>/dev/null || echo '1.0.0')"
+              version="$base"
+            else
+              IFS=. read -r major minor patch <<< "${latest#v}"
+              version="${major}.${minor}.$((patch + 1))"
+            fi
           fi
           if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Invalid PAC version: $version" >&2
             exit 1
           fi
+          echo "$version" > VERSION
+          echo "$version" > VERSION_CURRENT.md
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
-
-      - name: Validate version markers
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="${{ steps.version.outputs.version }}"
-          test "$(tr -d '[:space:]' < VERSION)" = "$version"
-          test "$(tr -d '[:space:]' < VERSION_CURRENT.md)" = "$version"
 
       - name: Generate release artifacts
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/generate-pac-release.py --version "${{ steps.version.outputs.version }}"
-          unzip -t "dist/pac-full-${{ steps.version.outputs.version }}.zip"
-          unzip -t "dist/pac-patch-${{ steps.version.outputs.version }}.zip"
+          unzip -t dist/pac-full.zip
+          unzip -t dist/pac-patch.zip
+          unzip -t dist/pac-packages-seed.zip
 
       - name: Create tag
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_tag != false }}
+        if: ${{ github.event_name == 'push' || inputs.create_tag != false }}
         shell: bash
         run: |
           set -euo pipefail
@@ -83,24 +87,45 @@ jobs:
           if git rev-parse "$tag" >/dev/null 2>&1; then
             echo "Tag $tag already exists."
           else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git config user.name "pac-sync[bot]"
+            git config user.email "pac-sync[bot]@users.noreply.github.com"
             git tag -a "$tag" -m "PAC $tag"
             git push origin "$tag"
           fi
 
-      - name: Publish GitHub release
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: PAC ${{ steps.version.outputs.version }}
           generate_release_notes: true
           files: |
-            dist/pac-full-${{ steps.version.outputs.version }}.zip
-            dist/pac-patch-${{ steps.version.outputs.version }}.zip
+            dist/pac-full.zip
+            dist/pac-patch.zip
+            dist/pac-packages-seed.zip
             dist/PAC_RELEASE_MANIFEST.json
-            dist/pac-packages-seed-${{ steps.version.outputs.version }}.zip
-            dist/PAC_UPDATE_DIFF-${{ steps.version.outputs.version }}.diff
-            PAC_CHANGELOG.json
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            dist/PAC_UPDATE_DIFF.diff
+
+      - name: Checkout packages repository
+        uses: actions/checkout@v4
+        with:
+          repository: pac-labs/packages
+          token: ${{ secrets.push_token || github.token }}
+          path: packages
+          fetch-depth: 0
+
+      - name: Sync packages repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/generate-package-repo.py --source . --out packages --version "${{ steps.version.outputs.version }}"
+          cd packages
+          if git diff --quiet -- .; then
+            echo "No package changes to publish."
+            exit 0
+          fi
+          git config user.name "pac-sync[bot]"
+          git config user.email "pac-sync[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Sync PAC packages for ${{ steps.version.outputs.tag }}"
+          git push

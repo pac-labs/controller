@@ -416,7 +416,11 @@
         "Added Apply PAC diff PR workflow for label-gated pull requests containing .pac/diffs/*.diff.",
         "Added PAC diff validation script to reject binary patches, path traversal, env/secret files, and self-modification of the privileged apply workflow.",
         "Release generation now emits PAC_UPDATE_DIFF-<version>.diff when Git history is available.",
-        "Added documentation for the diff PR handoff flow."
+        "Added documentation for the diff PR handoff flow.",
+        "GitHub workflows now use the repository secret push_token for tag pushes, diff rollouts, and package repository synchronization.",
+        "Controller releases now also sync source/package folders into pac-labs/packages.",
+        "Package seed workflow now uses stable artifacts and push_token-based cross-repository checkout.",
+        "Diff rollout validation now checks stable release artifact names."
       ]
     }
   ],
