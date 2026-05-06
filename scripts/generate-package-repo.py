@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 from datetime import datetime, timezone
@@ -16,6 +17,27 @@ def ignore(dir_path: str, names: list[str]) -> set[str]:
     return {name for name in names if name.startswith(".") or name in IGNORE_NAMES or name.endswith(".pyc")}
 
 
+
+def component_content_hash(folder: Path) -> str:
+    digest = hashlib.sha256()
+    files: list[Path] = []
+    for item in folder.rglob('*'):
+        if not item.is_file():
+            continue
+        rel = item.relative_to(folder)
+        if any(part in IGNORE_NAMES or part.startswith('.') for part in rel.parts):
+            continue
+        if item.suffix == '.pyc' or item.name.endswith('~'):
+            continue
+        files.append(item)
+    for item in sorted(files, key=lambda p: p.relative_to(folder).as_posix()):
+        rel = item.relative_to(folder).as_posix()
+        digest.update(rel.encode('utf-8'))
+        digest.update(b'\0')
+        digest.update(item.read_bytes())
+        digest.update(b'\0')
+    return 'sha256:' + digest.hexdigest()
+
 def read_json(path: Path) -> dict:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -27,13 +49,15 @@ def read_json(path: Path) -> dict:
 def collect_components(out: Path) -> list[dict]:
     components: list[dict] = []
     for meta_path in sorted(out.glob("**/pac-component.json")):
-        if any(part in IGNORE_NAMES for part in meta_path.parts):
+        rel_path = meta_path.relative_to(out)
+        if any(part in IGNORE_NAMES for part in rel_path.parts):
             continue
         rel = meta_path.parent.relative_to(out).as_posix()
         data = read_json(meta_path)
         data.setdefault("id", rel.replace("/", ":"))
         data.setdefault("title", meta_path.parent.name.replace("-", " ").title())
         data.setdefault("source_path", rel)
+        data["content_hash"] = component_content_hash(meta_path.parent)
         components.append(data)
     return sorted(components, key=lambda c: str(c.get("source_path", c.get("id", ""))))
 

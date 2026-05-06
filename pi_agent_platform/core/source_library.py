@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -764,6 +765,34 @@ def prune_binary_artifacts(project: str | None = None, keep_versions: int = 1, d
 _DEFAULT_PACKAGES_MANIFEST = "https://raw.githubusercontent.com/pac-labs/packages/main/packages.json"
 
 
+
+def _component_content_hash(folder: Path) -> str | None:
+    """Return a stable hash for package source content, ignoring generated/cache files."""
+    if not folder.exists() or not folder.is_dir():
+        return None
+    digest = hashlib.sha256()
+    ignored_dirs = {'.git', '__pycache__', 'node_modules', 'dist', 'build', '.pytest_cache'}
+    files: list[Path] = []
+    for item in folder.rglob('*'):
+        if not item.is_file():
+            continue
+        rel = item.relative_to(folder)
+        if any(part in ignored_dirs or part.startswith('.') for part in rel.parts):
+            continue
+        if item.suffix in {'.pyc', '.pyo', '.swp'} or item.name.endswith('~'):
+            continue
+        files.append(item)
+    for item in sorted(files, key=lambda p: p.relative_to(folder).as_posix()):
+        rel = item.relative_to(folder).as_posix()
+        digest.update(rel.encode('utf-8'))
+        digest.update(b'\0')
+        try:
+            digest.update(item.read_bytes())
+        except Exception:
+            continue
+        digest.update(b'\0')
+    return 'sha256:' + digest.hexdigest()
+
 def _component_identity_from_path(path: str | None) -> str:
     return str(path or '').strip().strip('/').replace('\\', '/')
 
@@ -810,6 +839,7 @@ def _local_component_inventory() -> dict[str, dict[str, Any]]:
                 'description': meta.get('description'),
                 'kind': meta.get('kind') or root_name,
                 'version': version,
+                'content_hash': _component_content_hash(folder),
                 'component': meta,
             }
     return inventory
@@ -845,9 +875,21 @@ def fetch_online_package_updates(manifest_url: str | None = None, timeout_second
         if not source_path:
             continue
         local_record = local.get(source_path)
-        remote_version = str(remote.get('version') or manifest.get('version') or '').strip() or None
+        remote_version = str(remote.get('version') or '').strip() or None
         local_version = local_record.get('version') if local_record else None
-        status_text = 'new' if not local_record else ('update' if _version_is_newer(remote_version, local_version) else 'current')
+        remote_hash = str(remote.get('content_hash') or remote.get('sha256') or '').strip() or None
+        local_hash = local_record.get('content_hash') if local_record else None
+        if not local_record:
+            status_text = 'new'
+        elif remote_hash and local_hash:
+            status_text = 'update' if remote_hash != local_hash else 'current'
+        elif remote_version or local_version:
+            status_text = 'update' if _version_is_newer(remote_version, local_version) else 'current'
+        else:
+            # The repository-level package version changes on every controller release.
+            # Do not treat that as a module update when the module has no explicit
+            # version/hash of its own.
+            status_text = 'current'
         if status_text in {'new', 'update'}:
             updates.append({
                 'status': status_text,
@@ -858,6 +900,8 @@ def fetch_online_package_updates(manifest_url: str | None = None, timeout_second
                 'kind': remote.get('kind') or source_path.split('/', 1)[0],
                 'local_version': local_version,
                 'remote_version': remote_version,
+                'local_hash': local_hash,
+                'remote_hash': remote_hash,
                 'repository': remote.get('repository') or manifest.get('repository'),
                 'homepage': remote.get('homepage'),
                 'maintainers': remote.get('maintainers') or [],

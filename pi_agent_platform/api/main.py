@@ -84,15 +84,23 @@ _CONTROLLER_WRAPPER_SUPERVISOR_ACTIVE = False
 _CONTROLLER_PI_CONTAINER_NAME = "pac-pi-dev-controller"
 
 def _read_pac_version() -> str:
-    for candidate in [Path(__file__).resolve().parents[2] / 'VERSION', Path(__file__).resolve().parents[1] / 'VERSION']:
+    # GitHub release builds are the version authority. The workflow writes the
+    # tag version into VERSION before packaging, while service environments may
+    # also inject PAC_VERSION/PAC_RELEASE_VERSION for containerized runs. Prefer
+    # those explicit runtime values, then fall back to packaged markers.
+    for env_name in ('PAC_VERSION', 'PAC_RELEASE_VERSION', 'GITHUB_REF_NAME'):
+        value = os.environ.get(env_name, '').strip()
+        if value:
+            return value[1:] if value.startswith('v') and re.match(r'^v\d+\.\d+\.\d+$', value) else value
+    for candidate in [Path(__file__).resolve().parents[2] / 'VERSION', Path(__file__).resolve().parents[2] / 'VERSION_CURRENT.md', Path(__file__).resolve().parents[1] / 'VERSION']:
         try:
             if candidate.exists():
-                value = candidate.read_text(encoding='utf-8').strip()
+                value = candidate.read_text(encoding='utf-8').strip().splitlines()[0].strip()
                 if value:
-                    return value
+                    return value[1:] if value.startswith('v') and re.match(r'^v\d+\.\d+\.\d+$', value) else value
         except Exception:
             pass
-    return '1.0.79'
+    return 'dev'
 
 
 config = load_config()
@@ -3014,26 +3022,38 @@ def _agent_enablement_state(runner: Runner, requested: bool | None = None) -> di
     wants_agent = bool(requested if requested is not None else runner.metadata.get('agent_enabled'))
     main_server = bool(runner.metadata.get('local_control_plane') or runner.metadata.get('controller_pi_dev'))
     required = main_server or bool(runner.metadata.get('pi_dev_required'))
+    wrapper_installed = wrapper_ok
+    pi_installed = pi_ok
+    wrapper_running = bool(wrapper_process.get('running'))
+    pi_running = bool(pi_daemon.get('running'))
     if main_server:
-        wrapper_ok = wrapper_ok and bool(wrapper_process.get('running'))
-        pi_ok = pi_ok and bool(pi_daemon.get('running'))
+        wrapper_ok = wrapper_installed and wrapper_running
+        pi_ok = pi_installed and pi_running
     # PAC runs pi.dev through the container image plus the local PAC wrapper. Host
     # Node.js is useful for native pi.dev work, but it is not a blocker when the
     # container runtime path is available.
     enabled = wants_agent and wrapper_ok and pi_ok
     if enabled:
         status = 'ready'
-        detail = 'pi.dev can run on this endpoint through the PAC wrapper.'
-    elif wants_agent and not wrapper_ok:
+        detail = 'pi.dev is running on this endpoint through the PAC wrapper.'
+    elif main_server and wrapper_installed and pi_installed and (not wrapper_running or not pi_running):
+        status = 'starting'
+        missing = []
+        if not wrapper_running:
+            missing.append('PAC wrapper process')
+        if not pi_running:
+            missing.append('pi.dev daemon')
+        detail = 'Installed, but not running yet: ' + ', '.join(missing)
+    elif wants_agent and not wrapper_installed:
         status = 'blocked'
         detail = wrapper.get('reason') or 'Install the PAC wrapper binary before pi.dev workloads can run.'
-    elif wants_agent and not pi_ok:
+    elif wants_agent and not pi_installed:
         status = 'blocked'
         detail = pi_container.get('reason') or 'Install the local pi.dev runtime image before workloads can run.'
-    elif required and not wrapper_ok:
+    elif required and not wrapper_installed:
         status = 'blocked'
         detail = wrapper.get('reason') or 'The main PAC server requires the PAC wrapper.'
-    elif required and not pi_ok:
+    elif required and not pi_installed:
         status = 'blocked'
         detail = pi_container.get('reason') or 'The main PAC server requires pi.dev to be installed.'
     else:
@@ -3048,8 +3068,12 @@ def _agent_enablement_state(runner: Runner, requested: bool | None = None) -> di
         'node_available': node_ok,
         'node_version': req.get('node_version'),
         'pac_wrapper_available': wrapper_ok,
+        'pac_wrapper_installed': wrapper_installed,
+        'pac_wrapper_running': wrapper_running,
         'pac_wrapper': wrapper,
         'pi_available': pi_ok,
+        'pi_installed': pi_installed,
+        'pi_running': pi_running,
         'pi_container': pi_container,
         'detail': detail,
     }
@@ -3061,10 +3085,13 @@ def _normalise_endpoint_metadata(runner: Runner, requested_agent: bool | None = 
     runner.metadata['command_channel'] = {'mode': 'controller-queued', 'can_send': True, 'can_receive': True}
     runner.metadata['agent_enablement'] = _agent_enablement_state(runner, requested_agent)
     runner.metadata['agent_enabled'] = bool(runner.metadata['agent_enablement'].get('enabled'))
-    if runner.metadata['agent_enablement']['status'] == 'blocked':
+    state = runner.metadata['agent_enablement']['status']
+    if state == 'blocked':
         runner.metadata['agent_runtime'] = _runtime_agent_state('endpoint-agent', 'blocked', runner.metadata['agent_enablement']['detail'], requires=['pac-wrapper', 'pi.dev'])
-    elif runner.metadata['agent_enablement']['status'] == 'ready':
+    elif state == 'ready':
         runner.metadata['agent_runtime'] = _runtime_agent_state('endpoint-agent', 'ready', runner.metadata['agent_enablement']['detail'], requires=['pac-wrapper', 'pi.dev'])
+    elif state == 'starting':
+        runner.metadata['agent_runtime'] = _runtime_agent_state('endpoint-agent', 'starting', runner.metadata['agent_enablement']['detail'], requires=['pac-wrapper', 'pi.dev'])
     else:
         runner.metadata.setdefault('agent_runtime', _runtime_agent_state('remote-execution', 'available', 'Remote command execution is available.'))
     return runner
