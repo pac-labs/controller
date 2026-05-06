@@ -1,0 +1,1129 @@
+diff -ruN '--exclude=dist' pacorig/.github/workflows/apply-diff-pr.yml pacwork/.github/workflows/apply-diff-pr.yml
+--- pacorig/.github/workflows/apply-diff-pr.yml	2026-05-05 23:27:36.000000000 +0000
++++ pacwork/.github/workflows/apply-diff-pr.yml	2026-05-06 07:07:04.000000000 +0000
+@@ -73,6 +73,7 @@
+           ref: main
+           fetch-depth: 0
+           path: controller
++          token: ${{ secrets.push_token || github.token }}
+ 
+       - name: Checkout PR diff source
+         uses: actions/checkout@v4
+@@ -121,8 +122,8 @@
+             node --check pi_agent_platform/web/app.js
+           fi
+           python3 scripts/generate-pac-release.py --version "$(tr -d '[:space:]' < VERSION)"
+-          unzip -t "dist/pac-full-$(tr -d '[:space:]' < VERSION).zip"
+-          unzip -t "dist/pac-patch-$(tr -d '[:space:]' < VERSION).zip"
++          unzip -t dist/pac-full.zip
++          unzip -t dist/pac-patch.zip
+ 
+       - name: Commit and push to main
+         shell: bash
+@@ -133,8 +134,8 @@
+             echo "No changes after applying diff."
+             exit 0
+           fi
+-          git config user.name "github-actions[bot]"
+-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
++          git config user.name "pac-sync[bot]"
++          git config user.email "pac-sync[bot]@users.noreply.github.com"
+           git add .
+           git commit -m "Apply PAC diff from PR #${{ steps.pr.outputs.number }}" -m "${{ steps.pr.outputs.title }}"
+           git push origin HEAD:main
+diff -ruN '--exclude=dist' pacorig/.github/workflows/pac-release.yml pacwork/.github/workflows/pac-release.yml
+--- pacorig/.github/workflows/pac-release.yml	2026-05-05 23:39:24.000000000 +0000
++++ pacwork/.github/workflows/pac-release.yml	2026-05-06 07:07:28.000000000 +0000
+@@ -40,6 +40,7 @@
+         uses: actions/checkout@v4
+         with:
+           fetch-depth: 0
++          token: ${{ secrets.push_token || github.token }}
+ 
+       - name: Resolve GitHub release version
+         id: version
+@@ -78,7 +79,7 @@
+           unzip -t dist/pac-packages-seed.zip
+ 
+       - name: Create tag
+-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_tag != false }}
++        if: ${{ github.event_name == 'push' || inputs.create_tag != false }}
+         shell: bash
+         run: |
+           set -euo pipefail
+@@ -86,8 +87,8 @@
+           if git rev-parse "$tag" >/dev/null 2>&1; then
+             echo "Tag $tag already exists."
+           else
+-            git config user.name "github-actions[bot]"
+-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
++            git config user.name "pac-sync[bot]"
++            git config user.email "pac-sync[bot]@users.noreply.github.com"
+             git tag -a "$tag" -m "PAC $tag"
+             git push origin "$tag"
+           fi
+@@ -104,3 +105,27 @@
+             dist/pac-packages-seed.zip
+             dist/PAC_RELEASE_MANIFEST.json
+             dist/PAC_UPDATE_DIFF.diff
++
++      - name: Checkout packages repository
++        uses: actions/checkout@v4
++        with:
++          repository: pac-labs/packages
++          token: ${{ secrets.push_token || github.token }}
++          path: packages
++          fetch-depth: 0
++
++      - name: Sync packages repository
++        shell: bash
++        run: |
++          set -euo pipefail
++          python3 scripts/generate-package-repo.py --source . --out packages --version "${{ steps.version.outputs.version }}"
++          cd packages
++          if git diff --quiet -- .; then
++            echo "No package changes to publish."
++            exit 0
++          fi
++          git config user.name "pac-sync[bot]"
++          git config user.email "pac-sync[bot]@users.noreply.github.com"
++          git add .
++          git commit -m "Sync PAC packages for ${{ steps.version.outputs.tag }}"
++          git push
+diff -ruN '--exclude=dist' pacorig/.github/workflows/seed-packages.yml pacwork/.github/workflows/seed-packages.yml
+--- pacorig/.github/workflows/seed-packages.yml	2026-05-05 23:39:38.000000000 +0000
++++ pacwork/.github/workflows/seed-packages.yml	2026-05-06 07:07:00.000000000 +0000
+@@ -31,13 +31,15 @@
+         uses: actions/checkout@v4
+         with:
+           path: controller
++          fetch-depth: 0
+ 
+       - name: Checkout packages
+         uses: actions/checkout@v4
+         with:
+           repository: ${{ inputs.packages_repo || 'pac-labs/packages' }}
+-          token: ${{ secrets.PAC_PACKAGES_TOKEN }}
++          token: ${{ secrets.push_token || github.token }}
+           path: packages
++          fetch-depth: 0
+ 
+       - name: Generate package repository contents
+         shell: bash
+@@ -62,8 +64,8 @@
+             echo "No package changes to publish."
+             exit 0
+           fi
+-          git config user.name "github-actions[bot]"
+-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
++          git config user.name "pac-sync[bot]"
++          git config user.email "pac-sync[bot]@users.noreply.github.com"
+           git add .
+-          git commit -m "Seed PAC packages from controller ${GITHUB_SHA::7}"
++          git commit -m "Sync PAC packages from controller ${GITHUB_SHA::7}"
+           git push
+diff -ruN '--exclude=dist' pacorig/PAC_CHANGELOG.json pacwork/PAC_CHANGELOG.json
+--- pacorig/PAC_CHANGELOG.json	2026-05-05 23:40:28.000000000 +0000
++++ pacwork/PAC_CHANGELOG.json	2026-05-06 09:02:29.163467721 +0000
+@@ -1,6 +1,6 @@
+ {
+   "schema": "pac.changelog.v1",
+-  "current_version": "1.0.98",
++  "current_version": "1.0.99",
+   "entries": [
+     {
+       "version": "1.0.49",
+@@ -416,8 +416,40 @@
+         "Added Apply PAC diff PR workflow for label-gated pull requests containing .pac/diffs/*.diff.",
+         "Added PAC diff validation script to reject binary patches, path traversal, env/secret files, and self-modification of the privileged apply workflow.",
+         "Release generation now emits PAC_UPDATE_DIFF-<version>.diff when Git history is available.",
+-        "Added documentation for the diff PR handoff flow."
++        "Added documentation for the diff PR handoff flow.",
++        "GitHub workflows now use the repository secret push_token for tag pushes, diff rollouts, and package repository synchronization.",
++        "Controller releases now also sync source/package folders into pac-labs/packages.",
++        "Package seed workflow now uses stable artifacts and push_token-based cross-repository checkout.",
++        "Diff rollout validation now checks stable release artifact names."
+       ]
++    },
++    {
++      "version": "github-managed",
++      "title": "Runtime/update consistency",
++      "changes": [
++        "Treat installed-but-not-running local pi.dev as starting instead of blocked.",
++        "Compare source modules by component hash/explicit component version, not repository release version.",
++        "Prefer GitHub-injected runtime version markers and environment variables for UI version display."
++      ]
++    },
++    {
++      "version": "1.0.99",
++      "title": "PAC v1.0.99",
++      "changes": [
++        "PAC release artifact generated by GitHub Actions."
++      ]
++    },
++    {
++      "version": "github-managed",
++      "title": "Online updates and Let\u2019s Encrypt DNS certificates",
++      "changes": [
++        "Added Settings-based online PAC app update check against the GitHub release manifest.",
++        "Added changelog preview and one-click online app patch apply/restart.",
++        "Kept manual update file upload under the online update controls.",
++        "Added Let\u2019s Encrypt DNS-01 configuration and certificate request action for internal/non-public addresses.",
++        "Runtime startup now prefers an installed Let\u2019s Encrypt fullchain/key before falling back to the PAC local CA."
++      ],
++      "generated_at": "2026-05-06T09:01:44.149422+00:00"
+     }
+   ],
+   "versions": [
+diff -ruN '--exclude=dist' pacorig/VERSION pacwork/VERSION
+--- pacorig/VERSION	2026-05-05 23:28:14.000000000 +0000
++++ pacwork/VERSION	2026-05-06 07:40:00.000000000 +0000
+@@ -1 +1 @@
+-1.0.98
++1.0.99
+diff -ruN '--exclude=dist' pacorig/VERSION_CURRENT.md pacwork/VERSION_CURRENT.md
+--- pacorig/VERSION_CURRENT.md	2026-05-05 23:28:14.000000000 +0000
++++ pacwork/VERSION_CURRENT.md	2026-05-06 07:40:00.000000000 +0000
+@@ -1 +1 @@
+-1.0.98
++1.0.99
+diff -ruN '--exclude=dist' pacorig/changed_github-push-token-sync.txt pacwork/changed_github-push-token-sync.txt
+--- pacorig/changed_github-push-token-sync.txt	1970-01-01 00:00:00.000000000 +0000
++++ pacwork/changed_github-push-token-sync.txt	2026-05-06 07:07:04.000000000 +0000
+@@ -0,0 +1,4 @@
++- Switched controller/package synchronization workflows to use the GitHub `push_token` secret.
++- Added package repository sync during controller release creation.
++- Fixed the diff-apply workflow validation to use stable artifact names.
++- Documented the two-repository sync model and token permissions.
+diff -ruN '--exclude=dist' pacorig/changed_online-app-updates-letsencrypt.txt pacwork/changed_online-app-updates-letsencrypt.txt
+--- pacorig/changed_online-app-updates-letsencrypt.txt	1970-01-01 00:00:00.000000000 +0000
++++ pacwork/changed_online-app-updates-letsencrypt.txt	2026-05-06 09:01:41.538809930 +0000
+@@ -0,0 +1,5 @@
++- Added Settings-based online PAC app update check against the GitHub release manifest.
++- Added changelog preview and one-click online app patch apply/restart.
++- Kept manual update file upload under the online update controls.
++- Added Let’s Encrypt DNS-01 configuration and certificate request action for internal/non-public addresses.
++- Runtime startup now prefers an installed Let’s Encrypt fullchain/key before falling back to the PAC local CA.
+diff -ruN '--exclude=dist' pacorig/changed_runtime-update-consistency.txt pacwork/changed_runtime-update-consistency.txt
+--- pacorig/changed_runtime-update-consistency.txt	1970-01-01 00:00:00.000000000 +0000
++++ pacwork/changed_runtime-update-consistency.txt	2026-05-06 07:39:56.000000000 +0000
+@@ -0,0 +1,3 @@
++- Treat installed-but-not-running local pi.dev as starting instead of blocked.
++- Compare source modules by component hash/explicit component version, not repository release version.
++- Prefer GitHub-injected runtime version markers and environment variables for UI version display.
+diff -ruN '--exclude=dist' pacorig/docs/github-push-token-sync.md pacwork/docs/github-push-token-sync.md
+--- pacorig/docs/github-push-token-sync.md	1970-01-01 00:00:00.000000000 +0000
++++ pacwork/docs/github-push-token-sync.md	2026-05-06 07:07:04.000000000 +0000
+@@ -0,0 +1,46 @@
++# GitHub push token and package synchronization
++
++PAC uses two repositories:
++
++- `pac-labs/controller` for the controller application and release workflow.
++- `pac-labs/packages` for the generated package/source repository used by the Source Library.
++
++The controller repository workflow expects a repository secret named `push_token`.
++
++## What the token is used for
++
++`push_token` is used by GitHub Actions when PAC needs to write outside the default workflow scope:
++
++- creating or pushing release tags from `pac-labs/controller`;
++- publishing release assets from the controller workflow;
++- checking out and pushing generated package/source folders into `pac-labs/packages`;
++- applying approved PAC diff PRs back onto `main`.
++
++The token should have write access to both repositories. A fine-grained GitHub token should be limited to:
++
++- `pac-labs/controller`: contents read/write, pull requests read;
++- `pac-labs/packages`: contents read/write.
++
++## Source package sync
++
++The package sync workflow mirrors these controller folders into `pac-labs/packages`:
++
++- `binaries/`
++- `containers/`
++- `plugins/`
++- `scripts/`
++- `docs/`
++
++Each component can include `pac-component.json` metadata. The generated packages repository also gets a root `packages.json` manifest that PAC can read for online source-module update discovery.
++
++## Naming
++
++The controller keeps stable local artifact names to avoid local version skew:
++
++- `pac-full.zip`
++- `pac-patch.zip`
++- `pac-packages-seed.zip`
++- `PAC_RELEASE_MANIFEST.json`
++- `PAC_UPDATE_DIFF.diff`
++
++GitHub tags and release manifests are the version authority.
+diff -ruN '--exclude=dist' pacorig/docs/online-app-updates-and-letsencrypt.md pacwork/docs/online-app-updates-and-letsencrypt.md
+--- pacorig/docs/online-app-updates-and-letsencrypt.md	1970-01-01 00:00:00.000000000 +0000
++++ pacwork/docs/online-app-updates-and-letsencrypt.md	2026-05-06 09:01:44.307544494 +0000
+@@ -0,0 +1,17 @@
++# Online app updates and Let’s Encrypt certificates
++
++PAC can check the `pac-labs/controller` GitHub release manifest from Settings, show the release changelog, download the published `pac-patch.zip`, apply it through the same local updater used by manual uploads, and restart PAC after the app code is replaced.
++
++Manual update uploads remain available below the online update controls for local patch/full zips and source package zips.
++
++For certificates, PAC still supports the local PAC CA for internal `.local`/mDNS names. If a real browser-trusted certificate is needed for a hostname that is not externally reachable, use Let’s Encrypt with DNS-01 validation. HTTP-01 validation is not suitable for non-public controller addresses.
++
++The Settings page stores:
++
++- domain
++- email
++- DNS provider
++- DNS credentials file path
++- staging flag
++
++The certificate request action expects `certbot` and the matching DNS plugin to be installed on the PAC host. When a certificate is issued successfully, PAC copies the fullchain/key into `~/.pacp/config/tls/letsencrypt/` and schedules a restart. On startup PAC prefers that certificate when present, then falls back to the local PAC CA.
+Binary files pacorig/pi_agent_platform/__pycache__/__init__.cpython-313.pyc and pacwork/pi_agent_platform/__pycache__/__init__.cpython-313.pyc differ
+Binary files pacorig/pi_agent_platform/__pycache__/runner.cpython-313.pyc and pacwork/pi_agent_platform/__pycache__/runner.cpython-313.pyc differ
+Binary files pacorig/pi_agent_platform/api/__pycache__/__init__.cpython-313.pyc and pacwork/pi_agent_platform/api/__pycache__/__init__.cpython-313.pyc differ
+Binary files pacorig/pi_agent_platform/api/__pycache__/main.cpython-313.pyc and pacwork/pi_agent_platform/api/__pycache__/main.cpython-313.pyc differ
+diff -ruN '--exclude=dist' pacorig/pi_agent_platform/api/main.py pacwork/pi_agent_platform/api/main.py
+--- pacorig/pi_agent_platform/api/main.py	2026-05-05 23:39:50.000000000 +0000
++++ pacwork/pi_agent_platform/api/main.py	2026-05-06 09:00:29.514314310 +0000
+@@ -16,6 +16,8 @@
+ import zipfile
+ import socket
+ import ipaddress
++import urllib.request
++import urllib.error
+ from datetime import datetime, timezone, timedelta
+ from pathlib import Path
+ from typing import Any
+@@ -84,15 +86,23 @@
+ _CONTROLLER_PI_CONTAINER_NAME = "pac-pi-dev-controller"
+ 
+ def _read_pac_version() -> str:
+-    for candidate in [Path(__file__).resolve().parents[2] / 'VERSION', Path(__file__).resolve().parents[1] / 'VERSION']:
++    # GitHub release builds are the version authority. The workflow writes the
++    # tag version into VERSION before packaging, while service environments may
++    # also inject PAC_VERSION/PAC_RELEASE_VERSION for containerized runs. Prefer
++    # those explicit runtime values, then fall back to packaged markers.
++    for env_name in ('PAC_VERSION', 'PAC_RELEASE_VERSION', 'GITHUB_REF_NAME'):
++        value = os.environ.get(env_name, '').strip()
++        if value:
++            return value[1:] if value.startswith('v') and re.match(r'^v\d+\.\d+\.\d+$', value) else value
++    for candidate in [Path(__file__).resolve().parents[2] / 'VERSION', Path(__file__).resolve().parents[2] / 'VERSION_CURRENT.md', Path(__file__).resolve().parents[1] / 'VERSION']:
+         try:
+             if candidate.exists():
+-                value = candidate.read_text(encoding='utf-8').strip()
++                value = candidate.read_text(encoding='utf-8').strip().splitlines()[0].strip()
+                 if value:
+-                    return value
++                    return value[1:] if value.startswith('v') and re.match(r'^v\d+\.\d+\.\d+$', value) else value
+         except Exception:
+             pass
+-    return '1.0.79'
++    return 'dev'
+ 
+ 
+ config = load_config()
+@@ -770,6 +780,20 @@
+     mode: str
+ 
+ 
++class OnlineAppUpdateApplyRequest(BaseModel):
++    asset: str = "patch"
++    restart_after_update: bool = True
++    manifest_url: str | None = None
++
++
++class LetsEncryptRequest(BaseModel):
++    domain: str | None = None
++    email: str | None = None
++    staging: bool | None = None
++    dns_provider: str | None = None
++    credentials_file: str | None = None
++
++
+ def require_auth(authorization: str | None = Header(default=None)) -> None:
+     if not config.auth.enabled:
+         return
+@@ -1109,6 +1133,7 @@
+         'server': config.server.model_dump(),
+         'runtime': config.runtime.model_dump(),
+         'controller_harness': config.controller_harness.model_dump(),
++        'app_updates': config.app_updates.model_dump() if hasattr(config, 'app_updates') else {},
+         'source_updates': config.source_updates.model_dump(),
+         'auth': config.auth.model_dump(exclude={'dev_token'}),
+         'tls': config.tls.model_dump() if hasattr(config, 'tls') else {},
+@@ -1165,6 +1190,7 @@
+         'server': config.server.model_dump(),
+         'runtime': config.runtime.model_dump(),
+         'controller_harness': config.controller_harness.model_dump(),
++        'app_updates': config.app_updates.model_dump() if hasattr(config, 'app_updates') else {},
+         'source_updates': config.source_updates.model_dump(),
+         'auth': config.auth.model_dump(exclude={'dev_token'}),
+         'tls': config.tls.model_dump() if hasattr(config, 'tls') else {},
+@@ -1204,6 +1230,119 @@
+     return {'ok': True, 'public_url': config.server.public_url, 'mdns_enabled': config.mdns.enabled, 'message': 'Endpoint connection settings saved. Rebuild endpoint/agent binaries to compile this URL in.'}
+ 
+ 
++
++# ---- Online controller update discovery -------------------------------------------
++
++_APP_UPDATE_CACHE: dict[str, Any] = {}
++
++
++def _version_tuple(value: str | None) -> tuple[int, ...]:
++    raw = str(value or '').strip().lstrip('v')
++    parts: list[int] = []
++    for chunk in re.split(r'[^0-9]+', raw):
++        if chunk == '':
++            continue
++        try:
++            parts.append(int(chunk))
++        except ValueError:
++            break
++    return tuple(parts) if parts else (0,)
++
++
++def _manifest_asset_url(manifest_url: str, asset_name: str) -> str:
++    base = manifest_url.rsplit('/', 1)[0]
++    return f'{base}/{asset_name}'
++
++
++def _fetch_json_url(url: str, timeout: int = 20) -> dict[str, Any]:
++    if not url or not url.startswith(('https://', 'http://')):
++        raise ValueError('Manifest URL must start with https:// or http://')
++    req = urllib.request.Request(url, headers={'User-Agent': f'PAC/{PAC_VERSION}', 'Accept': 'application/json'})
++    with urllib.request.urlopen(req, timeout=timeout) as response:  # noqa: S310 - user-configured release manifest URL
++        body = response.read(2 * 1024 * 1024)
++    data = json.loads(body.decode('utf-8'))
++    if not isinstance(data, dict):
++        raise ValueError('Manifest response was not a JSON object')
++    return data
++
++
++def _check_online_app_update(manifest_url: str | None = None, force: bool = False) -> dict[str, Any]:
++    app_updates = getattr(config, 'app_updates', None)
++    url = manifest_url or getattr(app_updates, 'latest_manifest_url', None)
++    if not url:
++        return {'ok': False, 'error': 'No app update manifest URL configured'}
++    cache_key = url
++    cache_minutes = max(0, int(getattr(app_updates, 'cache_minutes', 30) or 0)) if app_updates else 30
++    cached = _APP_UPDATE_CACHE.get(cache_key)
++    now = datetime.now(timezone.utc)
++    if cached and not force:
++        checked_at = cached.get('checked_at_dt')
++        if isinstance(checked_at, datetime) and cache_minutes and now - checked_at < timedelta(minutes=cache_minutes):
++            result = dict(cached.get('result') or {})
++            result['cached'] = True
++            return result
++    try:
++        manifest = _fetch_json_url(url)
++        remote_version = str(manifest.get('version') or manifest.get('release') or manifest.get('tag') or '').lstrip('v')
++        artifacts = manifest.get('artifacts') if isinstance(manifest.get('artifacts'), dict) else {}
++        patch_name = str(artifacts.get('patch') or getattr(app_updates, 'patch_asset_name', 'pac-patch.zip'))
++        full_name = str(artifacts.get('full') or getattr(app_updates, 'full_asset_name', 'pac-full.zip'))
++        changelog = manifest.get('changelog_entry') or manifest.get('changelog') or {}
++        current = PAC_VERSION
++        has_update = _version_tuple(remote_version) > _version_tuple(current)
++        result = {
++            'ok': True,
++            'repository': getattr(app_updates, 'repository', 'https://github.com/pac-labs/controller') if app_updates else 'https://github.com/pac-labs/controller',
++            'manifest_url': url,
++            'current_version': current,
++            'latest_version': remote_version or 'unknown',
++            'has_update': has_update,
++            'checked_at': now.isoformat(),
++            'artifacts': {
++                'patch': patch_name,
++                'full': full_name,
++                'patch_url': _manifest_asset_url(url, patch_name),
++                'full_url': _manifest_asset_url(url, full_name),
++                'changelog': artifacts.get('changelog') or 'PAC_CHANGELOG.json',
++            },
++            'changelog': changelog,
++            'manifest': manifest,
++            'cached': False,
++        }
++    except Exception as exc:
++        result = {'ok': False, 'error': str(exc), 'manifest_url': url, 'current_version': PAC_VERSION, 'checked_at': now.isoformat(), 'cached': False}
++    _APP_UPDATE_CACHE[cache_key] = {'checked_at_dt': now, 'result': result}
++    return result
++
++
++def _download_online_update_asset(update: dict[str, Any], asset: str) -> Path:
++    if not update.get('ok'):
++        raise HTTPException(status_code=502, detail=update.get('error') or 'Online update check failed')
++    artifacts = update.get('artifacts') or {}
++    key = 'full_url' if asset == 'full' else 'patch_url'
++    url = artifacts.get(key)
++    if not url:
++        raise HTTPException(status_code=400, detail=f'No {asset} update asset URL was found in the release manifest')
++    updates_dir = pacp_path('updates', 'downloads')
++    updates_dir.mkdir(parents=True, exist_ok=True)
++    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
++    filename = f'{stamp}-{Path(str(artifacts.get("full" if asset == "full" else "patch") or "pac-patch.zip")).name}'
++    target = updates_dir / filename
++    req = urllib.request.Request(str(url), headers={'User-Agent': f'PAC/{PAC_VERSION}', 'Accept': 'application/zip,application/octet-stream,*/*'})
++    try:
++        with urllib.request.urlopen(req, timeout=90) as response:  # noqa: S310 - URL comes from configured release manifest
++            with target.open('wb') as out:
++                shutil.copyfileobj(response, out, length=1024 * 1024)
++    except Exception as exc:
++        raise HTTPException(status_code=502, detail=f'Could not download {asset} update asset: {exc}') from exc
++    try:
++        with zipfile.ZipFile(target) as zf:
++            _safe_zip_members(zf)
++    except Exception as exc:
++        target.unlink(missing_ok=True)
++        raise HTTPException(status_code=400, detail=f'Downloaded update asset is not a valid PAC zip: {exc}') from exc
++    return target
++
+ # ---- Versioned package self-update -------------------------------------------------
+ 
+ def _app_dir() -> Path:
+@@ -1464,6 +1603,7 @@
+             pass
+     return {
+         'enabled': getattr(config, 'tls', None).enabled if getattr(config, 'tls', None) else True,
++        'mode': getattr(getattr(config, 'tls', None), 'mode', 'local-ca'),
+         'generated_now': generated,
+         'ca_cert_file': str(paths['ca_cert']),
+         'server_cert_file': str(paths['server_cert']),
+@@ -1474,6 +1614,7 @@
+         'server_valid_until': _cert_not_after(paths['server_cert']),
+         'ca_download_url': '/v1/tls/ca.pem',
+         'public_url': config.server.public_url,
++        'letsencrypt': _letsencrypt_status_payload(),
+     }
+ 
+ 
+@@ -1626,6 +1767,7 @@
+         'system_unit_exists': Path(paths['system_unit']).exists(),
+         'port': config.server.port,
+         'public_url': config.server.public_url,
++        'letsencrypt': _letsencrypt_status_payload(),
+     }
+     if _systemctl_available():
+         status['user_active'] = _run_quiet(['systemctl', '--user', 'is-active', service_name], timeout=5).get('stdout', '').strip() or 'unknown'
+@@ -1754,6 +1896,120 @@
+     _schedule_local_restart(background_tasks, f'PAC restart scheduled after switching service mode to {requested}')
+     return {'ok': all(r.get('ok') for r in results if r.get('returncode') is not None), 'mode': requested, 'results': results, 'restart_scheduled': True, 'status': _service_status_payload()}
+ 
++
++def _letsencrypt_paths() -> dict[str, Path]:
++    tls = getattr(config, 'tls', None)
++    cert_file = Path(getattr(tls, 'letsencrypt_cert_file', '~/.pacp/config/tls/letsencrypt/fullchain.pem')).expanduser()
++    key_file = Path(getattr(tls, 'letsencrypt_key_file', '~/.pacp/config/tls/letsencrypt/privkey.pem')).expanduser()
++    return {'cert': cert_file, 'key': key_file}
++
++
++def _letsencrypt_status_payload() -> dict[str, Any]:
++    tls = getattr(config, 'tls', None)
++    paths = _letsencrypt_paths()
++    return {
++        'configured': bool(getattr(tls, 'letsencrypt_domain', None) and getattr(tls, 'letsencrypt_email', None)),
++        'domain': getattr(tls, 'letsencrypt_domain', None),
++        'email': getattr(tls, 'letsencrypt_email', None),
++        'dns_provider': getattr(tls, 'letsencrypt_dns_provider', None),
++        'staging': bool(getattr(tls, 'letsencrypt_staging', False)),
++        'cert_file': str(paths['cert']),
++        'key_file': str(paths['key']),
++        'cert_exists': paths['cert'].exists(),
++        'key_exists': paths['key'].exists(),
++        'valid_until': _cert_not_after(paths['cert']),
++        'note': 'Use DNS-01 for non-public/internal addresses. HTTP-01 will not work unless the hostname is publicly reachable.',
++    }
++
++
++def _certbot_dns_plugin(provider: str | None) -> str | None:
++    if not provider:
++        return None
++    provider = provider.strip().lower().replace('_', '-')
++    mapping = {
++        'cloudflare': 'dns-cloudflare',
++        'route53': 'dns-route53',
++        'rfc2136': 'dns-rfc2136',
++        'digitalocean': 'dns-digitalocean',
++        'linode': 'dns-linode',
++        'ovh': 'dns-ovh',
++        'google': 'dns-google',
++    }
++    return mapping.get(provider, provider if provider.startswith('dns-') else None)
++
++
++@app.post('/v1/tls/letsencrypt/config')
++def save_letsencrypt_config(payload: LetsEncryptRequest, _auth: None = Depends(require_auth)) -> dict[str, Any]:
++    global config
++    if payload.domain is not None:
++        config.tls.letsencrypt_domain = payload.domain.strip() or None
++    if payload.email is not None:
++        config.tls.letsencrypt_email = payload.email.strip() or None
++    if payload.staging is not None:
++        config.tls.letsencrypt_staging = bool(payload.staging)
++    if payload.dns_provider is not None:
++        config.tls.letsencrypt_dns_provider = payload.dns_provider.strip() or None
++    if payload.credentials_file is not None:
++        config.tls.letsencrypt_dns_credentials_file = payload.credentials_file.strip() or None
++    config.tls.mode = 'letsencrypt-dns' if config.tls.letsencrypt_domain else config.tls.mode
++    save_config(config)
++    store.add_event(Event(session_id='system', type='letsencrypt_config_saved', message='Let\'s Encrypt DNS settings saved', data=_letsencrypt_status_payload()))
++    return {'ok': True, 'status': _letsencrypt_status_payload()}
++
++
++@app.post('/v1/tls/letsencrypt/request')
++def request_letsencrypt_certificate(background_tasks: BackgroundTasks, _auth: None = Depends(require_auth)) -> dict[str, Any]:
++    tls = getattr(config, 'tls', None)
++    domain = getattr(tls, 'letsencrypt_domain', None)
++    email = getattr(tls, 'letsencrypt_email', None)
++    provider = getattr(tls, 'letsencrypt_dns_provider', None)
++    credentials = getattr(tls, 'letsencrypt_dns_credentials_file', None)
++    plugin = _certbot_dns_plugin(provider)
++    if not domain or not email:
++        raise HTTPException(status_code=400, detail='Let\'s Encrypt domain and email are required')
++    if not plugin:
++        raise HTTPException(status_code=400, detail='Choose a supported DNS provider such as cloudflare, route53, rfc2136, digitalocean, linode, ovh, or google')
++    if not credentials or not Path(credentials).expanduser().exists():
++        raise HTTPException(status_code=400, detail='DNS credentials file is required and must exist on the PAC host')
++    if not shutil.which('certbot'):
++        raise HTTPException(status_code=501, detail='certbot is not installed on the PAC host yet. Install certbot plus its DNS plugin, then run this action again.')
++    paths = _letsencrypt_paths()
++    work_dir = pacp_path('config', 'tls', 'letsencrypt', 'work')
++    logs_dir = pacp_path('logs', 'letsencrypt')
++    config_dir = pacp_path('config', 'tls', 'letsencrypt', 'certbot')
++    for d in (paths['cert'].parent, work_dir, logs_dir, config_dir):
++        d.mkdir(parents=True, exist_ok=True)
++    cmd = [
++        'certbot', 'certonly', '--non-interactive', '--agree-tos', '--keep-until-expiring',
++        '--email', email, '-d', domain,
++        f'--{plugin}', f'--{plugin}-credentials', str(Path(credentials).expanduser()),
++        '--config-dir', str(config_dir), '--work-dir', str(work_dir), '--logs-dir', str(logs_dir),
++    ]
++    if bool(getattr(tls, 'letsencrypt_staging', False)):
++        cmd.append('--staging')
++    proc = subprocess.run(cmd, text=True, capture_output=True, timeout=240)
++    result = {'cmd': cmd, 'returncode': proc.returncode, 'stdout': _tail(proc.stdout or '', 4000), 'stderr': _tail(proc.stderr or '', 4000)}
++    live_dir = config_dir / 'live' / domain
++    fullchain = live_dir / 'fullchain.pem'
++    privkey = live_dir / 'privkey.pem'
++    if proc.returncode == 0 and fullchain.exists() and privkey.exists():
++        shutil.copy2(fullchain, paths['cert'])
++        shutil.copy2(privkey, paths['key'])
++        try:
++            paths['key'].chmod(0o600)
++        except Exception:
++            pass
++        config.tls.mode = 'letsencrypt-dns'
++        config.tls.server_cert_file = str(paths['cert'])
++        config.tls.server_key_file = str(paths['key'])
++        save_config(config)
++        store.add_event(Event(session_id='system', type='letsencrypt_certificate_installed', message=f'Let\'s Encrypt certificate installed for {domain}', data={**result, 'status': _letsencrypt_status_payload()}))
++        _schedule_local_restart(background_tasks, f'PAC restart scheduled after installing Let\'s Encrypt certificate for {domain}')
++        return {'ok': True, 'message': 'Certificate installed. PAC restart scheduled so HTTPS can use it.', 'result': result, 'status': _letsencrypt_status_payload(), 'restart_scheduled': True}
++    store.add_event(Event(session_id='system', type='letsencrypt_certificate_failed', message=f'Let\'s Encrypt request failed for {domain}', data=result))
++    raise HTTPException(status_code=500, detail=f'Let\'s Encrypt request failed: {_tail(proc.stderr or proc.stdout, 2000)}')
++
++
+ @app.get('/v1/tls/status')
+ def tls_status(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+     status = _ensure_tls_material()
+@@ -2943,6 +3199,33 @@
+ 
+ 
+ 
++
++@app.get('/v1/update/online')
++def check_online_app_update(manifest_url: str | None = None, force: bool = False, _auth: None = Depends(require_auth)) -> dict[str, Any]:
++    result = _check_online_app_update(manifest_url, force=force)
++    event_type = 'app_online_update_checked' if result.get('ok') else 'app_online_update_failed'
++    message = f"PAC app update checked: {result.get('current_version')} -> {result.get('latest_version')}" if result.get('ok') else f"PAC app update check failed: {result.get('error', 'unknown error')}"
++    store.add_event(Event(session_id='system', type=event_type, message=message, data={k: v for k, v in result.items() if k != 'manifest'}))
++    return result
++
++
++@app.post('/v1/update/online/apply')
++def apply_online_app_update(payload: OnlineAppUpdateApplyRequest, background_tasks: BackgroundTasks, _auth: None = Depends(require_auth)) -> dict[str, Any]:
++    update = _check_online_app_update(payload.manifest_url, force=True)
++    if not update.get('ok'):
++        raise HTTPException(status_code=502, detail=update.get('error') or 'Online update check failed')
++    if not update.get('has_update'):
++        return {'ok': True, 'status': 'already_current', 'message': 'PAC is already on the latest online version.', 'update': update}
++    asset = 'full' if payload.asset == 'full' else 'patch'
++    package_path = _download_online_update_asset(update, asset)
++    result = _apply_version_package_from_path(package_path, package_path.name, restart_after_update=payload.restart_after_update)
++    result.update({'ok': True, 'online_update': {k: v for k, v in update.items() if k != 'manifest'}, 'downloaded_package': str(package_path)})
++    if payload.restart_after_update:
++        _schedule_local_restart(background_tasks, f'PAC local restart scheduled after applying online app update: {package_path.name}')
++    store.add_event(Event(session_id='system', type='app_online_update_applied', message=f"PAC online update applied: {update.get('current_version')} -> {update.get('latest_version')}", data=result))
++    return result
++
++
+ @app.get('/v1/sources/online-updates')
+ def check_source_online_updates(manifest_url: str | None = None, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+     url = manifest_url or getattr(config.source_updates, 'packages_manifest_url', None)
+@@ -3014,26 +3297,38 @@
+     wants_agent = bool(requested if requested is not None else runner.metadata.get('agent_enabled'))
+     main_server = bool(runner.metadata.get('local_control_plane') or runner.metadata.get('controller_pi_dev'))
+     required = main_server or bool(runner.metadata.get('pi_dev_required'))
++    wrapper_installed = wrapper_ok
++    pi_installed = pi_ok
++    wrapper_running = bool(wrapper_process.get('running'))
++    pi_running = bool(pi_daemon.get('running'))
+     if main_server:
+-        wrapper_ok = wrapper_ok and bool(wrapper_process.get('running'))
+-        pi_ok = pi_ok and bool(pi_daemon.get('running'))
++        wrapper_ok = wrapper_installed and wrapper_running
++        pi_ok = pi_installed and pi_running
+     # PAC runs pi.dev through the container image plus the local PAC wrapper. Host
+     # Node.js is useful for native pi.dev work, but it is not a blocker when the
+     # container runtime path is available.
+     enabled = wants_agent and wrapper_ok and pi_ok
+     if enabled:
+         status = 'ready'
+-        detail = 'pi.dev can run on this endpoint through the PAC wrapper.'
+-    elif wants_agent and not wrapper_ok:
++        detail = 'pi.dev is running on this endpoint through the PAC wrapper.'
++    elif main_server and wrapper_installed and pi_installed and (not wrapper_running or not pi_running):
++        status = 'starting'
++        missing = []
++        if not wrapper_running:
++            missing.append('PAC wrapper process')
++        if not pi_running:
++            missing.append('pi.dev daemon')
++        detail = 'Installed, but not running yet: ' + ', '.join(missing)
++    elif wants_agent and not wrapper_installed:
+         status = 'blocked'
+         detail = wrapper.get('reason') or 'Install the PAC wrapper binary before pi.dev workloads can run.'
+-    elif wants_agent and not pi_ok:
++    elif wants_agent and not pi_installed:
+         status = 'blocked'
+         detail = pi_container.get('reason') or 'Install the local pi.dev runtime image before workloads can run.'
+-    elif required and not wrapper_ok:
++    elif required and not wrapper_installed:
+         status = 'blocked'
+         detail = wrapper.get('reason') or 'The main PAC server requires the PAC wrapper.'
+-    elif required and not pi_ok:
++    elif required and not pi_installed:
+         status = 'blocked'
+         detail = pi_container.get('reason') or 'The main PAC server requires pi.dev to be installed.'
+     else:
+@@ -3048,8 +3343,12 @@
+         'node_available': node_ok,
+         'node_version': req.get('node_version'),
+         'pac_wrapper_available': wrapper_ok,
++        'pac_wrapper_installed': wrapper_installed,
++        'pac_wrapper_running': wrapper_running,
+         'pac_wrapper': wrapper,
+         'pi_available': pi_ok,
++        'pi_installed': pi_installed,
++        'pi_running': pi_running,
+         'pi_container': pi_container,
+         'detail': detail,
+     }
+@@ -3061,10 +3360,13 @@
+     runner.metadata['command_channel'] = {'mode': 'controller-queued', 'can_send': True, 'can_receive': True}
+     runner.metadata['agent_enablement'] = _agent_enablement_state(runner, requested_agent)
+     runner.metadata['agent_enabled'] = bool(runner.metadata['agent_enablement'].get('enabled'))
+-    if runner.metadata['agent_enablement']['status'] == 'blocked':
++    state = runner.metadata['agent_enablement']['status']
++    if state == 'blocked':
+         runner.metadata['agent_runtime'] = _runtime_agent_state('endpoint-agent', 'blocked', runner.metadata['agent_enablement']['detail'], requires=['pac-wrapper', 'pi.dev'])
+-    elif runner.metadata['agent_enablement']['status'] == 'ready':
++    elif state == 'ready':
+         runner.metadata['agent_runtime'] = _runtime_agent_state('endpoint-agent', 'ready', runner.metadata['agent_enablement']['detail'], requires=['pac-wrapper', 'pi.dev'])
++    elif state == 'starting':
++        runner.metadata['agent_runtime'] = _runtime_agent_state('endpoint-agent', 'starting', runner.metadata['agent_enablement']['detail'], requires=['pac-wrapper', 'pi.dev'])
+     else:
+         runner.metadata.setdefault('agent_runtime', _runtime_agent_state('remote-execution', 'available', 'Remote command execution is available.'))
+     return runner
+Binary files pacorig/pi_agent_platform/core/__pycache__/__init__.cpython-313.pyc and pacwork/pi_agent_platform/core/__pycache__/__init__.cpython-313.pyc differ
+Binary files pacorig/pi_agent_platform/core/__pycache__/agent_loop.cpython-313.pyc and pacwork/pi_agent_platform/core/__pycache__/agent_loop.cpython-313.pyc differ
+Binary files pacorig/pi_agent_platform/core/__pycache__/artifacts.cpython-313.pyc and pacwork/pi_agent_platform/core/__pycache__/artifacts.cpython-313.pyc differ
+Binary files pacorig/pi_agent_platform/core/__pycache__/config.cpython-313.pyc and pacwork/pi_agent_platform/core/__pycache__/config.cpython-313.pyc differ
+Binary files pacorig/pi_agent_platform/core/__pycache__/context_manager.cpython-313.pyc and pacwork/pi_agent_platform/core/__pycache__/context_manager.cpython-313.pyc differ
+Binary files pacorig/pi_agent_platform/core/__pycache__/maintenance.cpython-313.pyc and pacwork/pi_agent_platform/core/__pycache__/maintenance.cpython-313.pyc differ
+Binary files pacorig/pi_agent_platform/core/__pycache__/models.cpython-313.pyc and pacwork/pi_agent_platform/core/__pycache__/models.cpython-313.pyc differ
+Binary files pacorig/pi_agent_platform/core/__pycache__/platform_home.cpython-313.pyc and pacwork/pi_agent_platform/core/__pycache__/platform_home.cpython-313.pyc differ
+Binary files pacorig/pi_agent_platform/core/__pycache__/providers.cpython-313.pyc and pacwork/pi_agent_platform/core/__pycache__/providers.cpython-313.pyc differ
+Binary files pacorig/pi_agent_platform/core/__pycache__/runner_discovery.cpython-313.pyc and pacwork/pi_agent_platform/core/__pycache__/runner_discovery.cpython-313.pyc differ
+Binary files pacorig/pi_agent_platform/core/__pycache__/runtime.cpython-313.pyc and pacwork/pi_agent_platform/core/__pycache__/runtime.cpython-313.pyc differ
+Binary files pacorig/pi_agent_platform/core/__pycache__/source_library.cpython-313.pyc and pacwork/pi_agent_platform/core/__pycache__/source_library.cpython-313.pyc differ
+Binary files pacorig/pi_agent_platform/core/__pycache__/store.cpython-313.pyc and pacwork/pi_agent_platform/core/__pycache__/store.cpython-313.pyc differ
+Binary files pacorig/pi_agent_platform/core/__pycache__/web_tools.cpython-313.pyc and pacwork/pi_agent_platform/core/__pycache__/web_tools.cpython-313.pyc differ
+diff -ruN '--exclude=dist' pacorig/pi_agent_platform/core/config.py pacwork/pi_agent_platform/core/config.py
+--- pacorig/pi_agent_platform/core/config.py	2026-05-05 23:38:16.000000000 +0000
++++ pacwork/pi_agent_platform/core/config.py	2026-05-06 08:58:21.588493499 +0000
+@@ -20,6 +20,14 @@
+ 
+ class TlsConfig(BaseModel):
+     enabled: bool = True
++    mode: Literal["local-ca", "letsencrypt-dns"] = "local-ca"
++    letsencrypt_email: str | None = None
++    letsencrypt_domain: str | None = None
++    letsencrypt_staging: bool = False
++    letsencrypt_dns_provider: str | None = None
++    letsencrypt_dns_credentials_file: str | None = None
++    letsencrypt_cert_file: str = "~/.pacp/config/tls/letsencrypt/fullchain.pem"
++    letsencrypt_key_file: str = "~/.pacp/config/tls/letsencrypt/privkey.pem"
+     ca_days: int = 10950
+     server_days: int = 825
+     endpoint_days: int = 825
+@@ -180,6 +188,16 @@
+     is_default: bool = False
+ 
+ 
++class AppUpdateConfig(BaseModel):
++    enabled: bool = True
++    repository: str = "https://github.com/pac-labs/controller"
++    latest_manifest_url: str = "https://github.com/pac-labs/controller/releases/latest/download/PAC_RELEASE_MANIFEST.json"
++    patch_asset_name: str = "pac-patch.zip"
++    full_asset_name: str = "pac-full.zip"
++    check_on_startup: bool = True
++    cache_minutes: int = 30
++
++
+ class SourceUpdateConfig(BaseModel):
+     enabled: bool = True
+     packages_manifest_url: str = "https://raw.githubusercontent.com/pac-labs/packages/main/packages.json"
+@@ -234,6 +252,7 @@
+     agent_profiles: dict[str, AgentProfile] = Field(default_factory=dict)
+     workspaces: dict[str, WorkspaceProfile] = Field(default_factory=dict)
+     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
++    app_updates: AppUpdateConfig = Field(default_factory=AppUpdateConfig)
+     source_updates: SourceUpdateConfig = Field(default_factory=SourceUpdateConfig)
+     controller_harness: ControllerHarnessConfig = Field(default_factory=ControllerHarnessConfig)
+ 
+diff -ruN '--exclude=dist' pacorig/pi_agent_platform/core/source_library.py pacwork/pi_agent_platform/core/source_library.py
+--- pacorig/pi_agent_platform/core/source_library.py	2026-05-05 23:38:36.000000000 +0000
++++ pacwork/pi_agent_platform/core/source_library.py	2026-05-06 07:39:38.000000000 +0000
+@@ -1,5 +1,6 @@
+ from __future__ import annotations
+ 
++import hashlib
+ import json
+ import os
+ import re
+@@ -764,6 +765,34 @@
+ _DEFAULT_PACKAGES_MANIFEST = "https://raw.githubusercontent.com/pac-labs/packages/main/packages.json"
+ 
+ 
++
++def _component_content_hash(folder: Path) -> str | None:
++    """Return a stable hash for package source content, ignoring generated/cache files."""
++    if not folder.exists() or not folder.is_dir():
++        return None
++    digest = hashlib.sha256()
++    ignored_dirs = {'.git', '__pycache__', 'node_modules', 'dist', 'build', '.pytest_cache'}
++    files: list[Path] = []
++    for item in folder.rglob('*'):
++        if not item.is_file():
++            continue
++        rel = item.relative_to(folder)
++        if any(part in ignored_dirs or part.startswith('.') for part in rel.parts):
++            continue
++        if item.suffix in {'.pyc', '.pyo', '.swp'} or item.name.endswith('~'):
++            continue
++        files.append(item)
++    for item in sorted(files, key=lambda p: p.relative_to(folder).as_posix()):
++        rel = item.relative_to(folder).as_posix()
++        digest.update(rel.encode('utf-8'))
++        digest.update(b'\0')
++        try:
++            digest.update(item.read_bytes())
++        except Exception:
++            continue
++        digest.update(b'\0')
++    return 'sha256:' + digest.hexdigest()
++
+ def _component_identity_from_path(path: str | None) -> str:
+     return str(path or '').strip().strip('/').replace('\\', '/')
+ 
+@@ -810,6 +839,7 @@
+                 'description': meta.get('description'),
+                 'kind': meta.get('kind') or root_name,
+                 'version': version,
++                'content_hash': _component_content_hash(folder),
+                 'component': meta,
+             }
+     return inventory
+@@ -845,9 +875,21 @@
+         if not source_path:
+             continue
+         local_record = local.get(source_path)
+-        remote_version = str(remote.get('version') or manifest.get('version') or '').strip() or None
++        remote_version = str(remote.get('version') or '').strip() or None
+         local_version = local_record.get('version') if local_record else None
+-        status_text = 'new' if not local_record else ('update' if _version_is_newer(remote_version, local_version) else 'current')
++        remote_hash = str(remote.get('content_hash') or remote.get('sha256') or '').strip() or None
++        local_hash = local_record.get('content_hash') if local_record else None
++        if not local_record:
++            status_text = 'new'
++        elif remote_hash and local_hash:
++            status_text = 'update' if remote_hash != local_hash else 'current'
++        elif remote_version or local_version:
++            status_text = 'update' if _version_is_newer(remote_version, local_version) else 'current'
++        else:
++            # The repository-level package version changes on every controller release.
++            # Do not treat that as a module update when the module has no explicit
++            # version/hash of its own.
++            status_text = 'current'
+         if status_text in {'new', 'update'}:
+             updates.append({
+                 'status': status_text,
+@@ -858,6 +900,8 @@
+                 'kind': remote.get('kind') or source_path.split('/', 1)[0],
+                 'local_version': local_version,
+                 'remote_version': remote_version,
++                'local_hash': local_hash,
++                'remote_hash': remote_hash,
+                 'repository': remote.get('repository') or manifest.get('repository'),
+                 'homepage': remote.get('homepage'),
+                 'maintainers': remote.get('maintainers') or [],
+Binary files pacorig/pi_agent_platform/mcp/__pycache__/__init__.cpython-313.pyc and pacwork/pi_agent_platform/mcp/__pycache__/__init__.cpython-313.pyc differ
+Binary files pacorig/pi_agent_platform/mcp/__pycache__/server.cpython-313.pyc and pacwork/pi_agent_platform/mcp/__pycache__/server.cpython-313.pyc differ
+diff -ruN '--exclude=dist' pacorig/pi_agent_platform/web/app.js pacwork/pi_agent_platform/web/app.js
+--- pacorig/pi_agent_platform/web/app.js	2026-05-05 23:39:02.000000000 +0000
++++ pacwork/pi_agent_platform/web/app.js	2026-05-06 09:01:10.183951911 +0000
+@@ -1965,6 +1965,9 @@
+       'CA file': tls.ca_cert_file || '-',
+       'Server cert file': tls.server_cert_file || '-',
+       'Details': tls.details_file || '-',
++      'TLS mode': tls.mode || 'local-ca',
++      'Let’s Encrypt': tls.letsencrypt?.cert_exists ? 'certificate present' : (tls.letsencrypt?.configured ? 'configured' : 'not configured'),
++      'LE valid until': tls.letsencrypt?.valid_until || '-',
+     };
+     el.innerHTML = Object.entries(rows).map(([k,v]) => `<div><span>${k}</span><code>${escapeHtml(v)}</code></div>`).join('');
+   } catch (e) {
+@@ -2111,6 +2114,7 @@
+   renderSystemInfo();
+   renderControllerHarnessSettings();
+   renderEndpointConnectionSettings();
++  renderLetsEncryptSettingsFromConfig();
+   renderZedConfigExamples();
+   renderSources();
+   await loadTlsStatus();
+@@ -2660,6 +2664,88 @@
+     setTimeout(() => loadDashboardMetrics().catch(e => { if (delay === 0) paneError('Dashboard metrics could not load', e.message || String(e)); }), delay);
+   }
+ }
++
++let lastOnlineAppUpdate = null;
++
++function renderAppOnlineUpdate(result){
++  const box = document.getElementById('appOnlineUpdate');
++  const apply = document.getElementById('applyOnlineAppUpdate');
++  if (!box) return;
++  if (!result || !result.ok) {
++    if (apply) apply.disabled = true;
++    box.innerHTML = `<div class="pack-summary warn-summary">Could not check PAC app updates</div><div class="muted small-text">${escapeHtml(result?.error || 'Unknown error')}</div>`;
++    return;
++  }
++  const changelog = result.changelog || {};
++  const changes = Array.isArray(changelog.changes) ? changelog.changes : [];
++  const changeHtml = changes.length ? `<ul class="update-delta-list compact-delta-list">${changes.map(c=>`<li>${escapeHtml(String(c))}</li>`).join('')}</ul>` : '<div class="muted small-text">No changelog entry was published with this release.</div>';
++  const state = result.has_update ? 'PAC app update available' : 'PAC app is current';
++  const cls = result.has_update ? 'strong-summary' : 'ok-summary';
++  if (apply) apply.disabled = !result.has_update;
++  box.innerHTML = `<div class="pack-summary ${cls}">${escapeHtml(state)}</div><div class="muted small-text">Current ${escapeHtml(result.current_version || '-')}; online ${escapeHtml(result.latest_version || '-')}. Source: ${escapeHtml(result.repository || result.manifest_url || '-')}</div><div class="update-delta-heading">Changelog</div>${changeHtml}`;
++}
++
++async function checkAppOnlineUpdates(){
++  const status = document.getElementById('appUpdateStatus');
++  if (status) status.textContent = 'Checking pac-labs/controller…';
++  const result = await runWithPaneError(() => api('/v1/update/online?force=true'), 'PAC app update check failed');
++  if (!result) return;
++  lastOnlineAppUpdate = result;
++  if (status) status.textContent = result.ok ? (result.has_update ? `update ${result.latest_version} available` : 'current') : 'check failed';
++  renderAppOnlineUpdate(result);
++  emitUiEvent(result.ok ? 'app_online_update_checked' : 'app_online_update_failed', result.ok ? `PAC app update checked: ${result.current_version || '-'} -> ${result.latest_version || '-'}` : 'PAC app update check failed', result);
++}
++
++async function applyOnlineAppUpdate(){
++  if (!lastOnlineAppUpdate?.has_update) return paneError('Check online updates first');
++  if (!confirm(`Apply PAC ${lastOnlineAppUpdate.latest_version} from GitHub and restart PAC?`)) return;
++  const status = document.getElementById('appUpdateStatus');
++  if (status) status.textContent = 'Downloading and applying…';
++  const result = await runWithPaneError(() => api('/v1/update/online/apply', {method:'POST', body:JSON.stringify({asset:'patch', restart_after_update:true})}), 'Online PAC update could not be applied');
++  if (!result) return;
++  if (status) status.textContent = result.status || 'applied';
++  emitUiEvent('app_online_update_applied', 'PAC online update applied; restart scheduled', result);
++  scheduleHiddenReloadAfterRestart(18);
++}
++
++function renderLetsEncryptSettingsFromConfig(){
++  const tls = config.tls || {};
++  const setVal = (id, value) => { const el = document.getElementById(id); if (el) el.value = value || ''; };
++  setVal('leDomain', tls.letsencrypt_domain);
++  setVal('leEmail', tls.letsencrypt_email);
++  setVal('leProvider', tls.letsencrypt_dns_provider);
++  setVal('leCredentials', tls.letsencrypt_dns_credentials_file);
++  const staging = document.getElementById('leStaging');
++  if (staging) staging.checked = !!tls.letsencrypt_staging;
++}
++
++async function saveLetsEncryptSettings(){
++  const result = document.getElementById('letsEncryptResult');
++  const payload = {
++    domain: document.getElementById('leDomain')?.value?.trim() || null,
++    email: document.getElementById('leEmail')?.value?.trim() || null,
++    dns_provider: document.getElementById('leProvider')?.value?.trim() || null,
++    credentials_file: document.getElementById('leCredentials')?.value?.trim() || null,
++    staging: !!document.getElementById('leStaging')?.checked,
++  };
++  const data = await runWithPaneError(() => api('/v1/tls/letsencrypt/config', {method:'POST', body:JSON.stringify(payload)}), 'Let’s Encrypt settings could not be saved');
++  if (!data) return;
++  if (result) result.textContent = 'Certificate settings saved.';
++  await loadConfig();
++}
++
++async function requestLetsEncryptCertificate(){
++  const result = document.getElementById('letsEncryptResult');
++  if (!confirm('Request/renew the Let’s Encrypt certificate using DNS validation? PAC will restart after a successful install.')) return;
++  if (result) result.textContent = 'Requesting Let’s Encrypt certificate…';
++  const data = await runWithPaneError(() => api('/v1/tls/letsencrypt/request', {method:'POST'}), 'Let’s Encrypt certificate request failed');
++  if (!data) return;
++  if (result) result.textContent = data.message || 'Certificate installed.';
++  emitUiEvent('letsencrypt_certificate_installed', data.message || 'Let’s Encrypt certificate installed', data);
++  if (data.restart_scheduled) scheduleHiddenReloadAfterRestart(18);
++  await loadTlsStatus();
++}
++
+ async function checkSourceOnlineUpdates(){
+   const status = document.getElementById('sourceUpdateStatus');
+   const box = document.getElementById('sourceOnlineUpdates');
+@@ -2691,6 +2777,16 @@
+ }
+ 
+ 
++
++const checkAppUpdatesBtn = document.getElementById('checkAppUpdates');
++if (checkAppUpdatesBtn) checkAppUpdatesBtn.onclick = checkAppOnlineUpdates;
++const applyOnlineAppUpdateBtn = document.getElementById('applyOnlineAppUpdate');
++if (applyOnlineAppUpdateBtn) applyOnlineAppUpdateBtn.onclick = applyOnlineAppUpdate;
++const saveLetsEncryptBtn = document.getElementById('saveLetsEncrypt');
++if (saveLetsEncryptBtn) saveLetsEncryptBtn.onclick = saveLetsEncryptSettings;
++const requestLetsEncryptBtn = document.getElementById('requestLetsEncrypt');
++if (requestLetsEncryptBtn) requestLetsEncryptBtn.onclick = requestLetsEncryptCertificate;
++
+ async function init(){ setupTabs(); setupEventsRail(); await loadConfig(); await loadSessions(); await loadApprovals(); await loadRunners(); refreshDashboardMetricsOnStartup(); await loadGlobalEvents(true); loadMcpBuildStatus().catch(()=>{}); await loadBinaryFolderFilters().catch(()=>{}); await loadSourceBinaryArtifacts().catch(()=>{}); updateSourceActions(); }
+ init().catch(e=>paneError('PAC UI could not load', e.message || String(e)));
+ 
+diff -ruN '--exclude=dist' pacorig/pi_agent_platform/web/index.html pacwork/pi_agent_platform/web/index.html
+--- pacorig/pi_agent_platform/web/index.html	2026-05-05 23:38:58.000000000 +0000
++++ pacwork/pi_agent_platform/web/index.html	2026-05-06 09:00:47.326789729 +0000
+@@ -305,14 +305,23 @@
+     <section id="settings-tab" class="tab-panel">
+       <div class="settings-cube-grid">
+         <section class="card setting-cube wide">
+-          <div class="section-heading compact-heading"><div><h2>Updates</h2><p class="muted">Apply platform updates and feature/source packs from one place.</p></div></div>
+-          <div class="feature-pack-actions settings-update-actions">
+-            <input id="featurePackFile" type="file" accept=".zip">
+-            <button id="inspectFeaturePack" class="ghost-button">Preview update</button>
+-            <button id="applyFeaturePack" class="ghost-button" disabled>Apply update</button>
++          <div class="section-heading compact-heading"><div><h2>Updates</h2><p class="muted">Check GitHub for PAC updates, review the changelog, or apply a local update file.</p></div></div>
++          <div class="online-app-updates">
++            <div class="button-row"><button id="checkAppUpdates">Check PAC app online</button><button id="applyOnlineAppUpdate" class="ghost-button" disabled>Apply online update</button><span id="appUpdateStatus" class="muted small-text"></span></div>
++            <div id="appOnlineUpdate" class="feature-pack-preview muted">Online PAC app updates have not been checked yet.</div>
++          </div>
++          <div class="settings-subsection">
++            <h3>Manual update file</h3>
++            <p class="muted small-text">Use this when you already downloaded a PAC app patch/full zip or a source package zip.</p>
++            <div class="feature-pack-actions settings-update-actions">
++              <input id="featurePackFile" type="file" accept=".zip">
++              <button id="inspectFeaturePack" class="ghost-button">Preview update</button>
++              <button id="applyFeaturePack" class="ghost-button" disabled>Apply update</button>
++            </div>
++            <div id="featurePackPreview" class="feature-pack-preview muted">Choose a PAC update or feature pack zip to preview.</div>
+           </div>
+-          <div id="featurePackPreview" class="feature-pack-preview muted">Choose a PAC update or feature pack zip to preview.</div>
+-          <div class="online-source-updates">
++          <div class="online-source-updates settings-subsection">
++            <h3>Source modules</h3>
+             <div class="button-row"><button id="checkSourceUpdates" class="ghost-button">Check source modules online</button><span id="sourceUpdateStatus" class="muted small-text"></span></div>
+             <div id="sourceOnlineUpdates" class="feature-pack-preview muted">Online source module updates have not been checked yet.</div>
+           </div>
+@@ -374,13 +383,25 @@
+         </section>
+ 
+         <section class="card setting-cube">
+-          <h2>TLS / local CA</h2>
+-          <p class="muted">PAC generates a 30-year local root CA, signs the HTTPS server certificate for admin.pac.local, and advertises the admin service over mDNS.</p>
++          <h2>TLS / certificates</h2>
++          <p class="muted">Use the local PAC CA for internal names, or request Let’s Encrypt with DNS validation when the hostname is not externally reachable.</p>
+           <div id="tlsInfo" class="kv compact-kv"></div>
+           <div class="button-row">
+             <button id="refreshTlsStatus">Refresh TLS</button>
+             <a class="button-link" href="/v1/tls/ca.pem" download>Download CA</a>
+           </div>
++          <div class="settings-subsection">
++            <h3>Let’s Encrypt DNS validation</h3>
++            <div class="form-grid compact-form">
++              <label>Domain <input id="leDomain" placeholder="admin.example.com"></label>
++              <label>Email <input id="leEmail" placeholder="admin@example.com"></label>
++              <label>DNS provider <input id="leProvider" placeholder="cloudflare, route53, rfc2136"></label>
++              <label>Credentials file <input id="leCredentials" placeholder="~/.pacp/config/tls/cloudflare.ini"></label>
++              <label class="checkbox-line"><input id="leStaging" type="checkbox"> Use Let’s Encrypt staging</label>
++            </div>
++            <div class="button-row"><button id="saveLetsEncrypt" class="ghost-button">Save certificate settings</button><button id="requestLetsEncrypt">Request certificate</button></div>
++            <pre id="letsEncryptResult" class="inline-result compact-result"></pre>
++          </div>
+         </section>
+ 
+         <section class="card wide setting-cube">
+diff -ruN '--exclude=dist' pacorig/scripts/generate-package-repo.py pacwork/scripts/generate-package-repo.py
+--- pacorig/scripts/generate-package-repo.py	2026-05-05 22:40:40.000000000 +0000
++++ pacwork/scripts/generate-package-repo.py	2026-05-06 07:41:20.000000000 +0000
+@@ -3,6 +3,7 @@
+ from __future__ import annotations
+ 
+ import argparse
++import hashlib
+ import json
+ import shutil
+ from datetime import datetime, timezone
+@@ -16,6 +17,27 @@
+     return {name for name in names if name.startswith(".") or name in IGNORE_NAMES or name.endswith(".pyc")}
+ 
+ 
++
++def component_content_hash(folder: Path) -> str:
++    digest = hashlib.sha256()
++    files: list[Path] = []
++    for item in folder.rglob('*'):
++        if not item.is_file():
++            continue
++        rel = item.relative_to(folder)
++        if any(part in IGNORE_NAMES or part.startswith('.') for part in rel.parts):
++            continue
++        if item.suffix == '.pyc' or item.name.endswith('~'):
++            continue
++        files.append(item)
++    for item in sorted(files, key=lambda p: p.relative_to(folder).as_posix()):
++        rel = item.relative_to(folder).as_posix()
++        digest.update(rel.encode('utf-8'))
++        digest.update(b'\0')
++        digest.update(item.read_bytes())
++        digest.update(b'\0')
++    return 'sha256:' + digest.hexdigest()
++
+ def read_json(path: Path) -> dict:
+     try:
+         data = json.loads(path.read_text(encoding="utf-8"))
+@@ -27,13 +49,15 @@
+ def collect_components(out: Path) -> list[dict]:
+     components: list[dict] = []
+     for meta_path in sorted(out.glob("**/pac-component.json")):
+-        if any(part in IGNORE_NAMES for part in meta_path.parts):
++        rel_path = meta_path.relative_to(out)
++        if any(part in IGNORE_NAMES for part in rel_path.parts):
+             continue
+         rel = meta_path.parent.relative_to(out).as_posix()
+         data = read_json(meta_path)
+         data.setdefault("id", rel.replace("/", ":"))
+         data.setdefault("title", meta_path.parent.name.replace("-", " ").title())
+         data.setdefault("source_path", rel)
++        data["content_hash"] = component_content_hash(meta_path.parent)
+         components.append(data)
+     return sorted(components, key=lambda c: str(c.get("source_path", c.get("id", ""))))
+ 
