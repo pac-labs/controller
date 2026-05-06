@@ -30,8 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (contains(github.event.pull_request.labels.*.name, 'pac-apply-diff') &&
-       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))
+      contains(github.event.pull_request.labels.*.name, 'pac-apply-diff')
     steps:
       - name: Resolve PR metadata
         id: pr
@@ -51,13 +50,11 @@ jobs:
               repo: context.repo.repo,
               pull_number: prNumber,
             });
-            const allowed = ['OWNER', 'MEMBER', 'COLLABORATOR'].includes(pr.author_association);
             const hasLabel = pr.labels.some(label => label.name === 'pac-apply-diff');
-            if (!allowed) {
-              core.setFailed(`PR author association ${pr.author_association} is not allowed to apply diffs.`);
-              return;
-            }
-            if (context.eventName !== 'workflow_dispatch' && !hasLabel) {
+            // Diff rollout is intentionally label-gated instead of author-association-gated.
+            // This allows the repository owner to approve/apply a diff PR even when GitHub
+            // reports the author as CONTRIBUTOR, while still requiring an explicit maintainer label.
+            if (!hasLabel) {
               core.setFailed('PR must have label pac-apply-diff.');
               return;
             }
