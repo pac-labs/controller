@@ -12,18 +12,16 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: "Pull request number containing a .pac/diffs/*.diff file. Leave empty only when exactly one open PR has label pac-apply-diff."
-        required: false
+        description: "Pull request number containing a .pac/diffs/*.diff file"
+        required: true
         type: string
-        default: ""
 
 permissions:
   contents: write
   pull-requests: read
-  issues: write
 
 concurrency:
-  group: pac-apply-diff-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
+  group: pac-apply-diff-${{ github.event.pull_request.number || inputs.pr_number }}
   cancel-in-progress: false
 
 jobs:
@@ -32,8 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request_target' &&
-       contains(github.event.pull_request.labels.*.name, 'pac-apply-diff') &&
+      (contains(github.event.pull_request.labels.*.name, 'pac-apply-diff') &&
        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))
     steps:
       - name: Resolve PR metadata
@@ -41,49 +38,14 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            async function allowedPr(pr) {
-              const allowedAuthor = ['OWNER', 'MEMBER', 'COLLABORATOR'].includes(pr.author_association);
-              const hasLabel = pr.labels.some(label => label.name === 'pac-apply-diff');
-              return allowedAuthor && hasLabel && pr.base.ref === 'main';
-            }
-
-            let prNumber = 0;
-            if (context.eventName === 'pull_request_target') {
-              prNumber = Number(context.payload.pull_request?.number || 0);
-            } else {
-              const input = core.getInput('pr_number', { required: false }).trim();
-              if (input) {
-                prNumber = Number(input);
-              } else {
-                const { data: pulls } = await github.rest.pulls.list({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  state: 'open',
-                  base: 'main',
-                  per_page: 100,
-                });
-                const candidates = [];
-                for (const candidate of pulls) {
-                  if (await allowedPr(candidate)) {
-                    candidates.push(candidate);
-                  }
-                }
-                if (candidates.length === 1) {
-                  prNumber = candidates[0].number;
-                } else {
-                  core.setFailed(
-                    `Manual run needs pr_number, or exactly one open main-target PR with label pac-apply-diff from OWNER/MEMBER/COLLABORATOR. Found ${candidates.length}.`
-                  );
-                  return;
-                }
-              }
-            }
-
+            const rawPrNumber = context.eventName === 'workflow_dispatch'
+              ? String(context.payload.inputs?.pr_number || '').trim()
+              : String(context.payload.pull_request?.number || '').trim();
+            const prNumber = Number(rawPrNumber);
             if (!Number.isInteger(prNumber) || prNumber < 1) {
-              core.setFailed(`Invalid PR number: ${prNumber}. For manual runs, fill the pr_number input.`);
+              core.setFailed(`Invalid PR number: ${rawPrNumber || '<empty>'}. For manual runs, fill the workflow_dispatch input named pr_number.`);
               return;
             }
-
             const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -95,12 +57,8 @@ jobs:
               core.setFailed(`PR author association ${pr.author_association} is not allowed to apply diffs.`);
               return;
             }
-            if (!hasLabel) {
+            if (context.eventName !== 'workflow_dispatch' && !hasLabel) {
               core.setFailed('PR must have label pac-apply-diff.');
-              return;
-            }
-            if (pr.base.ref !== 'main') {
-              core.setFailed(`PR base must be main, not ${pr.base.ref}.`);
               return;
             }
             core.setOutput('number', String(pr.number));
@@ -116,7 +74,6 @@ jobs:
           ref: main
           fetch-depth: 0
           path: controller
-          token: ${{ secrets.push_token || github.token }}
 
       - name: Checkout PR diff source
         uses: actions/checkout@v4
@@ -165,8 +122,8 @@ jobs:
             node --check pi_agent_platform/web/app.js
           fi
           python3 scripts/generate-pac-release.py --version "$(tr -d '[:space:]' < VERSION)"
-          unzip -t dist/pac-full.zip
-          unzip -t dist/pac-patch.zip
+          unzip -t "dist/pac-full-$(tr -d '[:space:]' < VERSION).zip"
+          unzip -t "dist/pac-patch-$(tr -d '[:space:]' < VERSION).zip"
 
       - name: Commit and push to main
         shell: bash
@@ -177,14 +134,14 @@ jobs:
             echo "No changes after applying diff."
             exit 0
           fi
-          git config user.name "pac-sync[bot]"
-          git config user.email "pac-sync[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .
           git commit -m "Apply PAC diff from PR #${{ steps.pr.outputs.number }}" -m "${{ steps.pr.outputs.title }}"
           git push origin HEAD:main
 
       - name: Comment on PR
-        if: always() && steps.pr.outputs.number != ''
+        if: always()
         uses: actions/github-script@v7
         with:
           script: |
