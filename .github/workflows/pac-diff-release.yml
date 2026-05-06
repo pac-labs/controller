@@ -5,7 +5,7 @@ on:
     types: [opened, synchronize, reopened, labeled]
     branches: [main]
     paths:
-      - '.pacp/diffs/v*.diff'
+      - '.pac/diffs/v*.diff'
   workflow_dispatch:
     inputs:
       version:
@@ -63,9 +63,9 @@ jobs:
               repo: context.repo.repo,
               pull_number: context.payload.pull_request.number,
             });
-            const diffFiles = files.filter(f => f.filename.match(/^\.pacp\/diffs\/v[0-9]+\.[0-9]+\.[0-9]+\.diff$/));
+            const diffFiles = files.filter(f => f.filename.match(/^\.pac\/diffs\/v[0-9]+\.[0-9]+\.[0-9]+\.diff$/));
             if (diffFiles.length === 0) {
-              core.setFailed('No .pacp/diffs/vX.Y.Z.diff file found in PR. Add a diff file named vMAJOR.MINOR.PATCH.diff to .pacp/diffs/.');
+              core.setFailed('No .pac/diffs/vX.Y.Z.diff file found in PR. Add a diff file named vMAJOR.MINOR.PATCH.diff to .pac/diffs/.');
               return;
             }
             if (diffFiles.length > 1) {
