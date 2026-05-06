@@ -1,0 +1,211 @@
+name: PAC diff release
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    branches: [main]
+    paths:
+      - '.pac/diffs/v*.diff'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (X.Y.Z format, e.g. 1.0.100)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: pac-diff-release-${{ github.event.pull_request.number || inputs.version }}
+  cancel-in-progress: true
+
+jobs:
+  release-from-diff:
+    name: Build release from diff
+    runs-on: ubuntu-latest
+    # Run on PR labeled pac-apply-diff, or on workflow_dispatch with a version
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'pac-apply-diff'))
+    steps:
+      - name: Determine version and diff path
+        id: version
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]; then
+            version="${{ inputs.version }}"
+            if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Error: version must be X.Y.Z format, got '$version'" >&2
+              exit 1
+            fi
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "mode=dispatch" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # PR mode: signal that version will come from the file enumeration step
+          echo "version=dummy" >> "$GITHUB_OUTPUT"
+          echo "mode=pr" >> "$GITHUB_OUTPUT"
+
+      - name: List PR diff files
+        if: github.event_name == 'pull_request'
+        id: pr_files
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.push_token || github.token }}
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+            const diffFiles = files.filter(f => f.filename.match(/^\.pac\/diffs\/v[0-9]+\.[0-9]+\.[0-9]+\.diff$/));
+            if (diffFiles.length === 0) {
+              core.setFailed('No .pac/diffs/vX.Y.Z.diff file found in PR. Add a diff file named vMAJOR.MINOR.PATCH.diff to .pac/diffs/.');
+              return;
+            }
+            if (diffFiles.length > 1) {
+              core.setFailed(`Expected one diff file, found ${diffFiles.length}: ${diffFiles.map(f => f.filename).join(', ')}`);
+              return;
+            }
+            const fn = diffFiles[0].filename;
+            const m = fn.match(/v([0-9]+\.[0-9]+\.[0-9]+)\.diff$/);
+            core.setOutput('filename', fn);
+            core.setOutput('version', m[1]);
+
+      - name: Get diff file content
+        if: github.event_name == 'pull_request'
+        id: diff_content
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.push_token || github.token }}
+          script: |
+            const filename = '${{ steps.pr_files.outputs.filename }}';
+            const ref = context.payload.pull_request.head.ref;
+            const { data: fileData } = await github.rest.repos.getContent({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              path: filename,
+              ref: ref,
+            });
+            const content = Buffer.from(fileData.content, 'base64').toString('utf-8');
+            const fs = require('fs');
+            fs.writeFileSync('/tmp/input.diff', content);
+            core.setOutput('path', '/tmp/input.diff');
+
+      - name: Validate diff
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          python3 scripts/validate-pac-diff.py /tmp/input.diff
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: main
+          path: controller
+          token: ${{ secrets.push_token || github.token }}
+          fetch-depth: 0
+
+      - name: Apply diff to main
+        if: github.event_name == 'pull_request'
+        shell: bash
+        working-directory: controller
+        run: |
+          set -euo pipefail
+          git apply --whitespace=fix /tmp/input.diff
+
+      - name: Inject version markers
+        shell: bash
+        working-directory: controller
+        run: |
+          set -euo pipefail
+          version='${{ github.event_name == 'workflow_dispatch' && inputs.version || steps.pr_files.outputs.version }}'
+          printf '%s\n' "$version" > VERSION
+          printf '# PAC Version\n\nCurrent release: %s\n' "$version" > VERSION_CURRENT.md
+
+      - name: Generate release artifacts
+        shell: bash
+        working-directory: controller
+        env:
+          PAC_SOURCE_REF: >-
+            ${{ github.event_name == 'pull_request'
+                && format('PR #{0}', github.event.pull_request.number)
+                || 'workflow_dispatch' }}
+        run: |
+          set -euo pipefail
+          version='${{ github.event_name == 'workflow_dispatch' && inputs.version || steps.pr_files.outputs.version }}'
+          python3 scripts/generate-pac-release.py --version "$version" --source-ref "$PAC_SOURCE_REF"
+          unzip -t dist/pac-full.zip
+          unzip -t dist/pac-patch.zip
+          unzip -t dist/pac-packages-seed.zip
+
+      - name: Commit, tag and push
+        shell: bash
+        working-directory: controller
+        run: |
+          set -euo pipefail
+          version='${{ github.event_name == 'workflow_dispatch' && inputs.version || steps.pr_files.outputs.version }}'
+          tag="v$version"
+
+          git config user.name "pac-sync[bot]"
+          git config user.email "pac-sync[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --quiet -- .; then
+            echo "No changes after applying diff — nothing to release."
+          else
+            git commit -m "Release v$version from PAC diff"
+            git push origin HEAD:main
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists — skipping tag push."
+          else
+            git tag -a "$tag" -m "PAC $tag"
+            git push origin "$tag"
+          fi
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event_name == 'workflow_dispatch' && inputs.version || steps.pr_files.outputs.version }}
+          name: PAC v${{ github.event_name == 'workflow_dispatch' && inputs.version || steps.pr_files.outputs.version }}
+          generate_release_notes: false
+          files: |
+            controller/dist/pac-full.zip
+            controller/dist/pac-patch.zip
+            controller/dist/pac-packages-seed.zip
+            controller/dist/PAC_RELEASE_MANIFEST.json
+            controller/dist/PAC_UPDATE_DIFF.diff
+
+      - name: Sync packages repository
+        uses: actions/checkout@v4
+        with:
+          repository: pac-labs/packages
+          token: ${{ secrets.push_token || github.token }}
+          path: packages
+          fetch-depth: 0
+
+      - name: Generate and push packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          version='${{ github.event_name == 'workflow_dispatch' && inputs.version || steps.pr_files.outputs.version }}'
+          python3 controller/scripts/generate-package-repo.py --source controller --out packages --version "$version"
+          cd packages
+          if git diff --quiet -- .; then
+            echo "No package changes to publish."
+          else
+            git config user.name "pac-sync[bot]"
+            git config user.email "pac-sync[bot]@users.noreply.github.com"
+            git add .
+            git commit -m "Sync PAC packages for v$version"
+            git push
+          fi
