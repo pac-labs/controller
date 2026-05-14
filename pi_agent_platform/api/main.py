@@ -41,8 +41,11 @@ from pi_agent_platform.core.providers import effective_context, model_card, prov
 from pi_agent_platform.core.store import store
 from pi_agent_platform.core.artifacts import write_artifact, list_artifacts, task_artifact_dir, safe_artifact_path
 from pi_agent_platform.core.secrets import secret_store
+from pi_agent_platform.core.pac_ram import read_ram, write_ram, list_ram, all_ram
+from pi_agent_platform.core.source_variables import source_variable_store
 from pi_agent_platform.core.source_library import ensure_source_library, list_tree as source_list_tree, read_text as source_read_text, write_text as source_write_text, make_archive as source_make_archive, build_container as source_build_container, build_binary as source_build_binary, list_binary_artifacts as source_list_binary_artifacts, binary_artifact_path as source_binary_artifact_path, delete_binary_artifact as source_delete_binary_artifact, prune_binary_artifacts as source_prune_binary_artifacts, inspect_feature_pack as source_inspect_feature_pack, apply_feature_pack as source_apply_feature_pack, create_entry as source_create_entry, rename_entry as source_rename_entry, delete_entry as source_delete_entry, fetch_online_package_updates as source_fetch_online_package_updates
 from pi_agent_platform.core.update_preservation import build_backup_archive, compare_trees
+from pi_agent_platform.updates import fetch_latest_release_metadata, download_release_package
 
 
 def _model_available(model_name: str) -> tuple[bool, str | None]:
@@ -143,6 +146,34 @@ def _load_pac_changelog() -> dict[str, Any]:
         return {'entries': [], 'current_version': PAC_VERSION}
 
 
+def _current_release_package() -> Path:
+    root = Path(__file__).resolve().parents[2]
+    dist_dir = root / 'dist'
+    package = dist_dir / 'pac-full.zip'
+    version_marker = dist_dir / '.pac-full.version'
+    if package.exists() and version_marker.exists():
+        try:
+            if version_marker.read_text(encoding='utf-8').strip() == PAC_VERSION:
+                return package
+        except Exception:
+            pass
+    script = root / 'scripts' / 'generate-pac-release.py'
+    if not script.is_file():
+        raise RuntimeError('PAC release generator is not available on this installation')
+    proc = subprocess.run(
+        [sys.executable, str(script), '--version', PAC_VERSION],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        timeout=1800,
+        check=False,
+    )
+    if proc.returncode != 0 or not package.exists():
+        raise RuntimeError((proc.stderr or proc.stdout or 'PAC release generation failed').strip()[:4000])
+    version_marker.write_text(PAC_VERSION, encoding='utf-8')
+    return package
+
+
 def _changelog_delta(from_version: str | None, to_version: str | None) -> list[dict[str, Any]]:
     changelog = _load_pac_changelog()
     lower = _version_key(from_version)
@@ -189,6 +220,28 @@ def _list_update_archives() -> list[dict[str, Any]]:
             }
         )
     return items
+
+
+_SOURCE_VARIABLE_REF = re.compile(r"\$\{var:([A-Za-z_][A-Za-z0-9_.-]*)\}|\{\{var:([A-Za-z_][A-Za-z0-9_.-]*)\}\}")
+
+
+def _resolve_variable_tokens(values: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
+    resolved: dict[str, str] = {}
+    used: dict[str, str] = {}
+
+    for key, raw in (values or {}).items():
+        text = str(raw or "")
+
+        def _replace(match: re.Match[str]) -> str:
+            variable_id = str(match.group(1) or match.group(2) or "").strip()
+            item = source_variable_store.get(variable_id)
+            if not item:
+                return match.group(0)
+            used[variable_id] = str(item.get("value") or "")
+            return used[variable_id]
+
+        resolved[key] = _SOURCE_VARIABLE_REF.sub(_replace, text)
+    return resolved, used
 
 
 def _setup_issue(issue_id: str, title: str, detail: str, action_tab: str, action_label: str, severity: str = 'required') -> dict[str, str]:
@@ -971,6 +1024,18 @@ def _runner_from_auth_headers(authorization: str | None = None, runner_id: str |
     return runner
 
 
+def _require_admin_or_runner(
+    authorization: str | None = None,
+    runner_id: str | None = None,
+    runner_key: str | None = None,
+) -> Runner | None:
+    runner = _runner_from_auth_headers(authorization, runner_id, runner_key)
+    if _admin_auth_valid(authorization) or runner is not None:
+        return runner
+    require_auth(authorization)
+    return None
+
+
 
 def _runner_target_from_task(task: Task) -> dict[str, Any] | None:
     runner_id = task.metadata.get('runner_id') or task.metadata.get('target_runner_id')
@@ -1297,6 +1362,28 @@ def get_config(_auth: None = Depends(require_auth)) -> dict[str, Any]:
     return _config_payload()
 
 
+@app.get('/v1/ide/config')
+def get_ide_config(
+    authorization: str | None = Header(default=None),
+    x_pac_runner_id: str | None = Header(default=None, alias='X-PAC-Runner-ID'),
+    x_pac_runner_key: str | None = Header(default=None, alias='X-PAC-Runner-Key'),
+) -> dict[str, Any]:
+    runner = _require_admin_or_runner(authorization, x_pac_runner_id, x_pac_runner_key)
+    payload = {
+        'version': PAC_VERSION,
+        'server': {'public_url': config.server.public_url},
+        'source_contexts': {name: ctx.model_dump() for name, ctx in config.source_contexts.items()},
+        'workspaces': {name: item.model_dump() for name, item in config.workspaces.items()},
+        'session_slash_commands': list_session_slash_commands(),
+        'setup_status': _setup_status(),
+    }
+    if runner:
+        payload['requested_by'] = {'kind': 'endpoint', 'runner_id': runner.id, 'runner_name': runner.name}
+    else:
+        payload['requested_by'] = {'kind': 'admin'}
+    return payload
+
+
 @app.get('/v1/session-slash-commands')
 def get_session_slash_commands(_auth: None = Depends(require_auth)) -> dict[str, Any]:
     return {'commands': list_session_slash_commands(), 'help_text': slash_help_text()}
@@ -1318,6 +1405,13 @@ def get_updates_status(_auth: None = Depends(require_auth)) -> dict[str, Any]:
         'archives': archives[:12],
         'changelog_current_version': changelog.get('current_version') or PAC_VERSION,
     }
+
+
+@app.get('/v1/updates/check')
+def check_for_updates(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    meta = fetch_latest_release_metadata(PAC_VERSION)
+    store.add_event(Event(session_id='system', type='update_checked', message=meta.get('has_update') and f"Update available: v{meta.get('latest_version')}" or 'PAC release channel checked', data=meta))
+    return meta
 
 
 @app.get('/v1/updates/archives')
@@ -1362,6 +1456,42 @@ def get_update_release_notes(from_version: str | None = None, to_version: str | 
         'to_version': to_version or (_load_pac_changelog().get('current_version') or PAC_VERSION),
         'entries': entries,
     }
+
+
+@app.post('/v1/updates/apply')
+def apply_release_update(
+    background_tasks: BackgroundTasks,
+    restart_after_update: bool = Query(default=True),
+    _auth: None = Depends(require_auth),
+) -> dict[str, Any]:
+    meta = fetch_latest_release_metadata(PAC_VERSION)
+    if not meta.get('ok'):
+        raise HTTPException(status_code=503, detail=meta.get('error') or 'The PAC release feed is unavailable')
+    if not meta.get('has_update'):
+        return {'ok': False, 'current_version': PAC_VERSION, 'latest_version': meta.get('latest_version'), 'message': 'PAC is already up to date'}
+    download_url = str(meta.get('download_url') or '').strip()
+    if not download_url:
+        raise HTTPException(status_code=404, detail='Latest PAC release does not provide pac-full.zip')
+    downloads_dir = pacp_path('updates', 'downloads')
+    downloads_dir.mkdir(parents=True, exist_ok=True)
+    target = downloads_dir / f"pac-full-{meta.get('latest_version') or 'latest'}.zip"
+    download = download_release_package(download_url, target)
+    if not download.get('ok'):
+        raise HTTPException(status_code=502, detail=f"Release download failed: {download.get('error')}")
+    result = _apply_version_package_from_path(target, target.name, restart_after_update=restart_after_update)
+    result.update({'ok': True, 'current_version': PAC_VERSION, 'latest_version': meta.get('latest_version'), 'release_url': meta.get('release_url'), 'download_url': download_url, 'download': download})
+    if restart_after_update:
+        _schedule_local_restart(background_tasks, f'PAC local restart scheduled after applying release {meta.get("latest_version")}')
+    return result
+
+
+@app.get('/v1/admin/current-package')
+def download_current_package(_auth: None = Depends(require_auth)) -> FileResponse:
+    try:
+        package = _current_release_package()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return FileResponse(package, filename='pac-full.zip')
 
 
 
@@ -3163,6 +3293,16 @@ class SecretUpdateRequest(BaseModel):
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
+class SourceVariableUpdateRequest(BaseModel):
+    value: str
+    description: str = ''
+    tags: list[str] = Field(default_factory=list)
+
+
+class PacRamWriteRequest(BaseModel):
+    content: str
+
+
 class ServerConnectionRequest(BaseModel):
     public_url: str
     mdns_enabled: bool | None = None
@@ -3237,7 +3377,7 @@ def _match_source_context(path: str | None = None, name: str | None = None) -> t
 
 def _resolve_source_context(path: str | None = None, name: str | None = None, include_secret_values: bool = False) -> dict[str, Any]:
     context_name, context = _match_source_context(path=path, name=name)
-    config_vars = dict(context.config_vars or {})
+    config_vars, resolved_variables = _resolve_variable_tokens(dict(context.config_vars or {}))
     secret_refs = dict(context.secret_refs or {})
     resolved_secrets: dict[str, str | None] = {}
     for env_name, secret_id in secret_refs.items():
@@ -3254,6 +3394,7 @@ def _resolve_source_context(path: str | None = None, name: str | None = None, in
             **({env_name: value for env_name, value in resolved_secrets.items() if value is not None} if include_secret_values else {}),
         },
         'config_vars': config_vars,
+        'resolved_variables': resolved_variables,
         'secret_refs': secret_refs,
         'resolved_secrets': resolved_secrets,
     }
@@ -3428,6 +3569,153 @@ def delete_source_context(name: str, _auth: None = Depends(require_auth)) -> dic
     config = load_config()
     store.add_event(Event(session_id='system', type='source_context_deleted', message=f'Source context deleted: {key}', data={'name': key}))
     return {'status': 'deleted', 'name': key}
+
+
+@app.get('/v1/source-variables')
+@app.get('/v1/ide/variables')
+def list_source_variables(
+    authorization: str | None = Header(default=None),
+    x_pac_runner_id: str | None = Header(default=None, alias='X-PAC-Runner-ID'),
+    x_pac_runner_key: str | None = Header(default=None, alias='X-PAC-Runner-Key'),
+) -> dict[str, Any]:
+    _require_admin_or_runner(authorization, x_pac_runner_id, x_pac_runner_key)
+    return {'variables': source_variable_store.list()}
+
+
+@app.get('/v1/source-variables/{variable_id}')
+@app.get('/v1/ide/variables/{variable_id}')
+def get_source_variable(
+    variable_id: str,
+    authorization: str | None = Header(default=None),
+    x_pac_runner_id: str | None = Header(default=None, alias='X-PAC-Runner-ID'),
+    x_pac_runner_key: str | None = Header(default=None, alias='X-PAC-Runner-Key'),
+) -> dict[str, Any]:
+    _require_admin_or_runner(authorization, x_pac_runner_id, x_pac_runner_key)
+    try:
+        item = source_variable_store.get(variable_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not item:
+        raise HTTPException(status_code=404, detail='Variable not found')
+    return item
+
+
+@app.put('/v1/source-variables/{variable_id}')
+@app.put('/v1/ide/variables/{variable_id}')
+def put_source_variable(variable_id: str, payload: SourceVariableUpdateRequest, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    try:
+        item = source_variable_store.set(variable_id, payload.value, payload.description, payload.tags)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    store.add_event(Event(session_id='system', type='source_variable_saved', message=f'Source variable saved: {item["id"]}', data=item))
+    return {'status': 'saved', **item}
+
+
+@app.delete('/v1/source-variables/{variable_id}')
+@app.delete('/v1/ide/variables/{variable_id}')
+def delete_source_variable(variable_id: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    try:
+        deleted = source_variable_store.delete(variable_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail='Variable not found')
+    store.add_event(Event(session_id='system', type='source_variable_deleted', message=f'Source variable deleted: {variable_id}', data={'id': variable_id}))
+    return {'status': 'deleted', 'id': variable_id}
+
+
+@app.get('/v1/pac-ram/list')
+@app.get('/v1/ide/pac-ram/list')
+def get_pac_ram_list(
+    authorization: str | None = Header(default=None),
+    x_pac_runner_id: str | None = Header(default=None, alias='X-PAC-Runner-ID'),
+    x_pac_runner_key: str | None = Header(default=None, alias='X-PAC-Runner-Key'),
+) -> dict[str, Any]:
+    _require_admin_or_runner(authorization, x_pac_runner_id, x_pac_runner_key)
+    return list_ram()
+
+
+@app.get('/v1/pac-ram/all')
+@app.get('/v1/ide/pac-ram/all')
+def get_all_pac_ram(
+    authorization: str | None = Header(default=None),
+    x_pac_runner_id: str | None = Header(default=None, alias='X-PAC-Runner-ID'),
+    x_pac_runner_key: str | None = Header(default=None, alias='X-PAC-Runner-Key'),
+) -> dict[str, Any]:
+    _require_admin_or_runner(authorization, x_pac_runner_id, x_pac_runner_key)
+    return all_ram()
+
+
+@app.get('/v1/pac-ram/profile/{profile}')
+def get_profile_ram(
+    profile: str,
+    authorization: str | None = Header(default=None),
+    x_pac_runner_id: str | None = Header(default=None, alias='X-PAC-Runner-ID'),
+    x_pac_runner_key: str | None = Header(default=None, alias='X-PAC-Runner-Key'),
+) -> dict[str, Any]:
+    _require_admin_or_runner(authorization, x_pac_runner_id, x_pac_runner_key)
+    try:
+        return read_ram('profile', profile)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put('/v1/pac-ram/profile/{profile}')
+def put_profile_ram(profile: str, payload: PacRamWriteRequest, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    try:
+        result = write_ram('profile', profile, payload.content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    store.add_event(Event(session_id='system', type='pac_ram_saved', message=f'PAC RAM profile saved: {result["key"]}', data={'kind': 'profile', **result}))
+    return result
+
+
+@app.get('/v1/pac-ram/user/{user_id}')
+def get_user_ram(
+    user_id: str,
+    authorization: str | None = Header(default=None),
+    x_pac_runner_id: str | None = Header(default=None, alias='X-PAC-Runner-ID'),
+    x_pac_runner_key: str | None = Header(default=None, alias='X-PAC-Runner-Key'),
+) -> dict[str, Any]:
+    _require_admin_or_runner(authorization, x_pac_runner_id, x_pac_runner_key)
+    try:
+        return read_ram('user', user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put('/v1/pac-ram/user/{user_id}')
+def put_user_ram(user_id: str, payload: PacRamWriteRequest, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    try:
+        result = write_ram('user', user_id, payload.content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    store.add_event(Event(session_id='system', type='pac_ram_saved', message=f'PAC RAM user saved: {result["key"]}', data={'kind': 'user', **result}))
+    return result
+
+
+@app.get('/v1/pac-ram/workspace/{workspace}')
+def get_workspace_ram(
+    workspace: str,
+    authorization: str | None = Header(default=None),
+    x_pac_runner_id: str | None = Header(default=None, alias='X-PAC-Runner-ID'),
+    x_pac_runner_key: str | None = Header(default=None, alias='X-PAC-Runner-Key'),
+) -> dict[str, Any]:
+    _require_admin_or_runner(authorization, x_pac_runner_id, x_pac_runner_key)
+    try:
+        return read_ram('workspace', workspace)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put('/v1/pac-ram/workspace/{workspace}')
+def put_workspace_ram(workspace: str, payload: PacRamWriteRequest, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    try:
+        result = write_ram('workspace', workspace, payload.content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    store.add_event(Event(session_id='system', type='pac_ram_saved', message=f'PAC RAM workspace saved: {result["key"]}', data={'kind': 'workspace', **result}))
+    return result
 
 
 @app.get('/v1/secrets')

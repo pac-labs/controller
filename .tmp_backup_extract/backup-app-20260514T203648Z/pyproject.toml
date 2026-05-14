@@ -1,0 +1,20 @@
+[project]
+name = "pi-agent-platform"
+version = "1.0.92"
+description = "Remote agent PAC with provider registry, context profiles, sessions, approvals, remote runners, host/container execution, real agent loop, web UI, VS Code scaffold and MCP bridge"
+requires-python = ">=3.9"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "pydantic>=2.8.0",
+  "pyyaml>=6.0.0",
+  "httpx>=0.27.0",
+  "python-multipart>=0.0.9",
+  "zeroconf>=0.147.0"
+]
+
+[project.scripts]
+pi-agent-mcp = "pi_agent_platform.mcp.server:main"
+
+[tool.setuptools.packages.find]
+include = ["pi_agent_platform*"]

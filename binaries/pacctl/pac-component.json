@@ -1,0 +1,17 @@
+{
+  "id": "pacctl",
+  "title": "PAC Control CLI",
+  "description": "CLI binary for IDEs, endpoints, and containers to resolve PAC context, config, variables, secrets, and PAC RAM.",
+  "kind": "binary",
+  "version": "1.0.0",
+  "maintainers": [
+    "pac-labs"
+  ],
+  "repository": "https://github.com/pac-labs/packages",
+  "source_path": "binaries/pacctl",
+  "tags": [
+    "pac",
+    "cli",
+    "ide"
+  ]
+}

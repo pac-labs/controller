@@ -1,0 +1,24 @@
+{
+  "context_servers": {
+    "pac-local": {
+      "source": "custom",
+      "command": "C:/tools/pac.exe",
+      "args": [
+        "--base-url",
+        "https://localhost"
+      ],
+      "env": {}
+    },
+    "pac-https": {
+      "source": "custom",
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://localhost/mcp",
+        "--insecure"
+      ],
+      "env": {}
+    }
+  }
+}

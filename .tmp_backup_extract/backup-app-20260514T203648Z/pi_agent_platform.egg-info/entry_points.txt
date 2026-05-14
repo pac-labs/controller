@@ -1,0 +1,2 @@
+[console_scripts]
+pi-agent-mcp = pi_agent_platform.mcp.server:main

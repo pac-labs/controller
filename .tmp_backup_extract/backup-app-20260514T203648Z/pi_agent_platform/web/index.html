@@ -1,0 +1,839 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PAC - Pi Agent Controller v1.0.107</title>
+  <link rel="icon" type="image/svg+xml" href="/ui/assets/favicon.svg" />
+  <link rel="stylesheet" href="/ui/styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand-block">
+      <img class="brand-logo" src="/ui/assets/pac-logo.svg" alt="PAC logo" />
+      <div class="brand-copy">
+        <h1>PAC</h1>
+        <p>Pi Agent Controller — sessions, workspaces, models, endpoints and permissions.</p>
+      </div>
+    </div>
+    <div class="top-actions"><button id="openDownloadsModal" class="top-icon-button monochrome-icon clean-download-icon" title="Downloads" aria-label="Downloads"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3h2v10.2l3.6-3.6L18 11l-6 6-6-6 1.4-1.4 3.6 3.6V3Z"/><path d="M5 19h14v2H5v-2Z"/></svg></button><button id="openEventsPanel" class="top-icon-button monochrome-icon clean-bell-icon" title="Events" aria-label="Events"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a2.8 2.8 0 0 0 2.65-2h-5.3A2.8 2.8 0 0 0 12 22Z"/><path d="M5 17h14v2H5v-2Z"/><path d="M5 17c1.1-1.4 1.7-3.1 1.7-5.1V9a5.3 5.3 0 0 1 10.6 0v2.9c0 2 .6 3.7 1.7 5.1"/></svg></button><button id="refresh" class="top-icon-button monochrome-icon" title="Refresh" aria-label="Refresh"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></button><div id="userChip" class="user-chip" style="display:none;border:none"><span id="userChipName"></span><button id="userChipLogout" class="ghost-button small-ghost" title="Logout" onclick="logoutUser()" style="border:none;background:transparent;padding:0 .2rem;color:#5a5478;cursor:pointer"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3"/><path d="M16 12l5-4-5-4"/><path d="M11 21V7H3v14h8"/></svg></button></div><button id="loginBtn" class="user-head-btn" title="Login or profile" aria-label="Login"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/></svg></button></div>
+  </header>
+  <nav class="tabs" aria-label="Main navigation">
+    <button class="tab active" data-tab="dashboard">Dashboard</button>
+    <button class="tab" data-tab="sessions-tab">Sessions</button>
+    <button class="tab" data-tab="runners-tab">Endpoints</button>
+    <button class="tab" data-tab="models-tab">Models</button>
+    <button class="tab" data-tab="providers-tab">Providers</button>
+    <button class="tab" data-tab="profiles-tab">Profiles</button>
+    <button class="tab" data-tab="workspaces-tab">Workspaces</button>
+    <button class="tab" data-tab="tools-tab">Tools</button>
+    <button class="tab" data-tab="sources-tab">Source library</button>
+    <button class="tab" data-tab="approvals-tab">Approvals</button>
+    <button class="tab" data-tab="settings-tab">Settings</button>
+  </nav>
+
+  <div class="app-shell">
+  <main class="content-area">
+    <section id="dashboard" class="tab-panel active">
+      <div class="dashboard-grid dashboard-metrics">
+        <section class="card hero wide">
+          <div class="hero-title"><img class="hero-mark" src="/ui/assets/pac-icon.svg" alt="" /><div><h2>Operations dashboard</h2><p class="eyebrow">Real activity • Sessions • Endpoints</p></div></div>
+          <p class="muted">Current PAC state across sessions, endpoints and recent events.</p>
+          <div id="dashboardStats" class="stats-grid"><div class="metric"><b>—</b><span>loading</span></div></div>
+          <div class="button-row"><button id="dashboardNewSession">New session</button><button id="openReadmeModal" class="ghost-button">Documentation</button><button id="dashboardRefreshMetrics" class="ghost-button">Refresh metrics</button></div>
+        </section>
+        <section class="card"><h2>Event activity</h2><div id="eventActivityChart" class="spark-chart muted">Loading event activity…</div></section>
+        <section class="card"><h2>System</h2><div class="status-strip"><span class="pac-loader" aria-label="active"></span><span class="muted">PAC active</span></div><div id="systemInfo" class="kv"></div></section>
+        <section class="card"><h2>Recent sessions</h2><div id="sessions"></div></section>
+      </div>
+    </section>
+
+    <section id="sessions-tab" class="tab-panel sessions-workspace">
+      <section class="card wide session-chat-card"><div class="session-chat-head integrated-session-head"><div class="session-picker-wrap"><select id="sessionTopSelect" class="session-top-select" title="Select session"><option value="">Select session</option></select><button id="openSessionModal" class="session-plus-button" title="New session" aria-label="New session">+</button></div><div id="selectedSession" class="muted session-lock-summary">No session selected.</div></div><div class="session-chat-layout single"><div class="session-chat-main"><div id="events" class="session-timeline chat-timeline" aria-live="polite"></div><div class="session-composer chatgpt-composer">
+  <div class="composer-input-shell"><textarea id="taskPrompt" rows="1" placeholder="Message the agent, or start with / to run a command…"></textarea></div>
+  <div class="composer-controls integrated editor-like compact-destination-controls">
+    <div class="context-menu-wrap"><button id="composerAddContext" class="composer-icon-button square" type="button" title="Add context" aria-label="Add context">+</button><div id="composerContextMenu" class="composer-context-menu" hidden><b>Context</b><button type="button">▱ Files & Directories</button><button type="button">⌘ Symbols</button><button type="button">◌ Threads</button><button type="button">▣ Rules</button><button type="button">▧ Image</button><button type="button">Ⅰ Selection</button><button type="button">⌁ Branch Diff</button><button type="button" onclick="alert(slashCommandHelpText())">/ Slash commands</button></div></div>
+    <select id="taskModel" title="Model"><option value="">session model</option></select>
+    <select id="taskExecution" title="Destination"><option value="host">endpoint</option><option value="container">container</option><option value="pi_container">pi.dev</option></select>
+    <button id="runTask" class="composer-send-button square" title="Send" aria-label="Send">➤</button>
+  </div>
+  <input id="taskCommand" hidden value="" />
+  <input id="taskImage" hidden placeholder="Container image" />
+  <div class="muted small-text composer-hint" id="sessionEndpointLock">Create a session to lock it to an endpoint. Use /command rg, /rg, /git, /compact or /subagent. Type /help for the lookup table.</div><select id="taskRunner" hidden><option value="">PAC/local</option></select></div></div></div></section>
+    </section>
+
+    <div id="sessionModal" class="modal-backdrop" hidden>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="sessionModalTitle">
+        <div class="section-heading"><div><h2 id="sessionModalTitle">Create session</h2><p class="muted">Pick a profile, workspace and optional overrides.</p></div><button id="closeSessionModal" class="ghost-button">Close</button></div>
+        <div class="form-grid">
+          <label>Name <input id="sessionName" value="web-session" /></label>
+          <label>Profile <select id="agentProfile"></select></label>
+          <label>Workspace <select id="workspaceProfile"></select></label>
+          <label>Workspace mode <select id="sessionWorkspaceType"><option value="profile">saved workspace</option><option value="local">local path</option><option value="git">git repository</option></select></label>
+          <label>Local path <input id="sessionWorkspacePath" placeholder="optional; PAC creates one when empty" /></label>
+          <label>Git URL <input id="sessionWorkspaceUrl" placeholder="https://... or ssh://..." /></label>
+          <label>Git branch <input id="sessionWorkspaceBranch" placeholder="optional" /></label>
+          <label>Endpoint <select id="sessionEndpoint" required><option value="">select endpoint</option></select><small class="muted">A session stays locked to this endpoint.</small></label>
+          <label>Model override <select id="modelOverride"><option value="">profile default</option></select></label>
+          <label>Permission override <select id="permissionOverride"><option value="">profile default</option></select></label>
+          <label>Context <select id="contextMode"><option value="">profile default</option><option>low</option><option>medium</option><option>high</option><option>max</option></select></label>
+        </div>
+        <div class="button-row"><button id="createSession">Create session</button><span id="sessionCreateStatus" class="muted"></span></div>
+      </section>
+    </div>
+
+    <div id="sessionEventModal" class="modal-backdrop" hidden>
+      <section class="modal-card wide-modal" role="dialog" aria-modal="true" aria-labelledby="sessionEventModalTitle">
+        <div class="section-heading"><div><h2 id="sessionEventModalTitle">Tool activity</h2><p class="muted">Tool use is grouped here. Open a step to see exactly what was done.</p></div><button id="closeSessionEventModal" class="ghost-button">Close</button></div>
+        <div id="sessionEventModalBody" class="modal-scroll-output"></div>
+      </section>
+    </div>
+
+    <div id="gitDiffModal" class="modal-backdrop" hidden>
+      <section class="modal-card wide-modal" role="dialog" aria-modal="true" aria-labelledby="gitDiffModalTitle">
+        <div class="section-heading"><div><h2 id="gitDiffModalTitle">Git changes</h2><p class="muted">Shown only when you ask for it, so the session chat stays focused.</p></div><button id="closeGitDiffModal" class="ghost-button">Close</button></div>
+        <pre id="gitDiffBody" class="modal-scroll-output"></pre>
+      </section>
+    </div>
+    <div id="containerDestinationModal" class="modal-backdrop" hidden>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="containerDestinationTitle">
+        <div class="section-heading"><div><h2 id="containerDestinationTitle">Container destination</h2><p class="muted">Choose the container image used for this message.</p></div><button id="closeContainerDestinationModal" class="ghost-button">Close</button></div>
+        <label>Container image <input id="containerDestinationImage" placeholder="ghcr.io/org/image:tag or localhost/image:tag" /></label>
+        <div class="button-row"><button id="saveContainerDestination">Use container</button><button id="clearContainerDestination" class="ghost-button">Use endpoint instead</button></div>
+        <p class="muted small-text">This only sets the destination for the next session messages. The session remains locked to its endpoint.</p>
+      </section>
+    </div>
+
+    <section id="runners-tab" class="tab-panel">
+      <section class="card wide">
+        <div class="section-heading">
+          <div><h2>Endpoints</h2><p class="muted">Compact host inventory, health, versions, containers and maintenance actions.</p></div>
+          <div class="button-row">
+            <button id="openEndpointModal">Add remote endpoint</button>
+            <button id="addLocalRunner" class="ghost-button">Add local endpoint</button>
+            <button id="discoverLocal" class="ghost-button">Discover local host</button>
+          </div>
+        </div>
+        <div id="runnerSummaryEndpoints" class="stats-grid compact-stats"></div>
+        <div class="button-row"><button id="updateAllEndpoints">Update all online endpoints</button><button id="maintenanceAllEndpoints" class="ghost-button">Maintenance all online endpoints</button></div>
+        <div id="runners" class="endpoint-grid"></div>
+        <pre id="localDiscovery" class="compact-output"></pre>
+      </section>
+    </section>
+
+    <div id="endpointModal" class="modal-backdrop" hidden>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="endpointModalTitle">
+        <div class="section-heading"><div><h2 id="endpointModalTitle">Add remote endpoint</h2><p class="muted">Register a remote execution environment. pi.dev wrapper workloads require Node.js on the endpoint.</p></div><button id="closeEndpointModal" class="ghost-button">Close</button></div>
+        <div class="form-grid">
+          <label>Name <input id="runnerName" value="gpu-workstation-01" /></label>
+          <label>Labels <input id="runnerLabels" value="linux,gpu,endpoint" /></label>
+          <label>Endpoint URL <input id="runnerEndpoint" placeholder="optional: https://runner-host:8765" /></label>
+          <label class="checkbox-line"><input id="runnerAgentEnabled" type="checkbox" /> Enable pi.dev workloads</label>
+          <label>Endpoint tools <select id="runnerTools" multiple size="7"></select><small class="muted">Local binaries available to this endpoint.</small></label>
+          <label>Default workspace <select id="runnerDefaultWorkspace"></select><small class="muted">Workspace used when the endpoint runs agent tasks.</small></label>
+          <div class="package-strip"><b>Packages</b><div id="runnerToolPackagePreview" class="pill-list"></div></div>
+        </div>
+        <div class="button-row"><button id="addRunner">Save endpoint</button><span id="endpointModalStatus" class="muted"></span></div>
+      </section>
+    </div>
+
+    <section id="models-tab" class="tab-panel">
+      <div class="models-overview-layout">
+        <div class="models-left">
+          <div class="section-heading">
+            <div><h2>Models marketplace</h2><p class="muted">All configured models. Click any card to edit.</p></div>
+            <span id="modelsMoreAvailable" class="muted small-text" style="display:none"></span>
+            <button id="showUnconfigModels" class="ghost-button small-ghost" title="Browse available models from connected providers">Browse</button>
+            <button id="openMarketplaceModal" class="ghost-button small-ghost" title="Browse HuggingFace models">🔭 Marketplace</button>
+            <button id="openModelModal" class="top-icon-button" title="Add model">+</button>
+          </div>
+          <div id="modelFormResult" class="inline-result" hidden></div>
+          <div id="models-configured"></div>
+          <div id="unconfiguredModelsPanel" class="unconfig-models-panel" hidden>
+            <div class="section-heading compact-heading">
+              <div><h3>Available from providers</h3><p class="muted small-text">Click Use to configure a model.</p></div>
+              <button id="closeUnconfigModels" class="ghost-button small-ghost">Close</button>
+            </div>
+            <div id="unconfiguredModelsList"></div>
+          </div>
+        </div>
+        <div class="models-right">
+          <div id="models-recommendations-panel" class="card models-recommendations" hidden>
+            <div class="section-heading compact-heading">
+              <div><h3>Configuration recommendations</h3><p class="muted small-text">Model skill has detected settings that could be improved.</p></div>
+            </div>
+            <div id="models-recommendations-body"></div>
+          </div>
+          <div class="card models-active-sessions-panel">
+            <h2>Active sessions</h2>
+            <div id="models-active-sessions"><div class="muted small-text">Loading...</div></div>
+          </div>
+          <div class="card models-live-panel">
+            <h2>Live server models</h2>
+            <div id="models-live"></div>
+          </div>
+
+        <!-- Marketplace Modal -->
+        <div id="marketplaceModal" class="modal-backdrop" hidden>
+          <div class="modal-card" style="max-width:1200px;max-height:92vh;overflow:hidden">
+            <div class="section-heading">
+              <div><h2>🔭 Model Marketplace</h2><p class="muted small-text">Search HuggingFace GGUF models — compatible with your providers</p></div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(148,163,184,0.12)">
+              <input id="mpSearchInput" class="text-input" placeholder="Search (e.g. qwen coder)" style="width:220px">
+              <select id="mpCapabilityFilter" class="select-input" style="width:120px">
+                <option value="">All types</option>
+                <option value="coding">💻 Coding</option>
+                <option value="reasoning">🧠 Reasoning</option>
+                <option value="tool_use">🔧 Tool use</option>
+                <option value="fast">⚡ Fast/small</option>
+              </select>
+              <select id="mpSortBy" class="select-input" style="width:140px">
+                <option value="downloads">Most downloaded</option>
+                <option value="likes">Most liked</option>
+                <option value="recently_updated">Recently updated</option>
+              </select>
+              <button id="mpSearchBtn" class="ghost-button small-ghost">Search</button>
+            </div>
+            <div id="mpStatus" class="inline-result" hidden style="padding:6px 0"></div>
+            <div id="mpContent" style="display:flex;gap:0;height:calc(92vh - 200px);overflow:hidden">
+              <div id="mpResultsList" style="width:320px;overflow-y:auto;flex-shrink:0;border-right:1px solid rgba(148,163,184,0.12);padding-right:12px">
+                <div class="muted small-text" style="padding:1rem;text-align:center">Enter a search term and click Search</div>
+              </div>
+              <div id="mpDetailPanel" style="flex:1.5;overflow-y:auto;min-width:280px;padding-left:16px">
+                <div class="muted small-text" style="padding:2rem;text-align:center">Select a model from the list to see details and compatibility</div>
+              </div>
+            </div>
+            <div style="padding:8px 0 0;border-top:1px solid rgba(148,163,184,0.12);display:flex;justify-content:flex-end">
+              <button id="closeMarketplaceModal" class="ghost-button">Close</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="providers-tab" class="tab-panel">
+      <div class="providers-overview-layout">
+        <div class="providers-left">
+          <div class="section-heading">
+            <div><h2>Providers</h2><p class="muted">Providers connect PAC to model APIs and expose live model lists.</p></div>
+            <button id="openProviderModal" class="top-icon-button" title="Add provider">+</button>
+          </div>
+          <div id="providerFormResult" class="inline-result"></div>
+          <div id="providers" class="provider-grid"></div>
+        </div>
+        <div class="card providers-right-panel">
+          <h2>Live provider models</h2>
+          <div id="providers-live"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="profiles-tab" class="tab-panel">
+      <div class="profiles-overview-layout">
+        <div class="profiles-left">
+          <div class="section-heading">
+            <div><h2>Profiles</h2><p class="muted">Session presets. Select a model before creating a profile.</p></div>
+            <button id="openProfileModal" class="top-icon-button" title="Add profile">+</button>
+          </div>
+          <div id="profileFormResult" class="inline-result"></div>
+          <div id="profiles"></div>
+        </div>
+        <div class="card profiles-right-panel">
+          <h2>Session usage</h2>
+          <div id="profiles-usage"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="workspaces-tab" class="tab-panel">
+      <div class="workspaces-overview-layout">
+        <div class="workspaces-left">
+          <div class="section-heading">
+            <div><h2>Workspaces</h2><p class="muted">Portable workspaces placed on endpoints, populated from zip data, and cleaned up on expiry.</p></div>
+            <button id="openWorkspaceModal" class="top-icon-button" title="Add workspace">+</button>
+          </div>
+          <div id="workspaceFormResult" class="inline-result"></div>
+          <div id="workspaces" class="workspace-list"></div>
+        </div>
+        <div class="card workspaces-right-panel">
+          <h2>Active workspaces</h2>
+          <div id="workspaces-active"></div>
+        </div>
+      </div>
+    </section>
+
+
+
+    <div id="providerModal" class="modal-backdrop" hidden>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="providerModalTitle">
+        <div class="section-heading"><div><h2 id="providerModalTitle">Provider</h2><p class="muted">Configure the API endpoint PAC uses to list and call models.</p></div><button id="closeProviderModal" class="ghost-button">Close</button></div>
+        <div class="form-grid compact-form">
+          <label>Provider name <input id="providerName" placeholder="lmstudio" /></label>
+          <label>Provider preset <select id="providerPreset"><option value="custom-openai">Custom OpenAI-compatible</option><option value="openai">OpenAI</option><option value="openai-codex">OpenAI / Codex</option><option value="anthropic">Anthropic Claude</option><option value="minimax">MiniMax</option><option value="gemini">Google Gemini</option><option value="groq">Groq</option><option value="openrouter">OpenRouter</option><option value="deepseek">DeepSeek</option><option value="mistral">Mistral</option><option value="lmstudio">LM Studio</option><option value="ollama">Ollama</option><option value="vllm">vLLM</option><option value="custom-anthropic">Custom Anthropic-compatible</option></select></label>
+          <label>Type <select id="providerType"><option>openai-compatible</option><option>openai</option><option>openai-codex</option><option>anthropic</option><option>anthropic-compatible</option><option>minimax</option><option>gemini</option><option>lmstudio</option><option>ollama</option><option>vllm</option><option>groq</option><option>openrouter</option><option>deepseek</option><option>mistral</option><option>cohere</option></select></label>
+          <label>Base URL <input id="providerBaseUrl" placeholder="http://host:1234/v1" /></label>
+          <label>API key env <input id="providerApiKeyEnv" placeholder="OPENAI_API_KEY" /></label>
+          <label>API key <input id="providerApiKey" placeholder="optional" type="password" /></label>
+          <label>Timeout seconds <input id="providerTimeout" type="number" value="30" /></label>
+          <label>Execution type <select id="providerExecutionType"><option>unknown</option><option>local</option><option>remote</option><option>proxied</option><option>distributed</option></select><small class="muted">Where inference is reached from PAC.</small></label>
+          <label>Provider class <input id="providerClass" placeholder="ollama, lmstudio, vllm, openai" /></label>
+          <label>Device category <select id="providerDeviceCategory"><option>unknown</option><option>cpu</option><option>gpu</option><option>tpu</option><option>remote-cluster</option><option>hybrid</option></select></label>
+          <label>Device vendor <input id="providerDeviceVendor" placeholder="nvidia, amd, apple, cloud" /></label>
+          <label>Device model <input id="providerDeviceModel" placeholder="RTX 4090, M2 Max, H100 pool" /></label>
+          <label>Device memory GB <input id="providerDeviceMemory" type="number" step="0.1" placeholder="24" /></label>
+          <label>Host kind <select id="providerHostKind"><option>unknown</option><option>desktop</option><option>server</option><option>vm</option><option>container</option><option>kubernetes</option><option>edge</option><option>cloud</option></select></label>
+          <label>Host OS <input id="providerHostOs" placeholder="linux, windows, macos" /></label>
+          <label>Host arch <input id="providerHostArch" placeholder="amd64, arm64" /></label>
+          <label>Accelerators <input id="providerAccelerators" placeholder="cuda, rocm, metal" /><small class="muted">Comma-separated runtime hints.</small></label>
+          <label class="checkbox-line"><input id="providerDeviceShared" type="checkbox" /> Device is shared</label>
+        </div>
+        <div class="button-row"><button id="saveProvider">Save provider</button><button id="connectProviderForm">Connect provider</button><span id="providerModalStatus" class="muted"></span></div>
+      </section>
+    </div>
+
+    <div id="modelModal" class="modal-backdrop" hidden>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modelModalTitle">
+        <div class="section-heading"><div><h2 id="modelModalTitle">Model</h2><p class="muted">Choose the provider model ID and the endpoint that should run sessions using it.</p></div><button id="closeModelModal" class="ghost-button">Close</button></div>
+        <div class="form-grid compact-form">
+          <label>Model name <input id="modelName" placeholder="qwen-coder-local" /></label>
+          <label>Provider <select id="modelProvider"></select></label>
+          <label>Provider model ID <input id="modelId" placeholder="qwen2.5-coder-14b-instruct" /></label>
+          <label>Execution endpoint <select id="modelRunsOn"><option value="">PAC/local</option></select><small class="muted">Endpoint used by default for sessions using this model.</small></label>
+          <label>Context window <input id="modelContextWindow" type="number" value="4096" /></label>
+          <label>Max output tokens <input id="modelMaxOutput" type="number" value="1024" /></label>
+        </div>
+        <div class="form-grid compact-form" style="margin-bottom:.5rem">
+          <label>Architecture <input id="modelArchitecture" placeholder="e.g. transformer, moe" /></label>
+          <label>Format <select id="modelFormat"><option value="chat">Chat</option><option value="instruct">Instruct</option><option value="completion">Completion</option><option value="embedding">Embedding</option></select></label>
+          <label>Parameter count <input id="modelParameterCount" placeholder="e.g. 7B, 14B" /></label>
+        </div>
+        <div class="check-grid">
+          <label><input id="modelSupportsVision" type="checkbox" /> Vision</label>
+          <label><input id="modelSupportsJson" type="checkbox" /> JSON</label>
+          <label><input id="modelSupportsStreaming" type="checkbox" checked /> Streaming</label>
+          <label><input id="modelSupportsReasoning" type="checkbox" /> Reasoning</label>
+          <label><input id="modelSupportsToolUse" type="checkbox" /> Tool Use</label>
+          <label><input id="modelSupportsAgentic" type="checkbox" /> Agentic</label>
+          <label><input id="modelSupportsCoding" type="checkbox" /> Coding</label>
+          <label><input id="modelSupportsFunctionCalling" type="checkbox" /> Function Calling</label>
+        </div>
+        <div id="lmStudioModelControls" class="runtime-panel" hidden>
+          <div class="section-heading compact-heading"><div><h3>LM Studio runtime</h3><p class="muted">Load this model into LM Studio with the context and runtime settings PAC should use interactively.</p></div></div>
+          <div class="form-grid compact-form">
+            <label>Load context length <input id="lmModelContextLength" type="number" placeholder="32768" /></label>
+            <label>GPU offload <input id="lmModelGpuOffload" type="number" placeholder="layers / percent" /></label>
+            <label>Eval batch size <input id="lmModelEvalBatch" type="number" placeholder="512" /></label>
+            <label>Temperature <input id="lmModelTemperature" type="number" step="0.01" placeholder="0.7" /></label>
+            <label>Top P <input id="lmModelTopP" type="number" step="0.01" placeholder="0.95" /></label>
+            <label>Seed <input id="lmModelSeed" type="number" placeholder="optional" /></label>
+          </div>
+          <div class="check-grid">
+            <label><input id="lmModelFlashAttention" type="checkbox" checked /> Flash attention</label>
+            <label><input id="lmModelKvGpu" type="checkbox" checked /> KV cache on GPU</label>
+            <label><input id="lmModelEchoLoadConfig" type="checkbox" checked /> Show applied config</label>
+          </div>
+          <div class="button-row"><button id="loadLmStudioModel" class="ghost-button">Load in LM Studio</button><button id="unloadLmStudioModel" class="ghost-button">Unload</button><button id="inspectLmStudioModel" class="ghost-button">Inspect server</button></div>
+        </div>
+        <div class="button-row"><button id="saveModel">Save model</button><button id="testModelForm" class="ghost-button">Test model</button><span id="modelModalStatus" class="muted"></span></div>
+      </section>
+    </div>
+
+    <div id="profileModal" class="modal-backdrop" hidden>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+        <div class="section-heading"><div><h2 id="profileModalTitle">Profile</h2><p class="muted">Define an agent type with its model, context, workspace, tools, and permissions.</p></div><button id="closeProfileModal" class="ghost-button">Close</button></div>
+        <div class="form-grid compact-form">
+          <label>Profile name <input id="profileName" placeholder="coding-agent" /></label>
+          <label>Model <select id="profileModel"></select></label>
+        </div>
+        <div class="form-grid compact-form">
+          <label>Context mode <select id="profileContextMode"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="max">Max</option></select></label>
+          <label>Context profile <select id="profileContextProfile"><option value="medium">Default (medium)</option></select><small class="muted">Token budget preset.</small></label>
+        </div>
+        <div class="form-grid compact-form">
+          <label>Workspace <select id="profileWorkspace"><option value="">None</option></select><small class="muted">Default workspace for sessions from this profile.</small></label>
+          <label>Permission profile <select id="profilePermission"><option value="ask-first">Ask-first</option><option value="open">Open</option><option value="locked">Locked</option></select></label>
+        </div>
+        <div class="form-grid compact-form">
+          <label>Max runtime (min) <input id="profileMaxRuntime" type="number" value="60" /></label>
+          <label>System prompt <input id="profileSystemPrompt" placeholder="You are..." /></label>
+        </div>
+        <div class="section-heading compact-heading"><div><h3>Tools</h3></div></div>
+        <div id="profileTools" class="check-grid"></div>
+        <div class="button-row"><button id="saveProfile">Save profile</button><button id="deleteProfile" class="danger-ghost">Delete</button><span id="profileModalStatus" class="muted"></span></div>
+      </section>
+    </div>
+
+    <section id="tools-tab" class="tab-panel">
+      <div class="tools-overview-layout">
+        <div class="tools-left">
+          <div class="section-heading">
+            <div><h2>Tools</h2><p class="muted">Local endpoint binaries. Packages group tools for development or operations.</p></div>
+            <button id="openToolModal" class="top-icon-button" title="Add tool">+</button>
+          </div>
+          <div id="toolFormResult" class="inline-result"></div>
+          <div id="toolsOverview"></div>
+        </div>
+        <div class="card tools-right-panel">
+          <h2>Installed packages</h2>
+          <div id="tools-packages"></div>
+        </div>
+      </div>
+    </section>
+
+
+
+    <div id="workspaceModal" class="modal-backdrop" hidden>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="workspaceModalTitle">
+        <div class="section-heading"><div><h2 id="workspaceModalTitle">Workspace</h2><p class="muted">Portable workspace placed on an endpoint.</p></div><button id="closeWorkspaceModal" class="ghost-button">Close</button></div>
+        <div class="form-grid compact-form">
+          <label>Workspace name <input id="workspaceName" placeholder="my-workspace" /></label>
+          <label>Type <select id="workspaceType"><option value="local">Local</option><option value="git">Git</option><option value="container">Container</option></select></label>
+          <label>Runtime <select id="workspaceRuntime"><option value="any">Any</option><option value="pi.dev">pi.dev</option><option value="native">Native</option></select></label>
+          <label>Path <input id="workspacePath" placeholder="/home/agent/workspace" /></label>
+          <label>Git URL <input id="workspaceUrl" placeholder="https://github.com/user/repo" /></label>
+          <label>Branch <input id="workspaceBranch" placeholder="main" /></label>
+          <label>Container image <input id="workspaceContainerImage" placeholder="python:3.11-slim" /></label>
+          <label>Default agent profile <input id="workspaceDefaultProfile" placeholder="default" /></label>
+          <label>Endpoint ID <input id="workspaceEndpoint" placeholder="pi-001" /></label>
+          <label>Endpoint selector <input id="workspaceEndpointSelector" placeholder="label:dev" /></label>
+          <label>Data bundle URL <input id="workspaceDataUrl" placeholder="https://..." /></label>
+          <label>Data bundle path <input id="workspaceDataPath" placeholder="/local/path.zip" /></label>
+          <label>Data mount path <input id="workspaceDataMount" placeholder="/mnt/data" /></label>
+          <label>TTL hours <input id="workspaceTtlHours" type="number" placeholder="72" /></label>
+          <label>Protected paths <input id="workspaceProtectedPaths" placeholder="config/, *.key, tls/" /><small class="muted">Comma-separated glob patterns for paths humans should not modify</small></label>
+          <label>Human write policy <select id="workspaceHumanWritePolicy">
+            <option value="deny">Deny — block writes to protected paths</option>
+            <option value="ask">Ask — require approval for protected paths</option>
+            <option value="allow">Allow — no restriction</option>
+          </select></label>
+        </div>
+        <div class="check-grid">
+          <label><input id="workspaceEphemeral" type="checkbox" /> Ephemeral (auto-delete)</label>
+          <label><input id="workspaceDeleteOnExpire" type="checkbox" /> Delete on expire</label>
+          <label><input id="workspaceIsDefault" type="checkbox" /> Default workspace</label>
+        </div>
+        <div class="button-row"><button id="saveWorkspace">Save workspace</button><button id="deleteWorkspace" class="ghost-button danger-button">Delete</button><span id="workspaceModalStatus" class="muted"></span></div>
+      </section>
+    </div>
+
+
+    <div id="toolModal" class="modal-backdrop" hidden>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="toolModalTitle">
+        <div class="section-heading"><div><h2 id="toolModalTitle">Tool</h2><p class="muted">Local endpoint binary exposed to agents.</p></div><button id="closeToolModal" class="ghost-button">Close</button></div>
+        <div class="form-grid compact-form">
+          <label>Tool name <input id="toolName" placeholder="my-tool" /></label>
+          <label>Description <input id="toolDescription" placeholder="What this tool does" /></label>
+          <label>Package <input id="toolPackage" placeholder="my-package" /></label>
+        </div>
+        <div class="check-grid">
+          <label><input id="toolEnabled" type="checkbox" checked /> Enabled</label>
+        </div>
+        <div class="button-row"><button id="saveTool">Save tool</button><button id="deleteTool" class="ghost-button danger-button">Delete</button><span id="toolModalStatus" class="muted"></span></div>
+      </section>
+    </div>
+
+    <div id="downloadsModal" class="modal-backdrop" hidden>
+      <section class="modal-card wide-modal" role="dialog" aria-modal="true" aria-labelledby="downloadsModalTitle">
+        <div class="section-heading"><div><h2 id="downloadsModalTitle">Downloads</h2><p class="muted">Compiled binary artifacts available for download.</p></div><button id="closeDownloadsModal" class="ghost-button">Close</button></div>
+        <div class="source-workbench-toolbar" style="margin-bottom:.6rem">
+          <div class="source-menu-wrap">
+            <select id="binaryFolderFilter" style="min-width:200px"></select>
+          </div>
+        </div>
+        <div id="sourceBinaryArtifacts" style="max-height:65vh;overflow-y:auto"><span class="muted">Loading...</span></div>
+      </section>
+    </div>
+
+    <section id="sources-tab" class="tab-panel source-workbench-panel">
+      <div class="source-workbench-toolbar">
+        <div class="source-menu-wrap">
+          <button id="sourceFileMenuButton" class="ghost-button source-menu-button">File</button>
+          <div id="sourceFileMenu" class="source-file-menu" hidden>
+            <button id="sourceMenuSave" type="button">Save</button>
+            <button id="sourceMenuSaveAll" type="button">Save all</button>
+          </div>
+        </div>
+        <button id="newSourceFile" class="source-toolbar-icon" title="New file" aria-label="New file"><span class="ui-icon icon-new-file" aria-hidden="true"></span></button>
+        <button id="newSourceFolder" class="source-toolbar-icon" title="New folder" aria-label="New folder"><span class="ui-icon icon-new-folder" aria-hidden="true"></span></button>
+        <button id="renameSourceEntry" class="source-toolbar-icon" title="Rename selected" aria-label="Rename selected"><span class="ui-icon icon-rename" aria-hidden="true"></span></button>
+        <button id="deleteSourceEntry" class="source-toolbar-icon danger" title="Delete selected" aria-label="Delete selected"><span class="ui-icon icon-trash" aria-hidden="true"></span></button>
+        <span id="sourceActionHint" class="muted small-text source-toolbar-status">Buildable folders show a version and build button.</span>
+      </div>
+      <div class="source-workbench">
+        <aside class="source-workbench-tree">
+          <div id="sourceTree" class="source-tree source-file-tree muted">Loading sources…</div>
+        </aside>
+        <section class="source-workbench-editor" >
+          <div class="source-editor-area">
+            <div id="sourceTabs" class="source-tabs"><span class="muted small-text">Open a file from the tree.</span></div>
+            <textarea id="sourceEditor" class="source-editor source-code-editor" spellcheck="false" placeholder="Select a source file from the tree…"></textarea>
+            <div id="sourceFormResult" class="inline-result compact-result" hidden></div>
+            <button id="saveSourceFile" hidden>Save file</button>
+          </div>
+          <aside class="source-right-panels">
+            <div class="source-right-card" id="sourceConfigPanel">
+              <h3>Configuration</h3>
+              <div id="sourceConfigContent" class="source-right-content"></div>
+            </div>
+            <div class="source-right-card" id="sourceSecretsPanel">
+              <h3>Secrets</h3>
+              <div id="sourceSecretsContent" class="source-right-content"></div>
+            </div>
+          </aside>
+        </section>
+      </div>
+    </section>
+
+
+
+    <section id="approvals-tab" class="tab-panel">
+      <section class="card wide"><h2>Pending approvals</h2><p class="muted">Full-control sessions bypass approvals, but are still logged in the timeline.</p><div id="approvals"></div></section>
+    </section>
+
+
+    <section id="settings-tab" class="tab-panel">
+      <div class="settings-subnav">
+        <button class="settings-sub-btn active" data-settings-panel="updates">Updates</button>
+        <button class="settings-sub-btn" data-settings-panel="users">Users</button>
+        <button class="settings-sub-btn" data-settings-panel="pi-dev">pi.dev</button>
+        <button class="settings-sub-btn" data-settings-panel="endpoint">Endpoint</button>
+        <button class="settings-sub-btn" data-settings-panel="service">Service</button>
+        <button class="settings-sub-btn" data-settings-panel="tls">TLS / CA</button>
+        <button class="settings-sub-btn" data-settings-panel="registry">Registry</button>
+        <button class="settings-sub-btn" data-settings-panel="config">Config</button>
+      </div>
+
+      <!-- Updates -->
+      <div id="settings-updates" class="settings-panel">
+        <div class="settings-panel-inner">
+          <div class="settings-main">
+            <div class="updates-pac-status">
+              <div class="pac-status-line">
+                <span class="pac-status-label">Running</span>
+                <span id="pacCurrentVersion" class="pac-status-version"></span>
+              </div>
+              <div class="pac-status-line" id="pacUpdateStatusLine" style="display:none">
+                <span class="pac-status-label">Status</span>
+                <span id="pacStatusBadge" class="pac-status-badge"></span>
+                <span class="pac-status-version">
+                  <a id="pacUpdateVersionLink" href="#" target="_blank" rel="noopener" style="font-size:0.9em"></a>
+                </span>
+              </div>
+              <div class="pac-update-actions" id="pacUpdateActions" style="margin-top:8px">
+                <button id="checkPacUpdatesBtn" class="ghost-button">Check for updates</button>
+                <button id="applyPacUpdateBtn" class="ghost-button" style="display:none">Update &amp; restart</button>
+                <button id="dismissPacUpdateBtn" class="ghost-button small-ghost" style="display:none">Dismiss</button>
+              </div>
+            </div>
+            <div id="localPatchStatus" class="muted small-text" style="margin-top:6px; display:none"></div>
+
+            <div class="updates-manual-section">
+              <h3 class="updates-section-heading">Manual update</h3>
+              <p class="muted small-text">Upload a PAC zip package to preview or apply manually.</p>
+              <div class="feature-pack-actions">
+                <input id="featurePackFile" type="file" accept=".zip,.pac">
+                <button id="inspectFeaturePack" class="ghost-button">Preview</button>
+                <button id="applyFeaturePack" class="ghost-button" disabled>Apply</button>
+              </div>
+              <div id="featurePackPreview" class="feature-pack-preview muted small-text" style="margin-top:8px">Choose a .zip or .pac file to preview its contents.</div>
+            </div>
+
+            <div class="updates-source-section">
+              <h3 class="updates-section-heading">Source modules</h3>
+              <div class="button-row">
+                <button id="checkSourceUpdates" class="ghost-button">Check source modules online</button>
+                <span id="sourceUpdateStatus" class="muted small-text"></span>
+              </div>
+              <div id="sourceOnlineUpdates" class="muted small-text" style="margin-top:8px">Not checked yet.</div>
+            </div>
+
+
+            <div class="updates-archive-section" id="updates-archive-section">
+              <h3 class="updates-section-heading">Version archive &amp; change tracking</h3>
+              <div class="archive-status-card">
+                <div class="archive-status-line">
+                  <span class="archive-status-label">Archive</span>
+                  <span id="archiveStatusBadge" class="archive-status-badge muted">Not archived</span>
+                  <span id="archiveVersionLabel" class="muted small-text" style="display:none"></span>
+                </div>
+                <div class="archive-status-line" id="archiveChangeLine" style="display:none">
+                  <span class="archive-status-label">Changes</span>
+                  <span id="archiveChangeBadge" class="archive-status-badge change-badge">Diverged from base</span>
+                  <span id="archiveChangeSummary" class="muted small-text"></span>
+                </div>
+                <div class="archive-actions">
+                  <button id="archiveNowBtn" class="ghost-button">Archive current version</button>
+                  <button id="detectChangesBtn" class="ghost-button">Detect changes</button>
+                </div>
+              </div>
+              <div id="archiveStatusMsg" class="muted small-text" style="margin-top:6px; display:none"></div>
+              <div id="archiveDetailPanel" style="margin-top:10px; display:none">
+                <div class="diff-viewer-header">
+                  <span id="diffViewerTitle">Local changes</span>
+                </div>
+                <div id="diffViewerBody" class="diff-viewer-body muted small-text" style="font-family:monospace; font-size:0.8em; white-space:pre-wrap; max-height:200px; overflow-y:auto; background:#111; border-radius:4px; padding:8px; display:none"></div>
+                <div id="archiveDiffActions" class="button-row" style="margin-top:6px; display:none">
+                  <button id="viewChangeDiffBtn" class="ghost-button small-ghost">View changes</button>
+                  <button id="clearChangesBtn" class="ghost-button small-ghost" style="color:#fa0">Discard changes</button>
+                </div>
+              </div>
+              <div class="archive-update-preview" style="margin-top:12px">
+                <div class="button-row">
+                  <button id="diffToLatestBtn" class="ghost-button">Preview update diff</button>
+                  <span id="diffToLatestStatus" class="muted small-text"></span>
+                </div>
+                <div id="diffToLatestResult" class="muted small-text" style="margin-top:6px; display:none"></div>
+              </div>
+            </div>
+
+            <div class="updates-diff-section">
+              <h3 class="updates-section-heading">Generate diff</h3>
+              <p class="muted small-text">Compare your local PAC installation with the official main branch and generate a release diff file.</p>
+              <div class="diff-gen-form">
+                <input id="diffVersionInput" type="text" placeholder="e.g. 1.0.107" style="width:120px" />
+                <button id="generateDiffBtn" class="ghost-button">Generate diff</button>
+              </div>
+              <div id="diffGenStatus" class="muted small-text" style="margin-top:8px; display:none"></div>
+              <div id="diffGenResult" class="muted small-text" style="margin-top:6px; display:none"></div>
+            </div>
+          </div>
+
+          <div class="updates-detail-panel">
+            <div class="updates-detail-header">
+              <span id="updatesDetailTitle">Release details</span>
+              <span id="updatesDetailVersion" class="muted"></span>
+            </div>
+            <div class="updates-detail-body" id="updatesDetailBody">
+              <div class="muted small-text">Check for updates or preview a file to see release notes here.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Users -->
+      <div id="settings-users" class="settings-panel" style="display:none">
+        <div class="settings-panel-inner">
+          <div class="settings-main">
+            <div class="section-heading compact-heading"><h2>User management</h2></div>
+            <p class="muted small-text" style="margin-bottom:1rem">Create and manage users. User-password auth must be enabled in config to log in.</p>
+            <div id="usersList" class="users-list"></div>
+            <div class="button-row" style="margin-top:.75rem">
+              <button id="addUserBtn" class="ghost-button">+ Add user</button>
+            </div>
+            <div id="addUserForm" style="display:none; margin-top:1rem">
+              <div class="form-grid compact-form">
+                <label>Username <input id="newUserUsername" placeholder="username" /></label>
+                <label>Display name <input id="newUserDisplayName" placeholder="Display Name" /></label>
+                <label>Password <input id="newUserPassword" type="password" placeholder="password" /></label>
+                <label>Role <select id="newUserRole"><option value="user">user</option><option value="admin">admin</option><option value="readonly">readonly</option></select></label>
+              </div>
+              <div class="button-row" style="margin-top:.5rem">
+                <button id="saveNewUserBtn" class="ghost-button">Create user</button>
+                <button id="cancelNewUserBtn" class="ghost-button small-ghost">Cancel</button>
+              </div>
+              <pre id="addUserResult" class="inline-result compact-result" style="margin-top:.5rem"></pre>
+            </div>
+          </div>
+          <div class="settings-detail-panel">
+            <h3>Agent memory</h3>
+            <p class="muted small-text">Git-backed memory repos per agent profile. These are initialized on demand and synced manually.</p>
+            <div id="profileMemoryList" class="memory-list"></div>
+            <div class="button-row" style="margin-top:.5rem">
+              <button id="initProfileMemoryBtn" class="ghost-button">+ Init profile memory</button>
+            </div>
+            <div id="initProfileMemoryForm" style="display:none; margin-top:.5rem">
+              <label>Profile name <input id="initMemoryProfile" placeholder="my-profile" /></label>
+              <div class="button-row" style="margin-top:.4rem">
+                <button id="doInitProfileMemoryBtn" class="ghost-button">Create repo</button>
+                <button id="cancelInitProfileMemoryBtn" class="ghost-button small-ghost">Cancel</button>
+              </div>
+            </div>
+            <div id="profileMemoryResult" class="inline-result compact-result" style="margin-top:.5rem"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- pi.dev -->
+      <div id="settings-pi-dev" class="settings-panel" style="display:none">
+        <div class="settings-panel-inner">
+          <div class="settings-main">
+            <h2>Controller pi.dev</h2>
+            <p class="muted">Keep one built-in PAC session connected to pi.dev using the PAC platform workspace.</p>
+            <div id="controllerHarnessStatus" class="kv compact-kv"></div>
+            <div class="form-grid compact-form">
+              <label class="checkbox-line"><input id="harnessEnabled" type="checkbox" /> Enable controller pi.dev</label>
+              <label class="checkbox-line"><input id="harnessAutoBootstrap" type="checkbox" /> Build/install local PAC wrapper and pi.dev on startup</label>
+              <label class="checkbox-line"><input id="harnessAutoBuildWrapper" type="checkbox" /> Auto-build missing PAC wrapper binary</label>
+              <label class="checkbox-line"><input id="harnessAutoInstallPiDev" type="checkbox" /> Auto-install missing pi.dev container</label>
+              <label class="checkbox-line"><input id="harnessAutoSession" type="checkbox" /> Always create/keep one session</label>
+              <label>Session name <input id="harnessSessionName" placeholder="PAC controller pi.dev" /></label>
+              <label>Workspace profile <input id="harnessWorkspaceProfile" placeholder="pac-controller" /></label>
+              <label>Profile <select id="harnessAgentProfile"><option value="">none</option></select></label>
+              <label>Model override <select id="harnessModel"><option value="">profile default</option></select></label>
+              <label>Permission profile <select id="harnessPermission"><option value="ask-first">ask-first</option></select></label>
+              <label>Context mode <select id="harnessContextMode"><option>low</option><option>medium</option><option>high</option><option>max</option></select></label>
+              <label>Runner id <input id="harnessRunnerId" placeholder="controller-harness" /></label>
+              <label class="checkbox-line"><input id="harnessExposeTools" type="checkbox" /> Expose platform tools to pi.dev</label>
+            </div>
+            <div class="button-row" style="margin-top:.75rem"><button id="saveControllerHarness">Save pi.dev settings</button><button id="bootstrapControllerHarness" class="ghost-button">Build/install controller pi.dev</button><button id="openControllerHarnessSession" class="ghost-button">Open pi.dev session</button></div>
+            <pre id="controllerHarnessResult" class="inline-result compact-result" style="margin-top:.5rem"></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Endpoint -->
+      <div id="settings-endpoint" class="settings-panel" style="display:none">
+        <div class="settings-panel-inner">
+          <div class="settings-main">
+            <h2>Endpoint connection</h2>
+            <p class="muted">Use an explicit controller URL for endpoint binaries when mDNS is unavailable. IP addresses are fine.</p>
+            <div class="form-grid compact-form">
+              <label>Controller URL <input id="endpointPublicUrl" placeholder="https://192.168.1.20:443" /></label>
+              <label class="checkbox-line"><input id="endpointMdnsEnabled" type="checkbox" /> Advertise with mDNS</label>
+            </div>
+            <div class="button-row" style="margin-top:.75rem"><button id="saveEndpointConnection">Save endpoint URL</button></div>
+            <pre id="endpointConnectionResult" class="inline-result compact-result" style="margin-top:.5rem"></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Service -->
+      <div id="settings-service" class="settings-panel" style="display:none">
+        <div class="settings-panel-inner">
+          <div class="settings-main">
+            <h2>Service mode</h2>
+            <p class="muted">Run PAC as a user service for simple installs, or as a host/system service for port 443 and machine-wide startup.</p>
+            <div id="serviceModeInfo" class="kv compact-kv"></div>
+            <div class="segmented-control" role="group" aria-label="PAC service mode" style="margin-top:.75rem">
+              <button id="setUserService" class="ghost-button">Use user service</button>
+              <button id="setHostService">Use host service</button>
+            </div>
+            <pre id="serviceModeResult" class="inline-result compact-result" style="margin-top:.5rem"></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- TLS -->
+      <div id="settings-tls" class="settings-panel" style="display:none">
+        <div class="settings-panel-inner">
+          <div class="settings-main">
+            <h2>TLS / local CA</h2>
+            <p class="muted">PAC generates a 30-year local root CA, signs the HTTPS server certificate for admin.pac.local, and advertises the admin service over mDNS.</p>
+            <div id="tlsInfo" class="kv compact-kv"></div>
+            <div class="button-row" style="margin-top:.75rem">
+              <button id="refreshTlsStatus">Refresh TLS</button>
+              <a class="button-link" href="/v1/tls/ca.pem" download>Download CA</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Container Registry -->
+      <div id="settings-registry" class="settings-panel" style="display:none">
+        <div class="settings-panel-inner">
+          <div class="settings-main">
+            <div class="section-heading compact-heading"><h2>Container registry</h2></div>
+            <p class="muted small-text" style="margin-bottom:1rem">Build, tag, and push images to move them between hosts. Images are stored under <code>~/.pacp/registry/</code>.</p>
+            <div id="registryImages" class="registry-list"></div>
+            <div class="button-row" style="margin-top:.75rem">
+              <button id="pullRegistryImageBtn" class="ghost-button">Pull image</button>
+              <button id="buildRegistryImageBtn" class="ghost-button">Build image</button>
+            </div>
+            <div id="pullImageForm" style="display:none; margin-top:.75rem">
+              <label>Image source <input id="pullImageSource" placeholder="registry.example.com/image:tag" style="width:260px" /></label>
+              <label>Local tag <input id="pullImageTag" placeholder="my-image:latest" style="width:160px" /></label>
+              <div class="button-row" style="margin-top:.4rem">
+                <button id="doPullImageBtn" class="ghost-button">Pull</button>
+                <button id="cancelPullImageBtn" class="ghost-button small-ghost">Cancel</button>
+              </div>
+            </div>
+            <div id="buildImageForm" style="display:none; margin-top:.75rem">
+              <label>Dockerfile path <input id="buildDockerfile" placeholder="~/path/to/Dockerfile" style="width:260px" /></label>
+              <label>Image tag <input id="buildImageTag" placeholder="my-image:latest" style="width:160px" /></label>
+              <label>Build context <input id="buildContext" placeholder="~/path/to/context" style="width:200px" /></label>
+              <div class="button-row" style="margin-top:.4rem">
+                <button id="doBuildImageBtn" class="ghost-button">Build &amp; save</button>
+                <button id="cancelBuildImageBtn" class="ghost-button small-ghost">Cancel</button>
+              </div>
+            </div>
+            <pre id="registryResult" class="inline-result compact-result" style="margin-top:.5rem"></pre>
+          </div>
+          <div class="settings-detail-panel">
+            <h3>Image detail</h3>
+            <div id="registryImageDetail" class="muted small-text">Select an image to see its details.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Config -->
+      <div id="settings-config" class="settings-panel" style="display:none">
+        <div class="settings-panel-inner">
+          <div class="settings-main">
+            <div id="pacpInfo" class="kv compact-kv" style="margin-bottom:1rem"></div>
+            <h2>Configuration editor</h2>
+            <p class="muted">Raw JSON config. Saved server-side as YAML in the PAC home directory.</p>
+            <textarea id="configEditor" style="width:100%;min-height:300px;font-family:monospace;font-size:.82rem;background:rgba(15,23,42,.7);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:.75rem;resize:vertical"></textarea>
+            <button id="saveConfig" style="margin-top:.75rem">Save config</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <aside id="eventsRail" class="events-rail" aria-label="Events" hidden>
+    <div class="events-rail-header">
+      <div>
+        <h2>Events</h2>
+        <p>Live activity</p>
+      </div>
+      <div class="events-header-actions"><button id="pinEventsPanel" class="ghost-button events-pin-button" title="Keep events open" aria-pressed="false">📌</button><button id="clearEventPanel" class="ghost-button" title="Clear visible events">Clear</button><button id="closeEventsPanel" class="ghost-button" title="Close events">Close</button></div>
+    </div>
+    <div class="events-filter-row">
+      <span class="event-chip active" data-event-filter="all">All</span>
+      <span class="event-chip" data-event-filter="running">Running</span>
+      <span class="event-chip" data-event-filter="completed">Done</span>
+      <span class="event-chip" data-event-filter="attention">Attention</span>
+    </div>
+    <div id="globalEvents" class="events-list"><div class="empty-events">No events yet.</div></div>
+  </aside>
+  </div>
+  <footer class="app-footer"><img src="/ui/assets/pac-icon.svg" alt="" /> <span>PAC Control • Orchestrate • Execute</span><span class="app-version"><span style="opacity:.55;font-size:.65rem">v</span>1.0.107</span></footer>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="/ui/app.js?v=1.0.107"></script>
+
+<!-- Setup Modal - shown when no users exist -->
+<div id="setupModal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,.92); align-items:center; justify-content:center;">
+  <div style="background:#16162a; border:1px solid #1a1a2e; border-radius:4px; padding:2.5rem; max-width:420px; width:90%; box-shadow:0 8px 40px rgba(0,0,0,.6);">
+    <h2 style="margin:0 0 .5rem; font-size:1.3rem; font-weight:600; color:#e8e6f0;">Create Admin Account</h2>
+    <p style="margin:0 0 1.5rem; color:#8880a0; font-size:.9rem;">Set up your admin account to secure PAC.</p>
+    <form id="setupForm" onsubmit="return handleSetupSubmit(event)">
+      <div style="margin-bottom:1rem;">
+        <label style="display:block; font-size:.85rem; color:#9990b8; margin-bottom:.35rem;">Username</label>
+        <input id="setupUsername" type="text" required autocomplete="username" style="width:100%; background:#0d0d1a; border:1px solid #2a2a4e; border-radius:3px; padding:.6rem .75rem; color:#e8e6f0; font-size:.95rem; box-sizing:border-box;" />
+      </div>
+      <div style="margin-bottom:1rem;">
+        <label style="display:block; font-size:.85rem; color:#9990b8; margin-bottom:.35rem;">Display name</label>
+        <input id="setupDisplayName" type="text" autocomplete="name" style="width:100%; background:#0d0d1a; border:1px solid #2a2a4e; border-radius:3px; padding:.6rem .75rem; color:#e8e6f0; font-size:.95rem; box-sizing:border-box;" />
+      </div>
+      <div style="margin-bottom:1.5rem;">
+        <label style="display:block; font-size:.85rem; color:#9990b8; margin-bottom:.35rem;">Password <span style="font-weight:400; color:#666080;">(min. 8 chars)</span></label>
+        <input id="setupPassword" type="password" required minlength="8" autocomplete="new-password" style="width:100%; background:#0d0d1a; border:1px solid #2a2a4e; border-radius:3px; padding:.6rem .75rem; color:#e8e6f0; font-size:.95rem; box-sizing:border-box;" />
+      </div>
+      <div id="setupError" style="display:none; color:#e06060; font-size:.85rem; margin-bottom:1rem;"></div>
+      <button type="submit" style="width:100%; background:#4a3f8a; color:#fff; border:none; border-radius:3px; padding:.7rem; font-size:.95rem; cursor:pointer; font-weight:500;">Create Account</button>
+    </form>
+  </div>
+</div>
+
+
+    <div id="readmeModal" class="modal-backdrop" hidden>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="readmeModalTitle" style="max-width:800px;max-height:85vh;overflow-y:auto">
+        <div class="section-heading">
+          <div><h2 id="readmeModalTitle">📖 PAC README</h2><p class="muted">Pi Agent Controller — what PAC is and how it works</p></div>
+          <button id="closeReadmeModal" class="ghost-button">Close</button>
+        </div>
+        <div id="readmeContent" style="line-height:1.6;font-size:.88rem"></div>
+      </section>
+    </div>
+</body>
+</html>

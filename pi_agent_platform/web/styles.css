@@ -1571,6 +1571,9 @@ body {
 #sources-tab .source-side-textarea.compact {
   min-height: 72px;
 }
+#sources-tab .source-pac-ram {
+  min-height: 220px;
+}
 #sources-tab .source-side-result,
 #sources-tab .source-secret-audit,
 #sources-tab .source-marketplace-results {

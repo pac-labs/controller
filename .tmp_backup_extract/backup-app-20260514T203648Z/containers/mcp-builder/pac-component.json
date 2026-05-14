@@ -1,0 +1,16 @@
+{
+  "id": "mcp-builder",
+  "title": "MCP Builder Container",
+  "description": "Containerized builder source for MCP/client binaries.",
+  "kind": "container",
+  "version": "1.0.98",
+  "maintainers": [
+    "pac-labs"
+  ],
+  "repository": "https://github.com/pac-labs/packages",
+  "source_path": "containers/mcp-builder",
+  "tags": [
+    "pac",
+    "pi.dev"
+  ]
+}

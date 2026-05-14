@@ -1,0 +1,18 @@
+{
+  "id": "c-dev-container",
+  "title": "C Development Container",
+  "description": "C/C++ development environment with GCC, Make, GDB, CMake, and code search tools. For building and searching C/C++ projects.",
+  "kind": "container",
+  "version": "1.0.0",
+  "maintainers": [
+    "pac-labs"
+  ],
+  "repository": "https://github.com/pac-labs/packages",
+  "source_path": "containers/c-dev",
+  "tags": [
+    "pac",
+    "workspace",
+    "development"
+  ],
+  "is_workspace_container": true
+}

@@ -1,0 +1,271 @@
+= PAC Technical Design Document
+Version: 0.3
+
+== Purpose
+
+This document defines the architecture, terminology, and execution model of the PAC platform.
+It is intended as a single source of truth for developers and agents working on the system.
+
+== Platform Definition
+
+PAC is a local-first, distributed agent orchestration platform.
+
+It enables:
+- Execution of tasks across multiple endpoints
+- Structured use of tools within controlled workspaces
+- Integration with external model providers
+- Iterative planning and execution through agents
+- PAC-backed development sessions from IDEs and the Web UI
+- Customer- and user-scoped working contexts
+
+PAC does NOT:
+- Host or run language models itself
+- Replace endpoint capabilities
+- Treat the controller as a general-purpose compute node for arbitrary heavy work
+
+== Architecture Overview
+
+Components:
+- Controller
+- Agents
+- Endpoints
+- Endpoint Containers
+- Workspaces
+- Tools
+- Plugins
+- Model Providers (external)
+- IDE Integrations
+
+The Controller coordinates. Agents decide and execute. Endpoints perform work.
+
+== Core Components
+
+=== Controller
+
+Central orchestration layer.
+
+Responsibilities:
+- Task planning
+- Agent coordination
+- Endpoint selection
+- State management
+- Session bootstrap for IDE/Web initiated work
+- Lightweight operational preparation for execution environments
+
+Constraints:
+- No model hosting or inference
+- No broad parallel heavy execution as a default controller role
+
+Allowed controller-local work:
+- Configuration management
+- Session orchestration
+- State persistence
+- Artifact indexing
+- Small control-plane actions such as bootstrap, wrapper management, metadata collection, and targeted container launch requests
+
+Non-goals for the controller:
+- Running large user workloads directly by default
+- Acting as the main endpoint for all code execution
+- Becoming the primary location for long-running heavy agent fleets
+
+=== Agents
+
+Agents are the core intelligence layer.
+
+Types:
+- Controller Agent (planning)
+- Endpoint Agent (execution)
+- Subagents (scoped workers attached to a session or endpoint/container execution context)
+
+Responsibilities:
+- Interpret tasks
+- Select tools and endpoints
+- Interact with model providers
+- Iterate based on results
+- Delegate bounded work to subagents when appropriate
+
+Clarification:
+- PAC may coordinate multiple external model providers for a single task lifecycle.
+- Intelligence is externalized to providers, but PAC remains responsible for orchestration, routing, control, and safety decisions.
+
+=== Endpoints
+
+Execution environments.
+
+Characteristics:
+- OS-agnostic (Linux, Windows, etc.)
+- Tool-capable
+- Workspace-hosting
+- Self-contained execution
+
+Endpoints must:
+- Register with controller
+- Expose available tools
+- Allow secure command execution
+- Be addressable through the controller so PAC can route session work to them
+
+Endpoints may:
+- Be physical or virtual machines
+- Be Windows, Linux, or other supported operating systems
+- Support local tool execution only
+- Support container execution
+- Host endpoint-local agents or wrappers that maintain connectivity to the controller
+
+Endpoint containers:
+- Are valid execution environments for PAC sessions
+- May be launched on a selected endpoint for isolated work
+- May host a scoped worker/subagent runtime for the lifetime of a session or stage
+
+=== Workspaces
+
+Scoped execution environments.
+
+Properties:
+- Contain context (code, docs, data)
+- Assigned to endpoints
+- Used by agents for execution
+- Can be:
+  - Persistent
+  - Ephemeral
+- May be customer-scoped and user-scoped
+
+Purpose:
+- Provide bounded context for tasks
+- Carry the right customer documentation, repository state, and user-specific context for the selected session
+
+=== Tools
+
+Executable binaries available on endpoints.
+
+Rules:
+- Installed locally
+- Versioned
+- Discoverable by PAC
+
+Grouped into:
+- Tool packages (dev, ops, etc.)
+
+=== Plugins
+
+Extend agent capabilities.
+
+Examples:
+- Parsing logic
+- Data processors
+- Workflow helpers
+
+Plugins are:
+- Not binaries
+- Loaded by agents
+- Contextual
+
+=== Model Providers
+
+External systems providing AI/model capabilities.
+
+Examples:
+- Remote APIs
+- Local inference servers
+
+PAC usage:
+- Agents send requests
+- Agents interpret results
+
+PAC does not manage models directly.
+
+Provider expectations:
+- PAC can route different stages or subtasks to different model providers.
+- PAC should collect lightweight provider and endpoint metadata so operators can understand hardware fit, health, and whether a chosen provider is under stress.
+
+== Execution Model
+
+1. Task received
+2. Controller Agent creates execution plan
+3. Plan split into stages
+4. For each stage:
+   - Select endpoint
+   - Select workspace
+   - Select tools
+   - Optionally select model provider
+   - Optionally select or launch an endpoint container
+   - Optionally attach or create a scoped subagent
+5. Endpoint Agent executes tools
+6. Results returned to Controller Agent
+7. If needed:
+   - Send data to model provider
+   - Receive interpretation
+8. Iterate until completion
+
+Typical PAC-backed IDE flow:
+
+1. User opens PAC integration in Zed or VS Code
+2. User selects a session type, such as `docs/customer_name`
+3. User selects a profile, such as `doc-reader`
+4. PAC resolves:
+   - customer context
+   - user context
+   - target repository/workspace
+   - execution endpoint
+   - model/provider profile
+5. PAC starts or reuses an endpoint container when isolation is required
+6. PAC materializes the repository and context into that execution environment
+7. A scoped endpoint-side worker or subagent is attached to the session
+8. Session state and progress are visible in the PAC online system and IDE
+
+== Communication Model (Draft)
+
+- Controller <-> Endpoint Agent:
+  - Secure API (HTTP/gRPC)
+  - Task dispatch + result return
+
+- Agent <-> Model Provider:
+  - API-based interaction
+
+- Endpoint:
+  - Executes locally
+  - Reports back
+
+- IDE <-> Controller:
+  - Session initiation
+  - Session attachment
+  - Timeline/status streaming
+  - Workspace/profile selection
+
+== Design Principles
+
+- Local-first execution
+- Explicit execution boundaries
+- Agent-driven logic
+- Externalized intelligence (models)
+- Modular extensibility
+- Secure communication
+- Visible orchestration across IDE, controller, endpoint, and container boundaries
+- Customer- and user-aware session bootstrapping
+
+== Constraints
+
+- No internal model hosting
+- Endpoint must support required tools
+- Workspace defines scope
+- Network required for model access (unless local provider exists)
+- PAC should prefer endpoint-local execution over controller-local execution for user workloads
+- User-facing sessions should be reproducible from explicit profile, workspace, endpoint, and context selection
+
+== Known Gaps (Next Iteration)
+
+- Endpoint communication protocol specification
+- Workspace lifecycle definition
+- Security model (auth, secrets, isolation)
+- Agent capability schema
+- Tool discovery standard
+- Container-backed IDE session lifecycle
+- Customer/user context materialization contract
+- Provider and endpoint metrics model
+
+== Notes for Future Agents
+
+- Do not assume models run inside PAC
+- Always respect workspace boundaries
+- Prefer endpoint-local execution
+- Treat tools as authoritative execution layer
+- Keep controller control-plane oriented, but do not confuse "lightweight" with "unable to perform operational bootstrap work"

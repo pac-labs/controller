@@ -1,0 +1,18 @@
+{
+  "id": "python-dev-container",
+  "title": "Python Development Container",
+  "description": "Python 3 development environment with uv, pytest, and code search tools for writing, testing, and reviewing Python projects.",
+  "kind": "container",
+  "version": "1.0.0",
+  "maintainers": [
+    "pac-labs"
+  ],
+  "repository": "https://github.com/pac-labs/packages",
+  "source_path": "containers/python-dev",
+  "tags": [
+    "pac",
+    "workspace",
+    "development"
+  ],
+  "is_workspace_container": true
+}

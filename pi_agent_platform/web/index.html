@@ -368,6 +368,32 @@
             <div id="sourceSecretAudit" class="source-secret-audit muted">No secret audit events loaded yet.</div>
           </section>
           <section class="source-sidecard">
+            <div class="section-heading compact-heading"><div><h3>Source Variables</h3><p class="muted">Reusable config fragments that contexts and IDE clients can resolve without exposing secrets.</p></div></div>
+            <label>Variable <select id="sourceVariableSelect"><option value="">Select variable</option></select></label>
+            <label>ID <input id="sourceVariableId" placeholder="GIT_AUTHOR_EMAIL" /></label>
+            <label>Description <input id="sourceVariableDescription" placeholder="Default Git identity for customer work" /></label>
+            <label>Tags (comma separated) <input id="sourceVariableTags" placeholder="git,customer-a,ide" /></label>
+            <label>Value <textarea id="sourceVariableValue" class="source-side-textarea compact" spellcheck="false" placeholder="pac@example.com"></textarea></label>
+            <div class="button-row">
+              <button id="saveSourceVariable">Save variable</button>
+              <button id="deleteSourceVariable" class="ghost-button">Delete</button>
+            </div>
+            <div id="sourceVariableList" class="source-secret-audit muted">No source variables loaded yet.</div>
+          </section>
+          <section class="source-sidecard">
+            <div class="section-heading compact-heading"><div><h3>PAC RAM</h3><p class="muted">Durable profile, user, and workspace memory for context bootstrapping and personal growth.</p></div></div>
+            <div class="form-grid compact-form source-side-form">
+              <label>Kind <select id="pacRamKind"><option value="profile">Profile</option><option value="user">User</option><option value="workspace">Workspace</option></select></label>
+              <label>Key <input id="pacRamKey" placeholder="doc-reader" /></label>
+            </div>
+            <label>Content <textarea id="pacRamContent" class="source-side-textarea source-pac-ram" spellcheck="false" placeholder="PAC RAM content is loaded and saved as Markdown."></textarea></label>
+            <div class="button-row">
+              <button id="loadPacRam">Load memory</button>
+              <button id="savePacRam" class="ghost-button">Save memory</button>
+            </div>
+            <div id="pacRamSummary" class="source-secret-audit muted">No PAC RAM metadata loaded yet.</div>
+          </section>
+          <section class="source-sidecard">
             <div class="section-heading compact-heading"><div><h3>Marketplace</h3><p class="muted">Search GGUF-capable models and compare them with configured provider hardware.</p></div></div>
             <div class="button-row">
               <input id="marketplaceQuery" class="source-marketplace-query" placeholder="qwen coder" />
@@ -408,6 +434,11 @@
                 <div class="pac-status-line"><span class="pac-status-label">Running</span><span id="pacCurrentVersion" class="pac-status-version">v?</span></div>
                 <div class="pac-status-line"><span class="pac-status-label">Archives</span><span id="pacArchiveStatus" class="pac-status-badge">checking</span></div>
               </div>
+          <div class="button-row settings-update-actions">
+            <button id="checkPacRelease" class="ghost-button">Check PAC release</button>
+            <button id="applyPacRelease" class="ghost-button" disabled>Apply latest release</button>
+            <span id="pacReleaseStatus" class="muted small-text">GitHub release checks have not run yet.</span>
+          </div>
           <div class="feature-pack-actions settings-update-actions">
             <input id="featurePackFile" type="file" accept=".zip,.pac">
             <button id="inspectFeaturePack" class="ghost-button">Preview update</button>

@@ -1,0 +1,10 @@
+[source] New pacctl Go binary: container control with JSON-RPC server/client, 5-platform build
+[source] New binaries/pacctl/ folder with Go module, Containerfile, main.go
+[source] scripts/generate-changelog.py: generate version change entries from changed_*.txt
+[source] scripts/generate-local-diff.py: generate local diff against git tag
+[ui] Flat slate design refresh: rgba(15,23,42) panels, unified borders, square buttons
+[ui] New styles.css.v107 with flat dark slate theme replacing purple gradient cards
+[ui] Source Library tabbed UI with binary build and artifact management
+[ui] Endpoints tab with version display and Update endpoint actions
+Bug fix: generate-local-diff non-git path was missing diff_path.write_text (500 error)
+[backend] Binary build artifacts tracked and downloadable via Source Library

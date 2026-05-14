@@ -1323,6 +1323,51 @@ async function loadUpdateArchives() {
     setUpdatesDetail();
   }
 }
+function renderPacReleaseStatus(meta=null) {
+  const applyBtn = document.getElementById('applyPacRelease');
+  const status = document.getElementById('pacReleaseStatus');
+  if (!status) return;
+  if (!meta || !meta.ok) {
+    status.textContent = meta?.error || 'GitHub release checks have not run yet.';
+    if (applyBtn) applyBtn.disabled = true;
+    return;
+  }
+  if (meta.has_update) {
+    status.textContent = `Latest release: v${meta.latest_version}`;
+    if (applyBtn) applyBtn.disabled = false;
+    setUpdatesDetail({title:'Available release', version:meta.latest_version, entries:(meta.changes || []).length ? [{title:`PAC v${meta.latest_version}`, version:meta.latest_version, changes:meta.changes || []}] : [], body: meta.body || ''});
+    return;
+  }
+  status.textContent = `PAC is up to date${meta.latest_version ? ` at v${meta.latest_version}` : ''}.`;
+  if (applyBtn) applyBtn.disabled = true;
+  if (meta.latest_version) setUpdatesDetail({title:'Current release', version:meta.latest_version, entries:(meta.changes || []).length ? [{title:`PAC v${meta.latest_version}`, version:meta.latest_version, changes:meta.changes || []}] : [], body: meta.body || ''});
+}
+async function checkPacRelease() {
+  const meta = await api('/v1/updates/check');
+  window.__pacReleaseMeta = meta;
+  renderPacReleaseStatus(meta);
+}
+async function applyPacRelease() {
+  const meta = window.__pacReleaseMeta || {};
+  if (!meta.has_update) return paneError('No PAC release update is currently available');
+  if (!confirm(`Apply PAC release v${meta.latest_version}? PAC will restart after the package is installed.`)) return;
+  const btn = document.getElementById('applyPacRelease');
+  if (btn) { btn.disabled = true; btn.textContent = 'Applying…'; }
+  try {
+    const result = await api('/v1/updates/apply?restart_after_update=true', {method:'POST'});
+    renderPacReleaseStatus({ok:true, has_update:false, latest_version:result.latest_version, body:'The selected PAC release has been applied and a restart was scheduled.'});
+    if (result.preservation_archive || result.preservation_diff) {
+      setUpdatesDetail({
+        title: 'Release applied',
+        version: result.latest_version || '',
+        body: `PAC scheduled a restart after applying the latest release.\n\nPreservation archive: ${result.preservation_archive?.archive_path || '-'}\nUser diff: ${result.preservation_diff?.diff_path || '-'}`
+      });
+      await loadUpdateArchives().catch(()=>{});
+    }
+  } finally {
+    if (btn) btn.textContent = 'Apply latest release';
+  }
+}
 async function inspectFeaturePack() {
   const input = document.getElementById('featurePackFile');
   if (!input || !input.files || !input.files[0]) { paneError('Choose a feature update zip first'); return; }
@@ -1786,6 +1831,16 @@ function fillSourceContextForm(ctxName='') {
   set('sourceContextNotes', entry.notes);
   set('sourceContextConfigVars', JSON.stringify(entry.config_vars || {}, null, 2));
   set('sourceContextSecretRefs', JSON.stringify(entry.secret_refs || {}, null, 2));
+  if (entry.profile && document.getElementById('pacRamKind') && document.getElementById('pacRamKey')) {
+    document.getElementById('pacRamKind').value = 'profile';
+    document.getElementById('pacRamKey').value = entry.profile;
+  } else if (entry.user_scope && document.getElementById('pacRamKind') && document.getElementById('pacRamKey')) {
+    document.getElementById('pacRamKind').value = 'user';
+    document.getElementById('pacRamKey').value = entry.user_scope;
+  } else if (entry.workspace_profile && document.getElementById('pacRamKind') && document.getElementById('pacRamKey')) {
+    document.getElementById('pacRamKind').value = 'workspace';
+    document.getElementById('pacRamKey').value = entry.workspace_profile;
+  }
 }
 function renderSourceContexts() {
   const select = document.getElementById('sourceContextSelect');
@@ -1872,6 +1927,88 @@ async function loadSourceSecrets() {
   select.innerHTML = '<option value="">Select secret</option>' + (window.__pacSecrets || []).map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.id)}</option>`).join('');
   if ((window.__pacSecrets || []).some(item => item.id === current)) select.value = current;
   audit.textContent = (auditData.items || []).length ? (auditData.items || []).map(item => `${item.created_at}  ${item.event}  ${item.secret_id}`).join('\n') : 'No secret audit events loaded yet.';
+}
+function fillSourceVariableForm(variableId='') {
+  const select = document.getElementById('sourceVariableSelect');
+  if (select && variableId) select.value = variableId;
+  const item = ((window.__pacSourceVariables || []).find(v => v.id === variableId)) || {};
+  const set = (id, value='') => { const el = document.getElementById(id); if (el) el.value = value || ''; };
+  set('sourceVariableId', variableId);
+  set('sourceVariableDescription', item.description || '');
+  set('sourceVariableTags', Array.isArray(item.tags) ? item.tags.join(', ') : '');
+  set('sourceVariableValue', item.value || '');
+}
+async function loadSourceVariables() {
+  const select = document.getElementById('sourceVariableSelect');
+  const list = document.getElementById('sourceVariableList');
+  if (!select || !list) return;
+  const data = await api('/v1/source-variables');
+  window.__pacSourceVariables = data.variables || [];
+  const current = select.value || document.getElementById('sourceVariableId')?.value || '';
+  select.innerHTML = '<option value="">Select variable</option>' + (window.__pacSourceVariables || []).map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.id)}</option>`).join('');
+  if ((window.__pacSourceVariables || []).some(item => item.id === current)) select.value = current;
+  list.textContent = (window.__pacSourceVariables || []).length
+    ? (window.__pacSourceVariables || []).map(item => `${item.id}${item.tags?.length ? ` [${item.tags.join(', ')}]` : ''}`).join('\n')
+    : 'No source variables loaded yet.';
+}
+async function saveSourceVariableFromForm() {
+  try {
+    const variableId = document.getElementById('sourceVariableId')?.value?.trim();
+    const value = document.getElementById('sourceVariableValue')?.value ?? '';
+    if (!variableId) throw new Error('Variable ID is required');
+    const description = document.getElementById('sourceVariableDescription')?.value?.trim() || '';
+    const tags = String(document.getElementById('sourceVariableTags')?.value || '').split(',').map(v => v.trim()).filter(Boolean);
+    await api(`/v1/source-variables/${encodeURIComponent(variableId)}`, {method:'PUT', body: JSON.stringify({value, description, tags})});
+    await loadSourceVariables();
+    fillSourceVariableForm(variableId);
+    await resolveCurrentSourceContext().catch(()=>{});
+  } catch (e) {
+    paneError('Source variable could not be saved', e.message || String(e));
+  }
+}
+async function deleteSourceVariableFromForm() {
+  const variableId = document.getElementById('sourceVariableId')?.value?.trim() || document.getElementById('sourceVariableSelect')?.value || '';
+  if (!variableId) return paneError('Select a source variable first');
+  if (!confirm(`Delete source variable ${variableId}?`)) return;
+  await api(`/v1/source-variables/${encodeURIComponent(variableId)}`, {method:'DELETE'});
+  await loadSourceVariables();
+  fillSourceVariableForm('');
+  await resolveCurrentSourceContext().catch(()=>{});
+}
+async function loadPacRam() {
+  const kind = document.getElementById('pacRamKind')?.value || 'profile';
+  const key = document.getElementById('pacRamKey')?.value?.trim() || '';
+  const content = document.getElementById('pacRamContent');
+  const summary = document.getElementById('pacRamSummary');
+  if (!key) return paneError('PAC RAM key is required');
+  const data = await api(`/v1/pac-ram/${encodeURIComponent(kind)}/${encodeURIComponent(key)}`);
+  if (content) content.value = data.content || '';
+  if (summary) summary.textContent = `${data.kind}:${data.key}\n${data.path}\nUpdated ${data.updated_at || '-'}`;
+}
+async function loadPacRamIndex() {
+  const summary = document.getElementById('pacRamSummary');
+  if (!summary) return;
+  const data = await api('/v1/pac-ram/list');
+  const lines = [
+    `profiles: ${(data.profiles || []).join(', ') || '-'}`,
+    `users: ${(data.users || []).join(', ') || '-'}`,
+    `workspaces: ${(data.workspaces || []).join(', ') || '-'}`,
+  ];
+  if (!document.getElementById('pacRamContent')?.value?.trim()) summary.textContent = lines.join('\n');
+}
+async function savePacRamFromForm() {
+  try {
+    const kind = document.getElementById('pacRamKind')?.value || 'profile';
+    const key = document.getElementById('pacRamKey')?.value?.trim() || '';
+    const content = document.getElementById('pacRamContent')?.value ?? '';
+    const summary = document.getElementById('pacRamSummary');
+    if (!key) throw new Error('PAC RAM key is required');
+    const data = await api(`/v1/pac-ram/${encodeURIComponent(kind)}/${encodeURIComponent(key)}`, {method:'PUT', body: JSON.stringify({content})});
+    if (summary) summary.textContent = `${data.kind}:${data.key}\n${data.path}\nUpdated ${data.updated_at || '-'}`;
+    await loadPacRamIndex().catch(()=>{});
+  } catch (e) {
+    paneError('PAC RAM could not be saved', e.message || String(e));
+  }
 }
 async function saveSourceSecretFromForm() {
   try {
@@ -2541,7 +2678,10 @@ async function loadConfig() {
   renderSourceContexts();
   renderSources();
   await loadSourceSecrets().catch(()=>{});
+  await loadSourceVariables().catch(()=>{});
+  await loadPacRamIndex().catch(()=>{});
   await loadUpdateArchives().catch(()=>{});
+  renderPacReleaseStatus(window.__pacReleaseMeta || null);
   await loadTlsStatus();
   await loadServiceModeStatus();
   await loadControllerHarnessStatus();
@@ -2816,10 +2956,24 @@ const saveSourceSecretBtn = document.getElementById('saveSourceSecret');
 if (saveSourceSecretBtn) saveSourceSecretBtn.onclick = () => saveSourceSecretFromForm();
 const deleteSourceSecretBtn = document.getElementById('deleteSourceSecret');
 if (deleteSourceSecretBtn) deleteSourceSecretBtn.onclick = () => deleteSourceSecretFromForm().catch(e=>paneError('Secret could not be deleted', e.message));
+const sourceVariableSelect = document.getElementById('sourceVariableSelect');
+if (sourceVariableSelect) sourceVariableSelect.onchange = () => fillSourceVariableForm(sourceVariableSelect.value || '');
+const saveSourceVariableBtn = document.getElementById('saveSourceVariable');
+if (saveSourceVariableBtn) saveSourceVariableBtn.onclick = () => saveSourceVariableFromForm();
+const deleteSourceVariableBtn = document.getElementById('deleteSourceVariable');
+if (deleteSourceVariableBtn) deleteSourceVariableBtn.onclick = () => deleteSourceVariableFromForm().catch(e=>paneError('Source variable could not be deleted', e.message));
+const loadPacRamBtn = document.getElementById('loadPacRam');
+if (loadPacRamBtn) loadPacRamBtn.onclick = () => loadPacRam().catch(e=>paneError('PAC RAM could not be loaded', e.message));
+const savePacRamBtn = document.getElementById('savePacRam');
+if (savePacRamBtn) savePacRamBtn.onclick = () => savePacRamFromForm();
 const searchMarketplaceBtn = document.getElementById('searchMarketplace');
 if (searchMarketplaceBtn) searchMarketplaceBtn.onclick = () => searchMarketplace().catch(e=>paneError('Marketplace search failed', e.message));
 const refreshUpdateArchivesBtn = document.getElementById('refreshUpdateArchives');
 if (refreshUpdateArchivesBtn) refreshUpdateArchivesBtn.onclick = () => loadUpdateArchives().catch(e=>paneError('Update archives unavailable', e.message));
+const checkPacReleaseBtn = document.getElementById('checkPacRelease');
+if (checkPacReleaseBtn) checkPacReleaseBtn.onclick = () => checkPacRelease().catch(e=>paneError('PAC release check failed', e.message));
+const applyPacReleaseBtn = document.getElementById('applyPacRelease');
+if (applyPacReleaseBtn) applyPacReleaseBtn.onclick = () => applyPacRelease().catch(e=>paneError('PAC release apply failed', e.message));
 const openMarketplaceBtn = document.getElementById('openMarketplaceModal');
 if (openMarketplaceBtn) openMarketplaceBtn.onclick = () => openMarketplaceModal();
 const closeMarketplaceBtn = document.getElementById('closeMarketplaceModal');

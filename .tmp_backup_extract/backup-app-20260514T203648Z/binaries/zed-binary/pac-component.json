@@ -1,0 +1,16 @@
+{
+  "id": "zed-binary",
+  "title": "Zed MCP Binary",
+  "description": "Packaged MCP helper binary for editor integration.",
+  "kind": "binary",
+  "version": "1.0.98",
+  "maintainers": [
+    "pac-labs"
+  ],
+  "repository": "https://github.com/pac-labs/packages",
+  "source_path": "binaries/zed-binary",
+  "tags": [
+    "pac",
+    "pi.dev"
+  ]
+}

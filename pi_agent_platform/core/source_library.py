@@ -74,7 +74,10 @@ def ensure_source_library() -> dict[str, Any]:
     for dirname in sorted(_ALLOWED_TOP_LEVEL):
         (root / dirname).mkdir(parents=True, exist_ok=True)
     changed = _copy_default_tree(pkg / 'scripts', root / 'scripts') or changed
-    changed = _copy_default_tree(pkg / 'containers' / 'pi-agent-harness', root / 'containers' / 'pi-agent-harness') or changed
+    containers_root = pkg / 'containers'
+    if containers_root.exists():
+        for container_dir in sorted(item for item in containers_root.iterdir() if item.is_dir()):
+            changed = _copy_default_tree(container_dir, root / 'containers' / container_dir.name) or changed
     changed = _copy_default_tree(pkg / 'binaries', root / 'binaries') or changed
     # Keep the controller-provided build source folders present even on upgraded
     # systems where the source library was created before binary sources existed.

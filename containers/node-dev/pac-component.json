@@ -1,0 +1,18 @@
+{
+  "id": "node-dev-container",
+  "title": "Node.js Development Container",
+  "description": "Node.js development environment with npm, pnpm, TypeScript tooling, and code search tools for JavaScript and TypeScript projects.",
+  "kind": "container",
+  "version": "1.0.0",
+  "maintainers": [
+    "pac-labs"
+  ],
+  "repository": "https://github.com/pac-labs/packages",
+  "source_path": "containers/node-dev",
+  "tags": [
+    "pac",
+    "workspace",
+    "development"
+  ],
+  "is_workspace_container": true
+}

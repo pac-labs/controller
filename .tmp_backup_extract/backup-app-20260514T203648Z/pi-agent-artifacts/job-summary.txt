@@ -1,0 +1,4 @@
+job=unknown
+mode=pi_container
+task=Inspect the workspace and summarize what you find.
+workspace=/workspace

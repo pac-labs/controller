@@ -1,0 +1,14 @@
+services:
+  pi-agent:
+    build:
+      context: ..
+      dockerfile: deploy/Containerfile
+    image: pi-agent-platform:dev
+    ports:
+      - "443:443"
+    volumes:
+      - ../config/example.config.yaml:/app/config/config.yaml:ro
+      - pi-agent-workspaces:/tmp/pi-agent-workspaces
+
+volumes:
+  pi-agent-workspaces: {}

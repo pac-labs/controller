@@ -1,0 +1,18 @@
+{
+  "id": "docs-search-container",
+  "title": "Documentation Search Container",
+  "description": "Repository clone and ripgrep-oriented container for customer documentation, source analysis, and doc-reader style sessions.",
+  "kind": "container",
+  "version": "1.0.0",
+  "maintainers": [
+    "pac-labs"
+  ],
+  "repository": "https://github.com/pac-labs/packages",
+  "source_path": "containers/docs-search",
+  "tags": [
+    "pac",
+    "workspace",
+    "documentation"
+  ],
+  "is_workspace_container": true
+}

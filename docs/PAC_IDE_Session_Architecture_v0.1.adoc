@@ -1,0 +1,225 @@
+= PAC IDE Session Architecture
+Version: 0.1
+
+== Purpose
+
+This document specifies the intended PAC-backed IDE session flow for Zed, VS Code, and the PAC Web UI.
+
+It complements the main technical design by describing how a user starts a session, how PAC resolves the correct execution environment, and how customer/user context is loaded into that environment.
+
+== Scope
+
+This document covers:
+
+- IDE-driven session startup
+- Profile-based model selection
+- Customer- and user-scoped context loading
+- Endpoint and container execution
+- Subagent attachment model
+- Online visibility in PAC
+
+It does not define:
+
+- The full auth model
+- Full endpoint protocol details
+- Final plugin capability schemas
+
+== Primary User Story
+
+A user opens a PAC extension in Zed or VS Code and starts a session backed by PAC.
+
+Example:
+
+- Session family: `docs/customer_name`
+- Profile: `doc-reader`
+
+PAC should:
+
+1. Resolve the selected session family
+2. Resolve the selected customer
+3. Resolve the selected user context
+4. Resolve the configured execution profile
+5. Select a suitable endpoint
+6. Start or reuse an isolated container on that endpoint when required
+7. Materialize the repository and context into that execution environment
+8. Attach a worker/subagent to perform the requested work
+9. Surface the full lifecycle in the PAC online system
+
+== Session Inputs
+
+An IDE session request should contain enough structured information for PAC to reproduce the environment.
+
+Minimum inputs:
+
+- User identity
+- Session family or workspace key
+- Customer identifier
+- Requested profile
+- Optional endpoint preference
+- Optional branch or repository override
+
+Derived inputs:
+
+- Model/provider choice from the selected profile
+- Workspace materialization plan
+- Required tools
+- Container requirement
+- Context bundle selection
+
+== Profiles
+
+Profiles are first-class session presets.
+
+A profile should define:
+
+- Purpose
+- Default model or model-selection strategy
+- Allowed providers
+- Context policy
+- Tool set
+- Permission profile
+- Preferred execution style
+
+Example profile:
+
+- `doc-reader`
+  - optimized for customer documentation understanding
+  - may prefer a model/provider with strong long-context retrieval behavior
+  - may disable unnecessary write-heavy tools
+
+Profiles must be selectable from:
+
+- IDE integrations
+- PAC Web UI
+
+== Customer and User Context
+
+PAC should support contextual startup, not just raw repository execution.
+
+Customer context may include:
+
+- customer repository or repository path
+- customer documentation bundle
+- customer configuration files
+- customer-specific notes or metadata
+
+User context may include:
+
+- personal preferences
+- reusable notes
+- small bootstrap material retrieved quickly at session start
+- git-backed personal state where appropriate
+
+Rules:
+
+- Context must be explicit and auditable
+- Context must be scoped to the selected session
+- Context should be retrievable with minimal startup overhead
+
+== Endpoint Selection
+
+Endpoints are devices PAC can execute against.
+
+Examples:
+
+- Windows server with PAC endpoint agent
+- Linux workstation
+- Remote VM
+- Container-capable host
+
+Selection criteria may include:
+
+- required tools
+- container support
+- operating system
+- hardware capability
+- endpoint labels
+- current availability
+- affinity for a customer or workspace
+
+PAC should route session work through the controller even when a direct helper such as `pacctl` exists, so the controller remains the authoritative orchestrator and observer.
+
+== Container Execution Model
+
+For isolated development or analysis sessions, PAC should be able to run the work inside a container on the selected endpoint.
+
+Container responsibilities:
+
+- host the session workspace
+- contain required tooling
+- isolate customer/user work from the host
+- optionally host a scoped worker runtime
+
+Container startup flow:
+
+1. Select endpoint
+2. Select image or build source
+3. Launch container on endpoint
+4. Mount or materialize repository/workspace
+5. Load customer and user context
+6. Attach worker/subagent
+
+Open design choice:
+
+- The worker may be controlled through the controller
+- Or the endpoint may host a worker runtime that PAC attaches to
+
+Both are acceptable as long as:
+
+- the controller remains authoritative
+- the execution boundary is visible
+- the session can be resumed and audited
+
+== Subagent Model
+
+PAC should support spawning a scoped worker or subagent for a container-backed session.
+
+This subagent:
+
+- belongs to the parent PAC session
+- runs within the selected endpoint or container context
+- uses the selected profile/model constraints
+- reports progress and outputs back through PAC
+
+Subagent requirements:
+
+- bounded scope
+- visible parent-child relationship
+- explicit model/provider association
+- clear workspace boundary
+
+== Visibility in PAC
+
+Everything started from the IDE should be visible in the PAC online system.
+
+The online system should show:
+
+- session owner
+- selected customer
+- selected profile
+- selected model/provider
+- endpoint
+- container state
+- spawned subagents
+- workspace/repository state
+- timeline/events
+- artifacts and outputs
+
+The same session should be attachable from:
+
+- IDE
+- PAC Web UI
+- future PAC CLI tooling
+
+== Target State Summary
+
+PAC-backed IDE sessions are not just remote prompts.
+
+They are structured orchestration flows where PAC:
+
+- selects the right profile
+- prepares the right context
+- chooses the right endpoint
+- launches the right container when needed
+- attaches the right worker/subagent
+- keeps the whole flow visible online

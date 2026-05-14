@@ -1,0 +1,7 @@
+{
+  "image": "localhost/pi-agent-harness:stage11",
+  "mode": "task",
+  "workspace": "/workspace",
+  "pacctl_port": 9123,
+  "started_at": "2026-05-07T23:29:04+00:00"
+}
