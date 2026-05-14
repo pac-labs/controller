@@ -4,12 +4,16 @@ import asyncio
 import json
 import re
 import subprocess
+import time
 from pathlib import Path
+from shlex import join as shlex_join
 from typing import Any
 
 from .config import AppConfig
 from .models import Event, Session, SessionStatus, Task, TaskStatus
 from .providers import chat_complete, effective_context
+from .session_commands import parse_session_slash_command, slash_help_text
+from .subagents import spawn_pi_dev_subagent
 from .context_manager import (
     batch_reduce_text,
     chunk_text,
@@ -47,6 +51,7 @@ Tool call:
 {"type":"tool_call","tool":"web_search","input":{"query":"search terms","max_results":5}}
 {"type":"tool_call","tool":"save_artifact","input":{"name":"notes/result.txt","content":"..."}}
 {"type":"tool_call","tool":"list_artifacts","input":{}}
+{"type":"tool_call","tool":"slash_command","input":{"command":"/rg TODO src"}}
 
 Rules:
 - Prefer inspecting files before editing.
@@ -57,7 +62,6 @@ Rules:
 - Use web_search before web_fetch when you do not know the exact URL.
 - Save important generated files/results with save_artifact when the user may want to download them.
 """.strip()
-
 
 def _extract_json(text: str) -> dict[str, Any]:
     text = text.strip()
@@ -217,6 +221,27 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
             return "DENIED: shell tool is not enabled for this session", False
         return await _run_shell(session, task, str(inp.get("command") or ""), config)
 
+    if tool == "slash_command":
+        parsed = parse_session_slash_command(str(inp.get("command") or ""))
+        if not parsed:
+            return "Invalid slash command input", False
+        if parsed.get("error"):
+            return parsed["error"], False
+        if parsed["kind"] == "help":
+            return slash_help_text(), False
+        if parsed["kind"] == "compact":
+            task.metadata["_compact_now"] = True
+            return "Context compaction requested.", False
+        if parsed["kind"] == "subagent":
+            spawned = await spawn_pi_dev_subagent(session, task, str(parsed.get("instruction") or ""), config, run_agent_loop)
+            child_session = spawned["session"]
+            child_task = spawned["task"]
+            return f"{spawned['message']} Child task: {child_task.id}. Child session: {child_session.id}.", False
+        if parsed["kind"] == "tool":
+            shell_tool = parsed.get("tool") or ""
+            shell_args = [str(a) for a in (parsed.get("args") or [])]
+            return await execute_tool(session, task, "shell", {"command": shlex_join([shell_tool, *shell_args])}, config)
+
 
     if tool == "web_fetch":
         if "web_fetch" not in allowed and "internet" not in allowed:
@@ -312,11 +337,25 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
         messages.append({"role": "assistant", "content": json.dumps(pending)})
         messages.append({"role": "user", "content": "Tool result:\n" + observation})
 
-    max_steps = int(task.metadata.get("max_agent_steps") or 8)
+    configured_max_steps = task.metadata.get("max_agent_steps")
+    if configured_max_steps is None:
+        configured_max_steps = getattr(agent, "max_agent_steps", 48) if agent else 48
+    max_steps = max(1, int(configured_max_steps))
+    max_runtime_minutes = max(1, int(task.metadata.get("max_runtime_minutes") or (getattr(agent, "max_runtime_minutes", 60) if agent else 60)))
+    deadline = time.monotonic() + (max_runtime_minutes * 60)
     transcript: list[dict[str, Any]] = task.metadata.get("agent_transcript") or []
     rolling_summary = task.metadata.get("rolling_context_summary")
 
     for step in range(max_steps):
+        if time.monotonic() >= deadline:
+            task.status = TaskStatus.completed
+            task.output = f"Agent stopped after reaching the runtime limit of {max_runtime_minutes} minute(s). Check the timeline and diff for partial work."
+            task.metadata["agent_transcript"] = transcript[-20:]
+            store.add_task(task)
+            store.add_event(Event(session_id=session.id, task_id=task.id, type="result", message=task.output, data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "agent_profile": session.agent_profile, "permission_profile": session.permission_profile, "stop_reason": "runtime_limit"}))
+            session.status = SessionStatus.created
+            store.add_session(session)
+            return task
         current_tokens = message_tokens(messages)
         threshold = int(budget.input_budget_tokens * 0.82)
         if current_tokens > threshold:
@@ -327,7 +366,8 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                 store.add_task(task)
                 store.add_event(Event(session_id=session.id, task_id=task.id, type="context_compacted", message=f"Compacted context from ~{current_tokens} tokens to ~{message_tokens(messages)} tokens", data={"before_tokens": current_tokens, "after_tokens": message_tokens(messages), "budget_tokens": budget.budget_tokens}))
 
-        store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_thinking", message=f"Agent step {step + 1}/{max_steps} (~{message_tokens(messages)}/{budget.input_budget_tokens} input tokens)"))
+        remaining_seconds = max(0, int(deadline - time.monotonic()))
+        store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_thinking", message=f"Agent step {step + 1}/{max_steps} (~{message_tokens(messages)}/{budget.input_budget_tokens} input tokens, ~{remaining_seconds}s left)"))
         try:
             raw = await asyncio.to_thread(chat_complete, config, session.model, messages, max_tokens=min(ctx["reserve_output_tokens"], 4096))
         except Exception as exc:
@@ -369,6 +409,14 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             store.add_task(task)
             if paused:
                 return task
+            if task.metadata.pop("_compact_now", False):
+                before_tokens = message_tokens(messages)
+                messages, rolling_summary, did_compact = compact_messages_basic(messages, budget, rolling_summary)
+                if did_compact:
+                    task.metadata["rolling_context_summary"] = rolling_summary
+                    task.metadata["context_tokens_estimate"] = message_tokens(messages)
+                    store.add_task(task)
+                    store.add_event(Event(session_id=session.id, task_id=task.id, type="context_compacted", message=f"Compacted context from ~{before_tokens} tokens to ~{message_tokens(messages)} tokens", data={"before_tokens": before_tokens, "after_tokens": message_tokens(messages), "budget_tokens": budget.budget_tokens, "source": "agent_slash_command"}))
             messages.append({"role": "assistant", "content": json.dumps(action)})
             messages.append({"role": "user", "content": "Tool result:\n" + observation})
             # crude context trim: keep system, original prompt, and recent tool turns
@@ -379,10 +427,10 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
         messages.append({"role": "user", "content": "Invalid action. Return either a final answer or a valid tool_call JSON object."})
 
     task.status = TaskStatus.completed
-    task.output = "Agent stopped after reaching max_agent_steps. Check the timeline and diff for partial work."
+    task.output = f"Agent stopped after reaching the step limit of {max_steps}. Check the timeline and diff for partial work."
     task.metadata["agent_transcript"] = transcript[-20:]
     store.add_task(task)
-    store.add_event(Event(session_id=session.id, task_id=task.id, type="result", message=task.output, data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "agent_profile": session.agent_profile, "permission_profile": session.permission_profile}))
+    store.add_event(Event(session_id=session.id, task_id=task.id, type="result", message=task.output, data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "agent_profile": session.agent_profile, "permission_profile": session.permission_profile, "stop_reason": "step_limit"}))
     session.status = SessionStatus.created
     store.add_session(session)
     return task

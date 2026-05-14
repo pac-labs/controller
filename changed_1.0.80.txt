@@ -1,4 +1,0 @@
-v1.0.80
-- Made Sessions and Source Library use the available viewport height without page-level scrolling.
-- Squared the Sessions surfaces and Source Library editor/tree controls for a less rounded editor feel.
-- Added a pin button to the Events drawer; clicking outside closes it only when unpinned.

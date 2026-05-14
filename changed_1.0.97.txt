@@ -1,6 +1,0 @@
-PAC v1.0.97
-- Configured pac-labs/controller as the main controller repository release source.
-- Added pac-labs/packages seed workflow and generator for source-package repository mirroring.
-- Added pac-component.json metadata files for source components so titles, descriptions, maintainers and package data can be indexed.
-- Source Library API/UI now exposes component metadata in the tree view.
-- Release workflow now publishes full, patch, changelog, release manifest and package seed artifacts.

@@ -1,4 +1,0 @@
-v1.0.67 session thinking grouping update
-- Groups consecutive internal thinking/tool activity into one Thinking bubble.
-- Suppresses noisy agent loop lifecycle entries from the visible chat timeline.
-- Keeps full internal details available in the Thinking details modal.

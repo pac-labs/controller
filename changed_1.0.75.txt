@@ -1,4 +1,0 @@
-v1.0.75
-- Session thinking is now a light grey thought line with ChatGPT-like tool activity modal.
-- Only tool/command activity is shown in thinking details; lifecycle/model chatter is hidden.
-- Assistant results stay as chat replies, not separate event cards.

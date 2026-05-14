@@ -16,7 +16,7 @@ The patch zip is intentionally a complete PAC application update package. PAC's 
 ## Manual release
 
 1. Update `VERSION` and `VERSION_CURRENT.md`.
-2. Add `changed_<version>.txt` or update `PAC_CHANGELOG.json`.
+2. Update `PAC_CHANGELOG.json`.
 3. Push to `main`.
 4. Run **PAC release** from GitHub Actions.
 5. Confirm release assets are attached to tag `v<version>`.

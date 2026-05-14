@@ -17,7 +17,6 @@ on:
       - main
     paths:
       - PAC_CHANGELOG.json
-      - changed_*.txt
       - pi_agent_platform/**
       - scripts/**
       - containers/**

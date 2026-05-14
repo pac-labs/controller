@@ -30,6 +30,8 @@ from pi_agent_platform.core.platform_home import ensure_pacp_layout, pacp_path
 from pi_agent_platform.core.models import Event, Session, SessionCreate, Task, TaskCreate, TaskStatus, Runner, RunnerCreateRequest, RunnerRegisterRequest, RunnerHeartbeat, RunnerStatus, RunnerJobCreate, RunnerJob, RunnerJobStatus, RunnerJobUpdate, RunnerJobLog, RunnerExecutionMode
 from pi_agent_platform.core.runtime import git_diff, git_status, run_shell_task
 from pi_agent_platform.core.agent_loop import run_agent_loop
+from pi_agent_platform.core.session_commands import list_session_slash_commands, parse_session_slash_command, slash_help_text
+from pi_agent_platform.core.subagents import spawn_pi_dev_subagent
 from pi_agent_platform.core.runner_discovery import discover_host, discover_containers
 from pi_agent_platform.core.maintenance import run_endpoint_maintenance
 from pi_agent_platform.core.providers import effective_context, model_card, provider_public, test_model, test_provider, list_provider_models, sync_models_from_provider, lmstudio_inspect_provider, lmstudio_load_model, lmstudio_unload_model, lmstudio_download_model, lmstudio_companion_script
@@ -95,7 +97,16 @@ def _read_pac_version() -> str:
     for candidate in [Path(__file__).resolve().parents[2] / 'VERSION', Path(__file__).resolve().parents[2] / 'VERSION_CURRENT.md', Path(__file__).resolve().parents[1] / 'VERSION']:
         try:
             if candidate.exists():
-                value = candidate.read_text(encoding='utf-8').strip().splitlines()[0].strip()
+                lines = [line.strip() for line in candidate.read_text(encoding='utf-8').splitlines() if line.strip()]
+                if not lines:
+                    continue
+                value = lines[0]
+                if not re.match(r'^\d+\.\d+\.\d+$', value) and len(lines) > 1:
+                    for line in lines[1:]:
+                        match = re.search(r'(\d+\.\d+\.\d+)', line)
+                        if match:
+                            value = match.group(1)
+                            break
                 if value:
                     return value[1:] if value.startswith('v') and re.match(r'^v\d+\.\d+\.\d+$', value) else value
         except Exception:
@@ -105,6 +116,82 @@ def _read_pac_version() -> str:
 
 config = load_config()
 PAC_VERSION = _read_pac_version()
+SESSION_CAPABLE_PROVIDER_TYPES = {"openai", "openai-codex", "openai-compatible", "lmstudio", "vllm", "groq", "openrouter", "deepseek", "mistral", "ollama"}
+
+
+def _setup_issue(issue_id: str, title: str, detail: str, action_tab: str, action_label: str, severity: str = 'required') -> dict[str, str]:
+    return {
+        'id': issue_id,
+        'title': title,
+        'detail': detail,
+        'action_tab': action_tab,
+        'action_label': action_label,
+        'severity': severity,
+    }
+
+
+def _setup_status() -> dict[str, Any]:
+    issues: list[dict[str, str]] = []
+    warnings: list[dict[str, str]] = []
+    enabled_providers = {name: provider for name, provider in (config.providers or {}).items() if getattr(provider, 'enabled', False)}
+    session_capable_models = []
+    unsupported_models = []
+    for name, model in (config.models or {}).items():
+        provider = config.providers.get(model.provider)
+        provider_type = provider.type if provider else None
+        if provider and provider_type in SESSION_CAPABLE_PROVIDER_TYPES:
+            session_capable_models.append(name)
+        else:
+            unsupported_models.append({'model': name, 'provider': model.provider, 'provider_type': provider_type or 'unknown'})
+
+    if not config.models:
+        issues.append(_setup_issue('no_models', 'Configure at least one model', 'PAC cannot start agent-backed sessions until a model is configured.', 'models-tab', 'Open Models'))
+    if config.models and not enabled_providers:
+        issues.append(_setup_issue('no_enabled_providers', 'Connect at least one provider', 'Models exist, but no provider is enabled. PAC cannot call a model provider yet.', 'providers-tab', 'Open Providers'))
+    if config.models and not session_capable_models:
+        issues.append(_setup_issue('no_session_capable_models', 'Add one session-capable model', 'Configured models only reference provider types that the agent loop cannot use yet.', 'models-tab', 'Review Models'))
+    if config.controller_harness.enabled:
+        model_name, profile_name, _permission = _harness_model_and_profile()
+        if not model_name or model_name not in config.models:
+            issues.append(_setup_issue('controller_model_missing', 'Select the controller pi.dev model', f'The controller pi.dev runtime is enabled, but profile {profile_name or MAIN_PI_DEV_PROFILE} does not resolve to a configured model.', 'settings-tab', 'Open Settings'))
+    if config.auth.enabled and config.auth.mode == 'dev-token' and str(config.auth.dev_token or '').strip() in {'', 'change-me'}:
+        issues.append(_setup_issue('dev_token_default', 'Replace the default bearer token', 'Authentication is enabled, but the bearer token is still the default placeholder.', 'settings-tab', 'Open Settings'))
+    if unsupported_models:
+        warnings.append(_setup_issue('unsupported_models_present', 'Some configured models are not session-capable yet', f'{len(unsupported_models)} model(s) point at provider types that are not supported by the current agent loop.', 'models-tab', 'Review Models', severity='warning'))
+    return {
+        'ok': not issues,
+        'version': PAC_VERSION,
+        'required_issues': issues,
+        'warnings': warnings,
+        'session_capable_provider_types': sorted(SESSION_CAPABLE_PROVIDER_TYPES),
+        'session_capable_models': session_capable_models,
+        'enabled_provider_count': len(enabled_providers),
+        'configured_model_count': len(config.models or {}),
+    }
+
+
+def _config_payload() -> dict[str, Any]:
+    return {
+        'server': config.server.model_dump(),
+        'runtime': config.runtime.model_dump(),
+        'controller_harness': config.controller_harness.model_dump(),
+        'source_updates': config.source_updates.model_dump(),
+        'auth': config.auth.model_dump(exclude={'dev_token'}),
+        'tls': config.tls.model_dump() if hasattr(config, 'tls') else {},
+        'service': config.service.model_dump() if hasattr(config, 'service') else {'mode': 'user', 'name': 'pacp'},
+        'providers': provider_public(config),
+        'context_profiles': {name: cp.model_dump() for name, cp in config.context_profiles.items()},
+        'permission_profiles': {name: p.model_dump() for name, p in config.permission_profiles.items()},
+        'agent_profiles': {name: p.model_dump() for name, p in config.agent_profiles.items()},
+        'workspaces': {name: w.model_dump() for name, w in config.workspaces.items()},
+        'models': {name: model.model_dump() for name, model in config.models.items()},
+        'tools': {name: tool.model_dump() for name, tool in config.tools.items()},
+        'tool_packages': {name: pkg.model_dump() for name, pkg in config.tool_packages.items()},
+        'plugins': {name: plugin.model_dump() for name, plugin in config.plugins.items()},
+        'session_slash_commands': list_session_slash_commands(),
+        'pacp': {'home': str(ensure_pacp_layout()), 'config_path': str(default_config_path()), 'single_instance_lock': str(pacp_path('run', 'server.lock'))},
+        'setup_status': _setup_status(),
+    }
 
 def _runtime_agent_state(kind: str, status: str, detail: str | None = None, **extra: Any) -> dict[str, Any]:
     data: dict[str, Any] = {'kind': kind, 'status': status, 'version': PAC_VERSION}
@@ -1113,25 +1200,17 @@ def metrics_summary(_auth: None = Depends(require_auth)) -> dict[str, Any]:
 
 @app.get('/v1/config')
 def get_config(_auth: None = Depends(require_auth)) -> dict[str, Any]:
-    return {
-        'server': config.server.model_dump(),
-        'runtime': config.runtime.model_dump(),
-        'controller_harness': config.controller_harness.model_dump(),
-        'source_updates': config.source_updates.model_dump(),
-        'auth': config.auth.model_dump(exclude={'dev_token'}),
-        'tls': config.tls.model_dump() if hasattr(config, 'tls') else {},
-        'service': config.service.model_dump() if hasattr(config, 'service') else {'mode': 'user', 'name': 'pacp'},
-        'providers': provider_public(config),
-        'context_profiles': {name: cp.model_dump() for name, cp in config.context_profiles.items()},
-        'permission_profiles': {name: p.model_dump() for name, p in config.permission_profiles.items()},
-        'agent_profiles': {name: p.model_dump() for name, p in config.agent_profiles.items()},
-        'workspaces': {name: w.model_dump() for name, w in config.workspaces.items()},
-        'models': {name: model.model_dump() for name, model in config.models.items()},
-        'tools': {name: tool.model_dump() for name, tool in config.tools.items()},
-        'tool_packages': {name: pkg.model_dump() for name, pkg in config.tool_packages.items()},
-        'plugins': {name: plugin.model_dump() for name, plugin in config.plugins.items()},
-        'pacp': {'home': str(ensure_pacp_layout()), 'config_path': str(default_config_path()), 'single_instance_lock': str(pacp_path('run', 'server.lock'))},
-    }
+    return _config_payload()
+
+
+@app.get('/v1/session-slash-commands')
+def get_session_slash_commands(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    return {'commands': list_session_slash_commands(), 'help_text': slash_help_text()}
+
+
+@app.get('/v1/setup/status')
+def get_setup_status(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    return _setup_status()
 
 
 
@@ -1169,25 +1248,7 @@ def update_config(payload: ConfigUpdateRequest, _auth: None = Depends(require_au
     save_config(new_config)
     config = load_config()
     store.add_event(Event(session_id='system', type='config_updated', message='Configuration updated from Web UI'))
-    return {
-        'server': config.server.model_dump(),
-        'runtime': config.runtime.model_dump(),
-        'controller_harness': config.controller_harness.model_dump(),
-        'source_updates': config.source_updates.model_dump(),
-        'auth': config.auth.model_dump(exclude={'dev_token'}),
-        'tls': config.tls.model_dump() if hasattr(config, 'tls') else {},
-        'service': config.service.model_dump() if hasattr(config, 'service') else {'mode': 'user', 'name': 'pacp'},
-        'providers': provider_public(config),
-        'context_profiles': {name: cp.model_dump() for name, cp in config.context_profiles.items()},
-        'permission_profiles': {name: p.model_dump() for name, p in config.permission_profiles.items()},
-        'agent_profiles': {name: p.model_dump() for name, p in config.agent_profiles.items()},
-        'workspaces': {name: w.model_dump() for name, w in config.workspaces.items()},
-        'models': {name: model.model_dump() for name, model in config.models.items()},
-        'tools': {name: tool.model_dump() for name, tool in config.tools.items()},
-        'tool_packages': {name: pkg.model_dump() for name, pkg in config.tool_packages.items()},
-        'plugins': {name: plugin.model_dump() for name, plugin in config.plugins.items()},
-        'pacp': {'home': str(ensure_pacp_layout()), 'config_path': str(default_config_path()), 'single_instance_lock': str(pacp_path('run', 'server.lock'))},
-    }
+    return _config_payload()
 
 
 
@@ -1242,7 +1303,7 @@ def _copy_package_tree(src: Path, dst: Path) -> list[str]:
     entries = [
         'README.md', 'requirements.txt', 'pyproject.toml', '.gitignore',
         'pi_agent_platform', 'config', 'scripts', 'deploy', 'containers', 'docs', 'tests', 'vscode-extension', 'binaries',
-        'VERSION', 'VERSION_1.md', 'VERSION_CURRENT.md', 'FILES.txt', 'MANIFEST.json', 'docs-zed-mcp-example.json', 'install.sh', 'mcp',
+        'VERSION', 'VERSION_CURRENT.md', 'FILES.txt', 'MANIFEST.json', 'docs-zed-mcp-example.json', 'install.sh', 'mcp',
     ]
     copied: list[str] = []
     dst.mkdir(parents=True, exist_ok=True)
@@ -2357,6 +2418,30 @@ async def create_task(session_id: str, payload: TaskCreate, background_tasks: Ba
         raise HTTPException(status_code=404, detail='Session not found')
 
     metadata = dict(payload.metadata or {})
+    parsed_slash = parse_session_slash_command(payload.prompt)
+    if parsed_slash:
+        if parsed_slash.get('error'):
+            raise HTTPException(status_code=400, detail=parsed_slash['error'])
+        metadata.update(parsed_slash.get('metadata') or {})
+        if parsed_slash['kind'] == 'help':
+            task = Task(session_id=session_id, prompt=payload.prompt, metadata={**metadata, 'slash_command': 'help'})
+            task.status = TaskStatus.completed
+            task.output = slash_help_text()
+            store.add_task(task)
+            store.add_event(Event(session_id=session_id, task_id=task.id, type='user_message', message=payload.prompt, data={'role': 'user', 'model': metadata.get('model') or session.model, 'session_model': session.model, 'endpoint_id': metadata.get('runner_id') or session.metadata.get('preferred_endpoint'), 'command': None, 'execution_mode': metadata.get('execution_mode'), 'stored': True}))
+            store.add_event(Event(session_id=session_id, task_id=task.id, type='result', message=task.output, data={'role': 'assistant', 'model': metadata.get('model') or session.model, 'agent_profile': session.agent_profile, 'endpoint_id': metadata.get('runner_id') or session.metadata.get('preferred_endpoint'), 'slash_command': 'help'}))
+            return task
+        payload = TaskCreate(
+            prompt=parsed_slash.get('prompt') or payload.prompt,
+            command=parsed_slash.get('command') or payload.command,
+            require_approval=payload.require_approval,
+            metadata=metadata,
+        )
+        if parsed_slash['kind'] == 'tool':
+            metadata['execution_mode'] = 'host'
+        elif parsed_slash['kind'] == 'subagent':
+            metadata['execution_mode'] = metadata.get('execution_mode') or 'pi_container'
+
     locked_endpoint = session.metadata.get('preferred_endpoint') if session.metadata.get('endpoint_locked') else None
     if locked_endpoint:
         requested_endpoint = metadata.get('runner_id') or metadata.get('target_runner_id')
@@ -2388,6 +2473,17 @@ async def create_task(session_id: str, payload: TaskCreate, background_tasks: Ba
         task.output = 'Context compaction requested for this session.'
         store.add_task(task)
         store.add_event(Event(session_id=session_id, task_id=task.id, type='context_compacted', message='Context compaction requested', data={'role': 'assistant', 'model': metadata.get('model') or session.model, 'agent_profile': session.agent_profile, 'slash_command': metadata.get('slash_command')}))
+        return task
+    if metadata.get('subagent'):
+        spawned = await spawn_pi_dev_subagent(session, task, str(metadata.get('subagent_instruction') or payload.prompt or ''), config, run_agent_loop)
+        child_session = spawned['session']
+        child_task = spawned['task']
+        task.status = TaskStatus.completed
+        task.output = f"{spawned['message']} Open session {child_session.id} to follow it."
+        task.metadata['subagent_session_id'] = child_session.id
+        task.metadata['subagent_task_id'] = child_task.id
+        store.add_task(task)
+        store.add_event(Event(session_id=session_id, task_id=task.id, type='result', message=task.output, data={'role': 'assistant', 'model': metadata.get('model') or session.model, 'agent_profile': session.agent_profile, 'endpoint_id': metadata.get('runner_id') or session.metadata.get('preferred_endpoint'), 'subagent_session_id': child_session.id, 'subagent_task_id': child_task.id, 'slash_command': metadata.get('slash_command'), 'timeline': {'title': 'Subagent launched', 'summary': task.output, 'fields': {'Session': child_session.id, 'Task': child_task.id, 'Mode': 'pi.dev', 'Endpoint': metadata.get('runner_id') or session.metadata.get('preferred_endpoint') or '-'}}}))
         return task
     agent_enabled = _session_agent_enabled(session) and metadata.get('direct_model') is not True
     store.add_event(Event(session_id=session_id, task_id=task.id, type='task_queued', message='Task queued', data={**message_meta, 'internal': True, 'agent_enabled': agent_enabled}))

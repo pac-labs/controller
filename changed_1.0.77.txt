@@ -1,5 +1,0 @@
-v1.0.77
-- Agent-enabled sessions now route every user turn through the session agent loop.
-- Slash commands and command input are passed to the agent as intent instead of bypassing the agent.
-- Session metadata records agent_enabled/execution_mode and reply details show routing context.
-- Direct model/runner execution remains possible only through explicit direct_model metadata.

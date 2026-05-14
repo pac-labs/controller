@@ -1,5 +1,0 @@
-PAC v1.0.90
-
-- Replaced the top download and events icons with cleaner monochrome masks that adapt to light and dark themes.
-- Expanded Workspaces into movable workspace definitions with endpoint placement, runtime/container intent, data zip metadata, and ephemeral/TTL cleanup options.
-- Workspace saves now preserve endpoint/default flags and reject unknown endpoints or invalid TTL values.

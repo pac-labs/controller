@@ -1,5 +1,0 @@
-PAC v1.0.60
-
-- Fixed Windows-style PAC_URL=... command-line assignments for pac-endpoint, pac-agent, and zed MCP helper binaries.
-- Zed MCP helper now supports PAC_URL environment/config fallback, shorter HTTP timeout, and --check connectivity mode.
-- Zed MCP helper no longer appears to hang when run directly in a terminal; it prints usage and exits unless launched through stdio by Zed.

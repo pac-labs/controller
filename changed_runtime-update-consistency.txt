@@ -1,3 +1,0 @@
-- Treat installed-but-not-running local pi.dev as starting instead of blocked.
-- Compare source modules by component hash/explicit component version, not repository release version.
-- Prefer GitHub-injected runtime version markers and environment variables for UI version display.

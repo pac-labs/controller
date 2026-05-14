@@ -1,4 +1,0 @@
-v1.0.87
-- Added LM Studio runtime controls in the Model view so model entries can save/load context and runtime options directly.
-- Added backend model-scoped LM Studio load/unload/inspect endpoints.
-- Repaired LM Studio companion script generation syntax.

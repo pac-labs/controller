@@ -62,9 +62,7 @@ INCLUDE_FILES = [
     "MANIFEST.json",
     "PAC_CHANGELOG.json",
     "README.md",
-    "SOURCE_VERSIONS.md",
     "VERSION",
-    "VERSION_1.md",
     "VERSION_CURRENT.md",
     "docs-zed-mcp-example.json",
     "install.sh",
@@ -149,12 +147,6 @@ def iter_package_files() -> Iterable[Path]:
             if p.is_file() and not should_skip(p) and p not in seen:
                 seen.add(p)
                 yield p
-    for p in ROOT.glob("changed_*.txt"):
-        if p.is_file() and not should_skip(p) and p not in seen:
-            seen.add(p)
-            yield p
-
-
 def load_changelog() -> dict:
     path = ROOT / "PAC_CHANGELOG.json"
     if not path.exists():

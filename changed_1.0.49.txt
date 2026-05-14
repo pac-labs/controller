@@ -1,5 +1,0 @@
-PAC v1.0.50
-
-- Downloads panel is passive: removed Download selected and Refresh controls.
-- Downloads now filter by binary source folder category and list available files grouped by detected version.
-- Kept Source Library build actions separate from Downloads.

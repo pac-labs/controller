@@ -1,1 +1,0 @@
-Sessions UI cleanup: modal-only thought details, stable user messages, no inline git diff, plus-button session creation.

@@ -1,6 +1,0 @@
-v1.0.94
-- Merged controller pi.dev into the existing local-PAC endpoint.
-- Made local pi.dev a required condition for the main controller session.
-- Updated endpoint readiness to include pi.dev image availability and PAC wrapper prerequisites.
-- Updated controller pi.dev settings defaults to local-PAC.
-- Protected local-PAC from deletion because it backs the controller pi.dev runtime.

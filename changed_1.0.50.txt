@@ -1,7 +1,0 @@
-PAC v1.0.50
-
-Changes:
-- Fix local endpoint registration crash by adding the missing _safe_runner_slug helper.
-- Downloads panel now refreshes automatically when traversing Source Library folders.
-- Downloads category follows sources/binaries/<folder> when browsing binary source folders.
-- Binary artifact API now returns known binary source folders even before artifacts exist, so the UI can show an empty category instead of stale data.

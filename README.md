@@ -1,4 +1,4 @@
-# PAC - Pi Agent Control v1.0.98
+# PAC - Pi Agent Control
 
 PAC is a lightweight agent control system with a Python control server, endpoint services, model/tool configuration, pi.dev container execution, artifacts, self-update support and a dark purple Web UI.
 
@@ -14,7 +14,7 @@ Open the UI at the configured host/port, normally `https://admin.pac.local` or `
 
 ## Version history
 
-See `VERSION_1.md` for the consolidated v1.0 baseline history. Version 1.0.57 separates endpoints as remote execution environments from pi.dev workloads. Endpoints can expose local binaries, Node.js-gated pi.dev enablement, default workspaces, and controller-queued command execution.
+See `PAC_CHANGELOG.json` for release history. Version 1.0.57 separates endpoints as remote execution environments from pi.dev workloads. Endpoints can expose local binaries, Node.js-gated pi.dev enablement, default workspaces, and controller-queued command execution.
 
 ---
 

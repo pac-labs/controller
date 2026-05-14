@@ -1,7 +1,0 @@
-PAC v1.0.64
-
-- Replaced the plain preformatted Sessions timeline with structured event cards.
-- Added pac.timeline.v1 JSON card rendering for agent/tool/Zed timeline events.
-- Added POST /v1/sessions/{session_id}/events for integrations to append structured events.
-- Added pac_add_timeline_event to the Zed MCP helper.
-- Added documentation for the structured session timeline format.

@@ -81,7 +81,6 @@ def ensure_source_library() -> dict[str, Any]:
     for binary_dir in ('pac-endpoint', 'pac-endpoint-runner', 'pac-agent', 'zed-binary'):
         changed = _copy_default_tree(pkg / 'binaries' / binary_dir, root / 'binaries' / binary_dir) or changed
     changed = _copy_default_tree(pkg / 'docs', root / 'docs') or changed
-    changed = _copy_default_file(pkg / 'SOURCE_VERSIONS.md', root / 'docs' / 'SOURCE_VERSIONS.md') or changed
     readme = root / 'README.md'
     if not readme.exists():
         readme.write_text(

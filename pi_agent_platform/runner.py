@@ -284,7 +284,7 @@ def copy_package_tree(src: Path, dst: Path) -> list[str]:
     entries = [
         'README.md', 'requirements.txt', 'pyproject.toml', '.gitignore',
         'pi_agent_platform', 'config', 'scripts', 'deploy', 'containers', 'docs', 'tests', 'vscode-extension',
-        'docs-zed-mcp-example.json', 'install.sh', 'VERSION', 'VERSION_1.md', 'VERSION_CURRENT.md', 'mcp',
+        'docs-zed-mcp-example.json', 'install.sh', 'VERSION', 'VERSION_CURRENT.md', 'mcp',
     ]
     entries += [p.name for p in src.glob('STAGE*_CHANGELOG.md')]
     copied: list[str] = []

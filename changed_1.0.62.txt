@@ -1,5 +1,0 @@
-PAC v1.0.63
-- Added online provider presets for OpenAI, OpenAI/Codex, Anthropic, MiniMax, Gemini, Groq, OpenRouter, DeepSeek, Mistral, LM Studio, Ollama, vLLM, and custom compatible providers.
-- Added provider type support for OpenAI-compatible and Anthropic-compatible model listing/testing paths.
-- Added Gemini model listing/testing path.
-- Provider modal can now load sane base URL/API key env defaults from a provider preset.

@@ -49,6 +49,8 @@ let sessionThinkingGroup = null;
 let sessionEventSeen = new Set();
 let sessionMessageSeen = new Set();
 let sessionPendingRows = new Map();
+let setupStatus = null;
+let sessionSlashCommands = [];
 
 const SESSION_SLASH_COMMANDS = {
   command: {kind:'tool', label:'/command <tool> [args]', description:'Run a registered endpoint tool on the locked host endpoint. Example: /command rg TODO'},
@@ -115,8 +117,55 @@ function slashCommandHelpText() {
 async function loadVersion(){
   try {
     const v = await api('/v1/version');
-    document.querySelectorAll('.app-version').forEach(el => el.textContent = 'v' + (v.version || '1.0.98'));
+    document.querySelectorAll('.app-version').forEach(el => el.textContent = 'v' + (v.version || 'unknown'));
+    if (v?.version) document.title = `PAC - Pi Agent Control v${v.version}`;
   } catch (_) {}
+}
+function slashCommandHelpText() {
+  const commands = (sessionSlashCommands && sessionSlashCommands.length) ? sessionSlashCommands : Object.values(SESSION_SLASH_COMMANDS);
+  return commands.map(c => `${c.label} - ${c.description}`).join('\n');
+}
+function isHelpSlashCommand(raw) {
+  return String(raw || '').trim().toLowerCase() === '/help';
+}
+
+function hideSetupWizard() {
+  const modal = document.getElementById('setupWizard');
+  if (modal) modal.hidden = true;
+}
+function openSetupWizard() {
+  const modal = document.getElementById('setupWizard');
+  if (modal) modal.hidden = false;
+}
+function renderSetupWizard() {
+  setupStatus = config?.setup_status || null;
+  const body = document.getElementById('setupWizardBody');
+  const modal = document.getElementById('setupWizard');
+  if (!body || !modal) return;
+  const issues = setupStatus?.required_issues || [];
+  const warnings = setupStatus?.warnings || [];
+  if (!issues.length) {
+    body.innerHTML = '';
+    hideSetupWizard();
+    return;
+  }
+  const issueRows = issues.map(issue => {
+    const actionTab = issue.action_tab || 'settings-tab';
+    const actionLabel = issue.action_label || 'Open';
+    return `<div class="pack-summary warn-summary"><b>${escapeHtml(issue.title || 'Configuration required')}</b><div class="muted small-text">${escapeHtml(issue.detail || '')}</div><div class="button-row"><button type="button" class="ghost-button setup-nav-button" data-tab="${escapeHtml(actionTab)}">${escapeHtml(actionLabel)}</button></div></div>`;
+  }).join('');
+  const warningRows = warnings.length ? `<div class="muted small-text"><b>Warnings</b></div>${warnings.map(issue => `<div class="pack-summary"><b>${escapeHtml(issue.title || 'Warning')}</b><div class="muted small-text">${escapeHtml(issue.detail || '')}</div></div>`).join('')}` : '';
+  body.innerHTML = `<div class="pack-summary strong-summary">Required setup items: ${issues.length}</div>${issueRows}${warningRows}`;
+  body.querySelectorAll('.setup-nav-button').forEach(btn => {
+    btn.onclick = () => {
+      const tab = btn.dataset.tab || 'settings-tab';
+      switchToTab(tab);
+      if (tab === 'providers-tab') openProviderModal();
+      if (tab === 'models-tab') openModelModal();
+      hideSetupWizard();
+    };
+  });
+  openSetupWizard();
 }
 
 
@@ -2178,6 +2227,7 @@ async function saveEndpointConnectionSettings() {
 
 async function loadConfig() {
   config = await api('/v1/config');
+  sessionSlashCommands = Array.isArray(config?.session_slash_commands) ? config.session_slash_commands : [];
   fillSelects(); renderWorkspaces(); renderProfiles(); renderProviders(); renderModels(); renderTools();
   document.getElementById('configEditor').value = JSON.stringify(config, null, 2);
   renderSystemInfo();
@@ -2188,6 +2238,7 @@ async function loadConfig() {
   await loadTlsStatus();
   await loadServiceModeStatus();
   await loadControllerHarnessStatus();
+  renderSetupWizard();
 }
 async function loadSessions() {
   const sessions = await api('/v1/sessions');
@@ -2238,7 +2289,7 @@ async function selectSession(id) {
   // EventSource cannot set auth headers, so auth-enabled deployments should use the snapshot refresh path or put UI/API behind same auth proxy.
   source = new EventSource(`/v1/sessions/${id}/events`);
   source.onmessage = e => { try { appendEvent('message', JSON.parse(e.data)); } catch { appendEvent('message', e.data); } };
-  ['user_message','agent_routing','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','full_control_enabled'].forEach(t => source.addEventListener(t, e => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
+  ['user_message','agent_routing','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','full_control_enabled','subagent_started'].forEach(t => source.addEventListener(t, e => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
 }
 function appendEvent(type, payload) {
   const event = normalizeEvent(type, payload);
@@ -2258,6 +2309,8 @@ async function loadApprovals() {
   });
 }
 document.getElementById('refresh').onclick=()=>init();
+if (document.getElementById('dismissSetupWizard')) document.getElementById('dismissSetupWizard').onclick = () => hideSetupWizard();
+if (document.getElementById('recheckSetupWizard')) document.getElementById('recheckSetupWizard').onclick = () => loadConfig().catch(e => paneError('Setup recheck failed', e.message));
 document.getElementById('createSession').onclick=async()=>{
   const btn = document.getElementById('createSession');
   const status = document.getElementById('sessionCreateStatus');
@@ -2287,36 +2340,22 @@ async function sendSessionComposer(){
   if(!selectedSession) return alert('select a session first');
   const rawPrompt = (taskPrompt.value || '').trim();
   if(!rawPrompt) return;
-  const parsedSlash = parseSessionSlashCommand(rawPrompt);
-  if (parsedSlash?.error) return alert(parsedSlash.error);
-  if (parsedSlash?.kind === 'help') {
+  if (isHelpSlashCommand(rawPrompt)) {
     alert(slashCommandHelpText());
     return;
   }
-  let prompt = parsedSlash?.prompt || rawPrompt;
-  let command = '';
   const metadata={};
-  if (parsedSlash?.metadata) Object.assign(metadata, parsedSlash.metadata);
   const runnerChoice = selectedSession.metadata?.preferred_endpoint || taskRunner.value || '';
   if(runnerChoice){
     metadata.runner_id=runnerChoice;
-    const isToolInvocation = Boolean(metadata.tool_name);
-    metadata.execution_mode = isToolInvocation ? 'host' : ((taskExecution.value === 'container' || taskExecution.value === 'pi_container') ? taskExecution.value : 'pi_container');
+    metadata.execution_mode = (taskExecution.value === 'container' || taskExecution.value === 'pi_container') ? taskExecution.value : 'pi_container';
     if(taskImage.value) metadata.container_image=taskImage.value;
-    if (isToolInvocation) command = `tool:${metadata.tool_name}`;
-  }
-  if (parsedSlash?.kind === 'compact') {
-    metadata.execution_mode = 'pi_container';
-  }
-  if (parsedSlash?.kind === 'subagent') {
-    metadata.execution_mode = 'pi_container';
-    metadata.agent_profile = selectedSession.agent_profile || selectedSession.metadata?.agent_profile || null;
   }
   if (document.getElementById('taskModel')?.value) metadata.model = taskModel.value;
   taskPrompt.value='';
   taskCommand.value='';
   autosizeSessionPrompt();
-  const created = await api(`/v1/sessions/${selectedSession.id}/tasks`,{method:'POST',body:JSON.stringify({prompt:prompt || rawPrompt,command,metadata})});
+  const created = await api(`/v1/sessions/${selectedSession.id}/tasks`,{method:'POST',body:JSON.stringify({prompt:rawPrompt,command:'',metadata})});
   if (created && created.id) {
     const localEvent = {
       id: `local_user_${created.id}`,
@@ -2325,7 +2364,7 @@ async function sendSessionComposer(){
       type: 'user_message',
       message: rawPrompt,
       created_at: created.created_at || new Date().toISOString(),
-      data: {role:'user', model: metadata.model || selectedSession.model, endpoint_id: metadata.runner_id || selectedSession.metadata?.preferred_endpoint, command, execution_mode: metadata.execution_mode, slash_command: metadata.slash_command, tool_name: metadata.tool_name, args: metadata.args, stored:true, pi_dev_enabled:selectedSession.metadata?.agent_enabled !== false, routing:'pi.dev'}
+      data: {role:'user', model: metadata.model || selectedSession.model, endpoint_id: metadata.runner_id || selectedSession.metadata?.preferred_endpoint, command:'', execution_mode: metadata.execution_mode, stored:true, pi_dev_enabled:selectedSession.metadata?.agent_enabled !== false, routing:'pi.dev'}
     };
     renderSessionTimelineEvent(localEvent);
   }
@@ -2764,7 +2803,7 @@ function renderSourceOnlineUpdates(result){
 }
 
 
-async function init(){ setupTabs(); setupEventsRail(); await loadConfig(); await loadSessions(); await loadApprovals(); await loadRunners(); refreshDashboardMetricsOnStartup(); await loadGlobalEvents(true); loadMcpBuildStatus().catch(()=>{}); await loadBinaryFolderFilters().catch(()=>{}); await loadSourceBinaryArtifacts().catch(()=>{}); updateSourceActions(); }
+async function init(){ setupTabs(); setupEventsRail(); await loadVersion().catch(()=>{}); await loadConfig(); await loadSessions(); await loadApprovals(); await loadRunners(); refreshDashboardMetricsOnStartup(); await loadGlobalEvents(true); loadMcpBuildStatus().catch(()=>{}); await loadBinaryFolderFilters().catch(()=>{}); await loadSourceBinaryArtifacts().catch(()=>{}); updateSourceActions(); }
 init().catch(e=>paneError('PAC UI could not load', e.message || String(e)));
 
 const openEndpointBtn = document.getElementById('openEndpointModal');

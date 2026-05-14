@@ -1,7 +1,0 @@
-PAC v1.0.55
-
-- Added independent source/tool versions for binaries, containers and MCP sources.
-- Binary builds now use the selected source folder VERSION instead of the PAC controller version.
-- Downloads display the source folder version when artifact names do not contain a version.
-- Source tree folder rows expose source_version metadata for UI use.
-- Included endpoint embedded-runner source pack in the bundled source tree.

@@ -180,6 +180,7 @@ class AgentProfile(BaseModel):
     permission_profile: str = "ask-first"
     tools: list[str] = Field(default_factory=list)
     system_prompt: str = "You are a careful remote coding and infrastructure agent."
+    max_agent_steps: int = 48
     max_runtime_minutes: int = 60
 
 

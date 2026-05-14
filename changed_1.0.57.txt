@@ -1,6 +1,0 @@
-v1.0.57
-
-- Added individual binary delete controls in Downloads.
-- Added binary artifact prune action to keep only newest version per binary folder.
-- Removed Source Library download bundle button from the UI.
-- Downloads now expose binary artifact version metadata and retention-safe cleanup events.

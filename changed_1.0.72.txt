@@ -1,5 +1,0 @@
-v1.0.72
-- Integrated session selector into the Sessions chat header with a compact + create action.
-- Removed the visible sessions list panel from the Sessions page.
-- Added slash-command parsing so /rg, /git, /just, etc. are sent as endpoint commands without a separate command field.
-- Added a container destination modal that appears when container execution is selected.

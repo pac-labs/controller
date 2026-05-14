@@ -1,6 +1,0 @@
-pi.dev controller runtime terminology
-
-- Aligned PAC runtime wording: pi, agent and harness now mean pi.dev.
-- Reworked the controller runtime settings and labels around controller pi.dev instead of a separate controller harness concept.
-- Added a durable pi.dev terminology document for future builds.
-- Kept PAC-side integration wording focused on PAC wrappers/tooling.

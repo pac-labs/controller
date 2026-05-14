@@ -1,4 +1,0 @@
-v1.0.88
-- Added a root PAC_CHANGELOG.json file so PAC update zips expose version-by-version changes before install.
-- Update preview now reads the changelog directly from PAC full/patch zips and shows the delta between the installed version and target version.
-- Removed the redundant Settings page self-update/package panel now that the unified Updates panel handles PAC app updates.

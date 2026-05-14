@@ -1,5 +1,0 @@
-v1.0.69
-- Persist user messages as durable session events.
-- Show ChatGPT-style loading/thought line below user messages.
-- Assistant replies are selectable to inspect model, endpoint and task metadata.
-- Session live event stream now listens for user_message/task_queued events.
