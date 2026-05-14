@@ -1232,6 +1232,7 @@ function renderFeaturePackPreview(result) {
   if (!box) return;
   if (!result || !result.components) {
     box.innerHTML = '<div class="muted">Upload a PAC patch/full zip or source update zip to preview versions.</div>';
+    setUpdatesDetail();
     if (apply) apply.disabled = true;
     return;
   }
@@ -1246,10 +1247,81 @@ function renderFeaturePackPreview(result) {
       : '<div class="muted small-text">No version notes were found inside this zip. The update can still be applied.</div>';
     const source = result.changelog?.source ? `<span class="muted small-text">Change notes: ${escapeHtml(result.changelog.source)}</span>` : '';
     box.innerHTML = `<div class="pack-summary strong-summary">PAC application update ready</div><div class="muted small-text">${escapeHtml(result.filename || 'upload')} updates the controller from ${escapeHtml(fromVersion)} to ${escapeHtml(toVersion)}. Apply will install the app patch and restart PAC.</div><table class="compact-table"><thead><tr><th>Update</th><th>From</th><th>To</th><th>Action</th></tr></thead><tbody><tr><td><code>PAC app</code></td><td>${escapeHtml(fromVersion)}</td><td>${escapeHtml(toVersion)}</td><td>install + restart</td></tr></tbody></table><div class="update-delta-heading">Changes included</div>${changeHtml}${source}`;
+    setUpdatesDetail({title:'Previewed update', version:toVersion, entries:delta, body:`${result.filename || 'upload'} updates PAC from ${fromVersion} to ${toVersion}.`});
     return;
   }
   const rows = result.components.map(c => `<tr><td><code>${escapeHtml(c.path)}</code></td><td>${escapeHtml(c.kind)}</td><td>${escapeHtml(c.from_version || 'new')}</td><td>${escapeHtml(c.to_version || '-')}</td><td>${escapeHtml(c.status || '')}</td></tr>`).join('');
   box.innerHTML = `<div class="pack-summary">${result.component_count || result.components.length} source folder(s) ready from ${escapeHtml(result.filename || 'upload')}</div><table class="compact-table"><thead><tr><th>Source folder</th><th>Kind</th><th>From</th><th>To</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table>`;
+  setUpdatesDetail({title:'Feature pack preview', version:result.root_version || '', body:`${result.component_count || result.components.length} source folder(s) are ready to apply.`});
+}
+function setUpdatesDetail(meta=null) {
+  const title = document.getElementById('updatesDetailTitle');
+  const version = document.getElementById('updatesDetailVersion');
+  const body = document.getElementById('updatesDetailBody');
+  if (!title || !version || !body) return;
+  if (!meta) {
+    title.textContent = 'Release details';
+    version.textContent = '';
+    body.innerHTML = '<div class="muted small-text">Preview a PAC update or select an archive to inspect local preservation details.</div>';
+    return;
+  }
+  title.textContent = meta.title || 'Release details';
+  version.textContent = meta.version ? `v${meta.version}` : '';
+  const entries = meta.entries || [];
+  const bodyHtml = meta.html_body || null;
+  if (entries.length) {
+    body.innerHTML = `<div class="update-delta-list">${entries.map(entry => `<div class="update-delta-version"><div class="update-delta-title">${escapeHtml(entry.title || ('PAC v' + (entry.version || '')))}</div><ul>${(entry.changes || []).map(change => `<li>${escapeHtml(change)}</li>`).join('')}</ul></div>`).join('')}</div>${bodyHtml ? `<div class="muted small-text" style="margin-top:.6rem">${bodyHtml}</div>` : (meta.body ? `<div class="muted small-text" style="margin-top:.6rem">${escapeHtml(meta.body)}</div>` : '')}`;
+  } else {
+    body.innerHTML = bodyHtml ? `<div class="muted small-text">${bodyHtml}</div>` : (meta.body ? `<div class="muted small-text">${escapeHtml(meta.body)}</div>` : '<div class="muted small-text">No additional details available.</div>');
+  }
+}
+function renderUpdateArchives(data) {
+  const list = document.getElementById('updateArchivesList');
+  const hint = document.getElementById('updateArchiveHint');
+  const badge = document.getElementById('pacArchiveStatus');
+  const current = document.getElementById('pacCurrentVersion');
+  if (current) current.textContent = `v${data?.current_version || config.setup_status?.version || '?'}`;
+  if (!list || !hint || !badge) return;
+  const archives = data?.archives || [];
+  badge.textContent = archives.length ? `${archives.length} archived` : 'none yet';
+  badge.className = `pac-status-badge ${archives.length ? 'current-badge' : ''}`.trim();
+  hint.textContent = archives.length ? `Latest archive: ${archives[0].stamp}` : 'No preserved controller archives yet.';
+  if (!archives.length) {
+    list.innerHTML = '<div class="muted small-text">No update archives available yet. Archives will appear after PAC app updates are applied.</div>';
+    return;
+  }
+  list.innerHTML = archives.map(item => {
+    const summary = item.summary?.file_count || {};
+    return `<button class="update-archive-row" data-update-archive="${escapeHtml(item.stamp)}"><b>${escapeHtml(item.stamp)}</b><span class="muted small-text">modified ${escapeHtml(String(summary.modified || 0))} • added ${escapeHtml(String(summary.added || 0))} • removed ${escapeHtml(String(summary.removed || 0))}</span></button>`;
+  }).join('');
+  list.querySelectorAll('[data-update-archive]').forEach(btn => btn.onclick = async () => {
+    const stamp = btn.dataset.updateArchive;
+    const detail = await api(`/v1/updates/archives/${encodeURIComponent(stamp)}`);
+    const summary = detail.summary || {};
+    const fileCount = summary.file_count || {};
+    const links = [
+      detail.archive_path ? `<a href="/v1/updates/archives/${encodeURIComponent(stamp)}/download?kind=archive">backup.tar.gz</a>` : '',
+      detail.diff_path ? `<a href="/v1/updates/archives/${encodeURIComponent(stamp)}/download?kind=diff">user diff</a>` : '',
+      detail.summary_path ? `<a href="/v1/updates/archives/${encodeURIComponent(stamp)}/download?kind=summary">summary json</a>` : '',
+    ].filter(Boolean).join(' • ');
+    setUpdatesDetail({
+      title: 'Preserved local changes',
+      version: '',
+      body: `${stamp}\nmodified: ${fileCount.modified || 0}\nadded: ${fileCount.added || 0}\nremoved: ${fileCount.removed || 0}`,
+      html_body: links ? `Downloads: ${links}` : '',
+    });
+  });
+}
+async function loadUpdateArchives() {
+  const data = await api('/v1/updates/status');
+  renderUpdateArchives(data);
+  const latest = data.latest_archive;
+  if (latest?.summary) {
+    const notes = await api(`/v1/updates/release-notes?from_version=${encodeURIComponent(config.version || config.setup_status?.version || '')}&to_version=${encodeURIComponent(config.version || config.setup_status?.version || '')}`).catch(()=>null);
+    setUpdatesDetail({title:'Current release', version:config.version || config.setup_status?.version || '', entries:notes?.entries || [], body: latest.summary ? 'Latest preserved local change summary is available in the archive list.' : ''});
+  } else {
+    setUpdatesDetail();
+  }
 }
 async function inspectFeaturePack() {
   const input = document.getElementById('featurePackFile');
@@ -1268,6 +1340,14 @@ async function applyFeaturePack() {
   if (result) {
     renderFeaturePackPreview(null);
     const input = document.getElementById('featurePackFile'); if (input) input.value = '';
+    if (result.preservation_archive || result.preservation_diff) {
+      setUpdatesDetail({
+        title: 'Update applied',
+        version: result.preview?.target_version || result.preview?.root_version || '',
+        body: `PAC scheduled a restart after applying this update.\n\nPreservation archive: ${result.preservation_archive?.archive_path || '-'}\nUser diff: ${result.preservation_diff?.diff_path || '-'}`
+      });
+      loadUpdateArchives().catch(()=>{});
+    }
     emitUiEvent('feature_pack_applied', result.package_type === 'pac_app_update' ? 'PAC app update applied; restart scheduled' : `Feature update applied: ${(result.components || []).length} source folders`, result);
     if (result.package_type !== 'pac_app_update') await renderSources(selectedSourceFolder || '');
   }
@@ -1841,6 +1921,71 @@ async function searchMarketplace() {
     el.textContent = e.message || String(e);
   }
 }
+function openMarketplaceModal() {
+  const modal = document.getElementById('marketplaceModal');
+  if (modal) modal.hidden = false;
+  const input = document.getElementById('marketplaceModalQuery');
+  if (input) input.value = document.getElementById('marketplaceQuery')?.value || '';
+  renderMarketplaceModalDetail();
+}
+function closeMarketplaceModal() {
+  const modal = document.getElementById('marketplaceModal');
+  if (modal) modal.hidden = true;
+}
+function renderMarketplaceModalDetail(detail=null) {
+  const title = document.getElementById('marketplaceDetailTitle');
+  const version = document.getElementById('marketplaceDetailVersion');
+  const body = document.getElementById('marketplaceDetailBody');
+  if (!title || !version || !body) return;
+  if (!detail) {
+    title.textContent = 'Model details';
+    version.textContent = '';
+    body.innerHTML = '<div class="muted small-text">Select a marketplace result to inspect provider fit and configure it as a PAC model.</div>';
+    return;
+  }
+  title.textContent = detail.model_id || 'Model details';
+  version.textContent = detail.params_b ? `${detail.params_b}B` : '';
+  const providers = (detail.provider_scores || []).map(entry => {
+    const provider = entry.provider || {};
+    return `<tr><td><code>${escapeHtml(provider.name || '-')}</code></td><td>${escapeHtml(provider.type || '-')}</td><td>${escapeHtml(entry.quant_recommended || '-')}</td><td>${escapeHtml(entry.reason || '-')}</td></tr>`;
+  }).join('');
+  body.innerHTML = `<div class="muted small-text">Author: ${escapeHtml(detail.author || 'unknown')} • Downloads: ${escapeHtml(String(detail.downloads || 0))}</div><div class="marketplace-meta" style="margin:.6rem 0">${Object.entries(detail.capabilities || {}).filter(([,v]) => !!v).map(([k]) => `<span class="marketplace-pill">${escapeHtml(k)}</span>`).join('')}</div><table class="compact-table"><thead><tr><th>Provider</th><th>Type</th><th>Quant</th><th>Fit</th></tr></thead><tbody>${providers || '<tr><td colspan="4" class="muted">No providers configured yet.</td></tr>'}</tbody></table><div class="button-row" style="margin-top:.75rem"><button id="configureMarketplaceModel">Configure as model</button></div>`;
+  const btn = document.getElementById('configureMarketplaceModel');
+  if (btn) btn.onclick = () => {
+    const preferred = (detail.provider_scores || []).find(entry => entry.can_run && entry.provider?.name)?.provider?.name
+      || (detail.provider_scores || [])[0]?.provider?.name
+      || '';
+    closeMarketplaceModal();
+    openModelModal();
+    if (preferred && modelProvider) modelProvider.value = preferred;
+    if (modelId) modelId.value = detail.model_id || '';
+    if (modelName) modelName.value = String(detail.model_id || '').replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase();
+  };
+}
+async function searchMarketplaceModal() {
+  const query = document.getElementById('marketplaceModalQuery')?.value?.trim() || '';
+  const el = document.getElementById('marketplaceModalResults');
+  if (!el) return;
+  el.textContent = 'Searching marketplace...';
+  try {
+    const data = await api(`/v1/models/marketplace/search?q=${encodeURIComponent(query)}&limit=18`);
+    const results = data?.results || [];
+    if (!results.length) {
+      el.innerHTML = '<span class="muted">No marketplace models matched this query.</span>';
+      return;
+    }
+    el.innerHTML = results.map(item => {
+      const caps = Object.entries(item.capabilities || {}).filter(([,v]) => !!v).map(([k]) => `<span class="marketplace-pill">${escapeHtml(k)}</span>`).join('');
+      return `<button class="marketplace-card marketplace-card-button" data-marketplace-model="${escapeHtml(item.model_id)}"><b>${escapeHtml(item.model_id)}</b><div class="marketplace-meta">${caps}</div><div class="muted small-text">${escapeHtml(item.author || 'unknown author')} • ${escapeHtml(String(item.downloads || 0))} downloads</div></button>`;
+    }).join('');
+    el.querySelectorAll('[data-marketplace-model]').forEach(btn => btn.onclick = async () => {
+      const detail = await api(`/v1/models/marketplace/model/${encodeURIComponent(btn.dataset.marketplaceModel || '')}`);
+      renderMarketplaceModalDetail(detail);
+    });
+  } catch (e) {
+    el.textContent = e.message || String(e);
+  }
+}
 function formatBuildCommand(command) {
   return Array.isArray(command) ? command.join(' ') : String(command || '');
 }
@@ -2396,6 +2541,7 @@ async function loadConfig() {
   renderSourceContexts();
   renderSources();
   await loadSourceSecrets().catch(()=>{});
+  await loadUpdateArchives().catch(()=>{});
   await loadTlsStatus();
   await loadServiceModeStatus();
   await loadControllerHarnessStatus();
@@ -2672,6 +2818,14 @@ const deleteSourceSecretBtn = document.getElementById('deleteSourceSecret');
 if (deleteSourceSecretBtn) deleteSourceSecretBtn.onclick = () => deleteSourceSecretFromForm().catch(e=>paneError('Secret could not be deleted', e.message));
 const searchMarketplaceBtn = document.getElementById('searchMarketplace');
 if (searchMarketplaceBtn) searchMarketplaceBtn.onclick = () => searchMarketplace().catch(e=>paneError('Marketplace search failed', e.message));
+const refreshUpdateArchivesBtn = document.getElementById('refreshUpdateArchives');
+if (refreshUpdateArchivesBtn) refreshUpdateArchivesBtn.onclick = () => loadUpdateArchives().catch(e=>paneError('Update archives unavailable', e.message));
+const openMarketplaceBtn = document.getElementById('openMarketplaceModal');
+if (openMarketplaceBtn) openMarketplaceBtn.onclick = () => openMarketplaceModal();
+const closeMarketplaceBtn = document.getElementById('closeMarketplaceModal');
+if (closeMarketplaceBtn) closeMarketplaceBtn.onclick = () => closeMarketplaceModal();
+const runMarketplaceSearchBtn = document.getElementById('runMarketplaceSearch');
+if (runMarketplaceSearchBtn) runMarketplaceSearchBtn.onclick = () => searchMarketplaceModal().catch(e=>paneError('Marketplace search failed', e.message));
 if (document.getElementById('saveTool')) saveTool.onclick=()=>saveToolFromForm().catch(e=>paneError('Tool save failed', e.message));
 if (document.getElementById('saveProfile')) saveProfile.onclick=()=>saveProfileFromForm().catch(e=>paneError('Profile save failed', e.message));
 if (document.getElementById('saveWorkspace')) saveWorkspace.onclick=()=>saveWorkspaceFromForm().catch(e=>paneError('Workspace save failed', e.message));

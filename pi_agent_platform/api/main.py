@@ -124,6 +124,73 @@ PAC_VERSION = _read_pac_version()
 SESSION_CAPABLE_PROVIDER_TYPES = {"openai", "openai-codex", "openai-compatible", "lmstudio", "vllm", "groq", "openrouter", "deepseek", "mistral", "ollama"}
 
 
+def _version_key(value: str | None) -> tuple[int, ...]:
+    text = str(value or '').strip().lstrip('v')
+    parts: list[int] = []
+    for token in text.split('.'):
+        match = re.match(r'^(\d+)', token)
+        parts.append(int(match.group(1)) if match else 0)
+    return tuple(parts or [0])
+
+
+def _load_pac_changelog() -> dict[str, Any]:
+    path = Path(__file__).resolve().parents[2] / 'PAC_CHANGELOG.json'
+    if not path.exists():
+        return {'entries': [], 'current_version': PAC_VERSION}
+    try:
+        return json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        return {'entries': [], 'current_version': PAC_VERSION}
+
+
+def _changelog_delta(from_version: str | None, to_version: str | None) -> list[dict[str, Any]]:
+    changelog = _load_pac_changelog()
+    lower = _version_key(from_version)
+    upper = _version_key(to_version or changelog.get('current_version') or PAC_VERSION)
+    entries = []
+    for entry in changelog.get('entries', []) or []:
+        version = str(entry.get('version') or '').strip()
+        key = _version_key(version)
+        if key > lower and key <= upper:
+            entries.append(entry)
+    return sorted(entries, key=lambda item: _version_key(item.get('version')), reverse=True)
+
+
+def _update_backups_root() -> Path:
+    root = pacp_path('backups')
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _list_update_archives() -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for entry in sorted(_update_backups_root().iterdir(), key=lambda path: path.name, reverse=True):
+        if not entry.is_dir():
+            continue
+        summary_path = entry / 'change-summary.json'
+        summary = None
+        if summary_path.exists():
+            try:
+                summary = json.loads(summary_path.read_text(encoding='utf-8'))
+            except Exception:
+                summary = None
+        diff_file = next((path for path in entry.glob('*.diff') if path.is_file()), None)
+        archive_file = entry / 'backup.tar.gz'
+        items.append(
+            {
+                'stamp': entry.name,
+                'archive_path': str(archive_file) if archive_file.exists() else None,
+                'archive_size': archive_file.stat().st_size if archive_file.exists() else 0,
+                'diff_path': str(diff_file) if diff_file else None,
+                'diff_size': diff_file.stat().st_size if diff_file else 0,
+                'summary_path': str(summary_path) if summary_path.exists() else None,
+                'summary': summary,
+                'created_at': summary.get('generated_at') if isinstance(summary, dict) else None,
+            }
+        )
+    return items
+
+
 def _setup_issue(issue_id: str, title: str, detail: str, action_tab: str, action_label: str, severity: str = 'required') -> dict[str, str]:
     return {
         'id': issue_id,
@@ -1238,6 +1305,63 @@ def get_session_slash_commands(_auth: None = Depends(require_auth)) -> dict[str,
 @app.get('/v1/setup/status')
 def get_setup_status(_auth: None = Depends(require_auth)) -> dict[str, Any]:
     return _setup_status()
+
+
+@app.get('/v1/updates/status')
+def get_updates_status(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    archives = _list_update_archives()
+    changelog = _load_pac_changelog()
+    return {
+        'current_version': PAC_VERSION,
+        'archive_count': len(archives),
+        'latest_archive': archives[0] if archives else None,
+        'archives': archives[:12],
+        'changelog_current_version': changelog.get('current_version') or PAC_VERSION,
+    }
+
+
+@app.get('/v1/updates/archives')
+def list_update_archives(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    return {'archives': _list_update_archives()}
+
+
+@app.get('/v1/updates/archives/{stamp}')
+def get_update_archive(stamp: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    target = _update_backups_root() / stamp
+    if not target.is_dir():
+        raise HTTPException(status_code=404, detail='Update archive not found')
+    archive = next((item for item in _list_update_archives() if item['stamp'] == stamp), None)
+    if not archive:
+        raise HTTPException(status_code=404, detail='Update archive not found')
+    return archive
+
+
+@app.get('/v1/updates/archives/{stamp}/download')
+def download_update_archive(stamp: str, kind: str = 'archive', _auth: None = Depends(require_auth)) -> FileResponse:
+    target = _update_backups_root() / stamp
+    if not target.is_dir():
+        raise HTTPException(status_code=404, detail='Update archive not found')
+    if kind == 'archive':
+        path = target / 'backup.tar.gz'
+    elif kind == 'summary':
+        path = target / 'change-summary.json'
+    elif kind == 'diff':
+        path = next((item for item in target.glob('*.diff') if item.is_file()), None)
+    else:
+        raise HTTPException(status_code=400, detail='Unsupported archive download kind')
+    if not path or not Path(path).exists():
+        raise HTTPException(status_code=404, detail='Requested archive file not found')
+    return FileResponse(Path(path), filename=Path(path).name)
+
+
+@app.get('/v1/updates/release-notes')
+def get_update_release_notes(from_version: str | None = None, to_version: str | None = None, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    entries = _changelog_delta(from_version, to_version)
+    return {
+        'from_version': from_version or PAC_VERSION,
+        'to_version': to_version or (_load_pac_changelog().get('current_version') or PAC_VERSION),
+        'entries': entries,
+    }
 
 
 

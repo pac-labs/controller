@@ -157,7 +157,7 @@
         <section class="card wide">
           <div class="section-heading">
             <div><h2>Models</h2><p class="muted">Models connect a provider model ID to the endpoint that should run sessions using it.</p></div>
-            <div class="button-row"><button id="openModelModal">Add model</button></div>
+            <div class="button-row"><button id="openMarketplaceModal" class="ghost-button">Marketplace</button><button id="openModelModal">Add model</button></div>
           </div>
           <div id="modelFormResult" class="inline-result" hidden></div>
         </section>
@@ -252,6 +252,30 @@
           <div class="button-row"><button id="loadLmStudioModel" class="ghost-button">Load in LM Studio</button><button id="unloadLmStudioModel" class="ghost-button">Unload</button><button id="inspectLmStudioModel" class="ghost-button">Inspect server</button></div>
         </div>
         <div class="button-row"><button id="saveModel">Save model</button><button id="testModelForm" class="ghost-button">Test model</button><span id="modelModalStatus" class="muted"></span></div>
+      </section>
+    </div>
+
+    <div id="marketplaceModal" class="modal-backdrop" hidden>
+      <section class="modal-card wide-modal" role="dialog" aria-modal="true" aria-labelledby="marketplaceModalTitle">
+        <div class="section-heading"><div><h2 id="marketplaceModalTitle">Models Marketplace</h2><p class="muted">Search GGUF-capable models and compare them against PAC provider hardware.</p></div><button id="closeMarketplaceModal" class="ghost-button">Close</button></div>
+        <div class="updates-layout">
+          <div class="updates-main">
+            <div class="button-row">
+              <input id="marketplaceModalQuery" class="source-marketplace-query" placeholder="qwen coder" />
+              <button id="runMarketplaceSearch" class="ghost-button">Search</button>
+            </div>
+            <div id="marketplaceModalResults" class="source-marketplace-results muted">Search the marketplace to browse candidate models.</div>
+          </div>
+          <aside class="updates-detail-panel">
+            <div class="updates-detail-header">
+              <span id="marketplaceDetailTitle">Model details</span>
+              <span id="marketplaceDetailVersion" class="muted"></span>
+            </div>
+            <div class="updates-detail-body" id="marketplaceDetailBody">
+              <div class="muted small-text">Select a marketplace result to inspect provider fit and configure it as a PAC model.</div>
+            </div>
+          </aside>
+        </div>
       </section>
     </div>
 
@@ -378,8 +402,14 @@
       <div class="settings-cube-grid">
         <section class="card setting-cube wide">
           <div class="section-heading compact-heading"><div><h2>Updates</h2><p class="muted">Apply platform updates and feature/source packs from one place.</p></div></div>
+          <div class="updates-layout">
+            <div class="updates-main">
+              <div class="updates-pac-status">
+                <div class="pac-status-line"><span class="pac-status-label">Running</span><span id="pacCurrentVersion" class="pac-status-version">v?</span></div>
+                <div class="pac-status-line"><span class="pac-status-label">Archives</span><span id="pacArchiveStatus" class="pac-status-badge">checking</span></div>
+              </div>
           <div class="feature-pack-actions settings-update-actions">
-            <input id="featurePackFile" type="file" accept=".zip">
+            <input id="featurePackFile" type="file" accept=".zip,.pac">
             <button id="inspectFeaturePack" class="ghost-button">Preview update</button>
             <button id="applyFeaturePack" class="ghost-button" disabled>Apply update</button>
           </div>
@@ -387,6 +417,21 @@
           <div class="online-source-updates">
             <div class="button-row"><button id="checkSourceUpdates" class="ghost-button">Check source modules online</button><span id="sourceUpdateStatus" class="muted small-text"></span></div>
             <div id="sourceOnlineUpdates" class="feature-pack-preview muted">Online source module updates have not been checked yet.</div>
+          </div>
+              <div class="updates-archive-section">
+                <div class="button-row"><button id="refreshUpdateArchives" class="ghost-button">Refresh archives</button><span id="updateArchiveHint" class="muted small-text"></span></div>
+                <div id="updateArchivesList" class="update-delta-list"><div class="muted small-text">No update archives loaded yet.</div></div>
+              </div>
+            </div>
+            <aside class="updates-detail-panel">
+              <div class="updates-detail-header">
+                <span id="updatesDetailTitle">Release details</span>
+                <span id="updatesDetailVersion" class="muted"></span>
+              </div>
+              <div class="updates-detail-body" id="updatesDetailBody">
+                <div class="muted small-text">Preview a PAC update or select an archive to inspect local preservation details.</div>
+              </div>
+            </aside>
           </div>
         </section>
 
