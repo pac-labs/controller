@@ -204,6 +204,20 @@ class WorkspaceProfile(BaseModel):
     is_default: bool = False
 
 
+class SourceContextConfig(BaseModel):
+    description: str | None = None
+    path_prefix: str
+    customer_id: str | None = None
+    user_scope: str | None = None
+    workspace_profile: str | None = None
+    preferred_endpoint: str | None = None
+    container_image: str | None = None
+    profile: str | None = None
+    config_vars: dict[str, str] = Field(default_factory=dict)
+    secret_refs: dict[str, str] = Field(default_factory=dict)
+    notes: str | None = None
+
+
 class SourceUpdateConfig(BaseModel):
     enabled: bool = True
     packages_manifest_url: str = "https://raw.githubusercontent.com/pac-labs/packages/main/packages.json"
@@ -257,6 +271,7 @@ class AppConfig(BaseModel):
     permission_profiles: dict[str, PermissionRule] = Field(default_factory=dict)
     agent_profiles: dict[str, AgentProfile] = Field(default_factory=dict)
     workspaces: dict[str, WorkspaceProfile] = Field(default_factory=dict)
+    source_contexts: dict[str, SourceContextConfig] = Field(default_factory=dict)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     source_updates: SourceUpdateConfig = Field(default_factory=SourceUpdateConfig)
     controller_harness: ControllerHarnessConfig = Field(default_factory=ControllerHarnessConfig)

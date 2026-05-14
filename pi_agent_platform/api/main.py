@@ -16,6 +16,9 @@ import uuid
 import zipfile
 import socket
 import ipaddress
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
@@ -25,7 +28,7 @@ from fastapi.responses import FileResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from pi_agent_platform.core.config import AppConfig, ProviderConfig, AgentProfile, WorkspaceProfile, save_config, load_config, default_config_path, MAIN_PI_DEV_PROFILE, AGENT_CONTROL_WORKSPACE, MODEL_NOT_SELECTED
+from pi_agent_platform.core.config import AppConfig, ProviderConfig, AgentProfile, WorkspaceProfile, SourceContextConfig, save_config, load_config, default_config_path, MAIN_PI_DEV_PROFILE, AGENT_CONTROL_WORKSPACE, MODEL_NOT_SELECTED
 from pi_agent_platform.core.platform_home import ensure_pacp_layout, pacp_path
 from pi_agent_platform.core.models import Event, Session, SessionCreate, Task, TaskCreate, TaskStatus, Runner, RunnerCreateRequest, RunnerRegisterRequest, RunnerHeartbeat, RunnerStatus, RunnerJobCreate, RunnerJob, RunnerJobStatus, RunnerJobUpdate, RunnerJobLog, RunnerExecutionMode
 from pi_agent_platform.core.runtime import git_diff, git_status, run_shell_task
@@ -37,7 +40,9 @@ from pi_agent_platform.core.maintenance import run_endpoint_maintenance
 from pi_agent_platform.core.providers import effective_context, model_card, provider_public, test_model, test_provider, list_provider_models, sync_models_from_provider, lmstudio_inspect_provider, lmstudio_load_model, lmstudio_unload_model, lmstudio_download_model, lmstudio_companion_script
 from pi_agent_platform.core.store import store
 from pi_agent_platform.core.artifacts import write_artifact, list_artifacts, task_artifact_dir, safe_artifact_path
+from pi_agent_platform.core.secrets import secret_store
 from pi_agent_platform.core.source_library import ensure_source_library, list_tree as source_list_tree, read_text as source_read_text, write_text as source_write_text, make_archive as source_make_archive, build_container as source_build_container, build_binary as source_build_binary, list_binary_artifacts as source_list_binary_artifacts, binary_artifact_path as source_binary_artifact_path, delete_binary_artifact as source_delete_binary_artifact, prune_binary_artifacts as source_prune_binary_artifacts, inspect_feature_pack as source_inspect_feature_pack, apply_feature_pack as source_apply_feature_pack, create_entry as source_create_entry, rename_entry as source_rename_entry, delete_entry as source_delete_entry, fetch_online_package_updates as source_fetch_online_package_updates
+from pi_agent_platform.core.update_preservation import build_backup_archive, compare_trees
 
 
 def _model_available(model_name: str) -> tuple[bool, str | None]:
@@ -184,6 +189,7 @@ def _config_payload() -> dict[str, Any]:
         'permission_profiles': {name: p.model_dump() for name, p in config.permission_profiles.items()},
         'agent_profiles': {name: p.model_dump() for name, p in config.agent_profiles.items()},
         'workspaces': {name: w.model_dump() for name, w in config.workspaces.items()},
+        'source_contexts': {name: ctx.model_dump() for name, ctx in config.source_contexts.items()},
         'models': {name: model.model_dump() for name, model in config.models.items()},
         'tools': {name: tool.model_dump() for name, tool in config.tools.items()},
         'tool_packages': {name: pkg.model_dump() for name, pkg in config.tool_packages.items()},
@@ -865,16 +871,37 @@ class ServiceModeRequest(BaseModel):
     mode: str
 
 
-def require_auth(authorization: str | None = Header(default=None)) -> None:
+def _admin_auth_valid(authorization: str | None) -> bool:
     if not config.auth.enabled:
-        return
+        return True
     if config.auth.mode == 'dev-token':
         expected = f'Bearer {config.auth.dev_token}'
-        if authorization != expected:
-            raise HTTPException(status_code=401, detail='Missing or invalid bearer token')
+        return authorization == expected
+    return False
+
+
+def require_auth(authorization: str | None = Header(default=None)) -> None:
+    if _admin_auth_valid(authorization):
         return
     # OIDC is intentionally a deployment placeholder for now; keep enforcement conservative.
-    raise HTTPException(status_code=501, detail='OIDC auth mode is configured but not implemented in this starter')
+    if config.auth.enabled and config.auth.mode != 'dev-token':
+        raise HTTPException(status_code=501, detail='OIDC auth mode is configured but not implemented in this starter')
+    raise HTTPException(status_code=401, detail='Missing or invalid bearer token')
+
+
+def _runner_from_auth_headers(authorization: str | None = None, runner_id: str | None = None, runner_key: str | None = None) -> Runner | None:
+    if _admin_auth_valid(authorization):
+        return None
+    rid = str(runner_id or '').strip()
+    if not rid:
+        return None
+    runner = store.get_runner(rid)
+    if not runner:
+        raise HTTPException(status_code=404, detail='Endpoint not found')
+    expected = str(runner.api_key or '').strip()
+    if not expected or str(runner_key or '').strip() != expected:
+        raise HTTPException(status_code=401, detail='Missing or invalid endpoint key')
+    return runner
 
 
 
@@ -1423,14 +1450,29 @@ async def upload_stage_package(background_tasks: BackgroundTasks, file: UploadFi
 
     app_dir = _app_dir()
     backup_dir = updates_dir / f'backup-app-{stamp}'
+    preservation_dir = pacp_path('backups', stamp)
+    archive_meta: dict[str, Any] | None = None
+    diff_meta: dict[str, Any] | None = None
     if app_dir.exists():
         shutil.copytree(app_dir, backup_dir, ignore=shutil.ignore_patterns('.venv', '__pycache__', '*.pyc'))
+        archive_meta = build_backup_archive(app_dir, preservation_dir / 'backup.tar.gz')
+        diff_summary = compare_trees(
+            installed_root=app_dir,
+            incoming_root=package_root,
+            diff_path=preservation_dir / f'{Path(filename).stem}-user.diff',
+            summary_path=preservation_dir / 'change-summary.json',
+        )
+        diff_meta = {
+            'summary': diff_summary,
+            'diff_path': str(preservation_dir / f'{Path(filename).stem}-user.diff'),
+            'summary_path': str(preservation_dir / 'change-summary.json'),
+        }
     copied = _copy_package_tree(package_root, app_dir)
     pip_result = _pip_install_editable(app_dir)
     run_script_result = _write_runtime_run_script(app_dir)
     marker = pacp_path('run', 'restart-required')
     marker.write_text(f'PAC update applied at {stamp}\nsource={upload_path}\nbackup={backup_dir}\n', encoding='utf-8')
-    store.add_event(Event(session_id='system', type='package_applied', message=f'Version package applied: {filename}. Restart required.', data={'upload_path': str(upload_path), 'backup_dir': str(backup_dir), 'copied': copied, 'pip': pip_result, 'run_script': run_script_result, 'restart_after_update': restart_after_update}))
+    store.add_event(Event(session_id='system', type='package_applied', message=f'Version package applied: {filename}. Restart required.', data={'upload_path': str(upload_path), 'backup_dir': str(backup_dir), 'copied': copied, 'pip': pip_result, 'run_script': run_script_result, 'restart_after_update': restart_after_update, 'preservation_archive': archive_meta, 'preservation_diff': diff_meta}))
     status = 'installed_restarting' if restart_after_update else 'installed_restart_required'
     if restart_after_update:
         _schedule_local_restart(background_tasks, f'PAC local restart scheduled after applying version package: {filename}')
@@ -1443,6 +1485,8 @@ async def upload_stage_package(background_tasks: BackgroundTasks, file: UploadFi
         'copied': copied,
         'pip': pip_result,
         'run_script': run_script_result,
+        'preservation_archive': archive_meta,
+        'preservation_diff': diff_meta,
         'restart_required': True,
         'restart_scheduled': restart_after_update,
         'restart_marker': str(marker),
@@ -2087,6 +2131,242 @@ def get_effective_context(model_name: str, context_profile: str = 'medium', _aut
     if model_name not in config.models:
         raise HTTPException(status_code=404, detail='Model not found')
     return effective_context(config, model_name, context_profile)
+
+
+HF_API = 'https://huggingface.co/api'
+MARKETPLACE_QUANTS = ['q2_k', 'q3_k_m', 'q4_0', 'q4_k_m', 'q5_k_m', 'q6_k', 'q8_0', 'f16', 'f32']
+
+
+class MarketplaceDownloadRequest(BaseModel):
+    model: str
+    provider: str
+    quantization: str | None = None
+
+
+def _hf_headers() -> dict[str, str]:
+    headers = {'Accept': 'application/json'}
+    token = os.environ.get('HF_TOKEN', '').strip()
+    if token:
+        headers['Authorization'] = f'Bearer {token}'
+    return headers
+
+
+def _hf_get_json(url: str) -> Any:
+    req = urllib.request.Request(url, headers=_hf_headers())
+    try:
+        with urllib.request.urlopen(req, timeout=20) as handle:
+            return json.loads(handle.read().decode('utf-8'))
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f'Hugging Face API error {exc.code}: {exc.reason}') from exc
+    except urllib.error.URLError as exc:
+        raise HTTPException(status_code=502, detail=f'Hugging Face API unreachable: {exc.reason or exc}') from exc
+
+
+def _marketplace_param_billions(model_id: str) -> float | None:
+    match = re.search(r'(\d+(?:\.\d+)?)\s*[bB](?:[^a-zA-Z]|$)', model_id or '')
+    return float(match.group(1)) if match else None
+
+
+def _marketplace_vram_gb(params_b: float | None, quant: str) -> float | None:
+    if not params_b:
+        return None
+    bits = {
+        'q8_0': 8,
+        'q6_k': 6,
+        'q5_k_m': 5,
+        'q4_k_m': 4.5,
+        'q4_0': 4,
+        'q3_k_m': 3.5,
+        'q2_k': 2.5,
+        'f16': 16,
+        'f32': 32,
+    }.get(str(quant or '').lower(), 4.5)
+    return round(params_b * bits / 8, 2)
+
+
+def _marketplace_capabilities(model_id: str, tags: list[str]) -> dict[str, bool]:
+    text = str(model_id or '').lower()
+    tag_set = {str(tag).lower() for tag in (tags or [])}
+    return {
+        'coding': any(token in text for token in ['coder', 'codellama', 'starcoder', 'deepseek-coder', 'qwen2.5-coder', 'code']),
+        'reasoning': any(token in text for token in ['reason', 'r1', 'think']) or 'reasoning' in tag_set,
+        'tool_use': any(token in text for token in ['tool', 'function', 'agent']) or 'tool-use' in tag_set,
+        'vision': any(token in text for token in ['vision', 'llava', 'vl']) or 'vision' in tag_set,
+        'embedding': 'embedding' in text or 'feature-extraction' in tag_set,
+        'fast': any(token in text for token in ['0.5b', '1b', '2b', '3b', 'tiny', 'nano']),
+        'chat': any(token in tag_set for token in ['conversational', 'text-generation', 'causal-lm']),
+    }
+
+
+def _marketplace_available_quants(siblings: list[dict[str, Any]]) -> list[str]:
+    quants: set[str] = set()
+    for sibling in siblings or []:
+        filename = str(sibling.get('rfilename') or '')
+        if not filename.endswith('.gguf'):
+            continue
+        match = re.search(r'(q\d(?:[_-][a-z0-9]+)+|f16|f32)', filename, re.IGNORECASE)
+        if match:
+            quants.add(match.group(1).lower().replace('-', '_'))
+    return sorted(quants, key=lambda value: MARKETPLACE_QUANTS.index(value) if value in MARKETPLACE_QUANTS else 999)
+
+
+def _marketplace_provider_profiles() -> list[dict[str, Any]]:
+    profiles: list[dict[str, Any]] = []
+    for name, provider in sorted((config.providers or {}).items()):
+        runtime = provider.runtime
+        provider_models = [model_name for model_name, model in (config.models or {}).items() if model.provider == name]
+        attached_endpoints = sorted({model.runs_on for model in config.models.values() if model.provider == name and model.runs_on})
+        profiles.append(
+            {
+                'name': name,
+                'type': provider.type,
+                'enabled': provider.enabled,
+                'status': provider.status,
+                'base_url': provider.base_url,
+                'cached_model_count': len(provider.cached_models or []),
+                'execution_type': runtime.execution_type,
+                'provider_class': runtime.provider_class,
+                'device': runtime.device.model_dump(),
+                'host': runtime.host.model_dump(),
+                'accelerators': list(runtime.accelerators or []),
+                'configured_models': provider_models,
+                'attached_endpoints': attached_endpoints,
+            }
+        )
+    return profiles
+
+
+def _provider_marketplace_fit(params_b: float | None, quants: list[str], profile: dict[str, Any]) -> dict[str, Any]:
+    device = profile.get('device') or {}
+    memory_gb = device.get('memory_gb')
+    candidates = quants or ['q4_k_m']
+    if not params_b:
+        return {'can_run': None, 'reason': 'Model parameter size could not be inferred', 'quant_recommended': None, 'estimated_vram_gb': None}
+    chosen_quant = None
+    chosen_vram = None
+    if memory_gb:
+        for quant in candidates:
+            needed = _marketplace_vram_gb(params_b, quant)
+            if needed is not None and needed <= float(memory_gb):
+                chosen_quant = quant
+                chosen_vram = needed
+                break
+    if not memory_gb:
+        fallback = candidates[0] if candidates else 'q4_k_m'
+        return {'can_run': None, 'reason': 'Provider memory is not configured yet', 'quant_recommended': fallback.upper(), 'estimated_vram_gb': _marketplace_vram_gb(params_b, fallback)}
+    if not chosen_quant:
+        smallest = _marketplace_vram_gb(params_b, candidates[0])
+        return {'can_run': False, 'reason': f'Needs about {smallest} GB at {candidates[0].upper()}, provider advertises {memory_gb} GB', 'quant_recommended': None, 'estimated_vram_gb': smallest}
+    headroom = round(float(memory_gb) - float(chosen_vram or 0), 2)
+    return {'can_run': True, 'reason': f'{chosen_quant.upper()} fits with {headroom} GB headroom', 'quant_recommended': chosen_quant.upper(), 'estimated_vram_gb': chosen_vram}
+
+
+def _marketplace_model_detail(model_id: str) -> dict[str, Any]:
+    encoded = urllib.parse.quote(model_id, safe='')
+    model = _hf_get_json(f'{HF_API}/models/{encoded}')
+    siblings = model.get('siblings', []) or []
+    tags = [str(tag) for tag in (model.get('tags') or [])]
+    quants = _marketplace_available_quants(siblings)
+    params_b = _marketplace_param_billions(model.get('id') or model_id)
+    providers = []
+    for profile in _marketplace_provider_profiles():
+        providers.append({'provider': profile, **_provider_marketplace_fit(params_b, quants, profile)})
+    return {
+        'model_id': model.get('id') or model_id,
+        'author': model.get('author'),
+        'downloads': model.get('downloads', 0),
+        'likes': model.get('likes', 0),
+        'tags': tags,
+        'last_modified': model.get('lastModified'),
+        'pipeline_tag': model.get('pipeline_tag'),
+        'params_b': params_b,
+        'capabilities': _marketplace_capabilities(model.get('id') or model_id, tags),
+        'available_quants': quants,
+        'provider_scores': providers,
+        'gated': bool(model.get('gated')),
+        'private': bool(model.get('private')),
+    }
+
+
+@app.get('/v1/models/marketplace/providers')
+def marketplace_providers(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    return {'providers': _marketplace_provider_profiles()}
+
+
+@app.get('/v1/models/marketplace/search')
+def marketplace_search_models(q: str = '', limit: int = 20, sort: str = 'downloads', capability: str | None = None, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    params = [('search', q), ('direction', '-1'), ('limit', max(1, min(limit, 50))), ('sort', sort)]
+    query = '&'.join(f'{key}={urllib.parse.quote(str(value))}' for key, value in params if str(value))
+    raw = _hf_get_json(f'{HF_API}/models?{query}')
+    results: list[dict[str, Any]] = []
+    for item in list(raw or [])[:limit]:
+        model_id = str(item.get('id') or '')
+        tags = [str(tag) for tag in (item.get('tags') or [])]
+        siblings = item.get('siblings') or []
+        if not any(str(sibling.get('rfilename') or '').endswith('.gguf') for sibling in siblings):
+            try:
+                detail = _hf_get_json(f'{HF_API}/models/{urllib.parse.quote(model_id, safe="")}')
+                siblings = detail.get('siblings') or []
+            except HTTPException:
+                siblings = []
+        quants = _marketplace_available_quants(siblings)
+        if not quants:
+            continue
+        capabilities = _marketplace_capabilities(model_id, tags)
+        if capability and capability not in {'all', 'any'} and not capabilities.get(capability, False):
+            continue
+        params_b = _marketplace_param_billions(model_id)
+        results.append(
+            {
+                'model_id': model_id,
+                'author': item.get('author'),
+                'downloads': item.get('downloads', 0),
+                'likes': item.get('likes', 0),
+                'tags': tags,
+                'last_modified': item.get('lastModified'),
+                'capabilities': capabilities,
+                'params_b': params_b,
+                'available_quants': quants,
+                'vram_q4_k_m_gb': _marketplace_vram_gb(params_b, 'q4_k_m'),
+                'gated': bool(item.get('gated')),
+                'private': bool(item.get('private')),
+            }
+        )
+    return {'query': q, 'results': results, 'total': len(results)}
+
+
+@app.get('/v1/models/marketplace/model/{model_id:path}')
+def marketplace_model_detail(model_id: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    return _marketplace_model_detail(model_id)
+
+
+@app.post('/v1/models/marketplace/download')
+def marketplace_download_model(payload: MarketplaceDownloadRequest, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    provider = config.providers.get(payload.provider)
+    if not provider:
+        raise HTTPException(status_code=404, detail='Provider not found')
+    if provider.type != 'lmstudio' or not provider.base_url:
+        raise HTTPException(status_code=400, detail='Marketplace download is currently supported only for configured LM Studio providers')
+    base = provider.base_url.rstrip('/')
+    if base.endswith('/v1'):
+        base = base[:-3]
+    request_body = json.dumps({'model': f'https://huggingface.co/{payload.model}', 'quantization': payload.quantization or 'Q4_K_M'}).encode('utf-8')
+    request = urllib.request.Request(
+        f'{base}/api/v1/models/download',
+        data=request_body,
+        headers={'Content-Type': 'application/json', 'Accept': 'application/json'},
+        method='POST',
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as handle:
+            result = json.loads(handle.read().decode('utf-8'))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode('utf-8', errors='ignore')
+        raise HTTPException(status_code=502, detail=f'LM Studio download failed ({exc.code}): {body}') from exc
+    except urllib.error.URLError as exc:
+        raise HTTPException(status_code=502, detail=f'LM Studio provider unreachable: {exc.reason or exc}') from exc
+    store.add_event(Event(session_id='system', type='marketplace_download_started', message=f'Marketplace download requested: {payload.model} via {payload.provider}', data={'model': payload.model, 'provider': payload.provider, 'quantization': payload.quantization or 'Q4_K_M', 'result': result}))
+    return result
 
 
 @app.get('/v1/tool-packages')
@@ -2740,6 +3020,25 @@ class SourceBuildRequest(BaseModel):
     server_url: str | None = None
 
 
+class SourceContextUpdateRequest(BaseModel):
+    description: str | None = None
+    path_prefix: str
+    customer_id: str | None = None
+    user_scope: str | None = None
+    workspace_profile: str | None = None
+    preferred_endpoint: str | None = None
+    container_image: str | None = None
+    profile: str | None = None
+    config_vars: dict[str, str] = Field(default_factory=dict)
+    secret_refs: dict[str, str] = Field(default_factory=dict)
+    notes: str | None = None
+
+
+class SecretUpdateRequest(BaseModel):
+    value: str
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
 class ServerConnectionRequest(BaseModel):
     public_url: str
     mdns_enabled: bool | None = None
@@ -2756,6 +3055,84 @@ class EndpointInstallNodeRequest(BaseModel):
 class EndpointInstallHarnessRequest(BaseModel):
     image: str | None = None
     runtime: str = 'auto'
+
+
+def _normalise_source_context_name(name: str) -> str:
+    value = str(name or '').strip()
+    if not value:
+        raise HTTPException(status_code=400, detail='Source context name is required')
+    if '/' in value or '\\' in value:
+        raise HTTPException(status_code=400, detail='Source context name must not contain path separators')
+    return value
+
+
+def _normalise_source_context_path(path: str | None) -> str:
+    value = str(path or '').strip().replace('\\', '/').strip('/')
+    if not value:
+        raise HTTPException(status_code=400, detail='path_prefix is required')
+    return value
+
+
+def _save_source_context(name: str, payload: SourceContextUpdateRequest) -> dict[str, Any]:
+    global config
+    context = SourceContextConfig.model_validate(
+        {
+            **payload.model_dump(),
+            'path_prefix': _normalise_source_context_path(payload.path_prefix),
+        }
+    )
+    config.source_contexts[name] = context
+    save_config(config)
+    config = load_config()
+    result = config.source_contexts[name].model_dump()
+    store.add_event(Event(session_id='system', type='source_context_saved', message=f'Source context saved: {name}', data={'name': name, **result}))
+    return result
+
+
+def _match_source_context(path: str | None = None, name: str | None = None) -> tuple[str, SourceContextConfig]:
+    if name:
+        context = config.source_contexts.get(name)
+        if not context:
+            raise HTTPException(status_code=404, detail='Source context not found')
+        return name, context
+    clean = str(path or '').strip().replace('\\', '/').strip('/')
+    if not clean:
+        raise HTTPException(status_code=400, detail='path or name is required')
+    matches: list[tuple[int, str, SourceContextConfig]] = []
+    for ctx_name, ctx in (config.source_contexts or {}).items():
+        prefix = str(ctx.path_prefix or '').strip('/').replace('\\', '/')
+        if not prefix:
+            continue
+        if clean == prefix or clean.startswith(prefix + '/'):
+            matches.append((len(prefix), ctx_name, ctx))
+    if not matches:
+        raise HTTPException(status_code=404, detail='No source context matches this path')
+    _len, matched_name, matched_context = sorted(matches, key=lambda item: item[0], reverse=True)[0]
+    return matched_name, matched_context
+
+
+def _resolve_source_context(path: str | None = None, name: str | None = None, include_secret_values: bool = False) -> dict[str, Any]:
+    context_name, context = _match_source_context(path=path, name=name)
+    config_vars = dict(context.config_vars or {})
+    secret_refs = dict(context.secret_refs or {})
+    resolved_secrets: dict[str, str | None] = {}
+    for env_name, secret_id in secret_refs.items():
+        try:
+            resolved_secrets[env_name] = secret_store.get(secret_id) if include_secret_values else None
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {
+        'name': context_name,
+        'context': context.model_dump(),
+        'path': str(path or '').strip().replace('\\', '/'),
+        'environment': {
+            **config_vars,
+            **({env_name: value for env_name, value in resolved_secrets.items() if value is not None} if include_secret_values else {}),
+        },
+        'config_vars': config_vars,
+        'secret_refs': secret_refs,
+        'resolved_secrets': resolved_secrets,
+    }
 
 
 
@@ -2868,6 +3245,129 @@ def put_source_content(payload: SourceWriteRequest, _auth: None = Depends(requir
         raise HTTPException(status_code=400, detail=str(exc))
     store.add_event(Event(session_id='system', type='source_file_saved', message=f'Source saved: {result["path"]}', data=result))
     return {'status': 'saved', **result}
+
+
+@app.get('/v1/source-contexts')
+@app.get('/v1/ide/contexts')
+def list_source_contexts(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    items = [{'name': name, **ctx.model_dump()} for name, ctx in sorted((config.source_contexts or {}).items())]
+    return {'contexts': items}
+
+
+@app.get('/v1/source-contexts/resolve')
+@app.get('/v1/ide/context/resolve')
+def resolve_source_context(
+    path: str | None = None,
+    name: str | None = None,
+    include_secrets: bool = Query(default=False),
+    authorization: str | None = Header(default=None),
+    x_pac_runner_id: str | None = Header(default=None, alias='X-PAC-Runner-ID'),
+    x_pac_runner_key: str | None = Header(default=None, alias='X-PAC-Runner-Key'),
+) -> dict[str, Any]:
+    runner = _runner_from_auth_headers(authorization, x_pac_runner_id, x_pac_runner_key)
+    include_secret_values = include_secrets and (_admin_auth_valid(authorization) or runner is not None)
+    result = _resolve_source_context(path=path, name=name, include_secret_values=include_secret_values)
+    if runner:
+        result['requested_by'] = {'kind': 'endpoint', 'runner_id': runner.id, 'runner_name': runner.name}
+    elif _admin_auth_valid(authorization):
+        result['requested_by'] = {'kind': 'admin'}
+    return result
+
+
+@app.get('/v1/source-contexts/{name}')
+@app.get('/v1/ide/contexts/{name}')
+def get_source_context(name: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    key = _normalise_source_context_name(name)
+    context = config.source_contexts.get(key)
+    if not context:
+        raise HTTPException(status_code=404, detail='Source context not found')
+    return {'name': key, **context.model_dump()}
+
+
+@app.put('/v1/source-contexts/{name}')
+@app.put('/v1/ide/contexts/{name}')
+def put_source_context(name: str, payload: SourceContextUpdateRequest, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    key = _normalise_source_context_name(name)
+    result = _save_source_context(key, payload)
+    return {'status': 'saved', 'name': key, **result}
+
+
+@app.delete('/v1/source-contexts/{name}')
+@app.delete('/v1/ide/contexts/{name}')
+def delete_source_context(name: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    global config
+    key = _normalise_source_context_name(name)
+    if key not in config.source_contexts:
+        raise HTTPException(status_code=404, detail='Source context not found')
+    del config.source_contexts[key]
+    save_config(config)
+    config = load_config()
+    store.add_event(Event(session_id='system', type='source_context_deleted', message=f'Source context deleted: {key}', data={'name': key}))
+    return {'status': 'deleted', 'name': key}
+
+
+@app.get('/v1/secrets')
+@app.get('/v1/ide/secrets')
+def list_secrets(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    try:
+        return {'secrets': secret_store.list()}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get('/v1/secrets/audit')
+@app.get('/v1/ide/secrets/audit')
+def list_secret_audit(limit: int = 20, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    try:
+        return {'items': secret_store.audit_tail(max(1, min(limit, 200)))}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.put('/v1/secrets/{secret_id}')
+@app.put('/v1/ide/secrets/{secret_id}')
+def put_secret(secret_id: str, payload: SecretUpdateRequest, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    try:
+        item = secret_store.set(secret_id, payload.value, actor='web-ui', meta=payload.meta)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    store.add_event(Event(session_id='system', type='secret_saved', message=f'Secret saved: {secret_id}', data={'secret_id': secret_id, 'meta': payload.meta}))
+    return {'status': 'saved', **item}
+
+
+@app.delete('/v1/secrets/{secret_id}')
+@app.delete('/v1/ide/secrets/{secret_id}')
+def delete_secret(secret_id: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    try:
+        deleted = secret_store.delete(secret_id, actor='web-ui')
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail='Secret not found')
+    store.add_event(Event(session_id='system', type='secret_deleted', message=f'Secret deleted: {secret_id}', data={'secret_id': secret_id}))
+    return {'status': 'deleted', 'secret_id': secret_id}
+
+
+@app.get('/v1/secrets/{secret_id}')
+@app.get('/v1/ide/secrets/{secret_id}')
+def get_secret(
+    secret_id: str,
+    authorization: str | None = Header(default=None),
+    x_pac_runner_id: str | None = Header(default=None, alias='X-PAC-Runner-ID'),
+    x_pac_runner_key: str | None = Header(default=None, alias='X-PAC-Runner-Key'),
+) -> dict[str, Any]:
+    runner = _runner_from_auth_headers(authorization, x_pac_runner_id, x_pac_runner_key)
+    try:
+        value = secret_store.get(secret_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if value is None:
+        raise HTTPException(status_code=404, detail='Secret not found')
+    return {
+        'secret_id': secret_id,
+        'value': value,
+        'requested_by': {'kind': 'endpoint', 'runner_id': runner.id} if runner else {'kind': 'admin'},
+    }
 
 
 
@@ -2995,8 +3495,23 @@ def _apply_version_package_from_path(package_path: Path, filename: str, restart_
     package_root = _find_package_root(extract_dir)
     app_dir = _app_dir()
     backup_dir = updates_dir / f'backup-app-{stamp}'
+    preservation_dir = pacp_path('backups', stamp)
+    archive_meta: dict[str, Any] | None = None
+    diff_meta: dict[str, Any] | None = None
     if app_dir.exists():
         shutil.copytree(app_dir, backup_dir, ignore=shutil.ignore_patterns('.venv', '__pycache__', '*.pyc'))
+        archive_meta = build_backup_archive(app_dir, preservation_dir / 'backup.tar.gz')
+        diff_summary = compare_trees(
+            installed_root=app_dir,
+            incoming_root=package_root,
+            diff_path=preservation_dir / f'{Path(filename).stem}-user.diff',
+            summary_path=preservation_dir / 'change-summary.json',
+        )
+        diff_meta = {
+            'summary': diff_summary,
+            'diff_path': str(preservation_dir / f'{Path(filename).stem}-user.diff'),
+            'summary_path': str(preservation_dir / 'change-summary.json'),
+        }
     copied = _copy_package_tree(package_root, app_dir)
     pip_result = _pip_install_editable(app_dir)
     run_script_result = _write_runtime_run_script(app_dir)
@@ -3014,6 +3529,8 @@ def _apply_version_package_from_path(package_path: Path, filename: str, restart_
         'members': len(members),
         'pip': pip_result,
         'run_script': run_script_result,
+        'preservation_archive': archive_meta,
+        'preservation_diff': diff_meta,
         'restart_required': True,
         'restart_scheduled': restart_after_update,
         'restart_marker': str(marker),

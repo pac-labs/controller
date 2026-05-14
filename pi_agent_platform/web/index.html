@@ -306,6 +306,52 @@
           <div id="sourceFormResult" class="inline-result compact-result" hidden></div>
           <button id="saveSourceFile" hidden>Save file</button>
         </section>
+        <aside class="source-workbench-sidecar">
+          <section class="source-sidecard">
+            <div class="section-heading compact-heading"><div><h3>IDE Context</h3><p class="muted">Customer, profile, endpoint, config, and secret references for the selected source area.</p></div></div>
+            <label>Context <select id="sourceContextSelect"><option value="">Select context</option></select></label>
+            <div class="form-grid compact-form source-side-form">
+              <label>Name <input id="sourceContextName" placeholder="docs-customer-a" /></label>
+              <label>Path prefix <input id="sourceContextPathPrefix" placeholder="docs/customer-a" /></label>
+              <label>Customer <input id="sourceContextCustomerId" placeholder="customer-a" /></label>
+              <label>User scope <input id="sourceContextUserScope" placeholder="dorbi" /></label>
+              <label>Profile <input id="sourceContextProfile" placeholder="doc-reader" /></label>
+              <label>Workspace profile <input id="sourceContextWorkspaceProfile" placeholder="docs-workspace" /></label>
+              <label>Preferred endpoint <input id="sourceContextEndpoint" placeholder="endpoint-01" /></label>
+              <label>Container image <input id="sourceContextContainerImage" placeholder="pac/docs-search:latest" /></label>
+            </div>
+            <label>Description <input id="sourceContextDescription" placeholder="Customer documentation workspace" /></label>
+            <label>Config vars (JSON) <textarea id="sourceContextConfigVars" class="source-side-textarea" spellcheck="false" placeholder="{&#10;  &quot;GIT_AUTHOR_NAME&quot;: &quot;PAC&quot;&#10;}"></textarea></label>
+            <label>Secret refs (JSON) <textarea id="sourceContextSecretRefs" class="source-side-textarea" spellcheck="false" placeholder="{&#10;  &quot;GIT_TOKEN&quot;: &quot;github/pat&quot;&#10;}"></textarea></label>
+            <label>Notes <textarea id="sourceContextNotes" class="source-side-textarea compact" spellcheck="false" placeholder="Loaded into IDE-backed sessions for this customer."></textarea></label>
+            <div class="button-row">
+              <button id="saveSourceContext">Save context</button>
+              <button id="resolveSourceContext" class="ghost-button">Resolve current path</button>
+              <button id="deleteSourceContext" class="ghost-button">Delete</button>
+            </div>
+            <pre id="sourceContextResolved" class="inline-result compact-result source-side-result">Select a source context to inspect the resolved environment bundle.</pre>
+          </section>
+          <section class="source-sidecard">
+            <div class="section-heading compact-heading"><div><h3>Secrets</h3><p class="muted">Reusable endpoint and IDE secrets for Git, package registries, and client operations.</p></div></div>
+            <label>Secret <select id="sourceSecretSelect"><option value="">Select secret</option></select></label>
+            <label>ID <input id="sourceSecretId" placeholder="github/pat" /></label>
+            <label>Value <input id="sourceSecretValue" type="password" placeholder="Paste a secret value" /></label>
+            <label>Meta (JSON) <textarea id="sourceSecretMeta" class="source-side-textarea compact" spellcheck="false" placeholder="{&#10;  &quot;scope&quot;: &quot;git&quot;&#10;}"></textarea></label>
+            <div class="button-row">
+              <button id="saveSourceSecret">Save secret</button>
+              <button id="deleteSourceSecret" class="ghost-button">Delete</button>
+            </div>
+            <div id="sourceSecretAudit" class="source-secret-audit muted">No secret audit events loaded yet.</div>
+          </section>
+          <section class="source-sidecard">
+            <div class="section-heading compact-heading"><div><h3>Marketplace</h3><p class="muted">Search GGUF-capable models and compare them with configured provider hardware.</p></div></div>
+            <div class="button-row">
+              <input id="marketplaceQuery" class="source-marketplace-query" placeholder="qwen coder" />
+              <button id="searchMarketplace" class="ghost-button">Search</button>
+            </div>
+            <div id="marketplaceResults" class="source-marketplace-results muted">Search the marketplace to inspect model fit against PAC providers.</div>
+          </section>
+        </aside>
       </div>
     </section>
 

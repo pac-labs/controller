@@ -1434,6 +1434,7 @@ async function renderSources(path='', options={}) {
     renderSourceBuildPanel(sourceTreeCache.get(selectedSourceFolder) || rootData);
     await syncDownloadsWithSourcePath(selectedSourceFolder || '');
     bindSourceTreeEvents(tree);
+    resolveCurrentSourceContext().catch(()=>{});
   } catch (e) {
     tree.classList.add('muted');
     tree.textContent = e.message || String(e);
@@ -1681,6 +1682,164 @@ async function loadSourceBinaryArtifacts(project='') {
     const data = await api(`/v1/sources/binary-artifacts${qs}`);
     renderBinaryDownloads(data.projects || []);
   } catch(e) { el.textContent = `Could not load downloads: ${e.message}`; }
+}
+function parseJsonObject(text, label) {
+  const raw = String(text || '').trim();
+  if (!raw) return {};
+  let value;
+  try { value = JSON.parse(raw); } catch (e) { throw new Error(`${label} must be valid JSON`); }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be a JSON object`);
+  return value;
+}
+function fillSourceContextForm(ctxName='') {
+  const entry = (config.source_contexts || {})[ctxName] || {};
+  const set = (id, value='') => { const el = document.getElementById(id); if (el) el.value = value || ''; };
+  set('sourceContextName', ctxName);
+  set('sourceContextPathPrefix', entry.path_prefix);
+  set('sourceContextCustomerId', entry.customer_id);
+  set('sourceContextUserScope', entry.user_scope);
+  set('sourceContextProfile', entry.profile);
+  set('sourceContextWorkspaceProfile', entry.workspace_profile);
+  set('sourceContextEndpoint', entry.preferred_endpoint);
+  set('sourceContextContainerImage', entry.container_image);
+  set('sourceContextDescription', entry.description);
+  set('sourceContextNotes', entry.notes);
+  set('sourceContextConfigVars', JSON.stringify(entry.config_vars || {}, null, 2));
+  set('sourceContextSecretRefs', JSON.stringify(entry.secret_refs || {}, null, 2));
+}
+function renderSourceContexts() {
+  const select = document.getElementById('sourceContextSelect');
+  if (!select) return;
+  const contexts = Object.entries(config.source_contexts || {}).sort((a,b)=>a[0].localeCompare(b[0]));
+  const current = select.value || document.getElementById('sourceContextName')?.value || '';
+  select.innerHTML = '<option value="">Select context</option>' + contexts.map(([name, ctx]) => `<option value="${escapeHtml(name)}">${escapeHtml(name)} (${escapeHtml(ctx.path_prefix || '-')})</option>`).join('');
+  if (contexts.some(([name]) => name === current)) select.value = current;
+}
+async function saveSourceContextFromForm() {
+  try {
+    const name = document.getElementById('sourceContextName')?.value?.trim();
+    if (!name) throw new Error('Context name is required');
+    const body = {
+      description: document.getElementById('sourceContextDescription')?.value?.trim() || null,
+      path_prefix: document.getElementById('sourceContextPathPrefix')?.value?.trim() || '',
+      customer_id: document.getElementById('sourceContextCustomerId')?.value?.trim() || null,
+      user_scope: document.getElementById('sourceContextUserScope')?.value?.trim() || null,
+      profile: document.getElementById('sourceContextProfile')?.value?.trim() || null,
+      workspace_profile: document.getElementById('sourceContextWorkspaceProfile')?.value?.trim() || null,
+      preferred_endpoint: document.getElementById('sourceContextEndpoint')?.value?.trim() || null,
+      container_image: document.getElementById('sourceContextContainerImage')?.value?.trim() || null,
+      config_vars: parseJsonObject(document.getElementById('sourceContextConfigVars')?.value, 'Config vars'),
+      secret_refs: parseJsonObject(document.getElementById('sourceContextSecretRefs')?.value, 'Secret refs'),
+      notes: document.getElementById('sourceContextNotes')?.value?.trim() || null,
+    };
+    await api(`/v1/source-contexts/${encodeURIComponent(name)}`, {method:'PUT', body: JSON.stringify(body)});
+    await loadConfig();
+    document.getElementById('sourceContextSelect').value = name;
+    fillSourceContextForm(name);
+    await resolveCurrentSourceContext();
+  } catch (e) {
+    paneError('Source context could not be saved', e.message || String(e));
+  }
+}
+async function deleteSourceContextFromForm() {
+  const name = document.getElementById('sourceContextName')?.value?.trim() || document.getElementById('sourceContextSelect')?.value || '';
+  if (!name) return paneError('Select a source context first');
+  if (!confirm(`Delete source context ${name}?`)) return;
+  await api(`/v1/source-contexts/${encodeURIComponent(name)}`, {method:'DELETE'});
+  await loadConfig();
+  fillSourceContextForm('');
+  const out = document.getElementById('sourceContextResolved');
+  if (out) out.textContent = 'Select a source context to inspect the resolved environment bundle.';
+}
+async function resolveCurrentSourceContext() {
+  const out = document.getElementById('sourceContextResolved');
+  if (!out) return;
+  const explicitName = document.getElementById('sourceContextSelect')?.value || document.getElementById('sourceContextName')?.value?.trim() || '';
+  const path = selectedSourceEntry || selectedSourcePath || selectedSourceFolder || '';
+  if (!explicitName && !path) {
+    out.textContent = 'Select a context or a source path first.';
+    return;
+  }
+  try {
+    const qs = explicitName ? `name=${encodeURIComponent(explicitName)}` : `path=${encodeURIComponent(path)}`;
+    const data = await api(`/v1/source-contexts/resolve?${qs}&include_secrets=false`);
+    out.textContent = JSON.stringify(data, null, 2);
+    if (data?.name) {
+      const select = document.getElementById('sourceContextSelect');
+      if (select) select.value = data.name;
+      fillSourceContextForm(data.name);
+    }
+  } catch (e) {
+    out.textContent = e.message || String(e);
+  }
+}
+function fillSecretForm(secretId='') {
+  const select = document.getElementById('sourceSecretSelect');
+  if (select && secretId) select.value = secretId;
+  const item = ((window.__pacSecrets || []).find(s => s.id === secretId)) || {};
+  const set = (id, value='') => { const el = document.getElementById(id); if (el) el.value = value || ''; };
+  set('sourceSecretId', secretId);
+  set('sourceSecretValue', '');
+  set('sourceSecretMeta', JSON.stringify(item.meta || {}, null, 2));
+}
+async function loadSourceSecrets() {
+  const select = document.getElementById('sourceSecretSelect');
+  const audit = document.getElementById('sourceSecretAudit');
+  if (!select || !audit) return;
+  const [secretData, auditData] = await Promise.all([api('/v1/secrets'), api('/v1/secrets/audit?limit=12')]);
+  window.__pacSecrets = secretData.secrets || [];
+  const current = select.value || document.getElementById('sourceSecretId')?.value || '';
+  select.innerHTML = '<option value="">Select secret</option>' + (window.__pacSecrets || []).map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.id)}</option>`).join('');
+  if ((window.__pacSecrets || []).some(item => item.id === current)) select.value = current;
+  audit.textContent = (auditData.items || []).length ? (auditData.items || []).map(item => `${item.created_at}  ${item.event}  ${item.secret_id}`).join('\n') : 'No secret audit events loaded yet.';
+}
+async function saveSourceSecretFromForm() {
+  try {
+    const secretId = document.getElementById('sourceSecretId')?.value?.trim();
+    const value = document.getElementById('sourceSecretValue')?.value ?? '';
+    if (!secretId) throw new Error('Secret ID is required');
+    if (!value) throw new Error('Secret value is required when saving');
+    const meta = parseJsonObject(document.getElementById('sourceSecretMeta')?.value, 'Secret meta');
+    await api(`/v1/secrets/${encodeURIComponent(secretId)}`, {method:'PUT', body: JSON.stringify({value, meta})});
+    await loadSourceSecrets();
+    fillSecretForm(secretId);
+  } catch (e) {
+    paneError('Secret could not be saved', e.message || String(e));
+  }
+}
+async function deleteSourceSecretFromForm() {
+  const secretId = document.getElementById('sourceSecretId')?.value?.trim() || document.getElementById('sourceSecretSelect')?.value || '';
+  if (!secretId) return paneError('Select a secret first');
+  if (!confirm(`Delete secret ${secretId}?`)) return;
+  await api(`/v1/secrets/${encodeURIComponent(secretId)}`, {method:'DELETE'});
+  await loadSourceSecrets();
+  fillSecretForm('');
+}
+function renderMarketplaceResults(data) {
+  const el = document.getElementById('marketplaceResults');
+  if (!el) return;
+  const results = data?.results || [];
+  if (!results.length) {
+    el.innerHTML = '<span class="muted">No marketplace models matched this query.</span>';
+    return;
+  }
+  el.innerHTML = results.map(item => {
+    const caps = Object.entries(item.capabilities || {}).filter(([,v]) => !!v).map(([k]) => `<span class="marketplace-pill">${escapeHtml(k)}</span>`).join('');
+    const quants = (item.available_quants || []).slice(0, 5).map(q => `<span class="marketplace-pill">${escapeHtml(q.toUpperCase())}</span>`).join('');
+    return `<article class="marketplace-card"><b>${escapeHtml(item.model_id)}</b><div class="marketplace-meta">${caps}${quants}</div><div class="muted small-text">${escapeHtml(item.author || 'unknown author')} • ${escapeHtml(String(item.downloads || 0))} downloads • ${escapeHtml(String(item.params_b || '?'))}B</div></article>`;
+  }).join('');
+}
+async function searchMarketplace() {
+  const query = document.getElementById('marketplaceQuery')?.value?.trim() || '';
+  const el = document.getElementById('marketplaceResults');
+  if (!el) return;
+  el.textContent = 'Searching marketplace…';
+  try {
+    const data = await api(`/v1/models/marketplace/search?q=${encodeURIComponent(query)}&limit=12`);
+    renderMarketplaceResults(data);
+  } catch (e) {
+    el.textContent = e.message || String(e);
+  }
 }
 function formatBuildCommand(command) {
   return Array.isArray(command) ? command.join(' ') : String(command || '');
@@ -2234,7 +2393,9 @@ async function loadConfig() {
   renderControllerHarnessSettings();
   renderEndpointConnectionSettings();
   renderZedConfigExamples();
+  renderSourceContexts();
   renderSources();
+  await loadSourceSecrets().catch(()=>{});
   await loadTlsStatus();
   await loadServiceModeStatus();
   await loadControllerHarnessStatus();
@@ -2495,6 +2656,22 @@ const renameSourceBtn = document.getElementById('renameSourceEntry');
 if (renameSourceBtn) renameSourceBtn.onclick = () => renameSelectedSourceEntry().catch(e=>paneError('Source entry could not be renamed', e.message));
 const deleteSourceBtn = document.getElementById('deleteSourceEntry');
 if (deleteSourceBtn) deleteSourceBtn.onclick = () => deleteSelectedSourceEntry().catch(e=>paneError('Source entry could not be deleted', e.message));
+const sourceContextSelect = document.getElementById('sourceContextSelect');
+if (sourceContextSelect) sourceContextSelect.onchange = () => { fillSourceContextForm(sourceContextSelect.value || ''); resolveCurrentSourceContext().catch(()=>{}); };
+const saveSourceContextBtn = document.getElementById('saveSourceContext');
+if (saveSourceContextBtn) saveSourceContextBtn.onclick = () => saveSourceContextFromForm();
+const resolveSourceContextBtn = document.getElementById('resolveSourceContext');
+if (resolveSourceContextBtn) resolveSourceContextBtn.onclick = () => resolveCurrentSourceContext().catch(e=>paneError('Source context could not be resolved', e.message));
+const deleteSourceContextBtn = document.getElementById('deleteSourceContext');
+if (deleteSourceContextBtn) deleteSourceContextBtn.onclick = () => deleteSourceContextFromForm().catch(e=>paneError('Source context could not be deleted', e.message));
+const sourceSecretSelect = document.getElementById('sourceSecretSelect');
+if (sourceSecretSelect) sourceSecretSelect.onchange = () => fillSecretForm(sourceSecretSelect.value || '');
+const saveSourceSecretBtn = document.getElementById('saveSourceSecret');
+if (saveSourceSecretBtn) saveSourceSecretBtn.onclick = () => saveSourceSecretFromForm();
+const deleteSourceSecretBtn = document.getElementById('deleteSourceSecret');
+if (deleteSourceSecretBtn) deleteSourceSecretBtn.onclick = () => deleteSourceSecretFromForm().catch(e=>paneError('Secret could not be deleted', e.message));
+const searchMarketplaceBtn = document.getElementById('searchMarketplace');
+if (searchMarketplaceBtn) searchMarketplaceBtn.onclick = () => searchMarketplace().catch(e=>paneError('Marketplace search failed', e.message));
 if (document.getElementById('saveTool')) saveTool.onclick=()=>saveToolFromForm().catch(e=>paneError('Tool save failed', e.message));
 if (document.getElementById('saveProfile')) saveProfile.onclick=()=>saveProfileFromForm().catch(e=>paneError('Profile save failed', e.message));
 if (document.getElementById('saveWorkspace')) saveWorkspace.onclick=()=>saveWorkspaceFromForm().catch(e=>paneError('Workspace save failed', e.message));

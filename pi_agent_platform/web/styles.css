@@ -1511,7 +1511,7 @@ body {
   height: auto !important;
   min-height: 0 !important;
   display: grid !important;
-  grid-template-columns: 320px minmax(0, 1fr) !important;
+  grid-template-columns: 300px minmax(0, 1fr) 360px !important;
 }
 #sources-tab .source-workbench-tree {
   min-width: 0 !important;
@@ -1533,10 +1533,84 @@ body {
 #sources-tab .source-row {
   flex: 0 0 auto !important;
 }
+#sources-tab .source-workbench-sidecar {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  overflow: auto !important;
+  background:
+    linear-gradient(180deg, rgba(6, 18, 34, 0.98), rgba(7, 16, 30, 0.94)),
+    linear-gradient(135deg, rgba(0, 120, 212, 0.08), rgba(217, 124, 15, 0.08)) !important;
+  border-left: 1px solid rgba(125, 168, 213, 0.18) !important;
+  padding: 1rem !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 1rem !important;
+}
+#sources-tab .source-sidecard {
+  border: 1px solid rgba(125, 168, 213, 0.18);
+  background: linear-gradient(180deg, rgba(11, 22, 40, 0.96), rgba(8, 15, 28, 0.96));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+  padding: .95rem;
+  display: flex;
+  flex-direction: column;
+  gap: .7rem;
+}
+#sources-tab .source-sidecard h3 {
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  font-size: .78rem;
+}
+#sources-tab .source-side-form {
+  grid-template-columns: 1fr 1fr !important;
+}
+#sources-tab .source-side-textarea {
+  min-height: 94px;
+  resize: vertical;
+  font-family: "IBM Plex Mono", "Cascadia Code", monospace;
+}
+#sources-tab .source-side-textarea.compact {
+  min-height: 72px;
+}
+#sources-tab .source-side-result,
+#sources-tab .source-secret-audit,
+#sources-tab .source-marketplace-results {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  border: 1px solid rgba(125, 168, 213, 0.16);
+  background: rgba(4, 10, 22, 0.86);
+  padding: .75rem;
+}
+#sources-tab .source-marketplace-query {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+#sources-tab .source-marketplace-results .marketplace-card {
+  border: 1px solid rgba(125, 168, 213, 0.14);
+  background: rgba(9, 18, 32, 0.92);
+  padding: .7rem;
+  margin-bottom: .7rem;
+}
+#sources-tab .source-marketplace-results .marketplace-card:last-child {
+  margin-bottom: 0;
+}
+#sources-tab .source-marketplace-results .marketplace-meta {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin: .45rem 0;
+}
+#sources-tab .source-marketplace-results .marketplace-pill {
+  border: 1px solid rgba(125, 168, 213, 0.2);
+  padding: .16rem .4rem;
+  background: rgba(18, 53, 103, 0.34);
+  font-size: .75rem;
+}
 @media (max-width: 950px) {
   #sources-tab.source-workbench-panel.active { height: auto !important; overflow: visible !important; }
   #sources-tab .source-workbench { grid-template-columns: 1fr !important; height: auto !important; }
   #sources-tab .source-workbench-tree { max-height: 360px !important; overflow: hidden !important; }
+  #sources-tab .source-workbench-sidecar { max-height: none !important; }
 }
 
 
