@@ -137,8 +137,9 @@ def _ui_build_info() -> dict[str, Any]:
         _web_dir() / 'index.html',
         _web_dir() / 'app.js',
         _web_dir() / 'styles.css',
-        _web_dir() / 'assets' / 'pac-logo.svg',
-        _web_dir() / 'assets' / 'pac-icon.svg',
+        _web_dir() / 'assets' / 'logo.png',
+        _web_dir() / 'assets' / 'pac-brand-mark-transparent-128.png',
+        _web_dir() / 'assets' / 'pac-brand-mark-transparent-32.png',
     ]
     digest = hashlib.sha1()
     latest_mtime = 0.0
@@ -161,9 +162,9 @@ def _render_web_index() -> HTMLResponse:
     replacements = {
         '/ui/styles.css': f"/ui/styles.css?v={info['asset_stamp']}",
         '/ui/app.js': f"/ui/app.js?v={info['asset_stamp']}",
-        '/ui/assets/favicon.svg': f"/ui/assets/favicon.svg?v={info['asset_stamp']}",
-        '/ui/assets/pac-logo.svg': f"/ui/assets/pac-logo.svg?v={info['asset_stamp']}",
-        '/ui/assets/pac-icon.svg': f"/ui/assets/pac-icon.svg?v={info['asset_stamp']}",
+        '/ui/assets/pac-brand-mark-transparent-32.png': f"/ui/assets/pac-brand-mark-transparent-32.png?v={info['asset_stamp']}",
+        '/ui/assets/logo.png': f"/ui/assets/logo.png?v={info['asset_stamp']}",
+        '/ui/assets/pac-brand-mark-transparent-128.png': f"/ui/assets/pac-brand-mark-transparent-128.png?v={info['asset_stamp']}",
         '/ui/assets/pac-loader.svg': f"/ui/assets/pac-loader.svg?v={info['asset_stamp']}",
     }
     for source, target in replacements.items():
@@ -1898,8 +1899,8 @@ def web_index():
 
 @app.get('/favicon.ico')
 def favicon_ico():
-    icon = Path(__file__).resolve().parents[1] / 'web' / 'assets' / 'favicon.svg'
-    return FileResponse(icon, media_type='image/svg+xml')
+    icon = Path(__file__).resolve().parents[1] / 'web' / 'assets' / 'pac-brand-mark-transparent-32.png'
+    return FileResponse(icon, media_type='image/png')
 
 
 @app.get('/app')
