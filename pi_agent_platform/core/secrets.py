@@ -102,6 +102,18 @@ class SecretStore:
             )
         return sorted(results, key=lambda item: item.get("id", ""))
 
+    def status(self) -> dict[str, Any]:
+        with self._lock:
+            payload = self._read()
+        secrets = payload.get("secrets", {}) if isinstance(payload, dict) else {}
+        return {
+            "backend_ready": _CRYPTO_IMPORT_ERROR is None,
+            "error": None if _CRYPTO_IMPORT_ERROR is None else str(_CRYPTO_IMPORT_ERROR),
+            "store_path": str(self._data_file),
+            "audit_path": str(self._audit_file),
+            "count": len(secrets) if isinstance(secrets, dict) else 0,
+        }
+
     def get(self, secret_id: str) -> str | None:
         with self._lock:
             payload = self._read()

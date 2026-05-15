@@ -24,7 +24,7 @@
         <p>Pi Agent Controller. Orchestrate. Govern. Automate.</p>
       </div>
     </div>
-    <div class="top-actions"><button id="openDownloadsModal" class="top-icon-button monochrome-icon clean-download-icon" title="Downloads" aria-label="Downloads"><span aria-hidden="true"></span></button><button id="openEventsPanel" class="top-icon-button monochrome-icon clean-bell-icon" title="Events" aria-label="Events"><span aria-hidden="true"></span></button><label class="theme-select-label">Theme <select id="themeMode" aria-label="Theme mode"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label><input id="token" placeholder="Bearer token, optional" /><button id="refresh">Refresh</button></div>
+    <div class="top-actions"><div id="buildStamp" class="build-stamp" title="Backend and UI build information">backend v... • ui ...</div><button id="openDownloadsModal" class="top-icon-button monochrome-icon clean-download-icon" title="Downloads" aria-label="Downloads"><span aria-hidden="true"></span></button><button id="openEventsPanel" class="top-icon-button monochrome-icon clean-bell-icon" title="Events" aria-label="Events"><span aria-hidden="true"></span></button><label class="theme-select-label">Theme <select id="themeMode" aria-label="Theme mode"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label><input id="token" placeholder="Bearer token, optional" /><button id="refresh">Refresh</button></div>
   </header>
   <div id="setupWizard" class="modal-backdrop" hidden>
     <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="setupWizardTitle">
@@ -61,10 +61,13 @@
       <div class="dashboard-grid dashboard-metrics">
         <section class="card hero wide">
           <div class="hero-title"><img class="hero-mark" src="/ui/assets/pac-icon.svg" alt="" /><div><h2>Operations dashboard</h2><p class="eyebrow">Real activity • Sessions • Endpoints</p></div></div>
-          <p class="muted">Current PAC state across sessions, endpoints and recent events.</p>
+          <p class="muted">Current PAC state across sessions, endpoints, providers, controller runtime, and recent events.</p>
           <div id="dashboardStats" class="stats-grid"><div class="metric"><b>—</b><span>loading</span></div></div>
           <div class="button-row"><button id="dashboardNewSession">New session</button><button id="dashboardRefreshMetrics" class="ghost-button">Refresh metrics</button></div>
         </section>
+        <section class="card"><h2>Execution health</h2><div id="taskStatusChart" class="bar-chart muted">Loading execution health…</div></section>
+        <section class="card"><h2>Critical components</h2><div id="componentHealth" class="health-grid muted">Loading component health…</div></section>
+        <section class="card"><h2>Setup and updates</h2><div id="opsReadiness" class="health-grid muted">Loading setup state…</div></section>
         <section class="card"><h2>Event activity</h2><div id="eventActivityChart" class="spark-chart muted">Loading event activity…</div></section>
         <section class="card"><h2>System</h2><div class="status-strip"><span class="pac-loader" aria-label="active"></span><span class="muted">PAC active</span></div><div id="systemInfo" class="kv"></div></section>
         <section class="card"><h2>Recent sessions</h2><div id="sessions"></div></section>

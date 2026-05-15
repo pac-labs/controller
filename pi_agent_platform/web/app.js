@@ -57,6 +57,7 @@ let setupStatus = null;
 let sessionSlashCommands = [];
 let pacThemeMode = 'system';
 let marketplaceResultCache = [];
+let currentVersionInfo = null;
 
 const SESSION_SLASH_COMMANDS = {
   command: {kind:'tool', label:'/command <tool> [args]', description:'Run a registered endpoint tool on the locked host endpoint. Example: /command rg TODO'},
@@ -123,7 +124,16 @@ function slashCommandHelpText() {
 async function loadVersion(){
   try {
     const v = await api('/v1/version');
-    document.querySelectorAll('.app-version').forEach(el => el.textContent = 'v' + (v.version || 'unknown'));
+    currentVersionInfo = v || null;
+    const backend = v?.version || 'unknown';
+    const ui = v?.ui_build || 'unknown';
+    document.querySelectorAll('.app-version').forEach(el => el.textContent = 'v' + backend);
+    const stamp = document.getElementById('buildStamp');
+    if (stamp) {
+      stamp.textContent = `backend v${backend} • ui ${ui}`;
+      const when = v?.ui_updated_at ? `\nUI updated: ${v.ui_updated_at}` : '';
+      stamp.title = `Backend version: ${backend}\nUI build: ${ui}${when}`;
+    }
     if (v?.version) document.title = `PAC - Pi Agent Control v${v.version}`;
   } catch (_) {}
 }
@@ -3108,15 +3118,121 @@ async function loadRunners() {
 function renderStatCards(metrics) {
   const el = document.getElementById('dashboardStats');
   if (!el) return;
+  const health = metrics.component_health || {};
+  const providers = health.providers || {};
+  const models = health.models || {};
+  const endpoints = health.endpoints || {};
+  const setup = health.setup || {};
+  const updates = health.updates || {};
   const stats = [
     ['Sessions', metrics.sessions_total, `${metrics.sessions_active || 0} active`],
     ['Tasks', metrics.tasks_total, `${metrics.tasks_running || 0} running/queued`],
-    ['Completed', metrics.tasks_completed, 'tasks done'],
     ['Failed', metrics.tasks_failed, 'tasks failed'],
     ['Approvals', metrics.approvals_pending, 'pending'],
     ['Endpoints', metrics.endpoints_total, `${metrics.endpoints_online || 0} online`],
+    ['Providers', providers.connected ?? 0, `${providers.enabled ?? 0} enabled`],
+    ['Models', models.available ?? 0, `${models.session_capable ?? 0} session-ready`],
+    ['Setup', setup.required_issues ?? 0, `${setup.warnings ?? 0} warnings`],
+    ['Updates', updates.archives ?? 0, `${updates.local_diffs ?? 0} local diffs`],
   ];
   el.innerHTML = stats.map(([label,value,hint]) => `<div class="metric"><b>${value ?? 0}</b><span>${label}</span><small>${hint}</small></div>`).join('');
+}
+function renderHealthGrid(id, sections, emptyText) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (!sections || !sections.length) {
+    el.textContent = emptyText || 'No data yet.';
+    return;
+  }
+  el.innerHTML = sections.map(section => {
+    const rows = (section.rows || []).map(row => {
+      const tone = row.tone ? ` tone-${row.tone}` : '';
+      return `<div class="health-row${tone}"><span>${escapeHtml(row.label || '')}</span><b>${escapeHtml(String(row.value ?? '-'))}</b></div>`;
+    }).join('');
+    return `<section class="health-section"><h3>${escapeHtml(section.title || '')}</h3>${rows}</section>`;
+  }).join('');
+}
+function renderCriticalComponentHealth(metrics) {
+  const health = metrics.component_health || {};
+  const providers = health.providers || {};
+  const models = health.models || {};
+  const endpoints = health.endpoints || {};
+  const controller = health.controller || {};
+  renderHealthGrid('componentHealth', [
+    {
+      title: 'Providers',
+      rows: [
+        {label:'Connected', value: `${providers.connected ?? 0}/${providers.total ?? 0}`, tone:(providers.failed || 0) ? 'warn' : 'ok'},
+        {label:'Failed', value: providers.failed ?? 0, tone:(providers.failed || 0) ? 'danger' : 'ok'},
+        {label:'Disabled', value: providers.disabled ?? 0},
+      ],
+    },
+    {
+      title: 'Models',
+      rows: [
+        {label:'Available', value: `${models.available ?? 0}/${models.total ?? 0}`, tone:(models.unavailable || 0) ? 'warn' : 'ok'},
+        {label:'Unavailable', value: models.unavailable ?? 0, tone:(models.unavailable || 0) ? 'danger' : 'ok'},
+        {label:'Unsupported provider', value: models.unsupported_provider ?? 0, tone:(models.unsupported_provider || 0) ? 'warn' : 'ok'},
+      ],
+    },
+    {
+      title: 'Endpoints',
+      rows: [
+        {label:'Online', value: `${endpoints.online ?? 0}/${endpoints.total ?? 0}`, tone:(endpoints.offline || 0) ? 'warn' : 'ok'},
+        {label:'Agent ready', value: endpoints.agent_ready ?? 0, tone:(endpoints.agent_blocked || 0) ? 'warn' : 'ok'},
+        {label:'GPU capable', value: endpoints.gpu_capable ?? 0},
+      ],
+    },
+    {
+      title: 'Controller',
+      rows: [
+        {label:'Runtime', value: controller.runtime_status || 'unknown', tone:(controller.runtime_status === 'ready') ? 'ok' : ((controller.runtime_status === 'disabled') ? '' : 'warn')},
+        {label:'Wrapper', value: controller.wrapper_running ? 'running' : 'stopped', tone:controller.wrapper_running ? 'ok' : 'warn'},
+        {label:'pi.dev', value: controller.pi_dev_running ? 'running' : 'stopped', tone:controller.pi_dev_running ? 'ok' : 'warn'},
+      ],
+    },
+  ], 'No component health is available yet.');
+}
+function renderOpsReadiness(metrics) {
+  const health = metrics.component_health || {};
+  const setup = health.setup || {};
+  const secrets = health.secrets || {};
+  const source = health.source || {};
+  const updates = health.updates || {};
+  renderHealthGrid('opsReadiness', [
+    {
+      title: 'Setup',
+      rows: [
+        {label:'Required blockers', value: setup.required_issues ?? 0, tone:(setup.required_issues || 0) ? 'danger' : 'ok'},
+        {label:'Warnings', value: setup.warnings ?? 0, tone:(setup.warnings || 0) ? 'warn' : 'ok'},
+        {label:'Ready', value: setup.ready ? 'yes' : 'no', tone:setup.ready ? 'ok' : 'danger'},
+      ],
+    },
+    {
+      title: 'Secrets',
+      rows: [
+        {label:'Backend', value: secrets.backend_ready ? 'ready' : 'degraded', tone:secrets.backend_ready ? 'ok' : 'warn'},
+        {label:'Stored', value: secrets.count ?? 0},
+        {label:'Path', value: secrets.store_path ? 'configured' : 'missing'},
+      ],
+    },
+    {
+      title: 'Source state',
+      rows: [
+        {label:'Contexts', value: source.contexts ?? 0},
+        {label:'Variables', value: source.variables ?? 0},
+        {label:'PAC RAM', value: (source.ram_profiles || 0) + (source.ram_users || 0) + (source.ram_workspaces || 0)},
+      ],
+    },
+    {
+      title: 'Updates',
+      rows: [
+        {label:'Archives', value: updates.archives ?? 0},
+        {label:'Local diffs', value: updates.local_diffs ?? 0},
+        {label:'UI build', value: metrics.ui_build || currentVersionInfo?.ui_build || '-'},
+      ],
+    },
+  ], 'No setup or update data is available yet.');
 }
 function renderBarChart(id, rows, emptyText) {
   const el = document.getElementById(id);
@@ -3139,9 +3255,15 @@ async function loadDashboardMetrics() {
     renderStatCards(metrics);
     renderBarChart('taskStatusChart', metrics.task_status, 'No tasks have run yet.');
     renderEventActivity(metrics.events_by_day);
+    renderCriticalComponentHealth(metrics);
+    renderOpsReadiness(metrics);
   } catch (e) {
     const el = document.getElementById('dashboardStats');
     if (el) el.innerHTML = `<div class="muted">Could not load metrics: ${escapeHtml(e.message)}</div>`;
+    const component = document.getElementById('componentHealth');
+    if (component) component.innerHTML = `<div class="muted">Could not load component health: ${escapeHtml(e.message)}</div>`;
+    const readiness = document.getElementById('opsReadiness');
+    if (readiness) readiness.innerHTML = `<div class="muted">Could not load setup state: ${escapeHtml(e.message)}</div>`;
   }
 }
 
@@ -3280,6 +3402,9 @@ async function loadTlsStatus() {
 function renderSystemInfo() {
   const pacp = config.pacp || {};
   const rows = {
+    'Backend version': currentVersionInfo?.version || config.version || '-',
+    'UI build': currentVersionInfo?.ui_build || '-',
+    'UI updated': currentVersionInfo?.ui_updated_at || '-',
     'PAC home': pacp.home || '-',
     'Config': pacp.config_path || '-',
     'Single-instance lock': pacp.single_instance_lock || '-',

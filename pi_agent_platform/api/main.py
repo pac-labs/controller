@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import platform
@@ -24,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request, UploadFile, File
-from fastapi.responses import FileResponse, StreamingResponse, Response
+from fastapi.responses import FileResponse, StreamingResponse, Response, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -125,6 +126,49 @@ def _read_pac_version() -> str:
 config = load_config()
 PAC_VERSION = _read_pac_version()
 SESSION_CAPABLE_PROVIDER_TYPES = {"openai", "openai-codex", "openai-compatible", "lmstudio", "vllm", "groq", "openrouter", "deepseek", "mistral", "ollama"}
+
+
+def _web_dir() -> Path:
+    return Path(__file__).resolve().parents[1] / 'web'
+
+
+def _ui_build_info() -> dict[str, Any]:
+    files = [
+        _web_dir() / 'index.html',
+        _web_dir() / 'app.js',
+        _web_dir() / 'styles.css',
+        _web_dir() / 'assets' / 'pac-logo.svg',
+        _web_dir() / 'assets' / 'pac-icon.svg',
+    ]
+    digest = hashlib.sha1()
+    latest_mtime = 0.0
+    for path in files:
+        if not path.exists():
+            continue
+        stat = path.stat()
+        latest_mtime = max(latest_mtime, stat.st_mtime)
+        digest.update(path.name.encode('utf-8'))
+        digest.update(str(int(stat.st_mtime)).encode('utf-8'))
+        digest.update(str(stat.st_size).encode('utf-8'))
+    stamp = f'{PAC_VERSION}-{digest.hexdigest()[:10]}'
+    updated_at = datetime.fromtimestamp(latest_mtime, timezone.utc).isoformat().replace('+00:00', 'Z') if latest_mtime else None
+    return {'asset_stamp': stamp, 'updated_at': updated_at}
+
+
+def _render_web_index() -> HTMLResponse:
+    info = _ui_build_info()
+    html = (_web_dir() / 'index.html').read_text(encoding='utf-8')
+    replacements = {
+        '/ui/styles.css': f"/ui/styles.css?v={info['asset_stamp']}",
+        '/ui/app.js': f"/ui/app.js?v={info['asset_stamp']}",
+        '/ui/assets/favicon.svg': f"/ui/assets/favicon.svg?v={info['asset_stamp']}",
+        '/ui/assets/pac-logo.svg': f"/ui/assets/pac-logo.svg?v={info['asset_stamp']}",
+        '/ui/assets/pac-icon.svg': f"/ui/assets/pac-icon.svg?v={info['asset_stamp']}",
+        '/ui/assets/pac-loader.svg': f"/ui/assets/pac-loader.svg?v={info['asset_stamp']}",
+    }
+    for source, target in replacements.items():
+        html = html.replace(source, target)
+    return HTMLResponse(html, headers={'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0'})
 
 
 def _version_key(value: str | None) -> tuple[int, ...]:
@@ -347,6 +391,99 @@ def _config_payload() -> dict[str, Any]:
         'session_slash_commands': list_session_slash_commands(),
         'pacp': {'home': str(ensure_pacp_layout()), 'config_path': str(default_config_path()), 'single_instance_lock': str(pacp_path('run', 'server.lock'))},
         'setup_status': _setup_status(),
+    }
+
+
+def _runner_bool(metadata: dict[str, Any], *keys: str) -> bool:
+    for key in keys:
+        if metadata.get(key):
+            return True
+    return False
+
+
+def _metrics_component_health(runners: list[Runner]) -> dict[str, Any]:
+    provider_status = {'total': len(config.providers or {}), 'enabled': 0, 'connected': 0, 'failed': 0, 'disabled': 0, 'unknown': 0}
+    for provider in (config.providers or {}).values():
+        if getattr(provider, 'enabled', False):
+            provider_status['enabled'] += 1
+        state = str(getattr(provider, 'status', 'unknown') or 'unknown')
+        provider_status[state if state in provider_status else 'unknown'] = provider_status.get(state if state in provider_status else 'unknown', 0) + 1
+
+    model_status = {'total': len(config.models or {}), 'session_capable': 0, 'available': 0, 'unavailable': 0, 'unsupported_provider': 0}
+    for name, model in (config.models or {}).items():
+        provider = config.providers.get(model.provider)
+        provider_type = provider.type if provider else None
+        if provider and provider_type in SESSION_CAPABLE_PROVIDER_TYPES:
+            model_status['session_capable'] += 1
+        else:
+            model_status['unsupported_provider'] += 1
+        available, _reason = _model_available(name)
+        if available:
+            model_status['available'] += 1
+        else:
+            model_status['unavailable'] += 1
+
+    endpoint_status = {'total': len(runners), 'online': 0, 'offline': 0, 'agent_ready': 0, 'agent_blocked': 0, 'gpu_capable': 0, 'pi_dev_ready': 0}
+    for runner in runners:
+        status = getattr(runner.status, 'value', str(runner.status))
+        if status == 'online':
+            endpoint_status['online'] += 1
+        else:
+            endpoint_status['offline'] += 1
+        meta = runner.metadata or {}
+        agent_runtime = meta.get('agent_runtime') or {}
+        if str(agent_runtime.get('status') or '') == 'ready':
+            endpoint_status['agent_ready'] += 1
+        elif meta.get('agent_requested') or meta.get('agent_enabled'):
+            endpoint_status['agent_blocked'] += 1
+        runtime = meta.get('provider_runtime') or meta.get('detected_runtime') or {}
+        device = runtime.get('device') or {}
+        accelerators = runtime.get('accelerators') or []
+        if str(device.get('category') or '').lower() == 'gpu' or any('gpu' in str(item).lower() for item in accelerators):
+            endpoint_status['gpu_capable'] += 1
+        pi_daemon = meta.get('pi_dev_daemon') or {}
+        if bool(pi_daemon.get('running')) or bool(meta.get('pi_container_available')):
+            endpoint_status['pi_dev_ready'] += 1
+
+    setup = _setup_status()
+    secrets = secret_store.status()
+    ram = list_ram()
+    archives = _list_update_archives()
+    diffs = list_generated_diffs(_local_diffs_root())
+    controller = next((runner for runner in runners if _runner_bool(runner.metadata or {}, 'local_control_plane', 'controller_pi_dev')), None)
+    controller_meta = (controller.metadata or {}) if controller else {}
+    controller_runtime = controller_meta.get('agent_runtime') or {}
+    controller_wrapper = controller_meta.get('pac_wrapper_process') or {}
+    controller_pi = controller_meta.get('pi_dev_daemon') or {}
+    return {
+        'providers': provider_status,
+        'models': model_status,
+        'endpoints': endpoint_status,
+        'setup': {
+            'ready': bool(setup.get('ok')),
+            'required_issues': len(setup.get('required_issues') or []),
+            'warnings': len(setup.get('warnings') or []),
+        },
+        'secrets': secrets,
+        'source': {
+            'contexts': len(config.source_contexts or {}),
+            'variables': len(source_variable_store.list()),
+            'ram_profiles': len(ram.get('profiles') or []),
+            'ram_users': len(ram.get('users') or []),
+            'ram_workspaces': len(ram.get('workspaces') or []),
+        },
+        'updates': {
+            'archives': len(archives),
+            'local_diffs': len(diffs),
+        },
+        'controller': {
+            'enabled': bool(config.controller_harness.enabled),
+            'session_name': config.controller_harness.session_name,
+            'runtime_status': controller_runtime.get('status') or ('disabled' if not config.controller_harness.enabled else 'unknown'),
+            'wrapper_running': bool(controller_wrapper.get('running')),
+            'pi_dev_running': bool(controller_pi.get('running')),
+            'endpoint_id': controller.id if controller else config.controller_harness.runner_id,
+        },
     }
 
 def _runtime_agent_state(kind: str, status: str, detail: str | None = None, **extra: Any) -> dict[str, Any]:
@@ -1331,8 +1468,15 @@ def mcp_download(filename: str, _auth: None = Depends(require_auth)):
 
 
 @app.get('/v1/version')
-def get_version() -> dict[str, str]:
-    return {'version': PAC_VERSION, 'name': 'PAC', 'full_name': 'Pi Agent Control'}
+def get_version() -> dict[str, Any]:
+    ui = _ui_build_info()
+    return {
+        'version': PAC_VERSION,
+        'name': 'PAC',
+        'full_name': 'Pi Agent Control',
+        'ui_build': ui['asset_stamp'],
+        'ui_updated_at': ui['updated_at'],
+    }
 
 
 @app.get('/healthz')
@@ -1344,6 +1488,7 @@ def healthz() -> dict[str, str]:
 
 @app.get('/v1/metrics/summary')
 def metrics_summary(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    _refresh_local_runner_metadata(emit_event=False)
     sessions = store.list_sessions()
     tasks = store.list_tasks()
     runners = store.list_runners()
@@ -1371,8 +1516,12 @@ def metrics_summary(_auth: None = Depends(require_auth)) -> dict[str, Any]:
     failed_tasks = task_status.get('failed', 0)
     completed_tasks = task_status.get('completed', 0)
     running_tasks = task_status.get('running', 0) + task_status.get('queued', 0) + task_status.get('approval_required', 0)
+    component_health = _metrics_component_health(runners)
+    ui = _ui_build_info()
     return {
         'version': PAC_VERSION,
+        'ui_build': ui['asset_stamp'],
+        'ui_updated_at': ui['updated_at'],
         'sessions_total': len(sessions),
         'sessions_active': session_status.get('running', 0) + session_status.get('created', 0),
         'tasks_total': len(tasks),
@@ -1386,6 +1535,7 @@ def metrics_summary(_auth: None = Depends(require_auth)) -> dict[str, Any]:
         'session_status': session_status,
         'events_by_day': [{'date': key, 'count': events_by_day[key]} for key in day_keys],
         'top_event_types': sorted(event_types.items(), key=lambda item: item[1], reverse=True)[:8],
+        'component_health': component_health,
     }
 
 
@@ -1564,7 +1714,7 @@ def download_current_package(_auth: None = Depends(require_auth)) -> FileRespons
 
 @app.get('/')
 def web_index():
-    return FileResponse(Path(__file__).resolve().parents[1] / 'web' / 'index.html')
+    return _render_web_index()
 
 
 @app.get('/favicon.ico')
@@ -1575,12 +1725,12 @@ def favicon_ico():
 
 @app.get('/app')
 def web_app():
-    return FileResponse(Path(__file__).resolve().parents[1] / 'web' / 'index.html')
+    return _render_web_index()
 
 
 @app.get('/app/{path:path}')
 def web_app_path(path: str):
-    return FileResponse(Path(__file__).resolve().parents[1] / 'web' / 'index.html')
+    return _render_web_index()
 
 
 app.mount('/ui', StaticFiles(directory=Path(__file__).resolve().parents[1] / 'web', html=True), name='ui')
