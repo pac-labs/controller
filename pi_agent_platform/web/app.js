@@ -52,6 +52,7 @@ let sessionPendingRows = new Map();
 let setupStatus = null;
 let sessionSlashCommands = [];
 let pacThemeMode = 'system';
+let marketplaceResultCache = [];
 
 const SESSION_SLASH_COMMANDS = {
   command: {kind:'tool', label:'/command <tool> [args]', description:'Run a registered endpoint tool on the locked host endpoint. Example: /command rg TODO'},
@@ -706,7 +707,7 @@ function escapeHtml(value) {
 }
 function opt(select, value, label) { const o = document.createElement('option'); o.value=value; o.textContent=label || value; select.appendChild(o); }
 function fillSelects() {
-  for (const id of ['agentProfile','workspaceProfile']) { const el=document.getElementById(id); if(el) el.innerHTML = ''; }
+  for (const id of ['agentProfile','workspaceProfile','sessionSourceContext']) { const el=document.getElementById(id); if(el) el.innerHTML = id === 'sessionSourceContext' ? '<option value="">none</option>' : ''; }
   if (document.getElementById('taskRunner')) document.getElementById('taskRunner').innerHTML = '<option value="">PAC/local</option>'; 
   document.getElementById('modelOverride').innerHTML = '<option value="">profile default</option>';
   if (document.getElementById('taskModel')) document.getElementById('taskModel').innerHTML = '<option value="">session model</option>';
@@ -723,6 +724,10 @@ function fillSelects() {
   if (document.getElementById('toolPackage')) toolPackage.innerHTML = '<option value="">none</option>';
   Object.entries(config.agent_profiles || {}).forEach(([k,p]) => { if (p?.model && modelAvailability(p.model).ok) { opt(agentProfile,k); const wd=document.getElementById('workspaceDefaultProfile'); if (wd) opt(wd,k); } });
   Object.keys(config.workspaces || {}).forEach(k => { if (document.getElementById('workspaceProfile')) opt(workspaceProfile,k); if (document.getElementById('runnerDefaultWorkspace')) opt(runnerDefaultWorkspace,k); });
+  Object.entries(config.source_contexts || {}).forEach(([k,ctx]) => {
+    const label = [k, ctx.customer_id || '', ctx.workspace_profile || ''].filter(Boolean).join(' · ');
+    if (document.getElementById('sessionSourceContext')) opt(sessionSourceContext, k, label);
+  });
   Object.keys(config.models || {}).forEach(k => { if (modelAvailability(k).ok) { opt(modelOverride,k); if (document.getElementById('taskModel')) opt(taskModel,k); } if (document.getElementById('profileModel')) opt(profileModel,k, `${k}${modelAvailability(k).ok ? '' : ' (not available)'}`); });
   if (document.getElementById('modelProvider')) { modelProvider.innerHTML=''; Object.keys(config.providers || {}).forEach(k => opt(modelProvider,k)); }
   fillModelEndpointOptions();
@@ -2775,6 +2780,7 @@ function closeEndpointModal() {
 }
 function openSessionModal() {
   const modal = document.getElementById('sessionModal');
+  applySessionBootstrapMode();
   if (modal) { modal.hidden = false; setTimeout(() => document.getElementById('sessionName')?.focus(), 0); }
 }
 function closeSessionModal() {
@@ -3602,6 +3608,63 @@ if (closeUnconfigModelsBtn) closeUnconfigModelsBtn.onclick = () => {
   if (panel) panel.hidden = true;
 };
 
+const sessionBootstrapModeSelect = document.getElementById('sessionBootstrapMode');
+if (sessionBootstrapModeSelect) sessionBootstrapModeSelect.onchange = () => applySessionBootstrapMode();
+const sessionSourceContextSelect = document.getElementById('sessionSourceContext');
+if (sessionSourceContextSelect) sessionSourceContextSelect.onchange = () => {
+  const name = sessionSourceContextSelect.value || '';
+  if (!name) return;
+  applySessionSourceContext(name).catch(e => paneError('Source context could not be applied', e.message));
+};
+const marketplaceQueryInput = document.getElementById('marketplaceQuery');
+if (marketplaceQueryInput) marketplaceQueryInput.addEventListener('keydown', ev => {
+  if (ev.key === 'Enter') { ev.preventDefault(); searchMarketplace().catch(e=>paneError('Marketplace search failed', e.message)); }
+});
+const marketplaceModalQueryInput = document.getElementById('marketplaceModalQuery');
+if (marketplaceModalQueryInput) marketplaceModalQueryInput.addEventListener('keydown', ev => {
+  if (ev.key === 'Enter') { ev.preventDefault(); searchMarketplaceModal().catch(e=>paneError('Marketplace search failed', e.message)); }
+});
+const createSessionBtn = document.getElementById('createSession');
+if (createSessionBtn) createSessionBtn.onclick = async() => {
+  const btn = document.getElementById('createSession');
+  const status = document.getElementById('sessionCreateStatus');
+  try {
+    if (btn) btn.disabled = true;
+    if (status) status.textContent = 'Creating...';
+    const bootstrapMode = document.getElementById('sessionBootstrapMode')?.value || 'profile';
+    const sourceContextName = document.getElementById('sessionSourceContext')?.value || '';
+    const workspaceType = document.getElementById('sessionWorkspaceType')?.value || 'profile';
+    const workspace = workspaceType === 'git' ? {type:'git', url:sessionWorkspaceUrl.value.trim(), branch:sessionWorkspaceBranch.value.trim() || null, path:sessionWorkspacePath.value.trim() || null} : (workspaceType === 'local' ? {type:'local', path:sessionWorkspacePath.value.trim() || null} : {type:'profile', profile:workspaceProfile.value || null});
+    const endpointId = document.getElementById('sessionEndpoint')?.value || '';
+    if (!endpointId) throw new Error('Select the endpoint this session should use.');
+    const metadata = {preferred_endpoint:endpointId, endpoint_locked:true, agent_enabled:true, execution_mode:'pi.dev'};
+    if (bootstrapMode === 'source-context') {
+      if (!sourceContextName) throw new Error('Select a source context for this session bootstrap mode.');
+      const resolved = await api(`/v1/source-contexts/resolve?name=${encodeURIComponent(sourceContextName)}&include_secrets=false`);
+      metadata.source_context_name = sourceContextName;
+      metadata.source_context_path = resolved?.context?.path_prefix || null;
+      if (resolved?.context?.customer_id) metadata.customer_id = resolved.context.customer_id;
+      if (resolved?.context?.user_scope) metadata.user_scope = resolved.context.user_scope;
+    }
+    const body = {name:sessionName.value || 'web-session', agent_profile:agentProfile.value || null, workspace, tools:[], metadata};
+    if (modelOverride.value) body.model = modelOverride.value;
+    if (permissionOverride.value) body.permission_profile = permissionOverride.value;
+    if (contextMode.value) body.context_mode = contextMode.value;
+    const s = await api('/v1/sessions', {method:'POST', body:JSON.stringify(body)});
+    if (status) status.textContent = 'Created.';
+    closeSessionModal();
+    await loadSessions();
+    await loadDashboardMetrics();
+    switchToTab('sessions-tab');
+    await selectSession(s.id);
+  } catch (e) {
+    if (status) status.textContent = `Failed: ${e.message}`;
+    await loadGlobalEvents(true).catch(()=>{});
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+};
+
 const openSessionBtn = document.getElementById('openSessionModal');
 if (openSessionBtn) openSessionBtn.onclick = openSessionModal;
 const dashboardNewSessionBtn = document.getElementById('dashboardNewSession');
@@ -3648,8 +3711,151 @@ function renderSourceOnlineUpdates(result){
   box.innerHTML = `<div class="pack-summary strong-summary">${updates.length} source module update(s) available</div><div class="muted small-text">Checked ${escapeHtml(repo)} at ${escapeHtml(checked)}. Apply by downloading/importing the packages release or seed zip.</div><table class="compact-table"><thead><tr><th>Module</th><th>Local</th><th>Online</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+function applySessionBootstrapMode() {
+  const mode = document.getElementById('sessionBootstrapMode')?.value || 'profile';
+  const sourceLabel = document.getElementById('sessionSourceContext')?.closest('label');
+  if (sourceLabel) sourceLabel.style.display = mode === 'source-context' ? '' : '';
+}
 
-async function init(){ loadThemeMode(); setupTabs(); setupEventsRail(); await loadVersion().catch(()=>{}); await loadConfig(); await loadSessions(); await loadApprovals(); await loadRunners(); refreshDashboardMetricsOnStartup(); await loadGlobalEvents(true); loadMcpBuildStatus().catch(()=>{}); await loadBinaryFolderFilters().catch(()=>{}); await loadSourceBinaryArtifacts().catch(()=>{}); updateSourceActions(); }
+async function applySessionSourceContext(name) {
+  if (!name) return;
+  const resolved = await api(`/v1/source-contexts/resolve?name=${encodeURIComponent(name)}&include_secrets=false`);
+  const ctx = resolved?.context || {};
+  if (ctx.profile && document.getElementById('agentProfile')) agentProfile.value = ctx.profile;
+  if (ctx.workspace_profile && document.getElementById('workspaceProfile')) workspaceProfile.value = ctx.workspace_profile;
+  if (ctx.preferred_endpoint && document.getElementById('sessionEndpoint')) sessionEndpoint.value = ctx.preferred_endpoint;
+  if ((ctx.workspace_profile || ctx.path_prefix) && document.getElementById('sessionWorkspaceType')) sessionWorkspaceType.value = ctx.workspace_profile ? 'profile' : 'local';
+  if (ctx.path_prefix && document.getElementById('sessionWorkspacePath') && !sessionWorkspacePath.value) sessionWorkspacePath.value = ctx.path_prefix;
+  const status = document.getElementById('sessionCreateStatus');
+  if (status) status.textContent = `Loaded source context ${name}.`;
+}
+
+function renderMarketplaceResults(data) {
+  const el = document.getElementById('marketplaceResults');
+  if (!el) return;
+  const results = data?.results || [];
+  marketplaceResultCache = results;
+  if (!results.length) {
+    el.innerHTML = '<span class="muted">No marketplace models matched this query.</span>';
+    return;
+  }
+  el.innerHTML = results.map(item => {
+    const caps = Object.entries(item.capabilities || {}).filter(([,v]) => !!v).map(([k]) => `<span class="marketplace-pill">${escapeHtml(k)}</span>`).join('');
+    const quants = (item.available_quants || []).slice(0, 4).map(q => `<span class="marketplace-pill">${escapeHtml(String(q).toUpperCase())}</span>`).join('');
+    return `<button class="marketplace-card marketplace-card-button" data-marketplace-source-model="${escapeHtml(item.model_id)}"><b>${escapeHtml(item.model_id)}</b><div class="marketplace-meta">${caps}${quants}</div><div class="muted small-text">${escapeHtml(item.author || 'unknown author')} • ${escapeHtml(String(item.downloads || 0))} downloads • ${escapeHtml(String(item.params_b || '?'))}B</div></button>`;
+  }).join('');
+  el.querySelectorAll('[data-marketplace-source-model]').forEach(btn => btn.onclick = async () => {
+    const modelId = btn.dataset.marketplaceSourceModel || '';
+    const input = document.getElementById('marketplaceModalQuery');
+    if (input) input.value = modelId;
+    openMarketplaceModal();
+    const detail = await api(`/v1/models/marketplace/model/${encodeURIComponent(modelId)}`);
+    renderMarketplaceModalDetail(detail);
+  });
+}
+
+function openMarketplaceModal() {
+  const modal = document.getElementById('marketplaceModal');
+  if (modal) modal.hidden = false;
+  const input = document.getElementById('marketplaceModalQuery');
+  if (input) input.value = document.getElementById('marketplaceQuery')?.value || input.value || '';
+  renderMarketplaceModalDetail();
+  if (input && input.value.trim()) searchMarketplaceModal().catch(e=>paneError('Marketplace search failed', e.message));
+}
+
+function closeMarketplaceModal() {
+  const modal = document.getElementById('marketplaceModal');
+  if (modal) modal.hidden = true;
+}
+
+function preferredMarketplaceProvider(detail) {
+  return (detail.provider_scores || []).find(entry => entry.can_run && entry.provider?.name)?.provider?.name
+    || (detail.provider_scores || []).find(entry => entry.provider?.type === 'lmstudio')?.provider?.name
+    || (detail.provider_scores || [])[0]?.provider?.name
+    || '';
+}
+
+async function downloadMarketplaceModel(detail) {
+  const provider = preferredMarketplaceProvider(detail);
+  if (!provider) throw new Error('No compatible provider is configured for marketplace download');
+  const score = (detail.provider_scores || []).find(entry => entry.provider?.name === provider) || {};
+  const quantization = score.quant_recommended || (detail.available_quants || [])[0] || 'Q4_K_M';
+  const result = await api('/v1/models/marketplace/download', {
+    method:'POST',
+    body: JSON.stringify({model: detail.model_id, provider, quantization}),
+  });
+  showInline('modelFormResult', {marketplace_download: result, provider, model: detail.model_id, quantization});
+  await loadGlobalEvents(true).catch(()=>{});
+}
+
+function renderMarketplaceModalDetail(detail=null) {
+  const title = document.getElementById('marketplaceDetailTitle');
+  const version = document.getElementById('marketplaceDetailVersion');
+  const body = document.getElementById('marketplaceDetailBody');
+  if (!title || !version || !body) return;
+  if (!detail) {
+    title.textContent = 'Model details';
+    version.textContent = '';
+    body.innerHTML = '<div class="muted small-text">Select a marketplace result to inspect provider fit and configure it as a PAC model.</div>';
+    return;
+  }
+  title.textContent = detail.model_id || 'Model details';
+  version.textContent = detail.params_b ? `${detail.params_b}B` : '';
+  const providers = (detail.provider_scores || []).map(entry => {
+    const provider = entry.provider || {};
+    return `<tr><td><code>${escapeHtml(provider.name || '-')}</code></td><td>${escapeHtml(provider.type || '-')}</td><td>${escapeHtml(entry.quant_recommended || '-')}</td><td><span class="pill ${entry.can_run === true ? 'ok-pill' : (entry.can_run === false ? 'warn-pill' : '')}">${escapeHtml(entry.can_run === true ? 'fits' : (entry.can_run === false ? 'no fit' : 'unknown'))}</span> ${escapeHtml(entry.reason || '-')}</td></tr>`;
+  }).join('');
+  const quants = (detail.available_quants || []).slice(0, 8).map(q => `<span class="marketplace-pill">${escapeHtml(String(q).toUpperCase())}</span>`).join('');
+  const hasLmStudio = (detail.provider_scores || []).some(entry => entry.provider?.type === 'lmstudio');
+  body.innerHTML = `<div class="muted small-text">Author: ${escapeHtml(detail.author || 'unknown')} • Downloads: ${escapeHtml(String(detail.downloads || 0))}</div><div class="marketplace-meta" style="margin:.6rem 0">${Object.entries(detail.capabilities || {}).filter(([,v]) => !!v).map(([k]) => `<span class="marketplace-pill">${escapeHtml(k)}</span>`).join('')}${quants}</div><table class="compact-table"><thead><tr><th>Provider</th><th>Type</th><th>Quant</th><th>Fit</th></tr></thead><tbody>${providers || '<tr><td colspan="4" class="muted">No providers configured yet.</td></tr>'}</tbody></table><div class="button-row" style="margin-top:.75rem"><button id="configureMarketplaceModel">Configure as model</button>${hasLmStudio ? '<button id="downloadMarketplaceModel" class="ghost-button">Download to LM Studio</button>' : ''}</div>`;
+  const configureBtn = document.getElementById('configureMarketplaceModel');
+  if (configureBtn) configureBtn.onclick = () => {
+    const preferred = preferredMarketplaceProvider(detail);
+    closeMarketplaceModal();
+    openModelModal();
+    if (preferred && modelProvider) modelProvider.value = preferred;
+    if (modelId) modelId.value = detail.model_id || '';
+    if (modelName) modelName.value = String(detail.model_id || '').replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase();
+    setModalStatus('modelModalStatus', 'Marketplace model copied into the PAC model form.');
+  };
+  const downloadBtn = document.getElementById('downloadMarketplaceModel');
+  if (downloadBtn) downloadBtn.onclick = () => downloadMarketplaceModel(detail).catch(e=>paneError('Marketplace download failed', e.message));
+}
+
+async function searchMarketplaceModal() {
+  const query = document.getElementById('marketplaceModalQuery')?.value?.trim() || '';
+  const capability = document.getElementById('marketplaceModalCapability')?.value || '';
+  const sort = document.getElementById('marketplaceModalSort')?.value || 'downloads';
+  const el = document.getElementById('marketplaceModalResults');
+  if (!el) return;
+  el.textContent = 'Searching marketplace...';
+  try {
+    const params = new URLSearchParams({q: query, limit: '18', sort});
+    if (capability) params.set('capability', capability);
+    const data = await api(`/v1/models/marketplace/search?${params.toString()}`);
+    const results = data?.results || [];
+    marketplaceResultCache = results;
+    if (!results.length) {
+      el.innerHTML = '<span class="muted">No marketplace models matched this query.</span>';
+      renderMarketplaceModalDetail();
+      return;
+    }
+    el.innerHTML = results.map(item => {
+      const caps = Object.entries(item.capabilities || {}).filter(([,v]) => !!v).map(([k]) => `<span class="marketplace-pill">${escapeHtml(k)}</span>`).join('');
+      const quants = (item.available_quants || []).slice(0, 4).map(q => `<span class="marketplace-pill">${escapeHtml(String(q).toUpperCase())}</span>`).join('');
+      return `<button class="marketplace-card marketplace-card-button" data-marketplace-model="${escapeHtml(item.model_id)}"><b>${escapeHtml(item.model_id)}</b><div class="marketplace-meta">${caps}${quants}</div><div class="muted small-text">${escapeHtml(item.author || 'unknown author')} • ${escapeHtml(String(item.downloads || 0))} downloads • ${escapeHtml(String(item.params_b || '?'))}B</div></button>`;
+    }).join('');
+    el.querySelectorAll('[data-marketplace-model]').forEach(btn => btn.onclick = async () => {
+      const detail = await api(`/v1/models/marketplace/model/${encodeURIComponent(btn.dataset.marketplaceModel || '')}`);
+      renderMarketplaceModalDetail(detail);
+    });
+  } catch (e) {
+    el.textContent = e.message || String(e);
+  }
+}
+
+
+async function init(){ loadThemeMode(); setupTabs(); setupEventsRail(); await loadVersion().catch(()=>{}); await loadConfig(); await loadSessions(); await loadApprovals(); await loadRunners(); applySessionBootstrapMode(); refreshDashboardMetricsOnStartup(); await loadGlobalEvents(true); loadMcpBuildStatus().catch(()=>{}); await loadBinaryFolderFilters().catch(()=>{}); await loadSourceBinaryArtifacts().catch(()=>{}); updateSourceActions(); }
 init().catch(e=>paneError('PAC UI could not load', e.message || String(e)));
 
 const openEndpointBtn = document.getElementById('openEndpointModal');

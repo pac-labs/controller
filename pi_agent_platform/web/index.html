@@ -90,6 +90,8 @@
         <div class="section-heading"><div><h2 id="sessionModalTitle">Create session</h2><p class="muted">Pick a profile, workspace and optional overrides.</p></div><button id="closeSessionModal" class="ghost-button">Close</button></div>
         <div class="form-grid">
           <label>Name <input id="sessionName" value="web-session" /></label>
+          <label>Bootstrap mode <select id="sessionBootstrapMode"><option value="profile">profile / workspace</option><option value="source-context">source context</option></select></label>
+          <label>Source context <select id="sessionSourceContext"><option value="">none</option></select><small class="muted">Use a PAC source context to prefill customer, endpoint, profile, and workspace defaults.</small></label>
           <label>Profile <select id="agentProfile"></select></label>
           <label>Workspace <select id="workspaceProfile"></select></label>
           <label>Workspace mode <select id="sessionWorkspaceType"><option value="profile">saved workspace</option><option value="local">local path</option><option value="git">git repository</option></select></label>
@@ -309,6 +311,8 @@
           <div class="updates-main">
             <div class="button-row">
               <input id="marketplaceModalQuery" class="source-marketplace-query" placeholder="qwen coder" />
+              <select id="marketplaceModalCapability"><option value="">all capabilities</option><option value="coding">coding</option><option value="reasoning">reasoning</option><option value="tool_use">tool use</option><option value="chat">chat</option></select>
+              <select id="marketplaceModalSort"><option value="downloads">most downloaded</option><option value="likes">most liked</option><option value="lastModified">recently updated</option></select>
               <button id="runMarketplaceSearch" class="ghost-button">Search</button>
             </div>
             <div id="marketplaceModalResults" class="source-marketplace-results muted">Search the marketplace to browse candidate models.</div>
