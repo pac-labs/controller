@@ -118,6 +118,33 @@ def _extract_json(text: str) -> dict[str, Any]:
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?", "", text).strip()
         text = re.sub(r"```$", "", text).strip()
+    decoder = json.JSONDecoder()
+    actions: list[dict[str, Any]] = []
+    idx = 0
+    while idx < len(text):
+        while idx < len(text) and text[idx].isspace():
+            idx += 1
+        if idx >= len(text):
+            break
+        if text[idx] != "{":
+            idx += 1
+            continue
+        try:
+            parsed, end = decoder.raw_decode(text, idx)
+        except json.JSONDecodeError:
+            idx += 1
+            continue
+        if isinstance(parsed, dict):
+            actions.append(parsed)
+        idx = end
+    if actions:
+        tool_action = next((action for action in actions if str(action.get("type") or "") == "tool_call"), None)
+        if tool_action:
+            return tool_action
+        final_action = next((action for action in actions if str(action.get("type") or "") == "final"), None)
+        if final_action:
+            return final_action
+        return actions[0]
     try:
         return json.loads(text)
     except json.JSONDecodeError:
