@@ -2940,6 +2940,26 @@ def get_session(session_id: str, _auth: None = Depends(require_auth)) -> Session
     return session
 
 
+@app.put('/v1/sessions/{session_id}', response_model=Session)
+def update_session(session_id: str, payload: dict[str, Any], _auth: None = Depends(require_auth)) -> Session:
+    session = store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    changed = False
+    permission_profile = payload.get('permission_profile')
+    if permission_profile is not None:
+        if permission_profile not in config.permission_profiles:
+            raise HTTPException(status_code=400, detail=f'Unknown permission profile: {permission_profile}')
+        if session.permission_profile != permission_profile:
+            session.permission_profile = permission_profile
+            changed = True
+            store.add_event(Event(session_id=session.id, type='session_permission_profile_changed', message='Session permission profile updated', data={'permission_profile': permission_profile}))
+    if not changed:
+        return session
+    store.add_session(session)
+    return session
+
+
 @app.get('/v1/sessions/{session_id}/tasks', response_model=list[Task])
 def list_tasks(session_id: str, _auth: None = Depends(require_auth)) -> list[Task]:
     if not store.get_session(session_id):

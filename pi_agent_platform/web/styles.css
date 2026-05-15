@@ -551,6 +551,10 @@ pre#events, pre#diff { min-width: 0; width: 100%; overflow: auto; white-space: p
 /* v1.0.65: Chat-style session timeline and composer. */
 .session-chat-card { padding-bottom: 0; }
 .session-chat-head { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; margin-bottom:.75rem; }
+.session-session-meta { display:flex; align-items:flex-start; justify-content:space-between; gap:.75rem; flex:1; min-width:0; }
+.session-quick-controls { display:flex; align-items:center; gap:.45rem; flex-wrap:wrap; justify-content:flex-end; }
+.session-quick-label { color:var(--muted); font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+.session-quick-select { min-width:150px; max-width:220px; }
 .session-chat-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,34%); gap:1rem; min-width:0; }
 .session-chat-main { min-width:0; display:flex; flex-direction:column; border:1px solid var(--border); border-radius:18px; overflow:hidden; background:rgba(255,255,255,.03); }
 .session-timeline.chat-timeline {
@@ -599,7 +603,7 @@ pre#events, pre#diff { min-width: 0; width: 100%; overflow: auto; white-space: p
 .session-diff-panel { min-width:0; border:1px solid var(--border); border-radius:18px; padding:.75rem; background:rgba(255,255,255,.03); overflow:hidden; }
 .session-diff-panel pre#diff { max-height:62vh; }
 #composerMode[value="agent"] + #taskCommand { opacity:.75; }
-@media(max-width:1180px){ .session-chat-layout { grid-template-columns:1fr; } .composer-controls { grid-template-columns:1fr; } .chat-bubble { max-width:94%; } }
+@media(max-width:1180px){ .session-chat-layout { grid-template-columns:1fr; } .composer-controls { grid-template-columns:1fr; } .chat-bubble { max-width:94%; } .session-session-meta { flex-direction:column; align-items:stretch; } .session-quick-controls { justify-content:flex-start; } }
 
 /* v1.0.69: ChatGPT-like thought line, modal-only internals, no inline git panel. */
 .session-chat-layout.single { display:block; }

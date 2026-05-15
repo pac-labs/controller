@@ -33,6 +33,23 @@ def _looks_mutating_command(command: str) -> bool:
     return any(marker in padded for marker in write_markers)
 
 
+def _looks_observational_command(command: str) -> bool:
+    text = (command or '').strip().lower()
+    if not text:
+        return False
+    normalized = ' '.join(text.split())
+    safe_prefixes = (
+        'rg ', 'ripgrep ', 'fd ', 'find ', 'ls', 'dir', 'pwd', 'where ', 'which ',
+        'git status', 'git diff', 'git log', 'git show', 'git branch', 'git rev-parse',
+        'git ls-files', 'cat ', 'type ', 'bat ', 'more ', 'head ', 'tail ', 'wc ',
+        'jq ', 'python --version', 'python -v', 'python3 --version', 'node --version',
+        'npm --version', 'pip --version', 'go version',
+    )
+    if normalized in {'ls', 'dir', 'pwd', 'git status', 'git diff'}:
+        return True
+    return any(normalized.startswith(prefix) for prefix in safe_prefixes)
+
+
 def command_policy(command: str, session: Session, config: AppConfig) -> tuple[str, str | None]:
     if 'shell' not in session.tools:
         return 'deny', 'Session does not have the shell tool enabled'
@@ -59,6 +76,8 @@ def command_policy(command: str, session: Session, config: AppConfig) -> tuple[s
         return 'deny', 'Command matched deny policy'
     if profile.shell == 'deny':
         return 'deny', 'Shell execution is denied by permission profile'
+    if profile.shell == 'ask' and _looks_observational_command(command):
+        return 'allow', None
     if _matches(profile.command_ask_patterns, command):
         return 'ask', 'Command matched approval policy'
     if shell_cfg and _matches(shell_cfg.approval_required_patterns, command):

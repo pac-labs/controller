@@ -426,6 +426,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     if cfg.server.default_workspace_root in ("/tmp/pi-agent-workspaces", "./workspaces", "~/.pacp/workspaces"):
         cfg.server.default_workspace_root = str(home / "workspaces")
         changed = True
+    ask_first = cfg.permission_profiles.get("ask-first")
+    if ask_first and ask_first.network == "ask":
+        ask_first.network = "allow"
+        changed = True
     if changed:
         config_path.write_text(yaml.safe_dump(cfg.model_dump(mode="json", exclude_none=True), sort_keys=False), encoding="utf-8")
     return cfg

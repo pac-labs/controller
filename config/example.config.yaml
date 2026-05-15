@@ -228,7 +228,7 @@ permission_profiles:
     file_read: allow
     file_write: ask
     git_push: ask
-    network: ask
+    network: allow
     cluster_write: ask
     secrets: ask
     dangerous: deny

@@ -448,9 +448,10 @@ function thinkingGroupNeedsApproval(group) {
 }
 async function resolveSessionApproval(taskId, approved) {
   if (!taskId) return;
-  if (approved) await api(`/v1/tasks/${taskId}/approve?wait=true`, {method:'POST'});
+  if (approved) await api(`/v1/tasks/${taskId}/approve`, {method:'POST'});
   else await api(`/v1/tasks/${taskId}/reject?reason=Rejected`, {method:'POST'});
   removeSessionApprovalRow(taskId);
+  if (approved) addPendingRow(taskId);
   await loadSessions().catch(()=>{});
   if (selectedSession?.id) await pollSessionEvents(selectedSession.id).catch(()=>{});
   await loadApprovals().catch(()=>{});
@@ -632,6 +633,37 @@ function renderSessionApprovalRow(event) {
   sessionApprovalRows.set(taskId, row);
   el.appendChild(row);
   el.scrollTop = el.scrollHeight;
+}
+function syncSessionPermissionQuick() {
+  const select = document.getElementById('sessionPermissionQuick');
+  const button = document.getElementById('applySessionPermission');
+  if (!select || !button) return;
+  const profiles = Object.keys(config?.permission_profiles || {});
+  select.innerHTML = '';
+  if (!selectedSession) {
+    opt(select, '', 'No session');
+    select.disabled = true;
+    button.disabled = true;
+    return;
+  }
+  profiles.forEach((name) => opt(select, name, name));
+  select.value = selectedSession.permission_profile || profiles[0] || '';
+  select.disabled = !profiles.length;
+  button.disabled = !profiles.length || select.value === (selectedSession.permission_profile || '');
+}
+async function applySessionPermissionProfile() {
+  if (!selectedSession?.id) return;
+  const select = document.getElementById('sessionPermissionQuick');
+  const next = select?.value || '';
+  if (!next || next === selectedSession.permission_profile) return;
+  const updated = await api(`/v1/sessions/${selectedSession.id}`, {method:'PUT', body:JSON.stringify({permission_profile: next})});
+  selectedSession = updated;
+  const preferredEndpoint = selectedSession.metadata?.preferred_endpoint || '';
+  const endpointName = (window.__pacEndpoints || []).find(e => e.id === preferredEndpoint)?.name || preferredEndpoint || 'PAC/local';
+  document.getElementById('selectedSession').innerHTML = `<span class="session-lock-dot"></span><span>Profile: ${escapeHtml(selectedSession.agent_profile || 'default')}</span><span>Permissions: ${escapeHtml(selectedSession.permission_profile || '-')}</span><span>Endpoint: ${escapeHtml(endpointName)}</span><span>Mode: ${escapeHtml(selectedSession.metadata?.execution_mode || (selectedSession.metadata?.agent_enabled === false ? 'direct model' : 'pi.dev'))}</span><span>Model: ${escapeHtml(selectedSession.model || '')}</span><span>${escapeHtml(selectedSession.workspace_path || '')}</span>`;
+  if (document.getElementById('sessionEndpointLock')) sessionEndpointLock.textContent = `Profile: ${selectedSession.agent_profile || 'default'} · permissions: ${selectedSession.permission_profile || '-'} · endpoint: ${endpointName} · model: ${selectedSession.model || 'session default'}`;
+  syncSessionPermissionQuick();
+  emitUiEvent('session_permission_profile_changed', `Session permissions changed to ${next}`, {session_id: selectedSession.id, permission_profile: next});
 }
 async function pollSessionEvents(sessionId) {
   if (!sessionId || !selectedSession || selectedSession.id !== sessionId) return;
@@ -930,6 +962,7 @@ function fillSelects() {
     if (document.getElementById('profileTools') && profileTools.tagName === 'SELECT') opt(profileTools,k,label);
     if (document.getElementById('runnerTools') && runnerTools.tagName === 'SELECT') opt(runnerTools,k,label);
   });
+  syncSessionPermissionQuick();
 }
 function emitUiEvent(type, message, data=null) {
   renderGlobalEvent({
@@ -3234,8 +3267,10 @@ async function loadSessions() {
   if (dashboard) dashboard.innerHTML = '';
   if (picker) picker.innerHTML = '<option value="">Select session</option>';
   if (!sessions.length) {
+    selectedSession = null;
     if (dashboard) dashboard.innerHTML = '<div class="muted">No sessions yet. Create one from the Sessions page.</div>';
     if (picker) picker.innerHTML = '<option value="">No sessions yet</option>';
+    syncSessionPermissionQuick();
     renderModelActiveSessionsPanel();
     renderProfileUsagePanel();
     renderWorkspaceActivityPanel();
@@ -3262,10 +3297,11 @@ async function selectSession(id) {
   selectedSession = await api(`/v1/sessions/${id}`);
   const preferredEndpoint = selectedSession.metadata?.preferred_endpoint || '';
   const endpointName = (window.__pacEndpoints || []).find(e => e.id === preferredEndpoint)?.name || preferredEndpoint || 'PAC/local';
-  document.getElementById('selectedSession').innerHTML = `<span class="session-lock-dot"></span><span>Profile: ${escapeHtml(selectedSession.agent_profile || 'default')}</span><span>Endpoint: ${escapeHtml(endpointName)}</span><span>Mode: ${escapeHtml(selectedSession.metadata?.execution_mode || (selectedSession.metadata?.agent_enabled === false ? 'direct model' : 'pi.dev'))}</span><span>Model: ${escapeHtml(selectedSession.model || '')}</span><span>${escapeHtml(selectedSession.workspace_path || '')}</span>`;
+  document.getElementById('selectedSession').innerHTML = `<span class="session-lock-dot"></span><span>Profile: ${escapeHtml(selectedSession.agent_profile || 'default')}</span><span>Permissions: ${escapeHtml(selectedSession.permission_profile || '-')}</span><span>Endpoint: ${escapeHtml(endpointName)}</span><span>Mode: ${escapeHtml(selectedSession.metadata?.execution_mode || (selectedSession.metadata?.agent_enabled === false ? 'direct model' : 'pi.dev'))}</span><span>Model: ${escapeHtml(selectedSession.model || '')}</span><span>${escapeHtml(selectedSession.workspace_path || '')}</span>`;
   if (document.getElementById('sessionTopSelect')) sessionTopSelect.value = selectedSession.id;
   if (document.getElementById('taskRunner')) taskRunner.value = preferredEndpoint || '';
-  if (document.getElementById('sessionEndpointLock')) sessionEndpointLock.textContent = `Profile: ${selectedSession.agent_profile || 'default'} · endpoint: ${endpointName} · model: ${selectedSession.model || 'session default'}`;
+  if (document.getElementById('sessionEndpointLock')) sessionEndpointLock.textContent = `Profile: ${selectedSession.agent_profile || 'default'} · permissions: ${selectedSession.permission_profile || '-'} · endpoint: ${endpointName} · model: ${selectedSession.model || 'session default'}`;
+  syncSessionPermissionQuick();
   const timeline = document.getElementById('events');
   if (timeline) timeline.innerHTML = '<div class="empty-timeline">Waiting for session events.</div>';
   sessionThinkingGroup = null;
@@ -3379,6 +3415,13 @@ if (composerAddContextBtn && composerContextMenu) {
 
 const sessionTopSelect = document.getElementById('sessionTopSelect');
 if (sessionTopSelect) sessionTopSelect.onchange = () => { if (sessionTopSelect.value) { switchToTab('sessions-tab'); selectSession(sessionTopSelect.value); } };
+const sessionPermissionQuick = document.getElementById('sessionPermissionQuick');
+if (sessionPermissionQuick) sessionPermissionQuick.onchange = () => {
+  const apply = document.getElementById('applySessionPermission');
+  if (apply) apply.disabled = !selectedSession || sessionPermissionQuick.value === (selectedSession.permission_profile || '');
+};
+const applySessionPermissionBtn = document.getElementById('applySessionPermission');
+if (applySessionPermissionBtn) applySessionPermissionBtn.onclick = () => applySessionPermissionProfile().catch((e) => paneError('Session permission update failed', e.message || String(e)));
 
 function openContainerDestinationModal() {
   const modal = document.getElementById('containerDestinationModal');
