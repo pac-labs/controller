@@ -1733,6 +1733,21 @@ def web_app_path(path: str):
     return _render_web_index()
 
 
+@app.get('/ui')
+def web_ui_root():
+    return _render_web_index()
+
+
+@app.get('/ui/')
+def web_ui_root_slash():
+    return _render_web_index()
+
+
+@app.get('/ui/index.html')
+def web_ui_index():
+    return _render_web_index()
+
+
 app.mount('/ui', StaticFiles(directory=Path(__file__).resolve().parents[1] / 'web', html=True), name='ui')
 
 
