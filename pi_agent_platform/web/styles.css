@@ -1162,6 +1162,127 @@ body:not(.light) .compact-destination-controls select {
   padding:0;
   overflow:auto;
 }
+
+/* v1.0.110: restore flat-slate control-plane styling from backup pass. */
+:root {
+  --bg: #0c0f14;
+  --panel: rgba(15,23,42,.70);
+  --panel-2: rgba(20,27,44,.78);
+  --panel-3: rgba(28,35,54,.82);
+  --border: rgba(148,163,184,.20);
+  --radius: 6px;
+}
+body {
+  background: radial-gradient(circle at top right, #1d1238 0, #0c0f14 38rem);
+}
+.app-header,
+.tabs,
+.app-footer,
+.card,
+.events-rail,
+.events-rail-header,
+.modal-card,
+.session-chat-card,
+.session-chat-main,
+.endpoint-card,
+.remote-provider,
+.setting-cube,
+.source-build-card,
+.source-tree-card,
+.source-editor-card,
+.feature-pack-card {
+  background: rgba(15,23,42,.70) !important;
+}
+.app-header,
+.tabs,
+.app-footer,
+.events-rail-header {
+  border-color: rgba(148,163,184,.20) !important;
+}
+.card,
+.endpoint-card,
+.modal-card,
+.events-rail,
+.session-chat-main,
+.source-build-card,
+.source-tree-card,
+.source-editor-card,
+.feature-pack-card {
+  border: 1px solid rgba(148,163,184,.20) !important;
+  box-shadow: 0 10px 30px rgba(0,0,0,.28) !important;
+}
+.tab {
+  background: rgba(15,23,42,.60) !important;
+  border-color: rgba(148,163,184,.20) !important;
+}
+.tab.active {
+  background: rgba(37,32,71,.70) !important;
+  border-color: var(--accent) !important;
+  box-shadow: none !important;
+}
+button,
+.button-link,
+.ghost-button,
+.top-icon-button,
+.icon-button,
+.mini-button,
+.composer-icon-button,
+.composer-send-button,
+.event-chip,
+.source-tab,
+.source-row,
+.source-row-wrap,
+.session-plus-button {
+  border-radius: 0 !important;
+}
+button,
+.button-link,
+.ghost-button,
+.top-icon-button,
+.icon-button,
+.composer-icon-button,
+.composer-send-button,
+.event-chip {
+  background: rgba(37,32,71,.70);
+}
+.composer-input-shell,
+.composer-controls.integrated.editor-like,
+.session-composer .composer-input-shell,
+.session-composer .composer-controls.integrated.editor-like {
+  background: rgba(15,23,42,.70) !important;
+  color: #f4f1ff !important;
+  border-color: rgba(148,163,184,.20) !important;
+  box-shadow: none !important;
+}
+.session-composer textarea#taskPrompt,
+.session-composer input#taskCommand,
+.session-composer input#taskImage,
+.composer-controls.integrated input,
+.composer-controls.integrated select,
+.composer-controls.integrated.editor-like input,
+.composer-controls.integrated.editor-like select {
+  background: rgba(10,8,16,.82) !important;
+  color: #f4f1ff !important;
+  border-color: rgba(148,163,184,.20) !important;
+}
+.session-composer textarea#taskPrompt::placeholder,
+.session-composer input#taskCommand::placeholder,
+.session-composer input#taskImage::placeholder {
+  color: #94a3b8 !important;
+}
+.source-row,
+.source-row-wrap:not(.buildable-source-row) {
+  background: transparent !important;
+}
+.source-row:hover,
+.source-row-wrap:hover .source-row {
+  background: rgba(148,163,184,.10) !important;
+}
+.brand-logo,
+.hero-mark,
+.pac-loader {
+  filter: none !important;
+}
 .tool-activity-list {
   display:grid;
   gap:0;
