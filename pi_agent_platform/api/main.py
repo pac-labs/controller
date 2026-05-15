@@ -44,7 +44,7 @@ from pi_agent_platform.core.secrets import secret_store
 from pi_agent_platform.core.pac_ram import read_ram, write_ram, list_ram, all_ram
 from pi_agent_platform.core.source_variables import source_variable_store
 from pi_agent_platform.core.source_library import ensure_source_library, list_tree as source_list_tree, read_text as source_read_text, write_text as source_write_text, make_archive as source_make_archive, build_container as source_build_container, build_binary as source_build_binary, list_binary_artifacts as source_list_binary_artifacts, binary_artifact_path as source_binary_artifact_path, delete_binary_artifact as source_delete_binary_artifact, prune_binary_artifacts as source_prune_binary_artifacts, inspect_feature_pack as source_inspect_feature_pack, apply_feature_pack as source_apply_feature_pack, create_entry as source_create_entry, rename_entry as source_rename_entry, delete_entry as source_delete_entry, fetch_online_package_updates as source_fetch_online_package_updates
-from pi_agent_platform.core.update_preservation import build_backup_archive, compare_trees
+from pi_agent_platform.core.update_preservation import build_backup_archive, compare_trees, generate_local_diff, list_generated_diffs
 from pi_agent_platform.updates import fetch_latest_release_metadata, download_release_package
 
 
@@ -191,6 +191,36 @@ def _update_backups_root() -> Path:
     root = pacp_path('backups')
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def _local_diffs_root() -> Path:
+    root = _app_dir() / '.pac' / 'diffs'
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _suggest_next_version(version: str | None) -> str:
+    raw = str(version or '').strip().lstrip('v')
+    parts = raw.split('.')
+    if len(parts) != 3:
+        return raw or '1.0.0'
+    try:
+        major, minor, patch = (int(parts[0]), int(parts[1]), int(parts[2]))
+    except ValueError:
+        return raw
+    return f'{major}.{minor}.{patch + 1}'
+
+
+def _read_version_from_tree(app_dir: Path) -> str | None:
+    for candidate in (app_dir / 'VERSION', app_dir / 'VERSION_CURRENT.md'):
+        try:
+            if candidate.exists():
+                lines = [line.strip() for line in candidate.read_text(encoding='utf-8').splitlines() if line.strip()]
+                if lines:
+                    return lines[0].lstrip('v')
+        except Exception:
+            continue
+    return None
 
 
 def _list_update_archives() -> list[dict[str, Any]]:
@@ -1458,6 +1488,40 @@ def get_update_release_notes(from_version: str | None = None, to_version: str | 
         'to_version': to_version or (_load_pac_changelog().get('current_version') or PAC_VERSION),
         'entries': entries,
     }
+
+
+@app.get('/v1/updates/local-diffs')
+def get_generated_local_diffs(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    version = _read_version_from_tree(_app_dir()) or PAC_VERSION
+    return {
+        'current_version': version,
+        'suggested_version': _suggest_next_version(version),
+        'diffs': list_generated_diffs(_local_diffs_root()),
+    }
+
+
+@app.post('/v1/updates/generate-local-diff')
+def create_generated_local_diff(version: str = Query(..., description='Version for the diff, e.g. 1.0.107'), _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    clean_version = str(version or '').strip().lstrip('v')
+    if not clean_version:
+        raise HTTPException(status_code=400, detail='Version is required')
+    result = generate_local_diff(_app_dir(), clean_version, _local_diffs_root())
+    store.add_event(Event(
+        session_id='system',
+        type='local_diff_generated',
+        message=f'Local diff {("generated" if result.get("status") == "written" else "checked")}: v{clean_version}.diff',
+        data=result,
+    ))
+    return result
+
+
+@app.get('/v1/updates/diff/{version}')
+def download_generated_local_diff(version: str, _auth: None = Depends(require_auth)) -> FileResponse:
+    clean_version = str(version or '').strip().lstrip('v')
+    diff_path = (_local_diffs_root() / f'v{clean_version}.diff').resolve()
+    if not diff_path.exists():
+        raise HTTPException(status_code=404, detail=f'Diff not found: v{clean_version}.diff')
+    return FileResponse(path=str(diff_path), filename=f'v{clean_version}.diff', media_type='text/plain')
 
 
 @app.post('/v1/updates/apply')

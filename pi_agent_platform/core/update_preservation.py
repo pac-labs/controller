@@ -3,7 +3,9 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
+import subprocess
 import tarfile
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -135,3 +137,106 @@ def compare_trees(installed_root: Path, incoming_root: Path, diff_path: Path, su
     }
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary
+
+
+def _read_remote_text(base_url: str, rel_path: str) -> str | None:
+    url = f"{base_url.rstrip('/')}/{rel_path}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "PAC-local-diff/1"})
+        with urllib.request.urlopen(req, timeout=15) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except Exception:
+        return None
+
+
+def generate_local_diff(app_dir: Path, version: str, out_dir: Path, github_raw_base: str = "https://raw.githubusercontent.com/pac-labs/controller/main") -> dict[str, Any]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    diff_path = out_dir / f"v{version}.diff"
+
+    has_git = (app_dir / ".git").exists()
+    if has_git:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", "origin/main"],
+            cwd=app_dir,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        has_git = result.returncode == 0
+
+    if has_git:
+        result = subprocess.run(
+            ["git", "diff", "--binary", "--no-color", "origin/main", "--", "."],
+            cwd=app_dir,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        diff_text = result.stdout or ""
+    else:
+        diff_lines: list[str] = []
+        tracked = _tracked_files(app_dir)
+        for rel, local_path in sorted(tracked.items()):
+            local_text = _read_text(local_path)
+            if local_text is None:
+                continue
+            remote_text = _read_remote_text(github_raw_base, rel)
+            if remote_text is None:
+                diff_lines.append(f"diff --git a/{rel} b/{rel}")
+                diff_lines.extend(
+                    difflib.unified_diff(
+                        [],
+                        local_text.splitlines(),
+                        fromfile=f"a/{rel}",
+                        tofile=f"b/{rel}",
+                        lineterm="",
+                    )
+                )
+                diff_lines.append("")
+                continue
+            if local_text == remote_text:
+                continue
+            diff_lines.append(f"diff --git a/{rel} b/{rel}")
+            diff_lines.extend(
+                difflib.unified_diff(
+                    remote_text.splitlines(),
+                    local_text.splitlines(),
+                    fromfile=f"a/{rel}",
+                    tofile=f"b/{rel}",
+                    lineterm="",
+                )
+            )
+            diff_lines.append("")
+        diff_text = "\n".join(diff_lines).rstrip() + ("\n" if diff_lines else "")
+
+    if not diff_text.strip():
+        return {"ok": True, "status": "no_diff", "message": "No differences found.", "diff_path": None}
+
+    diff_path.write_text(diff_text, encoding="utf-8")
+    return {
+        "ok": True,
+        "status": "written",
+        "version": version,
+        "diff_path": str(diff_path),
+        "size": diff_path.stat().st_size,
+        "generated_at": _utc_now(),
+    }
+
+
+def list_generated_diffs(out_dir: Path) -> list[dict[str, Any]]:
+    if not out_dir.exists():
+        return []
+    items: list[dict[str, Any]] = []
+    for path in sorted(out_dir.glob("v*.diff"), key=lambda item: item.stat().st_mtime, reverse=True):
+        version = path.stem[1:] if path.stem.startswith("v") else path.stem
+        stat = path.stat()
+        items.append(
+            {
+                "version": version,
+                "filename": path.name,
+                "path": str(path),
+                "size": stat.st_size,
+                "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+            }
+        )
+    return items

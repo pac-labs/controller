@@ -501,6 +501,14 @@
             <div id="sourceOnlineUpdates" class="feature-pack-preview muted">Online source module updates have not been checked yet.</div>
           </div>
               <div class="updates-archive-section">
+                <div class="button-row">
+                  <input id="localDiffVersion" placeholder="1.0.108" />
+                  <button id="generateLocalDiff" class="ghost-button">Generate local diff</button>
+                  <span id="localDiffStatus" class="muted small-text"></span>
+                </div>
+                <div id="localDiffList" class="update-delta-list"><div class="muted small-text">No generated local diffs yet.</div></div>
+              </div>
+              <div class="updates-archive-section">
                 <div class="button-row"><button id="refreshUpdateArchives" class="ghost-button">Refresh archives</button><span id="updateArchiveHint" class="muted small-text"></span></div>
                 <div id="updateArchivesList" class="update-delta-list"><div class="muted small-text">No update archives loaded yet.</div></div>
               </div>

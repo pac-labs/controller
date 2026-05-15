@@ -1842,6 +1842,75 @@ function setUpdatesDetail(meta=null) {
     body.innerHTML = bodyHtml ? `<div class="muted small-text">${bodyHtml}</div>` : (meta.body ? `<div class="muted small-text">${escapeHtml(meta.body)}</div>` : '<div class="muted small-text">No additional details available.</div>');
   }
 }
+function renderLocalDiffs(data) {
+  const list = document.getElementById('localDiffList');
+  const status = document.getElementById('localDiffStatus');
+  const input = document.getElementById('localDiffVersion');
+  if (input && !input.value) input.value = data?.suggested_version || '';
+  if (status) status.textContent = data?.suggested_version ? `Suggested release diff version: v${data.suggested_version}` : '';
+  if (!list) return;
+  const diffs = data?.diffs || [];
+  if (!diffs.length) {
+    list.innerHTML = '<div class="muted small-text">No generated local diffs yet. Generate one from the current workspace to prepare an online update or release patch.</div>';
+    return;
+  }
+  list.innerHTML = diffs.map((item) => {
+    const size = Number(item.size || 0).toLocaleString();
+    const modified = item.modified_at ? formatEventTime(item.modified_at) : '';
+    return `<button class="update-archive-row" data-local-diff="${escapeHtml(item.version)}"><b>v${escapeHtml(item.version)}</b><span class="muted small-text">${escapeHtml(size)} bytes${modified ? ` • ${escapeHtml(modified)}` : ''}</span></button>`;
+  }).join('');
+  list.querySelectorAll('[data-local-diff]').forEach(btn => btn.onclick = async () => {
+    const version = btn.dataset.localDiff || '';
+    const link = `/v1/updates/diff/${encodeURIComponent(version)}`;
+    setUpdatesDetail({
+      title: 'Generated local diff',
+      version,
+      body: `Use this diff as the source patch for the next PAC release/update packaging flow.`,
+      html_body: `Download: <a href="${link}">v${escapeHtml(version)}.diff</a>`,
+    });
+  });
+}
+async function loadLocalDiffs() {
+  const data = await api('/v1/updates/local-diffs');
+  renderLocalDiffs(data);
+  return data;
+}
+async function generateLocalDiffNow() {
+  const input = document.getElementById('localDiffVersion');
+  const status = document.getElementById('localDiffStatus');
+  const button = document.getElementById('generateLocalDiff');
+  const version = String(input?.value || '').trim().replace(/^v/i, '');
+  if (!version) return paneError('A version is required to generate a local diff');
+  if (!confirm(`Generate .pac/diffs/v${version}.diff from the current local PAC workspace?`)) return;
+  if (button) { button.disabled = true; button.textContent = 'Generating…'; }
+  if (status) status.textContent = 'Generating local diff…';
+  try {
+    const result = await api(`/v1/updates/generate-local-diff?version=${encodeURIComponent(version)}`, {method:'POST'});
+    if (result.ok && result.status === 'written') {
+      if (status) status.textContent = `Generated v${version}.diff`;
+      setUpdatesDetail({
+        title: 'Generated local diff',
+        version,
+        body: `The local workspace diff is ready for the release/update pipeline.`,
+        html_body: `Download: <a href="/v1/updates/diff/${encodeURIComponent(version)}">v${escapeHtml(version)}.diff</a>`,
+      });
+      await loadLocalDiffs().catch(()=>{});
+      return;
+    }
+    if (result.ok && result.status === 'no_diff') {
+      if (status) status.textContent = 'No local differences found.';
+      setUpdatesDetail({title:'Generated local diff', version, body:'No local differences were found against upstream main.'});
+      await loadLocalDiffs().catch(()=>{});
+      return;
+    }
+    if (status) status.textContent = result.error || 'Local diff generation failed.';
+  } catch (e) {
+    if (status) status.textContent = e.message || String(e);
+    throw e;
+  } finally {
+    if (button) { button.disabled = false; button.textContent = 'Generate local diff'; }
+  }
+}
 function renderUpdateArchives(data) {
   const list = document.getElementById('updateArchivesList');
   const hint = document.getElementById('updateArchiveHint');
@@ -3252,6 +3321,7 @@ async function loadConfig() {
   await loadSourceSecrets().catch(()=>{});
   await loadSourceVariables().catch(()=>{});
   await loadPacRamIndex().catch(()=>{});
+  await loadLocalDiffs().catch(()=>{});
   await loadUpdateArchives().catch(()=>{});
   renderPacReleaseStatus(window.__pacReleaseMeta || null);
   await loadTlsStatus();
@@ -3578,7 +3648,12 @@ if (savePacRamBtn) savePacRamBtn.onclick = () => savePacRamFromForm();
 const searchMarketplaceBtn = document.getElementById('searchMarketplace');
 if (searchMarketplaceBtn) searchMarketplaceBtn.onclick = () => searchMarketplace().catch(e=>paneError('Marketplace search failed', e.message));
 const refreshUpdateArchivesBtn = document.getElementById('refreshUpdateArchives');
-if (refreshUpdateArchivesBtn) refreshUpdateArchivesBtn.onclick = () => loadUpdateArchives().catch(e=>paneError('Update archives unavailable', e.message));
+if (refreshUpdateArchivesBtn) refreshUpdateArchivesBtn.onclick = async () => {
+  await loadLocalDiffs().catch(e=>paneError('Local diffs unavailable', e.message));
+  await loadUpdateArchives().catch(e=>paneError('Update archives unavailable', e.message));
+};
+const generateLocalDiffBtn = document.getElementById('generateLocalDiff');
+if (generateLocalDiffBtn) generateLocalDiffBtn.onclick = () => generateLocalDiffNow().catch(e=>paneError('Local diff generation failed', e.message));
 const checkPacReleaseBtn = document.getElementById('checkPacRelease');
 if (checkPacReleaseBtn) checkPacReleaseBtn.onclick = () => checkPacRelease().catch(e=>paneError('PAC release check failed', e.message));
 const applyPacReleaseBtn = document.getElementById('applyPacRelease');
