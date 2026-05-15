@@ -3568,6 +3568,7 @@ async function loadConfig() {
   fillSelects(); renderWorkspaces(); renderProfiles(); renderProviders(); renderModels(); renderTools();
   document.getElementById('configEditor').value = JSON.stringify(config, null, 2);
   renderSystemInfo();
+  renderHeaderAuthBox();
   renderControllerHarnessSettings();
   renderEndpointConnectionSettings();
   renderZedConfigExamples();
@@ -3676,6 +3677,17 @@ function appendEvent(type, payload) {
     refreshSessionRunButton().catch(()=>{});
   }
 }
+
+function renderHeaderAuthBox() {
+  const badge = document.getElementById('authModeBadge');
+  const tokenInput = document.getElementById('token');
+  if (!badge || !tokenInput) return;
+  const auth = config?.auth || {};
+  const enabled = !!auth.enabled;
+  const hasToken = !!String(tokenInput.value || '').trim();
+  badge.textContent = enabled ? (hasToken ? 'Token set' : String(auth.mode || 'Auth')) : 'Open';
+  badge.className = `header-control-badge${enabled ? ' enabled' : ''}${hasToken ? ' active' : ''}`;
+}
 async function loadApprovals() {
   if (approvalsRequest) return approvalsRequest;
   approvalsRequest = (async () => {
@@ -3698,6 +3710,8 @@ async function loadApprovals() {
 document.getElementById('refresh').onclick=()=>init();
 const themeModeSelect = document.getElementById('themeMode');
 if (themeModeSelect) themeModeSelect.onchange = () => applyThemeMode(themeModeSelect.value || 'system');
+const authTokenInput = document.getElementById('token');
+if (authTokenInput) authTokenInput.addEventListener('input', () => renderHeaderAuthBox());
 if (document.getElementById('dismissSetupWizard')) document.getElementById('dismissSetupWizard').onclick = () => hideSetupWizard();
 if (document.getElementById('recheckSetupWizard')) document.getElementById('recheckSetupWizard').onclick = () => loadConfig().catch(e => paneError('Setup recheck failed', e.message));
 document.getElementById('createSession').onclick=async()=>{

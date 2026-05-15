@@ -2634,6 +2634,55 @@ html[data-theme="dark"] .recommendation-card p{color:#dbe7ff}
   text-transform:uppercase;
   white-space:nowrap;
 }
+.header-control-box{
+  display:inline-grid;
+  grid-template-columns:auto auto;
+  align-items:center;
+  gap:.45rem;
+  min-height:2.15rem;
+  padding:.22rem .5rem;
+  border:1px solid rgba(96,165,250,.18);
+  background:rgba(15,23,42,.58);
+  color:#dbeafe;
+}
+.header-control-label{
+  font-size:.7rem;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:#93c5fd;
+  white-space:nowrap;
+}
+.header-control-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:3.2rem;
+  padding:.18rem .45rem;
+  border:1px solid rgba(148,163,184,.22);
+  background:rgba(2,6,23,.45);
+  color:#cbd5e1;
+  font-size:.72rem;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+}
+.header-control-badge.enabled{color:#bfdbfe;border-color:rgba(96,165,250,.22)}
+.header-control-badge.active{color:#bbf7d0;border-color:rgba(34,197,94,.28)}
+.theme-control-box select,
+.auth-control-box input{
+  min-height:1.9rem;
+  border-radius:0;
+}
+.theme-control-box{
+  grid-template-columns:auto auto;
+}
+.auth-control-box{
+  grid-template-columns:auto auto minmax(180px,220px);
+}
+.auth-control-box input{
+  width:100%;
+  min-width:180px;
+}
+.app-footer .app-version{display:none}
 .health-grid{
   display:grid;
   grid-template-columns:repeat(2,minmax(0,1fr));
@@ -2674,6 +2723,22 @@ body[data-theme="light"] .build-stamp{
   background:rgba(255,255,255,.9);
   border-color:rgba(37,99,235,.18);
   color:#1e3a8a;
+}
+html[data-theme="light"] .header-control-box,
+body[data-theme="light"] .header-control-box{
+  background:rgba(255,255,255,.92);
+  border-color:rgba(37,99,235,.16);
+  color:#0f172a;
+}
+html[data-theme="light"] .header-control-label,
+body[data-theme="light"] .header-control-label{
+  color:#1d4ed8;
+}
+html[data-theme="light"] .header-control-badge,
+body[data-theme="light"] .header-control-badge{
+  background:rgba(241,245,249,.95);
+  color:#334155;
+  border-color:rgba(37,99,235,.14);
 }
 html[data-theme="light"] .health-section,
 body[data-theme="light"] .health-section{
