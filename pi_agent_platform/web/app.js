@@ -49,6 +49,8 @@ let sessionThinkingGroup = null;
 let sessionEventSeen = new Set();
 let sessionMessageSeen = new Set();
 let sessionPendingRows = new Map();
+let sessionLatestEventId = null;
+let sessionPoll = null;
 let setupStatus = null;
 let sessionSlashCommands = [];
 let pacThemeMode = 'system';
@@ -342,7 +344,11 @@ function sessionThinkingLine(event, block) {
 function sessionThinkingSummary(event, block) {
   const data = event?.data && typeof event.data === 'object' ? event.data : {};
   const type = String(event?.type || '').toLowerCase();
-  if (type.includes('approval_required')) return data.reason ? `Approval needed: ${data.reason}` : 'Approval needed before continuing';
+  if (type.includes('approval_required')) {
+    const target = data.command || data.path || data.url || data.query || '';
+    if (target) return `Approval needed for ${target}`;
+    return data.reason ? `Approval needed: ${data.reason}` : 'Approval needed before continuing';
+  }
   if (type.includes('task_approved')) return 'Approval granted';
   if (type.includes('task_rejected')) return 'Approval rejected';
   if (type.includes('task_failed')) return event?.message || 'Task failed';
@@ -562,6 +568,22 @@ function removePendingRow(taskId) {
   if (row && row.parentElement) row.remove();
   sessionPendingRows.delete(taskId);
 }
+async function pollSessionEvents(sessionId) {
+  if (!sessionId || !selectedSession || selectedSession.id !== sessionId) return;
+  try {
+    const qs = sessionLatestEventId ? `?after_id=${encodeURIComponent(sessionLatestEventId)}&limit=120` : '?limit=120';
+    const snapshot = await api(`/v1/sessions/${sessionId}/events/snapshot${qs}`);
+    (snapshot || []).forEach(ev => appendEvent(ev.type || 'message', ev));
+  } catch (_) {}
+}
+function startSessionPolling(sessionId) {
+  if (sessionPoll) {
+    clearInterval(sessionPoll);
+    sessionPoll = null;
+  }
+  if (!sessionId) return;
+  sessionPoll = setInterval(() => { pollSessionEvents(sessionId).catch(()=>{}); }, 1500);
+}
 function addPendingRow(taskId) {
   const el = document.getElementById('events');
   if (!el || !taskId || sessionPendingRows.has(taskId)) return;
@@ -588,6 +610,7 @@ function renderSessionTimelineEvent(event) {
   if (!el || !event) return;
   if (event.id && sessionEventSeen.has(event.id)) return;
   if (event.id) sessionEventSeen.add(event.id);
+  if (event.id) sessionLatestEventId = event.id;
   const messageKey = `${event.type || ''}:${event.task_id || ''}:${event.message || ''}`;
   if ((event.type === 'user_message' || event.type === 'result' || event.type === 'assistant_message') && sessionMessageSeen.has(messageKey)) return;
   if (event.type === 'user_message' || event.type === 'result' || event.type === 'assistant_message') sessionMessageSeen.add(messageKey);
@@ -3176,6 +3199,7 @@ async function selectSession(id) {
   sessionEventSeen = new Set();
   sessionMessageSeen = new Set();
   sessionPendingRows = new Map();
+  sessionLatestEventId = null;
   try {
     const snapshot = await api(`/v1/sessions/${id}/events/snapshot?limit=120`);
     if (timeline) timeline.innerHTML = snapshot.length ? '' : '<div class="empty-timeline">No session events yet.</div>';
@@ -3185,8 +3209,10 @@ async function selectSession(id) {
   if (source) source.close();
   // EventSource cannot set auth headers, so auth-enabled deployments should use the snapshot refresh path or put UI/API behind same auth proxy.
   source = new EventSource(`/v1/sessions/${id}/events`);
+  source.onerror = () => { startSessionPolling(id); };
   source.onmessage = e => { try { appendEvent('message', JSON.parse(e.data)); } catch { appendEvent('message', e.data); } };
   ['user_message','agent_routing','agent_intent','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','full_control_enabled','subagent_started'].forEach(t => source.addEventListener(t, e => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
+  startSessionPolling(id);
 }
 function appendEvent(type, payload) {
   const event = normalizeEvent(type, payload);
