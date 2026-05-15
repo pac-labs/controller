@@ -1,46 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 260" role="img" aria-labelledby="title desc">
-  <title id="title">PAC logo</title>
-  <desc id="desc">Purple five-node orbit around PAC wordmark.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 220" role="img" aria-labelledby="title desc">
+  <title id="title">PAC wordmark</title>
+  <desc id="desc">PAC icon with Pi Agent Controller wordmark.</desc>
   <defs>
-    <radialGradient id="glow" cx="50%" cy="50%" r="70%">
-      <stop offset="0%" stop-color="#a855f7" stop-opacity="0.55"/>
-      <stop offset="55%" stop-color="#8b5cf6" stop-opacity="0.18"/>
-      <stop offset="100%" stop-color="#08070d" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="violet" x1="0" x2="1" y1="0" y2="1">
-      <stop stop-color="#c084fc"/>
-      <stop offset="0.55" stop-color="#8b5cf6"/>
-      <stop offset="1" stop-color="#5b21b6"/>
+    <linearGradient id="pacBlueWordmark" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1457c8"/>
+      <stop offset="52%" stop-color="#1f7fe2"/>
+      <stop offset="100%" stop-color="#2fb9ff"/>
     </linearGradient>
-    <linearGradient id="word" x1="0" x2="1">
-      <stop stop-color="#ffffff"/>
-      <stop offset="0.55" stop-color="#f4f1ff"/>
-      <stop offset="1" stop-color="#c4b5fd"/>
-    </linearGradient>
-    <filter id="softGlow" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="5" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
   </defs>
-  <rect width="640" height="260" rx="18" fill="#08070d"/>
-  <ellipse cx="320" cy="128" rx="230" ry="110" fill="url(#glow)"/>
-  <g fill="none" stroke="url(#violet)" stroke-width="9" stroke-linecap="square" opacity="0.92" filter="url(#softGlow)">
-    <path d="M238 55 L320 28 L402 55"/>
-    <path d="M402 55 L455 128 L422 212"/>
-    <path d="M422 212 L218 212"/>
-    <path d="M218 212 L185 128 L238 55"/>
+  <g transform="translate(8 12)" fill="url(#pacBlueWordmark)" stroke="#35b8ff" stroke-width="4" stroke-linejoin="round">
+    <path d="M56 10h108l-37 64H56z"/>
+    <path d="M180 21l93 54-55 32-63-37z"/>
+    <path d="M286 97v111l-63-36v-79z"/>
+    <path d="M206 284l-76 44-76-44 37-64h78z" transform="translate(0 -86)"/>
+    <path d="M39 198L-23 162V55l62 36z" transform="translate(23 10)"/>
+    <path d="M35 22v86L-27 144V75z" transform="translate(23 0)"/>
+    <circle cx="112" cy="108" r="26" fill="#1f8df0" stroke="#35b8ff" stroke-width="4"/>
+    <path d="M98 129h28v62H98z" fill="#1f8df0" stroke="#35b8ff" stroke-width="4"/>
   </g>
-  <g filter="url(#softGlow)">
-    <g fill="#08070d" stroke="url(#violet)" stroke-width="8">
-      <circle cx="320" cy="28" r="26"/><circle cx="455" cy="128" r="26"/><circle cx="422" cy="212" r="26"/><circle cx="218" cy="212" r="26"/><circle cx="185" cy="128" r="26"/>
-    </g>
-    <g fill="#c084fc">
-      <circle cx="320" cy="28" r="13"/><circle cx="455" cy="128" r="13"/><circle cx="422" cy="212" r="13"/><circle cx="218" cy="212" r="13"/><circle cx="185" cy="128" r="13"/>
-    </g>
-  </g>
-  <g fill="url(#word)" filter="url(#softGlow)">
-    <path d="M150 111h72c22 0 36 13 36 32s-14 32-36 32h-47v35h-25v-99zm25 23v18h45c8 0 13-3 13-9s-5-9-13-9h-45z"/>
-    <path d="M307 111h27l61 99h-30l-44-74-44 74h-30l60-99z"/>
-    <path d="M407 111h85v23h-82c-15 0-26 11-26 26s11 27 26 27h82v23h-85c-29 0-50-21-50-50s21-49 50-49z"/>
+  <g fill="#ffffff" font-family="IBM Plex Sans, Inter, Arial, sans-serif">
+    <text x="340" y="92" font-size="108" font-weight="700" letter-spacing="4">PAC</text>
+    <text x="342" y="152" font-size="52" font-weight="600" letter-spacing="5">PI AGENT CONTROLLER</text>
   </g>
 </svg>

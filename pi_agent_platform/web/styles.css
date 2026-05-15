@@ -9,12 +9,9 @@
 
 /* PAC brand integration */
 .brand-block{display:flex;align-items:center;gap:1rem;min-width:0}
-.brand-logo{width:232px;height:auto;display:block}
-.brand-copy{min-width:0}
-.brand-copy h1{font-size:1.08rem;letter-spacing:.22em;text-transform:uppercase}
-.brand-copy p{max-width:780px;color:#93c5fd;font-size:.92rem;letter-spacing:.01em}
+.brand-logo{width:420px;max-width:min(52vw,420px);height:auto;display:block}
 .hero-title{display:flex;align-items:center;gap:.85rem;margin-bottom:.5rem}.hero-title h2{margin:0}.hero-mark{width:58px;height:58px;border:1px solid var(--border);background:#08070d;padding:.25rem;filter:drop-shadow(0 0 12px rgba(139,92,246,.28))}.eyebrow{margin:.15rem 0 0;color:#c084fc;text-transform:uppercase;letter-spacing:.18em;font-size:.72rem;font-weight:800}.status-strip{display:flex;align-items:center;gap:.55rem;margin:.2rem 0 .8rem;padding:.55rem;border:1px solid #241a3b;background:#090712}.pac-loader{width:34px;height:34px;display:inline-block;background:url('/ui/assets/pac-loader.svg') center/contain no-repeat;filter:drop-shadow(0 0 8px rgba(168,85,247,.45))}.pac-loader::after{content:'';display:block;width:100%;height:100%;border:1px solid transparent;animation:pac-spin 1.35s linear infinite}.app-footer{display:flex;align-items:center;gap:.5rem;color:#8f86a8;border-top:1px solid #241a3b;padding:.85rem 1.2rem;margin-top:1rem;background:#07060b;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase}.app-footer img{width:24px;height:24px}@keyframes pac-spin{to{transform:rotate(360deg)}}
-@media(max-width:720px){.brand-logo{width:132px}.brand-block{align-items:flex-start}.hero-title{align-items:flex-start}.hero-mark{width:46px;height:46px}}
+@media(max-width:720px){.brand-logo{width:min(72vw,300px)}.brand-block{align-items:flex-start}.hero-title{align-items:flex-start}.hero-mark{width:46px;height:46px}}
 
 .actions { display:flex; gap:8px; align-items:center; justify-content:flex-end; }
 .danger-button { border-color:#7f1d1d; color:#fecaca; background:#2a0b14; }

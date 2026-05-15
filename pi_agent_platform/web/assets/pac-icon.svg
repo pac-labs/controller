@@ -1,8 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
-<title id="title">PAC node icon</title><desc id="desc">Five violet nodes connected in an orchestration loop.</desc>
-<defs><linearGradient id="v" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#c084fc"/><stop offset=".55" stop-color="#8b5cf6"/><stop offset="1" stop-color="#5b21b6"/></linearGradient><filter id="g" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
-<rect width="128" height="128" rx="10" fill="#08070d"/><circle cx="64" cy="64" r="50" fill="#1d1238" opacity=".45"/>
-<g fill="none" stroke="url(#v)" stroke-width="5" stroke-linecap="square" filter="url(#g)"><path d="M64 18 L103 47 L88 94 L40 94 L25 47 Z"/></g>
-<g filter="url(#g)" stroke="url(#v)" stroke-width="5" fill="#08070d"><circle cx="64" cy="18" r="9"/><circle cx="103" cy="47" r="9"/><circle cx="88" cy="94" r="9"/><circle cx="40" cy="94" r="9"/><circle cx="25" cy="47" r="9"/></g>
-<g fill="#c084fc"><circle cx="64" cy="18" r="4"/><circle cx="103" cy="47" r="4"/><circle cx="88" cy="94" r="4"/><circle cx="40" cy="94" r="4"/><circle cx="25" cy="47" r="4"/></g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">PAC icon</title>
+  <desc id="desc">Blue PAC hexagonal orchestration mark.</desc>
+  <defs>
+    <linearGradient id="pacBlue" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1457c8"/>
+      <stop offset="52%" stop-color="#1f7fe2"/>
+      <stop offset="100%" stop-color="#2fb9ff"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#pacBlue)" stroke="#35b8ff" stroke-width="6" stroke-linejoin="round">
+    <path d="M169 45h125l-43 74h-82z"/>
+    <path d="M312 58l108 63-64 37-72-42z"/>
+    <path d="M436 146v129l-72-41V188z"/>
+    <path d="M344 362l-88 51-88-51 43-74h90z"/>
+    <path d="M148 349L76 308V184l72 42z"/>
+    <path d="M156 58v100l-72 42V121z"/>
+    <circle cx="256" cy="228" r="36" fill="#1f8df0" stroke="#35b8ff" stroke-width="6"/>
+    <path d="M236 258h40v84h-40z" fill="#1f8df0" stroke="#35b8ff" stroke-width="6"/>
+  </g>
 </svg>
