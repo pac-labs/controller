@@ -2676,11 +2676,50 @@ html[data-theme="dark"] .recommendation-card p{color:#dbe7ff}
   grid-template-columns:auto auto;
 }
 .auth-control-box{
-  grid-template-columns:auto auto minmax(180px,220px);
+  grid-template-columns:auto auto;
+  align-items:start;
+  min-width:220px;
 }
-.auth-control-box input{
+.auth-user-row{
+  display:flex;
+  align-items:center;
+  gap:.45rem;
+}
+.auth-token-input{
   width:100%;
   min-width:180px;
+  margin-top:.1rem;
+}
+.user-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:.45rem;
+  padding:.18rem .45rem;
+  border:1px solid rgba(96,165,250,.22);
+  background:rgba(2,6,23,.52);
+  color:#e2e8f0;
+  min-height:1.9rem;
+}
+.user-chip[hidden]{
+  display:none!important;
+}
+.auth-modal-card{
+  width:min(440px,94vw);
+}
+.auth-control-box .ghost-button{
+  min-height:1.9rem;
+  white-space:nowrap;
+}
+.stacked-output{
+  display:grid;
+  gap:.45rem;
+}
+.compact-scroll-output{
+  max-height:220px;
+  overflow:auto;
+  border:1px solid #241a3b;
+  background:#090712;
+  padding:.55rem;
 }
 .app-footer .app-version{display:none}
 .health-grid{

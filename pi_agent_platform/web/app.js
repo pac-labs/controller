@@ -62,6 +62,10 @@ let approvalsRequest = null;
 let sessionRunButtonRequest = null;
 let sessionPollRequest = null;
 let sessionPollingActiveFor = null;
+let currentUser = null;
+let authStatus = null;
+
+const AUTH_TOKEN_KEY = 'pac_auth_token';
 
 const SESSION_SLASH_COMMANDS = {
   command: {kind:'tool', label:'/command <tool> [args]', description:'Run a registered endpoint tool on the locked host endpoint. Example: /command rg TODO'},
@@ -1055,13 +1059,20 @@ function setupTabs() {
 }
 
 function tokenHeaders() {
-  const t = document.getElementById('token').value.trim();
+  const stored = localStorage.getItem(AUTH_TOKEN_KEY) || '';
+  const field = document.getElementById('token')?.value.trim() || '';
+  const t = stored || field;
   return t ? {Authorization: `Bearer ${t}`} : {};
 }
 async function api(path, opts = {}) {
   opts.headers = {...(opts.headers || {}), ...tokenHeaders()};
   if (opts.body && !(opts.body instanceof FormData) && !opts.headers['Content-Type']) opts.headers['Content-Type'] = 'application/json';
   const r = await fetch(path, opts);
+  if (r.status === 401) {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    currentUser = null;
+    renderHeaderAuthBox();
+  }
   if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
   return r.json();
 }
@@ -3564,6 +3575,7 @@ async function saveEndpointConnectionSettings() {
 
 async function loadConfig() {
   config = await api('/v1/config');
+  authStatus = {...(authStatus || {}), ...(config?.auth || {})};
   sessionSlashCommands = Array.isArray(config?.session_slash_commands) ? config.session_slash_commands : [];
   fillSelects(); renderWorkspaces(); renderProfiles(); renderProviders(); renderModels(); renderTools();
   document.getElementById('configEditor').value = JSON.stringify(config, null, 2);
@@ -3571,12 +3583,14 @@ async function loadConfig() {
   renderHeaderAuthBox();
   renderControllerHarnessSettings();
   renderEndpointConnectionSettings();
+  renderAuthInfo();
   renderZedConfigExamples();
   renderSourceContexts();
   renderSources();
   await loadSourceSecrets().catch(()=>{});
   await loadSourceVariables().catch(()=>{});
   await loadPacRamIndex().catch(()=>{});
+  await loadUsersList().catch(()=>{});
   await loadLocalDiffs().catch(()=>{});
   await loadUpdateArchives().catch(()=>{});
   renderPacReleaseStatus(window.__pacReleaseMeta || null);
@@ -3678,15 +3692,219 @@ function appendEvent(type, payload) {
   }
 }
 
+function getStoredToken() {
+  return localStorage.getItem(AUTH_TOKEN_KEY) || '';
+}
+function setStoredToken(token) {
+  if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
+  else localStorage.removeItem(AUTH_TOKEN_KEY);
+}
+function showUserChip(user) {
+  const chip = document.getElementById('userChip');
+  const name = document.getElementById('userChipName');
+  const loginBtn = document.getElementById('loginBtn');
+  if (chip && name) {
+    if (user) {
+      name.textContent = user.display_name || user.username || user.id || 'User';
+      chip.hidden = false;
+      chip.style.display = 'inline-flex';
+    } else {
+      chip.hidden = true;
+      chip.style.display = 'none';
+    }
+  }
+  if (loginBtn) loginBtn.hidden = !!user;
+}
+async function fetchAuthStatus() {
+  try {
+    authStatus = await fetch('/v1/auth/status').then(r => r.ok ? r.json() : {enabled:false, mode:'dev-token', needs_setup:false, user_count:0});
+  } catch (_) {
+    authStatus = {enabled:false, mode:'dev-token', needs_setup:false, user_count:0};
+  }
+  return authStatus;
+}
+async function fetchCurrentUser() {
+  if (!getStoredToken()) {
+    currentUser = null;
+    showUserChip(null);
+    return null;
+  }
+  try {
+    currentUser = await api('/v1/auth/me');
+    showUserChip(currentUser);
+    return currentUser;
+  } catch (_) {
+    setStoredToken('');
+    currentUser = null;
+    showUserChip(null);
+    return null;
+  }
+}
+function closeLoginModal() {
+  const modal = document.getElementById('loginModal');
+  if (modal) modal.remove();
+}
+function openLoginModal(mode = 'login') {
+  closeLoginModal();
+  const modal = document.createElement('div');
+  modal.id = 'loginModal';
+  modal.className = 'modal-backdrop';
+  const isSetup = mode === 'setup';
+  modal.innerHTML = `
+    <section class="modal-card auth-modal-card" role="dialog" aria-modal="true" aria-labelledby="loginModalTitle">
+      <div class="section-heading">
+        <div>
+          <h2 id="loginModalTitle">${isSetup ? 'Create PAC admin account' : 'Log in to PAC'}</h2>
+          <p class="muted">${isSetup ? 'Initial setup is required before PAC can be used with named users.' : 'Use your PAC account to unlock the controller UI.'}</p>
+        </div>
+        ${isSetup ? '' : '<button id="closeLoginModalBtn" class="ghost-button" type="button">Close</button>'}
+      </div>
+      <div class="form-grid compact-form">
+        <label>Username <input id="loginUsername" autocomplete="username" /></label>
+        ${isSetup ? '<label>Display name <input id="loginDisplayName" autocomplete="name" /></label>' : ''}
+        <label>Password <input id="loginPassword" type="password" autocomplete="current-password" /></label>
+      </div>
+      <div id="loginError" class="inline-result" hidden></div>
+      <div class="button-row">
+        <button id="doLoginBtn" type="button">${isSetup ? 'Create admin account' : 'Log in'}</button>
+        ${isSetup ? '' : '<button id="cancelLoginBtn" class="ghost-button" type="button">Cancel</button>'}
+      </div>
+    </section>`;
+  document.body.appendChild(modal);
+  if (!isSetup) {
+    document.getElementById('closeLoginModalBtn')?.addEventListener('click', closeLoginModal);
+    document.getElementById('cancelLoginBtn')?.addEventListener('click', closeLoginModal);
+    modal.addEventListener('click', (ev) => { if (ev.target === modal) closeLoginModal(); });
+  }
+  document.getElementById('doLoginBtn')?.addEventListener('click', () => submitLoginModal(mode));
+  document.getElementById('loginPassword')?.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') submitLoginModal(mode); });
+  document.getElementById('loginUsername')?.focus();
+}
+async function submitLoginModal(mode = 'login') {
+  const username = document.getElementById('loginUsername')?.value.trim() || '';
+  const password = document.getElementById('loginPassword')?.value || '';
+  const displayName = document.getElementById('loginDisplayName')?.value.trim() || username;
+  const errorEl = document.getElementById('loginError');
+  if (!username || !password) {
+    if (errorEl) { errorEl.hidden = false; errorEl.textContent = 'Username and password are required.'; }
+    return;
+  }
+  const path = mode === 'setup' ? '/v1/auth/setup' : '/v1/auth/login';
+  const payload = mode === 'setup' ? {username, password, display_name: displayName} : {username, password};
+  try {
+    const response = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.detail || data.error || 'Authentication failed');
+    setStoredToken(data.token || '');
+    currentUser = data.user || null;
+    showUserChip(currentUser);
+    renderHeaderAuthBox();
+    closeLoginModal();
+    await init();
+  } catch (error) {
+    if (errorEl) {
+      errorEl.hidden = false;
+      errorEl.textContent = error.message || 'Authentication failed';
+    }
+  }
+}
+function logoutUser() {
+  setStoredToken('');
+  currentUser = null;
+  showUserChip(null);
+  renderHeaderAuthBox();
+  if (authStatus?.enabled && authStatus?.mode === 'user-password') openLoginModal('login');
+}
+async function ensureAuthReady() {
+  await fetchAuthStatus();
+  if (!authStatus?.enabled) {
+    currentUser = null;
+    showUserChip(null);
+    return true;
+  }
+  if (authStatus.mode === 'user-password') {
+    if (authStatus.needs_setup) {
+      openLoginModal('setup');
+      return false;
+    }
+    const user = await fetchCurrentUser();
+    if (!user) {
+      openLoginModal('login');
+      return false;
+    }
+    return true;
+  }
+  return true;
+}
+function renderAuthInfo() {
+  const el = document.getElementById('authInfo');
+  if (!el) return;
+  const info = authStatus || config?.auth || {};
+  el.innerHTML = '';
+  const rows = [
+    ['Mode', String(info.mode || 'open')],
+    ['Enabled', info.enabled ? 'yes' : 'no'],
+    ['Users', String(info.user_count ?? '-')],
+    ['TTL', `${info.token_ttl_hours || config?.auth?.token_ttl_hours || 720}h`],
+  ];
+  rows.forEach(([label, value]) => {
+    const row = document.createElement('div');
+    row.innerHTML = `<span>${escapeHtml(label)}</span><code>${escapeHtml(value)}</code>`;
+    el.appendChild(row);
+  });
+}
+async function loadUsersList() {
+  const el = document.getElementById('usersList');
+  if (!el) return;
+  if (!(authStatus?.enabled && authStatus?.mode === 'user-password')) {
+    el.innerHTML = '<div class="muted small-text">User management is available when auth mode is set to user-password.</div>';
+    return;
+  }
+  try {
+    const users = await api('/v1/users');
+    if (!users.length) {
+      el.innerHTML = '<div class="muted small-text">No users found.</div>';
+      return;
+    }
+    el.innerHTML = users.map((user) => `
+      <div class="row">
+        <div><b>${escapeHtml(user.display_name || user.username)}</b><br><span class="muted small-text">${escapeHtml(user.username)} · ${escapeHtml(user.role || 'user')}</span></div>
+        <div class="button-row">
+          ${user.id === currentUser?.id ? '<span class="muted small-text">current</span>' : `<button class="ghost-button delete-user-btn" data-user-id="${escapeHtml(user.id)}" type="button">Delete</button>`}
+        </div>
+      </div>`).join('');
+    el.querySelectorAll('.delete-user-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const userId = btn.dataset.userId || '';
+        if (!userId || !confirm(`Delete user ${userId}?`)) return;
+        await api(`/v1/users/${encodeURIComponent(userId)}`, {method:'DELETE'});
+        await fetchAuthStatus();
+        renderAuthInfo();
+        await loadUsersList();
+      });
+    });
+  } catch (error) {
+    el.innerHTML = `<div class="muted small-text">Could not load users: ${escapeHtml(error.message || String(error))}</div>`;
+  }
+}
 function renderHeaderAuthBox() {
   const badge = document.getElementById('authModeBadge');
   const tokenInput = document.getElementById('token');
-  if (!badge || !tokenInput) return;
-  const auth = config?.auth || {};
+  if (!badge) return;
+  const auth = authStatus || config?.auth || {};
   const enabled = !!auth.enabled;
-  const hasToken = !!String(tokenInput.value || '').trim();
-  badge.textContent = enabled ? (hasToken ? 'Token set' : String(auth.mode || 'Auth')) : 'Open';
-  badge.className = `header-control-badge${enabled ? ' enabled' : ''}${hasToken ? ' active' : ''}`;
+  const storedToken = getStoredToken();
+  const hasToken = !!(storedToken || String(tokenInput?.value || '').trim());
+  if (!enabled) {
+    badge.textContent = 'Open';
+  } else if (auth.mode === 'user-password') {
+    badge.textContent = currentUser ? String(currentUser.role || 'user') : (auth.needs_setup ? 'Setup required' : 'Login required');
+  } else {
+    badge.textContent = hasToken ? 'Token set' : String(auth.mode || 'Auth');
+  }
+  badge.className = `header-control-badge${enabled ? ' enabled' : ''}${hasToken || currentUser ? ' active' : ''}`;
+  if (tokenInput) tokenInput.hidden = !!(enabled && auth.mode === 'user-password');
+  showUserChip(currentUser);
 }
 async function loadApprovals() {
   if (approvalsRequest) return approvalsRequest;
@@ -3712,6 +3930,27 @@ const themeModeSelect = document.getElementById('themeMode');
 if (themeModeSelect) themeModeSelect.onchange = () => applyThemeMode(themeModeSelect.value || 'system');
 const authTokenInput = document.getElementById('token');
 if (authTokenInput) authTokenInput.addEventListener('input', () => renderHeaderAuthBox());
+document.getElementById('loginBtn')?.addEventListener('click', () => openLoginModal(authStatus?.needs_setup ? 'setup' : 'login'));
+document.getElementById('userChipLogout')?.addEventListener('click', logoutUser);
+document.getElementById('refreshUsersBtn')?.addEventListener('click', () => loadUsersList().catch((e)=>paneError('Users could not be refreshed', e.message || String(e))));
+document.getElementById('createUserBtn')?.addEventListener('click', async () => {
+  const username = document.getElementById('newUsername')?.value.trim() || '';
+  const display_name = document.getElementById('newDisplayName')?.value.trim() || username;
+  const password = document.getElementById('newUserPassword')?.value || '';
+  const role = document.getElementById('newUserRole')?.value || 'user';
+  const result = document.getElementById('usersResult');
+  try {
+    if (!username || !password) throw new Error('Username and password are required.');
+    await api('/v1/users', {method:'POST', body: JSON.stringify({username, display_name, password, role})});
+    if (result) result.textContent = `User created: ${username}`;
+    ['newUsername', 'newDisplayName', 'newUserPassword'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+    await fetchAuthStatus();
+    renderAuthInfo();
+    await loadUsersList();
+  } catch (error) {
+    if (result) result.textContent = `Failed: ${error.message || String(error)}`;
+  }
+});
 if (document.getElementById('dismissSetupWizard')) document.getElementById('dismissSetupWizard').onclick = () => hideSetupWizard();
 if (document.getElementById('recheckSetupWizard')) document.getElementById('recheckSetupWizard').onclick = () => loadConfig().catch(e => paneError('Setup recheck failed', e.message));
 document.getElementById('createSession').onclick=async()=>{
@@ -4490,7 +4729,26 @@ async function searchMarketplaceModal() {
 }
 
 
-async function init(){ loadThemeMode(); setupTabs(); setupEventsRail(); await loadVersion().catch(()=>{}); await loadConfig(); await loadSessions(); await loadApprovals(); await loadRunners(); applySessionBootstrapMode(); refreshDashboardMetricsOnStartup(); await loadGlobalEvents(true); loadMcpBuildStatus().catch(()=>{}); await loadBinaryFolderFilters().catch(()=>{}); await loadSourceBinaryArtifacts().catch(()=>{}); updateSourceActions(); }
+async function init(){
+  loadThemeMode();
+  setupTabs();
+  setupEventsRail();
+  await loadVersion().catch(()=>{});
+  const ready = await ensureAuthReady();
+  renderHeaderAuthBox();
+  if (!ready) return;
+  await loadConfig();
+  await loadSessions();
+  await loadApprovals();
+  await loadRunners();
+  applySessionBootstrapMode();
+  refreshDashboardMetricsOnStartup();
+  await loadGlobalEvents(true);
+  loadMcpBuildStatus().catch(()=>{});
+  await loadBinaryFolderFilters().catch(()=>{});
+  await loadSourceBinaryArtifacts().catch(()=>{});
+  updateSourceActions();
+}
 init().catch(e=>paneError('PAC UI could not load', e.message || String(e)));
 
 const openEndpointBtn = document.getElementById('openEndpointModal');

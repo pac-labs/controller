@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field
 
 from pi_agent_platform.core.config import AppConfig, ProviderConfig, AgentProfile, WorkspaceProfile, SourceContextConfig, save_config, load_config, default_config_path, MAIN_PI_DEV_PROFILE, AGENT_CONTROL_WORKSPACE, MODEL_NOT_SELECTED
 from pi_agent_platform.core.platform_home import ensure_pacp_layout, pacp_path
-from pi_agent_platform.core.models import Event, Session, SessionCreate, Task, TaskCreate, TaskStatus, SessionStatus, Runner, RunnerCreateRequest, RunnerRegisterRequest, RunnerHeartbeat, RunnerStatus, RunnerJobCreate, RunnerJob, RunnerJobStatus, RunnerJobUpdate, RunnerJobLog, RunnerExecutionMode
+from pi_agent_platform.core.models import Event, Session, SessionCreate, Task, TaskCreate, TaskStatus, SessionStatus, Runner, RunnerCreateRequest, RunnerRegisterRequest, RunnerHeartbeat, RunnerStatus, RunnerJobCreate, RunnerJob, RunnerJobStatus, RunnerJobUpdate, RunnerJobLog, RunnerExecutionMode, User
 from pi_agent_platform.core.runtime import git_diff, git_status, run_shell_task
 from pi_agent_platform.core.agent_loop import run_agent_loop
 from pi_agent_platform.core.session_commands import list_session_slash_commands, parse_session_slash_command, slash_help_text
@@ -1158,22 +1158,59 @@ class ServiceModeRequest(BaseModel):
     mode: str
 
 
+class CurrentUser:
+    def __init__(self, user: User | None = None, is_admin: bool = False):
+        self.user = user
+        self.is_admin = is_admin
+
+
+def _bearer_token(authorization: str | None) -> str | None:
+    scheme, _, token = str(authorization or '').partition(' ')
+    if scheme.lower() != 'bearer' or not token:
+        return None
+    return token
+
+
 def _admin_auth_valid(authorization: str | None) -> bool:
     if not config.auth.enabled:
         return True
+    token = _bearer_token(authorization)
+    if not token:
+        return False
     if config.auth.mode == 'dev-token':
-        expected = f'Bearer {config.auth.dev_token}'
-        return authorization == expected
+        return token == config.auth.dev_token
+    if config.auth.mode == 'user-password':
+        user = store.get_user_by_token(token)
+        return bool(user and user.role == 'admin')
     return False
 
 
-def require_auth(authorization: str | None = Header(default=None)) -> None:
-    if _admin_auth_valid(authorization):
-        return
-    # OIDC is intentionally a deployment placeholder for now; keep enforcement conservative.
-    if config.auth.enabled and config.auth.mode != 'dev-token':
-        raise HTTPException(status_code=501, detail='OIDC auth mode is configured but not implemented in this starter')
-    raise HTTPException(status_code=401, detail='Missing or invalid bearer token')
+def _get_user_from_auth(authorization: str | None = Header(default=None)) -> CurrentUser:
+    if not config.auth.enabled:
+        return CurrentUser(None, True)
+    token = _bearer_token(authorization)
+    if not token:
+        raise HTTPException(status_code=401, detail='Missing authorization header')
+    if config.auth.mode == 'dev-token':
+        if token == config.auth.dev_token:
+            return CurrentUser(None, True)
+        raise HTTPException(status_code=401, detail='Invalid bearer token')
+    if config.auth.mode == 'user-password':
+        user = store.get_user_by_token(token)
+        if user:
+            return CurrentUser(user, user.role == 'admin')
+        raise HTTPException(status_code=401, detail='Invalid or expired token')
+    raise HTTPException(status_code=501, detail='OIDC auth mode is configured but not implemented in this starter')
+
+
+def require_auth(_auth: CurrentUser = Depends(_get_user_from_auth)) -> CurrentUser:
+    return _auth
+
+
+def require_admin(_auth: CurrentUser = Depends(require_auth)) -> CurrentUser:
+    if not _auth.is_admin:
+        raise HTTPException(status_code=403, detail='Admin required')
+    return _auth
 
 
 def _runner_from_auth_headers(authorization: str | None = None, runner_id: str | None = None, runner_key: str | None = None) -> Runner | None:
@@ -1199,7 +1236,7 @@ def _require_admin_or_runner(
     runner = _runner_from_auth_headers(authorization, runner_id, runner_key)
     if _admin_auth_valid(authorization) or runner is not None:
         return runner
-    require_auth(authorization)
+    _get_user_from_auth(authorization)
     return None
 
 
@@ -1477,6 +1514,148 @@ def get_version() -> dict[str, Any]:
         'ui_build': ui['asset_stamp'],
         'ui_updated_at': ui['updated_at'],
     }
+
+
+def _public_user(user: User) -> dict[str, Any]:
+    return {
+        'id': user.id,
+        'username': user.username,
+        'display_name': user.display_name or user.username,
+        'role': user.role,
+        'created_at': user.created_at.isoformat(),
+        'updated_at': user.updated_at.isoformat(),
+        'metadata': user.metadata or {},
+    }
+
+
+@app.get('/v1/auth/status')
+def auth_status() -> dict[str, Any]:
+    user_count = len(store.list_users())
+    return {
+        'enabled': config.auth.enabled,
+        'mode': config.auth.mode,
+        'needs_setup': config.auth.mode == 'user-password' and user_count == 0,
+        'user_count': user_count,
+        'token_ttl_hours': config.auth.token_ttl_hours,
+    }
+
+
+@app.post('/v1/auth/setup')
+def auth_setup(payload: dict[str, Any]) -> dict[str, Any]:
+    if config.auth.mode != 'user-password':
+        raise HTTPException(status_code=400, detail='User-password auth not enabled')
+    if store.list_users():
+        raise HTTPException(status_code=403, detail='System already has users. Use /v1/auth/login.')
+    username = str(payload.get('username') or '').strip()
+    password = str(payload.get('password') or '')
+    display_name = str(payload.get('display_name') or username).strip() or username
+    if not username or not password:
+        raise HTTPException(status_code=400, detail='username and password required')
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail='Password must be at least 8 characters')
+    user = User(id=username, username=username, display_name=display_name, role='admin')
+    user.set_password(password)
+    store.add_user(user)
+    token = uuid.uuid4().hex + uuid.uuid4().hex
+    expires_at = (datetime.utcnow() + timedelta(hours=max(1, int(config.auth.token_ttl_hours or 720)))).isoformat()
+    store.add_user_token(token, user.id, expires_at)
+    store.add_event(Event(session_id='system', type='initial_setup', message=f'Initial admin user created: {username}', data={'username': username}))
+    return {'ok': True, 'token': token, 'expires_at': expires_at, 'user': _public_user(user)}
+
+
+@app.post('/v1/auth/login')
+def auth_login(payload: dict[str, Any]) -> dict[str, Any]:
+    if config.auth.mode != 'user-password':
+        raise HTTPException(status_code=400, detail='User-password auth not enabled')
+    username = str(payload.get('username') or '').strip()
+    password = str(payload.get('password') or '')
+    if not username or not password:
+        raise HTTPException(status_code=400, detail='username and password required')
+    user = store.get_user_by_username(username)
+    if not user or not user.verify_password(password):
+        raise HTTPException(status_code=401, detail='Invalid credentials')
+    token = uuid.uuid4().hex + uuid.uuid4().hex
+    expires_at = (datetime.utcnow() + timedelta(hours=max(1, int(config.auth.token_ttl_hours or 720)))).isoformat()
+    store.add_user_token(token, user.id, expires_at)
+    store.add_event(Event(session_id='system', type='user_login', message=f'User login: {username}', data={'username': username}))
+    return {'ok': True, 'token': token, 'expires_at': expires_at, 'user': _public_user(user)}
+
+
+@app.get('/v1/auth/me')
+def auth_me(_auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    if not _auth.user:
+        return {'id': 'controller', 'username': 'controller', 'display_name': 'Controller', 'role': 'admin'}
+    return _public_user(_auth.user)
+
+
+@app.get('/v1/users/me')
+def users_me(_auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    return auth_me(_auth)
+
+
+@app.get('/v1/users')
+def list_users(_auth: CurrentUser = Depends(require_auth)) -> list[dict[str, Any]]:
+    return [_public_user(user) for user in store.list_users()]
+
+
+@app.post('/v1/users')
+def create_user(payload: dict[str, Any], _auth: CurrentUser = Depends(require_admin)) -> dict[str, Any]:
+    username = str(payload.get('username') or payload.get('id') or '').strip()
+    password = str(payload.get('password') or '')
+    if not username:
+        raise HTTPException(status_code=400, detail='username required')
+    if not password:
+        raise HTTPException(status_code=400, detail='password required')
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail='Password must be at least 8 characters')
+    if store.get_user_by_username(username):
+        raise HTTPException(status_code=409, detail='User already exists')
+    user = User(
+        id=username,
+        username=username,
+        display_name=str(payload.get('display_name') or username).strip() or username,
+        role=str(payload.get('role') or 'user'),
+        metadata=payload.get('metadata') or {},
+    )
+    user.set_password(password)
+    store.add_user(user)
+    store.add_event(Event(session_id='system', type='user_created', message=f'User created: {username}', data={'username': username}))
+    return {'ok': True, 'user': _public_user(user)}
+
+
+@app.delete('/v1/users/{user_id}')
+def delete_user(user_id: str, _auth: CurrentUser = Depends(require_admin)) -> dict[str, Any]:
+    if not store.delete_user(user_id):
+        raise HTTPException(status_code=404, detail='User not found')
+    store.add_event(Event(session_id='system', type='user_deleted', message=f'User deleted: {user_id}', data={'user_id': user_id}))
+    return {'ok': True}
+
+
+@app.get('/v1/auth/tokens')
+def auth_tokens(_auth: CurrentUser = Depends(require_admin)) -> list[dict[str, Any]]:
+    return store.list_user_tokens()
+
+
+@app.post('/v1/auth/tokens')
+def create_auth_token(payload: dict[str, Any], _auth: CurrentUser = Depends(require_admin)) -> dict[str, Any]:
+    username = str(payload.get('username') or '').strip()
+    ttl_hours = int(payload.get('ttl_hours') or config.auth.token_ttl_hours or 720)
+    if not username:
+        raise HTTPException(status_code=400, detail='username required')
+    user = store.get_user_by_username(username)
+    if not user:
+        raise HTTPException(status_code=404, detail='User not found')
+    token = uuid.uuid4().hex + uuid.uuid4().hex
+    expires_at = (datetime.utcnow() + timedelta(hours=max(1, ttl_hours))).isoformat()
+    store.add_user_token(token, user.id, expires_at)
+    store.add_event(Event(session_id='system', type='token_created', message=f'Token minted for: {username}', data={'username': username, 'created_by': _auth.user.username if _auth.user else 'controller'}))
+    return {'ok': True, 'token': token, 'expires_at': expires_at, 'user': _public_user(user)}
+
+
+@app.delete('/v1/auth/tokens/{token}')
+def revoke_auth_token(token: str, _auth: CurrentUser = Depends(require_admin)) -> dict[str, Any]:
+    store.delete_user_token(token)
+    return {'ok': True}
 
 
 @app.get('/healthz')

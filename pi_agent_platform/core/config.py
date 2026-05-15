@@ -51,8 +51,9 @@ class ServiceConfig(BaseModel):
 
 class AuthConfig(BaseModel):
     enabled: bool = False
-    mode: Literal["dev-token", "oidc-placeholder"] = "dev-token"
+    mode: Literal["dev-token", "user-password", "oidc-placeholder"] = "dev-token"
     dev_token: str = "change-me"
+    token_ttl_hours: int = 720
     oidc_issuer: str | None = None
     oidc_client_id: str | None = None
 

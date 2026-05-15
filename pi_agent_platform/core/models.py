@@ -223,3 +223,44 @@ class RunnerJobUpdate(BaseModel):
 class RunnerJobLog(BaseModel):
     stream: Literal["stdout", "stderr", "system"] = "system"
     message: str
+
+
+class User(BaseModel):
+    id: str
+    username: str
+    password_hash: str | None = None
+    display_name: str | None = None
+    role: Literal["admin", "user", "readonly"] = "user"
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def touch(self) -> None:
+        self.updated_at = now_utc()
+
+    def verify_password(self, password: str) -> bool:
+        import hashlib
+        import secrets
+
+        if not self.password_hash:
+            return False
+        if "::" in self.password_hash:
+            salt_hex, stored_hash_hex = self.password_hash.split("::", 1)
+            salt = bytes.fromhex(salt_hex)
+            computed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 200000).hex()
+            return secrets.compare_digest(computed, stored_hash_hex)
+        if self.password_hash.startswith("pbkdf2:"):
+            parts = self.password_hash.split("$")
+            if len(parts) >= 3:
+                salt, stored_pw = parts[1], parts[2]
+                computed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 310000).hex()
+                return secrets.compare_digest(computed, stored_pw)
+            return False
+        return False
+
+    def set_password(self, password: str) -> None:
+        import hashlib
+        import secrets
+
+        salt = secrets.token_bytes(32)
+        self.password_hash = salt.hex() + "::" + hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 200000).hex()

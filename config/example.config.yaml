@@ -41,6 +41,7 @@ auth:
   enabled: false
   mode: dev-token
   dev_token: change-me
+  token_ttl_hours: 720
 
 providers:
   openai:

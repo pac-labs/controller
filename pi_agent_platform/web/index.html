@@ -32,11 +32,18 @@
         <span class="header-control-label">Theme</span>
         <select id="themeMode" aria-label="Theme mode"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select>
       </label>
-      <label class="header-control-box auth-control-box">
+      <div class="header-control-box auth-control-box">
         <span class="header-control-label">Auth</span>
         <span id="authModeBadge" class="header-control-badge">Open</span>
-        <input id="token" placeholder="Bearer token, optional" />
-      </label>
+        <div class="auth-user-row">
+          <div id="userChip" class="user-chip" hidden>
+            <span id="userChipName"></span>
+            <button id="userChipLogout" class="ghost-button small-ghost" type="button" title="Logout" aria-label="Logout">Log out</button>
+          </div>
+          <button id="loginBtn" class="ghost-button" type="button">Log in</button>
+        </div>
+        <input id="token" class="auth-token-input" placeholder="Bearer token, optional" />
+      </div>
       <button id="refresh">Refresh</button>
     </div>
   </header>
@@ -568,6 +575,21 @@
             <button id="setHostService">Use host service</button>
           </div>
           <pre id="serviceModeResult" class="inline-result compact-result"></pre>
+        </section>
+
+        <section class="card setting-cube compact-setting-card">
+          <h2>Users and auth</h2>
+          <p class="muted">Named PAC users, roles, and bearer-backed session tokens.</p>
+          <div id="authInfo" class="kv compact-kv"></div>
+          <div class="form-grid compact-form">
+            <label>Username <input id="newUsername" placeholder="developer" /></label>
+            <label>Display name <input id="newDisplayName" placeholder="Developer" /></label>
+            <label>Password <input id="newUserPassword" type="password" placeholder="min 8 characters" /></label>
+            <label>Role <select id="newUserRole"><option value="user">user</option><option value="admin">admin</option><option value="readonly">readonly</option></select></label>
+          </div>
+          <div class="button-row"><button id="createUserBtn">Create user</button><button id="refreshUsersBtn" class="ghost-button">Refresh users</button></div>
+          <div id="usersList" class="stacked-output compact-scroll-output"><div class="muted small-text">No users loaded.</div></div>
+          <pre id="usersResult" class="inline-result compact-result"></pre>
         </section>
 
         <section class="card setting-cube compact-setting-card">

@@ -6,7 +6,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Iterable
 
-from .models import Event, Session, Task, Runner, RunnerJob, RunnerJobStatus
+from .models import Event, Session, Task, Runner, RunnerJob, RunnerJobStatus, User, now_utc
 from .platform_home import pacp_path
 
 
@@ -33,6 +33,9 @@ class SQLiteStore:
             conn.execute('create table if not exists runner_jobs (id text primary key, runner_id text not null, status text not null, payload text not null, updated_at text not null)')
             conn.execute('create index if not exists idx_runner_jobs_runner_status on runner_jobs(runner_id, status, updated_at)')
             conn.execute('create index if not exists idx_events_session_created on events(session_id, created_at)')
+            conn.execute('create table if not exists users (id text primary key, payload text not null, updated_at text not null)')
+            conn.execute('create table if not exists user_tokens (token text primary key, user_id text not null, expires_at text not null, created_at text not null)')
+            conn.execute('create index if not exists idx_user_tokens_user on user_tokens(user_id, expires_at)')
 
     def add_session(self, session: Session) -> Session:
         session.touch()
@@ -161,10 +164,75 @@ class SQLiteStore:
                 return None
             job = RunnerJob.model_validate_json(row['payload'])
             job.status = RunnerJobStatus.claimed
-            job.claimed_at = __import__('pi_agent_platform.core.models', fromlist=['now_utc']).now_utc()
+            job.claimed_at = now_utc()
             job.touch()
             conn.execute('update runner_jobs set status = ?, payload = ?, updated_at = ? where id = ?', (job.status.value, job.model_dump_json(), job.updated_at.isoformat(), job.id))
             return job
+
+    def add_user(self, user: User) -> User:
+        user.touch()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'insert or replace into users(id, payload, updated_at) values (?, ?, ?)',
+                (user.id, user.model_dump_json(), user.updated_at.isoformat()),
+            )
+        return user
+
+    def get_user(self, user_id: str) -> User | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from users where id = ?', (user_id,)).fetchone()
+        return User.model_validate_json(row['payload']) if row else None
+
+    def get_user_by_username(self, username: str) -> User | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from users where id = ?', (username,)).fetchone()
+        return User.model_validate_json(row['payload']) if row else None
+
+    def list_users(self) -> list[User]:
+        with self._connect() as conn:
+            rows = conn.execute('select payload from users order by updated_at desc').fetchall()
+        return [User.model_validate_json(r['payload']) for r in rows]
+
+    def delete_user(self, user_id: str) -> bool:
+        with self._lock, self._connect() as conn:
+            conn.execute('delete from user_tokens where user_id = ?', (user_id,))
+            cur = conn.execute('delete from users where id = ?', (user_id,))
+        return cur.rowcount > 0
+
+    def add_user_token(self, token: str, user_id: str, expires_at: str) -> None:
+        now = now_utc()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'insert or replace into user_tokens(token, user_id, expires_at, created_at) values (?, ?, ?, ?)',
+                (token, user_id, expires_at, now.isoformat()),
+            )
+
+    def get_user_by_token(self, token: str) -> User | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                'select user_id, expires_at from user_tokens where token = ?',
+                (token,),
+            ).fetchone()
+        if not row:
+            return None
+        if row['expires_at'] < now_utc().isoformat():
+            return None
+        return self.get_user(row['user_id'])
+
+    def list_user_tokens(self) -> list[dict[str, str]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                'select ut.token, ut.user_id, u.payload as user_payload, ut.expires_at from user_tokens ut join users u on ut.user_id = u.id order by ut.expires_at asc'
+            ).fetchall()
+        items: list[dict[str, str]] = []
+        for row in rows:
+            user = User.model_validate_json(row['user_payload'])
+            items.append({'token': row['token'], 'user_id': row['user_id'], 'username': user.username, 'expires_at': row['expires_at']})
+        return items
+
+    def delete_user_token(self, token: str) -> None:
+        with self._lock, self._connect() as conn:
+            conn.execute('delete from user_tokens where token = ?', (token,))
 
 
 store = SQLiteStore()
