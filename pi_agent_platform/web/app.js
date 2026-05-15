@@ -327,7 +327,7 @@ function renderTimelineBlock(card, event, block) {
 function sessionEventRole(event) {
   const t = String(event?.type || '').toLowerCase();
   if (t.includes('user_message') || t === 'user') return 'user';
-  if (t.includes('result') || t.includes('assistant_message')) return 'assistant';
+  if (t.includes('result') || t.includes('assistant_message') || t === 'final') return 'assistant';
   if (t.includes('task_queued') || t.includes('prompt')) return 'user';
   if (t.includes('failed') || t.includes('error') || t.includes('stderr') || t.includes('rejected')) return 'error';
   if (t.includes('tool') || t.includes('command') || t.includes('runner') || t.includes('stdout')) return 'tool';
@@ -337,7 +337,7 @@ function sessionEventRole(event) {
 function isInternalSessionEvent(event) {
   const t = String(event?.type || '').toLowerCase();
   if (t.includes('user_message')) return false;
-  if (t.includes('result') || t.includes('assistant_message')) return false;
+  if (t.includes('result') || t.includes('assistant_message') || t === 'final') return false;
   return t.includes('tool') || t.includes('command') || t.includes('runner') ||
     t.includes('stdout') || t.includes('stderr') || t.includes('approval') ||
     t.includes('thinking') || t.includes('intent') || t.includes('routing') || t.includes('task_queued') || t.includes('task_started') ||
@@ -853,8 +853,8 @@ function renderSessionTimelineEvent(event) {
   if (event.id) sessionEventSeen.add(event.id);
   if (event.id) sessionLatestEventId = event.id;
   const messageKey = `${event.type || ''}:${event.task_id || ''}:${event.message || ''}`;
-  if ((event.type === 'user_message' || event.type === 'result' || event.type === 'assistant_message') && sessionMessageSeen.has(messageKey)) return;
-  if (event.type === 'user_message' || event.type === 'result' || event.type === 'assistant_message') sessionMessageSeen.add(messageKey);
+  if ((event.type === 'user_message' || event.type === 'result' || event.type === 'assistant_message' || event.type === 'final') && sessionMessageSeen.has(messageKey)) return;
+  if (event.type === 'user_message' || event.type === 'result' || event.type === 'assistant_message' || event.type === 'final') sessionMessageSeen.add(messageKey);
   const typeLower = String(event.type || '').toLowerCase();
   if (typeLower.includes('task_completed') || typeLower.includes('task_failed') || typeLower.includes('result')) removePendingRow(event.task_id);
   if (typeLower.includes('task_approved') || typeLower.includes('task_rejected') || typeLower.includes('task_completed') || typeLower.includes('task_failed') || typeLower.includes('result')) removeSessionApprovalRow(event.task_id);
@@ -863,7 +863,7 @@ function renderSessionTimelineEvent(event) {
   const block = normalizeTimelineBlock(event);
   const role = sessionEventRole(event);
   const internal = isInternalSessionEvent(event);
-  if (internal) {
+  if (internal || typeLower === 'final') {
     const group = ensureSessionThinkingGroup(event);
     group.events.push({event, block});
     group.lastEvent = event;
@@ -3669,7 +3669,7 @@ async function selectSession(id) {
     startSessionPolling(id);
   };
   source.onmessage = e => { try { appendEvent('message', JSON.parse(e.data)); } catch { appendEvent('message', e.data); } };
-  ['user_message','agent_routing','agent_intent','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','full_control_enabled','subagent_started'].forEach(t => source.addEventListener(t, e => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
+  ['user_message','agent_routing','agent_intent','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','final','full_control_enabled','subagent_started'].forEach(t => source.addEventListener(t, e => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
   stopSessionPolling();
   await refreshSessionRunButton().catch(()=>{});
 }
