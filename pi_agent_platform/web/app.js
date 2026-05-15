@@ -447,6 +447,46 @@ function thinkingGroupNeedsApproval(group) {
   const event = group?.lastEvent;
   return !!event && String(event.type || '').toLowerCase().includes('approval_required');
 }
+function deriveThinkingPlanSteps(group) {
+  const rows = Array.isArray(group?.events) ? group.events : [];
+  const relevant = rows.filter((item) => {
+    const t = String(item?.event?.type || '').toLowerCase();
+    return t.includes('agent_intent') || t.includes('tool_call') || t.includes('approval_required') || t.includes('task_completed') || t.includes('task_failed');
+  });
+  const steps = [];
+  for (const item of relevant) {
+    const event = item?.event || {};
+    const data = event.data && typeof event.data === 'object' ? event.data : {};
+    const type = String(event.type || '').toLowerCase();
+    let label = '';
+    let status = 'done';
+    if (type.includes('approval_required')) {
+      label = sessionThinkingSummary(event, item?.block);
+      status = 'attention';
+    } else if (type.includes('tool_call')) {
+      label = data.tool ? `Run ${data.tool}` : (event.message || 'Run tool');
+    } else if (type.includes('agent_intent')) {
+      label = event.message || 'Interpret task';
+      status = 'running';
+    } else if (type.includes('task_failed')) {
+      label = event.message || 'Task failed';
+      status = 'failed';
+    } else if (type.includes('task_completed')) {
+      label = 'Complete response';
+    }
+    label = String(label || '').trim();
+    if (!label) continue;
+    const previous = steps[steps.length - 1];
+    if (previous && previous.label === label && previous.status === status) continue;
+    steps.push({label, status, time: event.created_at || ''});
+  }
+  if (!steps.length && group?.summary) steps.push({label: group.summary, status: group.closed ? 'done' : 'running', time: ''});
+  if (steps.length) {
+    const last = steps[steps.length - 1];
+    if (!group?.closed && last.status === 'done') last.status = thinkingGroupNeedsApproval(group) ? 'attention' : 'running';
+  }
+  return steps.slice(-6);
+}
 async function resolveSessionApproval(taskId, approved) {
   if (!taskId) return;
   if (approved) await api(`/v1/tasks/${taskId}/approve`, {method:'POST'});
@@ -465,6 +505,7 @@ function updateSessionThinkingRow(group) {
   const toolCount = thinkingGroupToolCount(group);
   const approvalPending = thinkingGroupNeedsApproval(group);
   const taskId = event?.task_id || group.taskId || '';
+  const planSteps = deriveThinkingPlanSteps(group);
   group.row.className = `thought-card${group.closed ? ' complete' : ' live'}${approvalPending ? ' needs-approval' : ''}`;
   group.row.innerHTML = '';
   const main = document.createElement('button');
@@ -481,6 +522,20 @@ function updateSessionThinkingRow(group) {
   main.onclick = () => openSessionThinkingModal(group);
   main.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') openSessionThinkingModal(group); };
   group.row.appendChild(main);
+  if (planSteps.length) {
+    const plan = document.createElement('details');
+    plan.className = 'thought-plan';
+    if (!group.closed || approvalPending) plan.open = true;
+    plan.innerHTML = `
+      <summary class="thought-plan-summary">
+        <span class="thought-plan-title">Plan</span>
+        <span class="thought-plan-count">${planSteps.length} ${planSteps.length === 1 ? 'task' : 'tasks'}</span>
+      </summary>
+      <div class="thought-plan-list">
+        ${planSteps.map((step, index) => `<div class="thought-plan-item ${escapeHtml(step.status)}"><span class="thought-plan-bullet">${index + 1}</span><span class="thought-plan-label">${escapeHtml(step.label)}</span><span class="thought-plan-state">${escapeHtml(step.status === 'running' ? 'Active' : step.status === 'attention' ? 'Needs approval' : step.status === 'failed' ? 'Failed' : 'Done')}</span></div>`).join('')}
+      </div>`;
+    group.row.appendChild(plan);
+  }
   if (approvalPending && taskId) {
     const actions = document.createElement('div');
     actions.className = 'thought-actions';
