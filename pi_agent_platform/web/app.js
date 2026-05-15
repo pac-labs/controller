@@ -772,6 +772,11 @@ function modelAvailability(name) {
   return {ok:true, reason:'available'};
 }
 
+function providerIsSessionCapable(provider) {
+  const type = String(provider?.type || '');
+  return ['openai','openai-codex','openai-compatible','lmstudio','vllm','groq','openrouter','deepseek','mistral','ollama'].includes(type);
+}
+
 function csv(value) { return (value || '').split(',').map(x => x.trim()).filter(Boolean); }
 function modelSummaryLine(model) {
   const bits = [];
@@ -783,6 +788,9 @@ function modelSummaryLine(model) {
 async function fetchProviderModels(name) {
   try { return await api(`/v1/providers/${name}/models`); }
   catch (e) { return {ok:false, error:e.message, models:[]}; }
+}
+function configuredModelMatchesProviderModel(providerName, modelId) {
+  return Object.entries(config.models || {}).some(([name, item]) => name === modelId || (item.provider === providerName && String(item.model || '') === String(modelId || '')));
 }
 function providerStatus(p) {
   if (p.enabled === false) return 'disabled';
@@ -903,7 +911,12 @@ function fillProviderRuntimeFields(runtime={}) {
 function renderProviders() {
   const el = document.getElementById('providers'); if (!el) return; el.innerHTML = '';
   const entries = Object.entries(config.providers || {});
-  if (!entries.length) { el.innerHTML = '<div class="empty-events">No providers configured yet.</div>'; return; }
+  if (!entries.length) {
+    el.innerHTML = '<div class="empty-events">No providers configured yet.</div>';
+    const live = document.getElementById('providersLive');
+    if (live) live.innerHTML = '<div class="muted small-text">No providers configured.</div>';
+    return;
+  }
   for (const [name,p] of entries) {
     const status = providerStatus(p);
     const r = providerRuntime(p);
@@ -939,6 +952,7 @@ function renderProviders() {
     actions.appendChild(label); actions.appendChild(edit); actions.appendChild(del); card.appendChild(actions); el.appendChild(card);
     if (p.enabled !== false) refreshProviderModelPreview(name).catch(()=>{});
   }
+  renderProvidersLivePanel().catch(()=>{});
 }
 async function refreshProviderModelPreview(name) {
   const target = document.getElementById(`providerModels_${name}`);
@@ -1010,6 +1024,315 @@ async function renderLiveModels() {
       setModalStatus('modelModalStatus', 'Review and save this model.');
     };
   });
+}
+function providerLabel(providerName) {
+  const provider = config.providers?.[providerName];
+  return provider ? `${providerName} (${provider.type || 'provider'})` : providerName;
+}
+function providerModelKey(providerName, modelId) {
+  return `${providerName}-${String(modelId || '').replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase()}`.replace(/^-+|-+$/g,'');
+}
+function openModelDraft(providerName, modelId) {
+  openModelModal();
+  modelProvider.value = providerName;
+  modelId.value = modelId;
+  modelName.value = providerModelKey(providerName, modelId) || String(modelId || '').replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase();
+  modelRunsOn.value = '';
+  setModalStatus('modelModalStatus', 'Review and save this model.');
+}
+function groupedSessionsBy(field) {
+  const rows = new Map();
+  for (const session of (window.__pacSessions || [])) {
+    const key = String(session?.[field] || session?.metadata?.[field] || '').trim() || '(none)';
+    const current = rows.get(key) || {count:0, running:0, failed:0, items:[]};
+    current.count += 1;
+    if (session.status === 'running') current.running += 1;
+    if (session.status === 'failed') current.failed += 1;
+    current.items.push(session);
+    rows.set(key, current);
+  }
+  return rows;
+}
+async function inspectLmStudioModelByName(name) {
+  const r = await api(`/v1/models/${encodeURIComponent(name)}/lmstudio/inspect`);
+  showInline('modelFormResult', {model:name, lmstudio:r});
+  return r;
+}
+async function unloadLmStudioModelByName(name) {
+  const model = config.models?.[name];
+  if (!model) throw new Error('Model not found');
+  const instanceId = prompt('Instance id / loaded model id to unload', model.model || name);
+  if (!instanceId) return null;
+  const r = await api(`/v1/models/${encodeURIComponent(name)}/lmstudio/unload`, {method:'POST', body:JSON.stringify({instance_id: instanceId})});
+  showInline('modelFormResult', {model:name, lmstudio_unload:r});
+  await loadGlobalEvents(true).catch(()=>{});
+  return r;
+}
+function recommendationCardHtml(level, title, body, detail = '') {
+  return `<article class="recommendation-card ${escapeHtml(level)}"><h4>${escapeHtml(title)}</h4><p>${escapeHtml(body)}</p>${detail ? `<div class="muted small-text">${escapeHtml(detail)}</div>` : ''}</article>`;
+}
+async function renderUnconfiguredModelsPanelFromLive() {
+  const target = document.getElementById('unconfiguredModelsList');
+  if (!target) return;
+  const providerEntries = Object.entries(config.providers || {}).filter(([_, provider]) => provider.enabled !== false);
+  if (!providerEntries.length) {
+    target.innerHTML = '<div class="muted">No enabled providers available.</div>';
+    return;
+  }
+  target.innerHTML = '<div class="muted small-text">Checking live providers...</div>';
+  const cards = [];
+  for (const [providerName, provider] of providerEntries) {
+    const result = await fetchProviderModels(providerName);
+    if (!result.ok) continue;
+    const rows = (result.models || []).filter(model => !configuredModelMatchesProviderModel(providerName, model.id || model.name || model.model));
+    if (!rows.length) continue;
+    const items = rows.map(model => {
+      const modelId = model.id || model.name || model.model || 'unknown';
+      const draftKey = providerModelKey(providerName, modelId);
+      const summary = modelSummaryLine(model) || 'live provider model';
+      return `<div class="inline-browser-row">
+        <div><b>${escapeHtml(modelId)}</b><div class="muted small-text">${escapeHtml(summary)}</div></div>
+        <div class="button-row inline-browser-group">
+          <button class="ghost-button mini-button" data-open-live-model="${escapeHtml(providerName)}::${escapeHtml(modelId)}">Configure</button>
+          <button class="mini-button" data-seed-live-model="${escapeHtml(providerName)}::${escapeHtml(modelId)}">${escapeHtml(draftKey)}</button>
+        </div>
+      </div>`;
+    }).join('');
+    cards.push(`<section class="remote-provider"><div class="provider-card-head"><div><b>${escapeHtml(providerLabel(providerName))}</b><div class="muted small-text">${rows.length} unconfigured model(s)</div></div><span class="pill ${providerIsSessionCapable(provider) ? 'ok-pill' : 'warn-pill'}">${providerIsSessionCapable(provider) ? 'session-ready' : 'limited'}</span></div>${items}</section>`);
+  }
+  target.innerHTML = cards.join('') || '<div class="muted">All provider models are already configured in PAC.</div>';
+  target.querySelectorAll('[data-open-live-model]').forEach(btn => {
+    btn.onclick = () => {
+      const [providerName, modelId] = String(btn.dataset.openLiveModel || '').split('::');
+      openModelDraft(providerName, modelId);
+    };
+  });
+  target.querySelectorAll('[data-seed-live-model]').forEach(btn => {
+    btn.onclick = () => {
+      const [providerName, modelId] = String(btn.dataset.seedLiveModel || '').split('::');
+      openModelDraft(providerName, modelId);
+      modelName.focus();
+      modelName.select();
+    };
+  });
+}
+function renderModelRecommendations() {
+  const panel = document.getElementById('modelsRecommendationsPanel');
+  const body = document.getElementById('modelsRecommendationsBody');
+  if (!panel || !body) return;
+  const recommendations = [];
+  const models = Object.entries(config.models || {});
+  const endpoints = window.__pacEndpoints || [];
+  const sessions = window.__pacSessions || [];
+  if (!models.length) {
+    const enabledProviders = Object.entries(config.providers || {}).filter(([_, provider]) => provider.enabled !== false);
+    if (enabledProviders.length) recommendations.push(recommendationCardHtml('info', 'No configured session models', 'Create at least one model from the live provider inventory so profiles and sessions can use it.', 'Use Browse providers or Marketplace from the Models area.'));
+  }
+  for (const [name, model] of models) {
+    const availability = modelAvailability(name);
+    const provider = config.providers?.[model.provider || ''];
+    const endpoint = endpoints.find(item => item.id === model.runs_on);
+    const sessionCount = sessions.filter(item => item.model === name).length;
+    if (!availability.ok) recommendations.push(recommendationCardHtml('warn', `${name} is not currently available`, availability.reason || 'The provider is not returning this model.', `${providerLabel(model.provider || '-')}${sessionCount ? ` - ${sessionCount} session(s) reference it` : ''}`));
+    if (provider?.type === 'lmstudio') {
+      const runtime = model.extra?.lmstudio_runtime || {};
+      if (!model.runs_on && endpoints.length > 1) recommendations.push(recommendationCardHtml('info', `Pin ${name} to an endpoint`, 'This LM Studio model is not pinned to a runtime endpoint, so PAC cannot make placement decisions consistently.', 'Select an execution endpoint in the model configuration.'));
+      if (!runtime.gpu_offload && (endpoint?.capabilities?.gpu?.available || endpoint?.capabilities?.gpu?.devices?.length)) recommendations.push(recommendationCardHtml('info', `Tune ${name} for GPU use`, 'A GPU-capable endpoint is available, but the LM Studio runtime fields are still mostly default.', 'Review GPU offload, context, and batch sizing in the model form.'));
+      if (runtime.context_length && model.context_window && Number(runtime.context_length) < Number(model.context_window)) recommendations.push(recommendationCardHtml('warn', `LM Studio load window is shorter for ${name}`, 'PAC is configured to expect a larger context window than the LM Studio runtime will load.', 'Raise the runtime context length or lower the configured model context to keep behavior consistent.'));
+      if (!runtime.context_length && model.context_window) recommendations.push(recommendationCardHtml('info', `Set an explicit LM Studio load window for ${name}`, 'The model has a configured PAC context window, but the LM Studio load runtime still relies on implicit defaults.', 'Set the runtime context length so load behavior is predictable.'));
+    }
+    if (model.context_window && Number(model.context_window) >= 64000 && !model.runs_on && endpoints.length) recommendations.push(recommendationCardHtml('info', `Review placement for ${name}`, 'This model is configured with a large context window and should usually be tied to a known-capacity endpoint.', 'Pinning prevents weak endpoints from being chosen implicitly.'));
+  }
+  const liveProviderModels = Object.entries(config.providers || {}).reduce((count, [providerName, provider]) => count + ((provider.cached_models || []).filter(model => !configuredModelMatchesProviderModel(providerName, model.id || model.name || model.model)).length), 0);
+  if (liveProviderModels > 0) recommendations.push(recommendationCardHtml('info', 'Additional provider models are available', `${liveProviderModels} live model(s) are visible from connected providers but not configured in PAC yet.`, 'Browse providers to promote them into session models.'));
+  body.innerHTML = recommendations.join('') || '<div class="muted small-text">No adaptation recommendations right now.</div>';
+  panel.hidden = false;
+}
+function renderModelActiveSessionsPanel() {
+  const target = document.getElementById('modelsActiveSessions');
+  if (!target) return;
+  const grouped = groupedSessionsBy('model');
+  if (!grouped.size) {
+    target.innerHTML = '<div class="muted small-text">No active or historical sessions yet.</div>';
+    return;
+  }
+  target.innerHTML = Array.from(grouped.entries()).sort((a,b) => b[1].count - a[1].count).map(([name, info]) => `<div class="inline-browser-row"><div><b>${escapeHtml(name)}</b><div class="muted small-text">${info.running} running - ${info.failed} failed</div></div><span class="pill">${info.count} session(s)</span></div>`).join('');
+}
+async function renderProvidersLivePanel() {
+  const target = document.getElementById('providersLive');
+  if (!target) return;
+  const providers = Object.entries(config.providers || {});
+  if (!providers.length) {
+    target.innerHTML = '<div class="muted small-text">No providers configured.</div>';
+    return;
+  }
+  const sections = [];
+  for (const [name, provider] of providers) {
+    const result = await fetchProviderModels(name);
+    const models = result.ok ? (result.models || []) : [];
+    const summary = models.length ? models.slice(0, 4).map(model => model.id || model.name || model.model).join(', ') : (result.ok ? 'No models returned' : (result.error || 'Model listing failed'));
+    sections.push(`<div class="inline-browser-row"><div><b>${escapeHtml(providerLabel(name))}</b><div class="muted small-text">${escapeHtml(summary)}</div></div><span class="pill ${result.ok ? 'ok-pill' : 'warn-pill'}">${result.ok ? `${models.length} live` : 'error'}</span></div>`);
+  }
+  target.innerHTML = sections.join('');
+}
+function renderProfileUsagePanel() {
+  const target = document.getElementById('profilesUsage');
+  if (!target) return;
+  const grouped = groupedSessionsBy('agent_profile');
+  const profiles = Object.entries(config.agent_profiles || {});
+  if (!profiles.length) {
+    target.innerHTML = '<div class="muted small-text">No profiles configured.</div>';
+    return;
+  }
+  target.innerHTML = profiles.map(([name, profile]) => {
+    const usage = grouped.get(name) || {count:0, running:0, failed:0};
+    return `<div class="inline-browser-row"><div><b>${escapeHtml(name)}</b><div class="muted small-text">${escapeHtml(profile.model || '-')} - ${escapeHtml(profile.permission_profile || '-')}</div></div><span class="pill">${usage.count} session(s)</span></div>`;
+  }).join('');
+}
+function renderWorkspaceActivityPanel() {
+  const target = document.getElementById('workspacesActive');
+  if (!target) return;
+  const sessions = window.__pacSessions || [];
+  const workspaces = Object.entries(config.workspaces || {});
+  if (!workspaces.length) {
+    target.innerHTML = '<div class="muted small-text">No workspaces configured.</div>';
+    return;
+  }
+  target.innerHTML = workspaces.map(([name, workspace]) => {
+    const count = sessions.filter(session => {
+      const path = String(session.workspace_path || '');
+      return path === String(workspace.path || '') || path.includes(name);
+    }).length;
+    const placement = workspace.endpoint_id || workspace.endpoint_selector || 'runtime';
+    return `<div class="inline-browser-row"><div><b>${escapeHtml(name)}</b><div class="muted small-text">${escapeHtml(workspace.type || 'local')} - ${escapeHtml(placement)}</div></div><span class="pill">${count} session(s)</span></div>`;
+  }).join('');
+}
+function renderModels() {
+  const el = document.getElementById('models');
+  if (!el) return;
+  const models = Object.entries(config.models || {});
+  if (!models.length) {
+    el.innerHTML = '<div class="muted">No configured models yet. Add one from Marketplace or Browse providers.</div>';
+  } else {
+    el.innerHTML = '';
+    for (const [name, model] of models) {
+      const availability = modelAvailability(name);
+      const provider = config.providers?.[model.provider || ''];
+      const card = document.createElement('article');
+      card.className = 'model-card clickable-row';
+      const runtime = model.extra?.lmstudio_runtime || {};
+      card.innerHTML = `<div class="provider-card-head"><div class="provider-title-block"><h3>${escapeHtml(name)}</h3><span class="muted">${escapeHtml(providerLabel(model.provider || '-'))}</span></div><span class="pill ${availability.ok ? 'ok-pill' : 'warn-pill'}">${escapeHtml(availability.ok ? 'available' : 'attention')}</span></div>
+        <div class="workspace-card-grid">
+          <div><small>model id</small><b>${escapeHtml(model.model || '-')}</b></div>
+          <div><small>endpoint</small><b>${escapeHtml(endpointName(model.runs_on))}</b></div>
+          <div><small>context</small><b>${escapeHtml(model.context_window || '-')}</b></div>
+          <div><small>max output</small><b>${escapeHtml(model.max_output_tokens || '-')}</b></div>
+        </div>
+        <div class="muted small-text">${escapeHtml(availability.ok ? 'Configured and visible to PAC.' : `Issue: ${availability.reason}`)}</div>
+        ${provider?.type === 'lmstudio' ? `<div class="muted small-text">LM Studio runtime: ctx ${escapeHtml(runtime.context_length || model.context_window || '-')}, gpu offload ${escapeHtml(runtime.gpu_offload || 'default')}, batch ${escapeHtml(runtime.batch_size || 'default')}</div>` : ''}`;
+      card.onclick = () => openModelModal(name);
+      const actions = document.createElement('div');
+      actions.className = 'button-row';
+      const edit = document.createElement('button');
+      edit.textContent = 'Edit';
+      edit.onclick = ev => { ev.stopPropagation(); openModelModal(name); };
+      const test = document.createElement('button');
+      test.textContent = 'Test model';
+      test.className = 'ghost-button';
+      test.onclick = async ev => { ev.stopPropagation(); const r = await api(`/v1/models/${name}/test`, {method:'POST'}); showInline('modelFormResult', {model:name, ...r}); };
+      actions.appendChild(edit);
+      actions.appendChild(test);
+      if (provider?.type === 'lmstudio') {
+        const inspect = document.createElement('button');
+        inspect.textContent = 'Inspect';
+        inspect.className = 'ghost-button mini-button';
+        inspect.onclick = ev => { ev.stopPropagation(); inspectLmStudioModelByName(name).catch(e => alert(e.message)); };
+        const load = document.createElement('button');
+        load.textContent = 'Load';
+        load.className = 'ghost-button mini-button';
+        load.onclick = ev => { ev.stopPropagation(); loadLmStudioModelByName(name).catch(e => alert(e.message)); };
+        const unload = document.createElement('button');
+        unload.textContent = 'Unload';
+        unload.className = 'ghost-button mini-button';
+        unload.onclick = ev => { ev.stopPropagation(); unloadLmStudioModelByName(name).catch(e => alert(e.message)); };
+        actions.appendChild(inspect);
+        actions.appendChild(load);
+        actions.appendChild(unload);
+      }
+      card.appendChild(actions);
+      el.appendChild(card);
+    }
+  }
+  renderModelRecommendations();
+  renderModelActiveSessionsPanel();
+  renderLiveModels().catch(()=>{});
+  renderUnconfiguredModelsPanelFromLive().catch(()=>{});
+}
+async function renderLiveModels() {
+  const live = document.getElementById('modelsLive');
+  if (!live) return;
+  const providers = Object.keys(config.providers || {});
+  if (!providers.length) { live.textContent = 'No providers configured.'; return; }
+  const chunks = [];
+  for (const name of providers) {
+    const result = await fetchProviderModels(name);
+    if (!result.ok) {
+      chunks.push(`<div class="remote-provider failed"><b>${escapeHtml(name)}</b><br><span>${escapeHtml(result.error || result.response?.error || 'model listing failed')}</span></div>`);
+      continue;
+    }
+    const models = result.models || [];
+    const rows = models.map(model => {
+      const id = model.id || model.name;
+      const key = providerModelKey(name, id);
+      const configured = !!config.models?.[key] || Object.values(config.models || {}).some(item => item.provider === name && (item.model || '') === id);
+      return `<li><button class="link-button" data-provider="${escapeHtml(name)}" data-model="${escapeHtml(id)}" data-key="${escapeHtml(key)}">${escapeHtml(id)}</button><button class="ghost-button mini-button" data-add-live-model="1" data-provider="${escapeHtml(name)}" data-model="${escapeHtml(id)}" data-key="${escapeHtml(key)}">${configured ? 'Edit' : 'Configure'}</button><span class="muted">${escapeHtml(modelSummaryLine(model))}</span></li>`;
+    }).join('');
+    chunks.push(`<div class="remote-provider"><b>${escapeHtml(name)}</b> <span class="pill ${models.length ? 'ok' : ''}">${models.length} models</span><ul>${rows || '<li class="muted">No models returned</li>'}</ul></div>`);
+  }
+  live.innerHTML = chunks.join('');
+  live.querySelectorAll('button[data-model]').forEach(btn => {
+    btn.onclick = () => openModelDraft(btn.dataset.provider, btn.dataset.model);
+  });
+  live.querySelectorAll('button[data-add-live-model]').forEach(btn => {
+    btn.onclick = async () => openModelDraft(btn.dataset.provider, btn.dataset.model);
+  });
+}
+function renderWorkspaces() {
+  const el = document.getElementById('workspaces');
+  if (!el) return;
+  el.innerHTML = '';
+  for (const [name,w] of Object.entries(config.workspaces || {})) {
+    const lifecycle = w.ephemeral ? `ephemeral${w.ttl_hours ? `, ${w.ttl_hours}h TTL` : ''}` : 'persistent';
+    const placement = w.endpoint_id || w.endpoint_selector || 'select at runtime';
+    const data = w.data_bundle_url || w.data_bundle_path || 'none';
+    const row = document.createElement('div');
+    row.className = 'workspace-card clickable-row';
+    row.innerHTML = `<div class="workspace-card-title"><b>${escapeHtml(name)}</b><span>${escapeHtml(lifecycle)}</span></div>
+      <div class="workspace-card-grid">
+        <div><small>type</small><b>${escapeHtml(w.type || 'local')}</b></div>
+        <div><small>runtime</small><b>${escapeHtml(w.runtime || 'any')}</b></div>
+        <div><small>placement</small><b>${escapeHtml(placement)}</b></div>
+        <div><small>profile</small><b>${escapeHtml(w.default_agent_profile || '-')}</b></div>
+      </div>
+      <code>${escapeHtml(w.description || '')}${w.description ? '\n' : ''}path: ${escapeHtml(w.path || '-')}\nurl: ${escapeHtml(w.url || '-')}\nbranch: ${escapeHtml(w.branch || '-')}\ncontainer: ${escapeHtml(w.container_image || '-')}\ndata zip: ${escapeHtml(data)}\ndata path: ${escapeHtml(w.data_mount_path || '-')}\ndefault: ${w.is_default ? 'yes' : 'no'}</code>`;
+    row.onclick = () => fillWorkspaceForm(name);
+    el.appendChild(row);
+  }
+  renderWorkspaceActivityPanel();
+}
+function renderProfiles() {
+  const el = document.getElementById('profiles');
+  el.innerHTML = '';
+  for (const [name,p] of Object.entries(config.agent_profiles || {})) {
+    const av = p.model ? modelAvailability(p.model) : {ok:false, reason:'no model'};
+    const valid = av.ok;
+    const row = document.createElement('div');
+    row.className = 'model-card clickable-row';
+    row.innerHTML = `<code>${name} ${valid ? '' : '[not selectable]'}\nmodel: ${p.model}\ncontext: ${p.context_profile || p.context_mode}\npermissions: ${p.permission_profile}\ntools: ${(p.tools||[]).join(', ')}${valid ? '' : `\nreason: ${av.reason}`}</code>`;
+    row.onclick = () => fillProfileForm(name);
+    el.appendChild(row);
+  }
+  renderProfileUsagePanel();
 }
 function selectedToolNames() {
   const sel = document.getElementById('profileTools');
@@ -2359,6 +2682,9 @@ async function loadRunners() {
     card.appendChild(actions);
     el.appendChild(card);
   });
+  renderModelRecommendations();
+  renderWorkspaceActivityPanel();
+  renderProvidersLivePanel().catch(()=>{});
 }
 
 
@@ -2689,6 +3015,7 @@ async function loadConfig() {
 }
 async function loadSessions() {
   const sessions = await api('/v1/sessions');
+  window.__pacSessions = sessions;
   const dashboard = document.getElementById('sessions');
   const picker = document.getElementById('sessionTopSelect');
   if (dashboard) dashboard.innerHTML = '';
@@ -2696,6 +3023,9 @@ async function loadSessions() {
   if (!sessions.length) {
     if (dashboard) dashboard.innerHTML = '<div class="muted">No sessions yet. Create one from the Sessions page.</div>';
     if (picker) picker.innerHTML = '<option value="">No sessions yet</option>';
+    renderModelActiveSessionsPanel();
+    renderProfileUsagePanel();
+    renderWorkspaceActivityPanel();
     return;
   }
   sessions.slice().reverse().forEach(s => {
@@ -2711,6 +3041,9 @@ async function loadSessions() {
     }
   });
   if (picker && selectedSession?.id) picker.value = selectedSession.id;
+  renderModelActiveSessionsPanel();
+  renderProfileUsagePanel();
+  renderWorkspaceActivityPanel();
 }
 async function selectSession(id) {
   selectedSession = await api(`/v1/sessions/${id}`);
@@ -3240,6 +3573,17 @@ const openModelBtn = document.getElementById('openModelModal');
 if (openModelBtn) openModelBtn.onclick = () => openModelModal();
 const closeModelBtn = document.getElementById('closeModelModal');
 if (closeModelBtn) closeModelBtn.onclick = closeModelModal;
+const showUnconfigModelsBtn = document.getElementById('showUnconfigModels');
+if (showUnconfigModelsBtn) showUnconfigModelsBtn.onclick = async () => {
+  const panel = document.getElementById('unconfiguredModelsPanel');
+  if (panel) panel.hidden = false;
+  await renderUnconfiguredModelsPanelFromLive().catch(e => paneError('Provider inventory could not load', e.message));
+};
+const closeUnconfigModelsBtn = document.getElementById('closeUnconfigModels');
+if (closeUnconfigModelsBtn) closeUnconfigModelsBtn.onclick = () => {
+  const panel = document.getElementById('unconfiguredModelsPanel');
+  if (panel) panel.hidden = true;
+};
 
 const openSessionBtn = document.getElementById('openSessionModal');
 if (openSessionBtn) openSessionBtn.onclick = openSessionModal;

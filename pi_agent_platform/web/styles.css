@@ -1867,3 +1867,28 @@ button:hover,
 
 /* v1.0.105: provider discovery hardware/runtime view */
 .provider-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:.85rem;margin-top:.85rem}.provider-card{border:1px solid #2a2140;background:linear-gradient(180deg,#120d22,#08070d);border-radius:var(--radius);padding:.85rem;display:grid;gap:.65rem;box-shadow:0 12px 28px rgba(0,0,0,.28);min-width:0}.provider-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem}.provider-title-block h3{margin:0;color:#fff}.provider-device-panel{border:1px solid rgba(139,92,246,.28);background:radial-gradient(circle at top right,rgba(109,69,214,.20),rgba(10,8,16,.82));padding:.65rem;border-radius:var(--radius);display:grid;gap:.25rem}.provider-device-panel b{color:#f4f1ff;overflow-wrap:anywhere}.provider-device-panel small{color:var(--muted);line-height:1.35}.provider-meta-line{font-size:.76rem;color:#a79abf;overflow-wrap:anywhere}.provider-meta-line span{border:1px solid #241a3b;background:#07060d;padding:.25rem .4rem;display:inline-block;max-width:100%}.provider-pill-list{display:flex;flex-wrap:wrap;gap:.35rem}.provider-capability-pill{font-size:.72rem;margin:0}.provider-card .provider-actions{justify-content:flex-start;flex-wrap:wrap;margin:.1rem 0 0}.provider-card .provider-actions button{flex:0 1 auto}.provider-overview-card{overflow:hidden}@media(max-width:720px){.provider-grid{grid-template-columns:1fr}.provider-card .provider-actions button{flex:1 1 120px}}
+
+/* v1.0.107: restored admin split views, model adaptation cards, and inventory rails */
+.split-admin-layout{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(300px,.95fr);gap:1rem;align-items:start}
+.split-main{min-width:0}
+.split-side{display:grid;gap:1rem;align-content:start}
+.side-panel{min-width:0}
+.inset-panel{margin-top:1rem;border-style:dashed}
+.inline-browser-row{display:flex;justify-content:space-between;gap:.8rem;align-items:flex-start;padding:.72rem .8rem;border:1px solid rgba(96,165,250,.14);border-radius:.55rem;background:rgba(15,23,42,.38);margin-top:.6rem}
+.inline-browser-row b{color:#f8fafc}
+.inline-browser-group{flex-wrap:wrap;justify-content:flex-end}
+.recommendation-card{border:1px solid rgba(148,163,184,.18);border-left-width:4px;border-radius:.6rem;padding:.78rem .85rem;background:linear-gradient(180deg,rgba(15,23,42,.78),rgba(2,6,23,.9));display:grid;gap:.35rem;margin-top:.7rem}
+.recommendation-card h4{margin:0;color:#f8fafc;font-size:.96rem}
+.recommendation-card p{margin:0;color:#dbe7ff;line-height:1.42}
+.recommendation-card.info{border-left-color:#60a5fa}
+.recommendation-card.warn{border-left-color:#f59e0b}
+.recommendation-card.error{border-left-color:#ef4444}
+@media (max-width: 1080px){
+  .split-admin-layout{grid-template-columns:1fr}
+}
+@media (prefers-color-scheme: light){
+  .inline-browser-row{background:rgba(255,255,255,.92);border-color:rgba(37,99,235,.12)}
+  .recommendation-card{background:linear-gradient(180deg,rgba(239,246,255,.98),rgba(255,255,255,.98))}
+  .recommendation-card h4{color:#0f172a}
+  .recommendation-card p{color:#1e293b}
+}

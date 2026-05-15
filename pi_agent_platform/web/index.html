@@ -153,40 +153,79 @@
     </div>
 
     <section id="models-tab" class="tab-panel">
-      <div class="dashboard-grid">
-        <section class="card wide">
+      <div class="split-admin-layout">
+        <section class="card split-main">
           <div class="section-heading">
-            <div><h2>Models</h2><p class="muted">Models connect a provider model ID to the endpoint that should run sessions using it.</p></div>
-            <div class="button-row"><button id="openMarketplaceModal" class="ghost-button">Marketplace</button><button id="openModelModal">Add model</button></div>
+            <div><h2>Models</h2><p class="muted">Configured models, live provider inventory, and adaptation guidance.</p></div>
+            <div class="button-row"><button id="showUnconfigModels" class="ghost-button">Browse providers</button><button id="openMarketplaceModal" class="ghost-button">Marketplace</button><button id="openModelModal">Add model</button></div>
           </div>
           <div id="modelFormResult" class="inline-result" hidden></div>
+          <div id="models"></div>
+          <section id="unconfiguredModelsPanel" class="card inset-panel" hidden>
+            <div class="section-heading compact-heading">
+              <div><h3>Available From Providers</h3><p class="muted small-text">Live models returned by connected providers that are not configured in PAC yet.</p></div>
+              <button id="closeUnconfigModels" class="ghost-button">Close</button>
+            </div>
+            <div id="unconfiguredModelsList"></div>
+          </section>
         </section>
-        <section class="card wide"><h2>Model overview</h2><div id="models"></div></section>
+        <aside class="split-side">
+          <section id="modelsRecommendationsPanel" class="card side-panel" hidden>
+            <div class="section-heading compact-heading"><div><h3>Configuration Recommendations</h3><p class="muted small-text">Model adaptation and runtime guidance derived from the current environment.</p></div></div>
+            <div id="modelsRecommendationsBody"></div>
+          </section>
+          <section class="card side-panel">
+            <h2>Active sessions</h2>
+            <div id="modelsActiveSessions"><div class="muted small-text">Loading…</div></div>
+          </section>
+          <section class="card side-panel">
+            <h2>Live server models</h2>
+            <div id="modelsLive"><div class="muted small-text">Loading…</div></div>
+          </section>
+        </aside>
       </div>
     </section>
 
     <section id="providers-tab" class="tab-panel">
-      <div class="dashboard-grid">
-        <section class="card wide">
+      <div class="split-admin-layout">
+        <section class="card split-main">
           <div class="section-heading">
             <div><h2>Providers</h2><p class="muted">Providers connect PAC to model APIs and expose live model lists.</p></div>
             <div class="button-row"><button id="openProviderModal">Add provider</button></div>
           </div>
           <div id="providerFormResult" class="inline-result"></div>
+          <div id="providers" class="provider-grid"></div>
         </section>
-        <section class="card wide provider-overview-card"><h2>Provider overview</h2><p class="muted">Provider model lists are fetched live from configured endpoints. Device details describe where inference happens, not where PAC tools or workspaces run.</p><div id="providers" class="provider-grid"></div></section>
+        <aside class="split-side">
+          <section class="card side-panel">
+            <h2>Live provider models</h2>
+            <div id="providersLive"><div class="muted small-text">Loading…</div></div>
+          </section>
+        </aside>
       </div>
     </section>
 
     <section id="profiles-tab" class="tab-panel">
-      <div class="dashboard-grid">
-        <section class="card wide"><h2>Profiles</h2><p class="muted">Create session presets here. A profile needs a configured model before it can be selected for a session.</p><div class="form-grid compact-form"><label>Profile name <input id="profileName" placeholder="local-coder" /></label><label>Model <select id="profileModel"></select></label><label>Context profile <select id="profileContextProfile"></select><small class="muted">Token budget preset.</small></label><label>Mode <select id="profileContextMode"><option>low</option><option selected>medium</option><option>high</option><option>max</option></select><small class="muted">Session context size.</small></label><label>Permission profile <select id="profilePermission"></select></label><label>Tools <select id="profileTools" multiple size="7"></select></label></div><label>System prompt <textarea id="profileSystemPrompt" rows="3">You are a careful remote coding and infrastructure agent.</textarea></label><div class="button-row"><button id="saveProfile">Save profile</button><button id="deleteProfile" class="ghost-button">Delete profile</button></div><div id="profileFormResult" class="inline-result"></div><div id="profiles"></div></section>
+      <div class="split-admin-layout">
+        <section class="card split-main"><h2>Profiles</h2><p class="muted">Create session presets here. A profile needs a configured model before it can be selected for a session.</p><div class="form-grid compact-form"><label>Profile name <input id="profileName" placeholder="local-coder" /></label><label>Model <select id="profileModel"></select></label><label>Context profile <select id="profileContextProfile"></select><small class="muted">Token budget preset.</small></label><label>Mode <select id="profileContextMode"><option>low</option><option selected>medium</option><option>high</option><option>max</option></select><small class="muted">Session context size.</small></label><label>Permission profile <select id="profilePermission"></select></label><label>Tools <select id="profileTools" multiple size="7"></select></label></div><label>System prompt <textarea id="profileSystemPrompt" rows="3">You are a careful remote coding and infrastructure agent.</textarea></label><div class="button-row"><button id="saveProfile">Save profile</button><button id="deleteProfile" class="ghost-button">Delete profile</button></div><div id="profileFormResult" class="inline-result"></div><div id="profiles"></div></section>
+        <aside class="split-side">
+          <section class="card side-panel">
+            <h2>Session usage</h2>
+            <div id="profilesUsage"><div class="muted small-text">Loading…</div></div>
+          </section>
+        </aside>
       </div>
     </section>
 
     <section id="workspaces-tab" class="tab-panel">
-      <div class="dashboard-grid">
-        <section class="card wide workspace-manager"><h2>Workspaces</h2><p class="muted">Create portable workspaces that can be placed on endpoints, populated from zip data, and cleaned up when they expire.</p><div class="form-grid compact-form workspace-form"><label>Workspace name <input id="workspaceName" placeholder="internal-docs-reader" /></label><label>Description <input id="workspaceDescription" placeholder="what this workspace is for" /></label><label>Type <select id="workspaceType"><option value="local">local path</option><option value="git">git checkout</option><option value="container">container workspace</option></select></label><label>Runtime <select id="workspaceRuntime"><option value="any">any endpoint</option><option value="local">host/local</option><option value="container">containerized</option></select></label><label>Path <input id="workspacePath" placeholder="optional local or endpoint path" /></label><label>Git URL <input id="workspaceUrl" placeholder="optional git repository" /></label><label>Branch <input id="workspaceBranch" placeholder="optional" /></label><label>Container image <input id="workspaceContainerImage" placeholder="optional compiler/runtime image" /></label><label>Endpoint <select id="workspaceEndpoint"><option value="">select at runtime</option></select></label><label>Endpoint selector <input id="workspaceEndpointSelector" placeholder="linux,gpu,docs-anywhere" /></label><label>Default profile <select id="workspaceDefaultProfile"><option value="">none</option></select></label><label>Data zip URL <input id="workspaceDataUrl" placeholder="https://.../docs.zip" /></label><label>Data zip path <input id="workspaceDataPath" placeholder="optional path already on endpoint/controller" /></label><label>Data mount/path <input id="workspaceDataMount" placeholder="docs or /workspace/docs" /></label><label>TTL hours <input id="workspaceTtlHours" type="number" min="1" placeholder="empty = no expiry" /></label><label class="checkbox-line"><input id="workspaceEphemeral" type="checkbox" /> Ephemeral workspace</label><label class="checkbox-line"><input id="workspaceDeleteOnExpire" type="checkbox" checked /> Delete data when expired</label><label class="checkbox-line"><input id="workspaceIsDefault" type="checkbox" /> Endpoint default</label></div><div class="button-row"><button id="saveWorkspace">Save workspace</button><button id="deleteWorkspace" class="ghost-button">Delete workspace</button></div><div id="workspaceFormResult" class="inline-result"></div><div id="workspaces" class="workspace-list"></div></section>
+      <div class="split-admin-layout">
+        <section class="card split-main workspace-manager"><h2>Workspaces</h2><p class="muted">Create portable workspaces that can be placed on endpoints, populated from zip data, and cleaned up when they expire.</p><div class="form-grid compact-form workspace-form"><label>Workspace name <input id="workspaceName" placeholder="internal-docs-reader" /></label><label>Description <input id="workspaceDescription" placeholder="what this workspace is for" /></label><label>Type <select id="workspaceType"><option value="local">local path</option><option value="git">git checkout</option><option value="container">container workspace</option></select></label><label>Runtime <select id="workspaceRuntime"><option value="any">any endpoint</option><option value="local">host/local</option><option value="container">containerized</option></select></label><label>Path <input id="workspacePath" placeholder="optional local or endpoint path" /></label><label>Git URL <input id="workspaceUrl" placeholder="optional git repository" /></label><label>Branch <input id="workspaceBranch" placeholder="optional" /></label><label>Container image <input id="workspaceContainerImage" placeholder="optional compiler/runtime image" /></label><label>Endpoint <select id="workspaceEndpoint"><option value="">select at runtime</option></select></label><label>Endpoint selector <input id="workspaceEndpointSelector" placeholder="linux,gpu,docs-anywhere" /></label><label>Default profile <select id="workspaceDefaultProfile"><option value="">none</option></select></label><label>Data zip URL <input id="workspaceDataUrl" placeholder="https://.../docs.zip" /></label><label>Data zip path <input id="workspaceDataPath" placeholder="optional path already on endpoint/controller" /></label><label>Data mount/path <input id="workspaceDataMount" placeholder="docs or /workspace/docs" /></label><label>TTL hours <input id="workspaceTtlHours" type="number" min="1" placeholder="empty = no expiry" /></label><label class="checkbox-line"><input id="workspaceEphemeral" type="checkbox" /> Ephemeral workspace</label><label class="checkbox-line"><input id="workspaceDeleteOnExpire" type="checkbox" checked /> Delete data when expired</label><label class="checkbox-line"><input id="workspaceIsDefault" type="checkbox" /> Endpoint default</label></div><div class="button-row"><button id="saveWorkspace">Save workspace</button><button id="deleteWorkspace" class="ghost-button">Delete workspace</button></div><div id="workspaceFormResult" class="inline-result"></div><div id="workspaces" class="workspace-list"></div></section>
+        <aside class="split-side">
+          <section class="card side-panel">
+            <h2>Active workspaces</h2>
+            <div id="workspacesActive"><div class="muted small-text">Loading…</div></div>
+          </section>
+        </aside>
       </div>
     </section>
 
