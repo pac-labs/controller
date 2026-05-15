@@ -19,6 +19,20 @@ def _matches(patterns: list[str], command: str) -> bool:
     return any(pattern in command or fnmatch.fnmatch(command, pattern) for pattern in patterns)
 
 
+def _looks_mutating_command(command: str) -> bool:
+    text = (command or '').strip().lower()
+    if not text:
+        return False
+    write_markers = [
+        ' rm ', ' rmdir ', ' del ', ' move ', ' mv ', ' cp ', ' copy ', ' rename ', ' ren ',
+        ' chmod ', ' chown ', ' mkdir ', ' touch ', ' tee ', ' git apply ', ' git commit ',
+        ' git add ', ' git rm ', ' git checkout ', ' git switch ', ' git clean ', ' patch ',
+        ' sed -i', '>>', ' >', 'truncate ', 'echo ', 'cat >', 'python -c', 'node -e',
+    ]
+    padded = f' {text} '
+    return any(marker in padded for marker in write_markers)
+
+
 def command_policy(command: str, session: Session, config: AppConfig) -> tuple[str, str | None]:
     if 'shell' not in session.tools:
         return 'deny', 'Session does not have the shell tool enabled'
@@ -29,6 +43,17 @@ def command_policy(command: str, session: Session, config: AppConfig) -> tuple[s
     profile = config.permission_profiles.get(session.permission_profile)
     if not profile:
         return 'deny', f'Unknown permission profile: {session.permission_profile}'
+
+    # Data access gating comes first. Shell is broad enough that blocked read access
+    # should block shell entirely, and write gating should apply before command/tool
+    # specific approval patterns.
+    if profile.file_read == 'deny':
+        return 'deny', 'Shell execution is denied because this permission profile blocks reading workspace data'
+    if _looks_mutating_command(command):
+        if profile.file_write == 'deny':
+            return 'deny', 'Command appears to modify workspace data, but this permission profile blocks changes'
+        if profile.file_write == 'ask':
+            return 'ask', 'Command appears to modify workspace data and requires change approval first'
 
     if _matches(profile.command_deny_patterns, command):
         return 'deny', 'Command matched deny policy'

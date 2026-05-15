@@ -299,10 +299,12 @@ function isInternalSessionEvent(event) {
   const t = String(event?.type || '').toLowerCase();
   if (t.includes('user_message')) return false;
   if (t.includes('result') || t.includes('assistant_message')) return false;
-  // Only tool/command activity belongs in the ChatGPT-like thought panel.
-  // Lifecycle/model chatter is intentionally hidden from the visible session.
   return t.includes('tool') || t.includes('command') || t.includes('runner') ||
     t.includes('stdout') || t.includes('stderr') || t.includes('approval') ||
+    t.includes('thinking') || t.includes('routing') || t.includes('task_queued') || t.includes('task_started') ||
+    t.includes('task_completed') || t.includes('task_failed') || t.includes('task_approved') ||
+    t.includes('task_rejected') || t.includes('subagent_started') || t.includes('context_compacted') ||
+    t.includes('model_response') ||
     t.includes('web_search') || t.includes('web_fetch') || t.includes('artifact_saved');
 }
 function sessionEventDetailsText(event, block) {
@@ -328,8 +330,33 @@ function sessionThinkingLine(event, block) {
   const data = event?.data && typeof event.data === 'object' ? event.data : {};
   const type = prettyEventType(event?.type);
   const text = timelineText(event, block);
-  const concise = data.tool ? `Used ${data.tool}` : data.command ? `Ran command` : text ? String(text).split('\n')[0] : type;
+  const concise = data.tool ? `Using ${data.tool}` :
+    data.command ? `Running ${data.command}` :
+    data.path ? `Accessing ${data.path}` :
+    data.url ? `Fetching ${data.url}` :
+    data.query ? `Searching ${data.query}` :
+    text ? String(text).split('\n')[0] :
+    type;
   return `${formatEventTime(event?.created_at)} · ${concise}`.trim();
+}
+function sessionThinkingSummary(event, block) {
+  const data = event?.data && typeof event.data === 'object' ? event.data : {};
+  const type = String(event?.type || '').toLowerCase();
+  if (type.includes('approval_required')) return data.reason ? `Approval needed: ${data.reason}` : 'Approval needed before continuing';
+  if (type.includes('task_approved')) return 'Approval granted';
+  if (type.includes('task_rejected')) return 'Approval rejected';
+  if (type.includes('task_failed')) return event?.message || 'Task failed';
+  if (type.includes('task_completed')) return 'Finished thinking';
+  if (type.includes('agent_thinking')) return event?.message || 'Thinking';
+  if (type.includes('agent_routing')) return event?.message || 'Routing task';
+  if (data.tool) return `Using ${data.tool}`;
+  if (data.command) return `Running ${data.command}`;
+  if (data.path) return `Working with ${data.path}`;
+  if (data.url) return `Fetching ${data.url}`;
+  if (data.query) return `Searching ${data.query}`;
+  const text = timelineText(event, block);
+  if (text) return String(text).split('\n')[0];
+  return prettyEventType(event?.type || 'thinking');
 }
 function toolActivityTitle(item) {
   const event = item?.event || {};
@@ -375,38 +402,95 @@ function openSessionThinkingModal(group) {
   if (!modal || !group) return;
   const title = document.getElementById('sessionEventModalTitle');
   const body = document.getElementById('sessionEventModalBody');
-  if (title) title.textContent = 'Tool activity';
+  if (title) title.textContent = 'Thought details';
   if (body) {
     body.className = 'modal-scroll-output tool-activity-modal';
     body.innerHTML = sessionThinkingDetailsHtml(group.events || []);
   }
   modal.hidden = false;
 }
+function thinkingGroupToolCount(group) {
+  return (group?.events || []).filter((item) => {
+    const t = String(item?.event?.type || '').toLowerCase();
+    return t.includes('tool') || t.includes('command') || t.includes('stdout') || t.includes('stderr') || t.includes('web_');
+  }).length;
+}
+function thinkingGroupNeedsApproval(group) {
+  const event = group?.lastEvent;
+  return !!event && String(event.type || '').toLowerCase().includes('approval_required');
+}
+async function resolveSessionApproval(taskId, approved) {
+  if (!taskId) return;
+  if (approved) await api(`/v1/tasks/${taskId}/approve`, {method:'POST'});
+  else await api(`/v1/tasks/${taskId}/reject?reason=Rejected`, {method:'POST'});
+  await loadApprovals().catch(()=>{});
+}
+function updateSessionThinkingRow(group) {
+  if (!group?.row) return;
+  const event = group.lastEvent || group.events?.[group.events.length - 1]?.event;
+  const summary = group.summary || sessionThinkingSummary(event, null);
+  const duration = formatDurationMs(((group.endedAt || new Date()).getTime()) - (group.startedAt || new Date()).getTime());
+  const toolCount = thinkingGroupToolCount(group);
+  const approvalPending = thinkingGroupNeedsApproval(group);
+  const taskId = event?.task_id || group.taskId || '';
+  group.row.className = `thought-card${group.closed ? ' complete' : ' live'}${approvalPending ? ' needs-approval' : ''}`;
+  group.row.innerHTML = '';
+  const main = document.createElement('button');
+  main.type = 'button';
+  main.className = 'thought-card-main';
+  main.innerHTML = `
+    <span class="thought-icon-shell">${group.closed ? '<span class="thought-icon-done" aria-hidden="true">◧</span>' : '<span class="tiny-spinner square" aria-hidden="true"></span>'}</span>
+    <span class="thought-copy">
+      <span class="thought-kicker">${escapeHtml(group.closed ? 'Thought' : 'Current task')}</span>
+      <span class="thought-summary">${escapeHtml(summary)}</span>
+      <span class="thought-meta"><span>${escapeHtml(duration)}</span><span>${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}</span><span>${escapeHtml(approvalPending ? 'Awaiting approval' : group.closed ? 'Completed' : 'Thinking')}</span></span>
+    </span>
+    <span class="thought-open">Details</span>`;
+  main.onclick = () => openSessionThinkingModal(group);
+  main.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') openSessionThinkingModal(group); };
+  group.row.appendChild(main);
+  if (approvalPending && taskId) {
+    const actions = document.createElement('div');
+    actions.className = 'thought-actions';
+    const approve = document.createElement('button');
+    approve.type = 'button';
+    approve.className = 'thought-action approve';
+    approve.textContent = 'Approve';
+    approve.onclick = async (ev) => {
+      ev.stopPropagation();
+      await resolveSessionApproval(taskId, true);
+    };
+    const reject = document.createElement('button');
+    reject.type = 'button';
+    reject.className = 'thought-action reject';
+    reject.textContent = 'Reject';
+    reject.onclick = async (ev) => {
+      ev.stopPropagation();
+      await resolveSessionApproval(taskId, false);
+    };
+    actions.append(approve, reject);
+    group.row.appendChild(actions);
+  }
+}
 function ensureSessionThinkingGroup(event) {
   if (!sessionThinkingGroup || sessionThinkingGroup.closed) {
-    sessionThinkingGroup = {events: [], startedAt: sessionEventDate(event), endedAt: null, row: null, closed: false};
+    const el = document.getElementById('events');
+    const row = document.createElement('article');
+    row.className = 'thought-card live';
+    if (el) el.appendChild(row);
+    sessionThinkingGroup = {events: [], startedAt: sessionEventDate(event), endedAt: null, row, closed: false, taskId: event?.task_id || ''};
   }
   if (!sessionThinkingGroup.startedAt) sessionThinkingGroup.startedAt = sessionEventDate(event);
+  if (!sessionThinkingGroup.taskId && event?.task_id) sessionThinkingGroup.taskId = event.task_id;
+  removePendingRow(event?.task_id);
   return sessionThinkingGroup;
 }
 function flushSessionThinkingGroup(endEvent) {
-  const el = document.getElementById('events');
   const group = sessionThinkingGroup;
-  if (!el || !group || group.closed || !group.events.length) return;
+  if (!group || group.closed || !group.events.length) return;
   group.closed = true;
   group.endedAt = endEvent ? sessionEventDate(endEvent) : new Date();
-  const started = group.startedAt || sessionEventDate(group.events[0].event);
-  const ended = group.endedAt || started;
-  const toolCount = (group.events || []).filter(item => item?.event && isInternalSessionEvent(item.event)).length;
-  if (!toolCount) return;
-  const row = document.createElement('button');
-  row.type = 'button';
-  row.className = 'thought-line';
-  row.innerHTML = `<span>Thought for ${escapeHtml(formatDurationMs(ended.getTime() - started.getTime()))}</span><span class="thought-tool-count">${toolCount} tool ${toolCount === 1 ? 'step' : 'steps'}</span>`;
-  row.onclick = () => openSessionThinkingModal(group);
-  row.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') openSessionThinkingModal(group); };
-  group.row = row;
-  el.appendChild(row);
+  updateSessionThinkingRow(group);
 }
 function openSessionEventModal(event, block) {
   const modal = document.getElementById('sessionEventModal');
@@ -478,10 +562,16 @@ function removePendingRow(taskId) {
 function addPendingRow(taskId) {
   const el = document.getElementById('events');
   if (!el || !taskId || sessionPendingRows.has(taskId)) return;
-  const row = document.createElement('button');
-  row.type = 'button';
-  row.className = 'thought-line loading';
-  row.innerHTML = '<span class="tiny-spinner" aria-hidden="true"></span><span>Thinking…</span>';
+  const row = document.createElement('article');
+  row.className = 'thought-card live pending-only';
+  row.innerHTML = `<div class="thought-card-main">
+    <span class="thought-icon-shell"><span class="tiny-spinner square" aria-hidden="true"></span></span>
+    <span class="thought-copy">
+      <span class="thought-kicker">Current task</span>
+      <span class="thought-summary">Thinking...</span>
+      <span class="thought-meta"><span>Waiting to start</span></span>
+    </span>
+  </div>`;
   row.onclick = () => {
     const group = sessionThinkingGroup && !sessionThinkingGroup.closed ? sessionThinkingGroup : {events: [], startedAt: new Date(), endedAt: null};
     openSessionThinkingModal(group);
@@ -500,7 +590,6 @@ function renderSessionTimelineEvent(event) {
   if (event.type === 'user_message' || event.type === 'result' || event.type === 'assistant_message') sessionMessageSeen.add(messageKey);
   const typeLower = String(event.type || '').toLowerCase();
   if (typeLower.includes('task_completed') || typeLower.includes('task_failed') || typeLower.includes('result')) removePendingRow(event.task_id);
-  if (sessionLifecycleEventIsNoise(event)) return;
   const empty = el.querySelector('.empty-timeline');
   if (empty) empty.remove();
   const block = normalizeTimelineBlock(event);
@@ -509,6 +598,9 @@ function renderSessionTimelineEvent(event) {
   if (internal) {
     const group = ensureSessionThinkingGroup(event);
     group.events.push({event, block});
+    group.lastEvent = event;
+    group.summary = sessionThinkingSummary(event, block);
+    updateSessionThinkingRow(group);
     if (String(event?.type || '').toLowerCase().includes('task_completed') || String(event?.type || '').toLowerCase().includes('task_failed')) {
       flushSessionThinkingGroup(event);
     }
@@ -516,6 +608,7 @@ function renderSessionTimelineEvent(event) {
     el.scrollTop = el.scrollHeight;
     return;
   }
+  if (sessionLifecycleEventIsNoise(event)) return;
   flushSessionThinkingGroup(event);
   const row = document.createElement('article');
   row.className = `chat-message-row ${role}`;
@@ -3104,8 +3197,8 @@ async function loadApprovals() {
   tasks.forEach(t => {
     const row=document.createElement('div'); row.className='row';
     row.innerHTML=`<div><b>${t.command || t.prompt}</b><br><span class="muted">${t.session_id}</span></div>`;
-    const a=document.createElement('button'); a.textContent='Approve'; a.onclick=async()=>{await api(`/v1/tasks/${t.id}/approve`,{method:'POST'}); await loadApprovals();};
-    const r=document.createElement('button'); r.textContent='Reject'; r.onclick=async()=>{await api(`/v1/tasks/${t.id}/reject?reason=Rejected`,{method:'POST'}); await loadApprovals();};
+    const a=document.createElement('button'); a.textContent='Approve'; a.onclick=async()=>{await resolveSessionApproval(t.id, true);};
+    const r=document.createElement('button'); r.textContent='Reject'; r.onclick=async()=>{await resolveSessionApproval(t.id, false);};
     row.append(a,r); el.appendChild(row);
   });
 }
@@ -3223,7 +3316,21 @@ function autosizeSessionPrompt() {
 
 if (runTaskBtn) runTaskBtn.onclick=()=>sendSessionComposer().catch(e=>alert(e.message));
 const taskPromptInput = document.getElementById('taskPrompt');
-if (taskPromptInput) { taskPromptInput.addEventListener('input', autosizeSessionPrompt); taskPromptInput.addEventListener('keydown', (ev) => { if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') { ev.preventDefault(); sendSessionComposer().catch(e=>alert(e.message)); } }); autosizeSessionPrompt(); }
+if (taskPromptInput) {
+  taskPromptInput.addEventListener('input', autosizeSessionPrompt);
+  taskPromptInput.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' && !ev.shiftKey && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
+      ev.preventDefault();
+      sendSessionComposer().catch(e=>alert(e.message));
+      return;
+    }
+    if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
+      ev.preventDefault();
+      sendSessionComposer().catch(e=>alert(e.message));
+    }
+  });
+  autosizeSessionPrompt();
+}
 const taskCommandInput = document.getElementById('taskCommand');
 if (taskCommandInput) taskCommandInput.addEventListener('keydown', (ev) => { if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') { ev.preventDefault(); sendSessionComposer().catch(e=>alert(e.message)); } });
 async function openGitDiffModal(){
