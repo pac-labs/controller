@@ -528,15 +528,43 @@
           </div>
         </section>
 
-        <section class="card setting-cube">
+        <section class="card setting-cube compact-setting-card">
           <h2>PAC home</h2>
           <div id="pacpInfo" class="kv compact-kv"></div>
           <p class="muted">Override with <code>PACP_HOME=/path/to/.pacp</code>. Default is <code>~/.pacp</code>.</p>
         </section>
 
+        <section class="card setting-cube compact-setting-card">
+          <h2>Endpoint connection</h2>
+          <p class="muted">Use an explicit controller URL for endpoint binaries when mDNS is unavailable. IP addresses are fine.</p>
+          <div class="form-grid compact-form">
+            <label>Controller URL <input id="endpointPublicUrl" placeholder="https://192.168.1.20:443" /></label>
+            <label class="checkbox-line"><input id="endpointMdnsEnabled" type="checkbox" /> Advertise with mDNS</label>
+          </div>
+          <div class="button-row"><button id="saveEndpointConnection">Save endpoint URL</button></div>
+          <pre id="endpointConnectionResult" class="inline-result compact-result"></pre>
+        </section>
 
+        <section class="card setting-cube compact-setting-card">
+          <h2>Service mode</h2>
+          <p class="muted">Run PAC as a user service for simple installs, or as a host/system service for port 443 and machine-wide startup.</p>
+          <div id="serviceModeInfo" class="kv compact-kv"></div>
+          <div class="segmented-control" role="group" aria-label="PAC service mode">
+            <button id="setUserService" class="ghost-button">Use user service</button>
+            <button id="setHostService">Use host service</button>
+          </div>
+          <pre id="serviceModeResult" class="inline-result compact-result"></pre>
+        </section>
 
-
+        <section class="card setting-cube compact-setting-card">
+          <h2>TLS / local CA</h2>
+          <p class="muted">PAC generates a 30-year local root CA, signs the HTTPS server certificate for admin.pac.local, and advertises the admin service over mDNS.</p>
+          <div id="tlsInfo" class="kv compact-kv"></div>
+          <div class="button-row">
+            <button id="refreshTlsStatus">Refresh TLS</button>
+            <a class="button-link" href="/v1/tls/ca.pem" download>Download CA</a>
+          </div>
+        </section>
 
         <section class="card wide setting-cube">
           <h2>Controller pi.dev</h2>
@@ -559,38 +587,6 @@
           </div>
           <div class="button-row"><button id="saveControllerHarness">Save pi.dev settings</button><button id="bootstrapControllerHarness" class="ghost-button">Build/install controller pi.dev</button><button id="openControllerHarnessSession" class="ghost-button">Open pi.dev session</button></div>
           <pre id="controllerHarnessResult" class="inline-result compact-result"></pre>
-        </section>
-
-        <section class="card setting-cube">
-          <h2>Endpoint connection</h2>
-          <p class="muted">Use an explicit controller URL for endpoint binaries when mDNS is unavailable. IP addresses are fine.</p>
-          <div class="form-grid compact-form">
-            <label>Controller URL <input id="endpointPublicUrl" placeholder="https://192.168.1.20:443" /></label>
-            <label class="checkbox-line"><input id="endpointMdnsEnabled" type="checkbox" /> Advertise with mDNS</label>
-          </div>
-          <div class="button-row"><button id="saveEndpointConnection">Save endpoint URL</button></div>
-          <pre id="endpointConnectionResult" class="inline-result compact-result"></pre>
-        </section>
-
-        <section class="card setting-cube">
-          <h2>Service mode</h2>
-          <p class="muted">Run PAC as a user service for simple installs, or as a host/system service for port 443 and machine-wide startup.</p>
-          <div id="serviceModeInfo" class="kv compact-kv"></div>
-          <div class="segmented-control" role="group" aria-label="PAC service mode">
-            <button id="setUserService" class="ghost-button">Use user service</button>
-            <button id="setHostService">Use host service</button>
-          </div>
-          <pre id="serviceModeResult" class="inline-result compact-result"></pre>
-        </section>
-
-        <section class="card setting-cube">
-          <h2>TLS / local CA</h2>
-          <p class="muted">PAC generates a 30-year local root CA, signs the HTTPS server certificate for admin.pac.local, and advertises the admin service over mDNS.</p>
-          <div id="tlsInfo" class="kv compact-kv"></div>
-          <div class="button-row">
-            <button id="refreshTlsStatus">Refresh TLS</button>
-            <a class="button-link" href="/v1/tls/ca.pem" download>Download CA</a>
-          </div>
         </section>
 
         <section class="card wide setting-cube">
