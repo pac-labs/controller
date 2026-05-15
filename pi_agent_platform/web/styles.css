@@ -1627,6 +1627,14 @@ button,
   gap: .55rem;
   align-items: center;
 }
+.settings-update-actions .feature-pack-actions button,
+.settings-update-actions .compact-build-actions button {
+  width: auto;
+  min-width: 0;
+}
+.settings-update-actions .feature-pack-actions {
+  align-items: center;
+}
 @media (max-width: 1250px) {
   .source-ide-shell { grid-template-columns: minmax(0, 1fr); }
   .source-ide-tree, .source-ide-downloads { border: 0 !important; border-bottom: 1px solid rgba(148,163,184,.16) !important; }

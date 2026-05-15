@@ -683,10 +683,11 @@ async function refreshSessionRunButton() {
   sessionRunButtonRequest = (async () => {
     try {
       const tasks = await api(`/v1/sessions/${selectedSession.id}/tasks`);
-      const active = (tasks || [])
-        .filter((task) => ['queued', 'running', 'approval_required'].includes(String(task.status || '')))
-        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0] || null;
-      activeSessionTaskId = active?.id || null;
+      const ordered = (tasks || []).slice().sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+      const latest = ordered[0] || null;
+      const latestStatus = String(latest?.status || '');
+      const latestIsActive = ['queued', 'running', 'approval_required'].includes(latestStatus);
+      activeSessionTaskId = latestIsActive ? (latest?.id || null) : null;
       if (activeSessionTaskId) {
         btn.dataset.mode = 'stop';
         btn.textContent = '■';
