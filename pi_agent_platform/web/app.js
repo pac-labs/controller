@@ -136,8 +136,14 @@ function isHelpSlashCommand(raw) {
 function applyThemeMode(mode = 'system') {
   pacThemeMode = ['system', 'dark', 'light'].includes(String(mode)) ? String(mode) : 'system';
   const root = document.documentElement;
-  if (pacThemeMode === 'system') root.removeAttribute('data-theme');
-  else root.setAttribute('data-theme', pacThemeMode);
+  const body = document.body;
+  if (pacThemeMode === 'system') {
+    root.removeAttribute('data-theme');
+    if (body) body.removeAttribute('data-theme');
+  } else {
+    root.setAttribute('data-theme', pacThemeMode);
+    if (body) body.setAttribute('data-theme', pacThemeMode);
+  }
   try { localStorage.setItem('pac-theme', pacThemeMode); } catch (_) {}
   const select = document.getElementById('themeMode');
   if (select) select.value = pacThemeMode;
@@ -442,9 +448,11 @@ function thinkingGroupNeedsApproval(group) {
 }
 async function resolveSessionApproval(taskId, approved) {
   if (!taskId) return;
-  if (approved) await api(`/v1/tasks/${taskId}/approve`, {method:'POST'});
+  if (approved) await api(`/v1/tasks/${taskId}/approve?wait=true`, {method:'POST'});
   else await api(`/v1/tasks/${taskId}/reject?reason=Rejected`, {method:'POST'});
   removeSessionApprovalRow(taskId);
+  await loadSessions().catch(()=>{});
+  if (selectedSession?.id) await pollSessionEvents(selectedSession.id).catch(()=>{});
   await loadApprovals().catch(()=>{});
 }
 function updateSessionThinkingRow(group) {

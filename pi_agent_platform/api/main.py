@@ -3109,6 +3109,9 @@ async def approve_task(task_id: str, background_tasks: BackgroundTasks, wait: bo
     session = store.get_session(task.session_id)
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')
+    task.status = TaskStatus.queued
+    task.error = None
+    store.add_task(task)
     store.add_event(Event(session_id=session.id, task_id=task.id, type='task_approved', message='Approved'))
     target = _runner_target_from_task(task)
     if target:
