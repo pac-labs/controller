@@ -3711,6 +3711,8 @@ function showUserChip(user) {
     } else {
       chip.hidden = true;
       chip.style.display = 'none';
+      chip.setAttribute('aria-expanded', 'false');
+      document.getElementById('userMenu')?.setAttribute('hidden', '');
     }
   }
   if (loginBtn) loginBtn.hidden = !!user;
@@ -3888,22 +3890,14 @@ async function loadUsersList() {
   }
 }
 function renderHeaderAuthBox() {
-  const badge = document.getElementById('authModeBadge');
   const tokenInput = document.getElementById('token');
-  if (!badge) return;
+  const loginBtn = document.getElementById('loginBtn');
   const auth = authStatus || config?.auth || {};
   const enabled = !!auth.enabled;
   const storedToken = getStoredToken();
   const hasToken = !!(storedToken || String(tokenInput?.value || '').trim());
-  if (!enabled) {
-    badge.textContent = 'Open';
-  } else if (auth.mode === 'user-password') {
-    badge.textContent = currentUser ? String(currentUser.role || 'user') : (auth.needs_setup ? 'Setup required' : 'Login required');
-  } else {
-    badge.textContent = hasToken ? 'Token set' : String(auth.mode || 'Auth');
-  }
-  badge.className = `header-control-badge${enabled ? ' enabled' : ''}${hasToken || currentUser ? ' active' : ''}`;
   if (tokenInput) tokenInput.hidden = !!(enabled && auth.mode === 'user-password');
+  if (loginBtn) loginBtn.textContent = auth.needs_setup ? 'Set up account' : 'Log in';
   showUserChip(currentUser);
 }
 async function loadApprovals() {
@@ -3931,7 +3925,35 @@ if (themeModeSelect) themeModeSelect.onchange = () => applyThemeMode(themeModeSe
 const authTokenInput = document.getElementById('token');
 if (authTokenInput) authTokenInput.addEventListener('input', () => renderHeaderAuthBox());
 document.getElementById('loginBtn')?.addEventListener('click', () => openLoginModal(authStatus?.needs_setup ? 'setup' : 'login'));
-document.getElementById('userChipLogout')?.addEventListener('click', logoutUser);
+document.getElementById('userChipLogout')?.addEventListener('click', () => { document.getElementById('userMenu')?.setAttribute('hidden', ''); logoutUser(); });
+document.getElementById('userChip')?.addEventListener('click', (ev) => {
+  ev.stopPropagation();
+  const menu = document.getElementById('userMenu');
+  const chip = document.getElementById('userChip');
+  if (!menu || !chip || chip.hidden) return;
+  const open = !menu.hasAttribute('hidden');
+  if (open) {
+    menu.setAttribute('hidden', '');
+    chip.setAttribute('aria-expanded', 'false');
+  } else {
+    menu.removeAttribute('hidden');
+    chip.setAttribute('aria-expanded', 'true');
+  }
+});
+document.getElementById('userMenuSettings')?.addEventListener('click', () => {
+  document.getElementById('userMenu')?.setAttribute('hidden', '');
+  document.getElementById('userChip')?.setAttribute('aria-expanded', 'false');
+  switchToTab('settings-tab');
+});
+document.addEventListener('click', (ev) => {
+  const menu = document.getElementById('userMenu');
+  const chip = document.getElementById('userChip');
+  if (!menu || !chip) return;
+  if (!menu.hasAttribute('hidden') && !menu.contains(ev.target) && !chip.contains(ev.target)) {
+    menu.setAttribute('hidden', '');
+    chip.setAttribute('aria-expanded', 'false');
+  }
+});
 document.getElementById('refreshUsersBtn')?.addEventListener('click', () => loadUsersList().catch((e)=>paneError('Users could not be refreshed', e.message || String(e))));
 document.getElementById('createUserBtn')?.addEventListener('click', async () => {
   const username = document.getElementById('newUsername')?.value.trim() || '';

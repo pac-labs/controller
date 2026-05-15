@@ -25,22 +25,24 @@
       </div>
     </div>
     <div class="top-actions">
-      <div id="buildStamp" class="build-stamp" title="Backend and UI build information">backend v... • ui ...</div>
       <button id="openDownloadsModal" class="top-icon-button monochrome-icon clean-download-icon" title="Downloads" aria-label="Downloads"><span aria-hidden="true"></span></button>
       <button id="openEventsPanel" class="top-icon-button monochrome-icon clean-bell-icon" title="Events" aria-label="Events"><span aria-hidden="true"></span></button>
-      <label class="header-control-box theme-control-box">
-        <span class="header-control-label">Theme</span>
-        <select id="themeMode" aria-label="Theme mode"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select>
-      </label>
-      <div class="header-control-box auth-control-box">
-        <span class="header-control-label">Auth</span>
-        <span id="authModeBadge" class="header-control-badge">Open</span>
-        <div class="auth-user-row">
-          <div id="userChip" class="user-chip" hidden>
-            <span id="userChipName"></span>
-            <button id="userChipLogout" class="ghost-button small-ghost" type="button" title="Logout" aria-label="Logout">Log out</button>
-          </div>
-          <button id="loginBtn" class="ghost-button" type="button">Log in</button>
+      <div class="theme-select-wrap">
+        <select id="themeMode" aria-label="Theme mode">
+          <option value="system">Theme: System</option>
+          <option value="dark">Theme: Dark</option>
+          <option value="light">Theme: Light</option>
+        </select>
+      </div>
+      <div class="user-menu-wrap">
+        <button id="loginBtn" class="ghost-button user-login-button" type="button">Log in</button>
+        <button id="userChip" class="user-chip user-menu-button" type="button" hidden aria-haspopup="menu" aria-expanded="false">
+          <span id="userChipName"></span>
+          <span class="user-menu-glyph" aria-hidden="true">☰</span>
+        </button>
+        <div id="userMenu" class="user-menu-dropdown" hidden>
+          <button id="userMenuSettings" type="button">Personal settings</button>
+          <button id="userChipLogout" type="button">Log out</button>
         </div>
         <input id="token" class="auth-token-input" placeholder="Bearer token, optional" />
       </div>
@@ -651,7 +653,7 @@
     <div id="globalEvents" class="events-list"><div class="empty-events">No events yet.</div></div>
   </aside>
   </div>
-  <footer class="app-footer"><img src="/ui/assets/pac-icon.svg" alt="" /> <span>PAC Control • Orchestrate • Execute</span></footer>
+  <footer class="app-footer"><img src="/ui/assets/pac-icon.svg" alt="" /> <span>PAC Control • Orchestrate • Execute</span><span id="buildStamp" class="app-version" title="Backend and UI build information">backend v... • ui ...</span></footer>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="/ui/app.js"></script>
 </body>
