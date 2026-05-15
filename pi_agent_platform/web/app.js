@@ -51,6 +51,7 @@ let sessionMessageSeen = new Set();
 let sessionPendingRows = new Map();
 let setupStatus = null;
 let sessionSlashCommands = [];
+let pacThemeMode = 'system';
 
 const SESSION_SLASH_COMMANDS = {
   command: {kind:'tool', label:'/command <tool> [args]', description:'Run a registered endpoint tool on the locked host endpoint. Example: /command rg TODO'},
@@ -127,6 +128,20 @@ function slashCommandHelpText() {
 }
 function isHelpSlashCommand(raw) {
   return String(raw || '').trim().toLowerCase() === '/help';
+}
+function applyThemeMode(mode = 'system') {
+  pacThemeMode = ['system', 'dark', 'light'].includes(String(mode)) ? String(mode) : 'system';
+  const root = document.documentElement;
+  if (pacThemeMode === 'system') root.removeAttribute('data-theme');
+  else root.setAttribute('data-theme', pacThemeMode);
+  try { localStorage.setItem('pac-theme', pacThemeMode); } catch (_) {}
+  const select = document.getElementById('themeMode');
+  if (select) select.value = pacThemeMode;
+}
+function loadThemeMode() {
+  let saved = 'system';
+  try { saved = localStorage.getItem('pac-theme') || 'system'; } catch (_) {}
+  applyThemeMode(saved);
 }
 
 function hideSetupWizard() {
@@ -3089,6 +3104,8 @@ async function loadApprovals() {
   });
 }
 document.getElementById('refresh').onclick=()=>init();
+const themeModeSelect = document.getElementById('themeMode');
+if (themeModeSelect) themeModeSelect.onchange = () => applyThemeMode(themeModeSelect.value || 'system');
 if (document.getElementById('dismissSetupWizard')) document.getElementById('dismissSetupWizard').onclick = () => hideSetupWizard();
 if (document.getElementById('recheckSetupWizard')) document.getElementById('recheckSetupWizard').onclick = () => loadConfig().catch(e => paneError('Setup recheck failed', e.message));
 document.getElementById('createSession').onclick=async()=>{
@@ -3632,7 +3649,7 @@ function renderSourceOnlineUpdates(result){
 }
 
 
-async function init(){ setupTabs(); setupEventsRail(); await loadVersion().catch(()=>{}); await loadConfig(); await loadSessions(); await loadApprovals(); await loadRunners(); refreshDashboardMetricsOnStartup(); await loadGlobalEvents(true); loadMcpBuildStatus().catch(()=>{}); await loadBinaryFolderFilters().catch(()=>{}); await loadSourceBinaryArtifacts().catch(()=>{}); updateSourceActions(); }
+async function init(){ loadThemeMode(); setupTabs(); setupEventsRail(); await loadVersion().catch(()=>{}); await loadConfig(); await loadSessions(); await loadApprovals(); await loadRunners(); refreshDashboardMetricsOnStartup(); await loadGlobalEvents(true); loadMcpBuildStatus().catch(()=>{}); await loadBinaryFolderFilters().catch(()=>{}); await loadSourceBinaryArtifacts().catch(()=>{}); updateSourceActions(); }
 init().catch(e=>paneError('PAC UI could not load', e.message || String(e)));
 
 const openEndpointBtn = document.getElementById('openEndpointModal');

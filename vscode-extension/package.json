@@ -1,8 +1,8 @@
 {
   "name": "pi-agent-vscode",
   "displayName": "Pi Agent",
-  "description": "VS Code client scaffold for Pi Agent Control",
-  "version": "1.0.98",
+  "description": "VS Code client for PAC session bootstrap and remote execution",
+  "version": "1.0.105",
   "engines": {
     "vscode": "^1.95.0"
   },
