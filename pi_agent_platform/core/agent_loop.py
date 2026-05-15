@@ -63,6 +63,56 @@ Rules:
 - Save important generated files/results with save_artifact when the user may want to download them.
 """.strip()
 
+
+def _summarize_tool_intent(tool: str, inp: dict[str, Any]) -> str:
+    tool = str(tool or "")
+    inp = inp or {}
+    if tool == "shell":
+        return f"Preparing command: {str(inp.get('command') or '').strip() or 'shell'}"
+    if tool == "read_file":
+        return f"Reading {inp.get('path') or 'file'}"
+    if tool == "read_file_chunk":
+        return f"Reading chunk from {inp.get('path') or 'file'}"
+    if tool == "list_files":
+        return f"Listing {inp.get('path') or '.'}"
+    if tool == "write_file":
+        return f"Writing {inp.get('path') or 'file'}"
+    if tool == "workspace_manifest":
+        return "Scanning workspace structure"
+    if tool == "batch_analyze_text":
+        return f"Analyzing text: {str(inp.get('instruction') or 'batch analysis')[:120]}"
+    if tool == "batch_analyze_file":
+        return f"Analyzing {inp.get('path') or 'file'}"
+    if tool == "web_search":
+        return f"Searching the web for {inp.get('query') or 'results'}"
+    if tool == "web_fetch":
+        return f"Fetching {inp.get('url') or 'page'}"
+    if tool == "save_artifact":
+        return f"Saving artifact {inp.get('name') or ''}".strip()
+    if tool == "list_artifacts":
+        return "Checking saved artifacts"
+    if tool == "slash_command":
+        return f"Running {inp.get('command') or 'slash command'}"
+    if tool == "git_status":
+        return "Checking git status"
+    if tool == "git_diff":
+        return "Checking git diff"
+    return f"Using {tool}"
+
+
+def _summarize_model_action(action: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    action = action or {}
+    kind = str(action.get("type") or "")
+    if kind == "tool_call":
+        tool = str(action.get("tool") or "")
+        inp = action.get("input") or {}
+        return _summarize_tool_intent(tool, inp), {"action_type": kind, "tool": tool, "input": inp}
+    if kind == "final":
+        message = str(action.get("message") or "").strip()
+        concise = message.splitlines()[0][:180] if message else "Preparing final response"
+        return concise or "Preparing final response", {"action_type": kind}
+    return "Re-evaluating next step", {"action_type": kind or "unknown"}
+
 def _extract_json(text: str) -> dict[str, Any]:
     text = text.strip()
     if text.startswith("```"):
@@ -388,6 +438,9 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             store.add_task(task)
             store.add_event(Event(session_id=session.id, task_id=task.id, type="result", message=raw[-4000:], data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "agent_profile": session.agent_profile, "permission_profile": session.permission_profile}))
             return task
+
+        thought_summary, thought_meta = _summarize_model_action(action)
+        store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_intent", message=thought_summary, data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "step": step + 1, **thought_meta}))
 
         if action.get("type") == "final":
             task.status = TaskStatus.completed

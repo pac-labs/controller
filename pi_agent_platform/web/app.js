@@ -301,7 +301,7 @@ function isInternalSessionEvent(event) {
   if (t.includes('result') || t.includes('assistant_message')) return false;
   return t.includes('tool') || t.includes('command') || t.includes('runner') ||
     t.includes('stdout') || t.includes('stderr') || t.includes('approval') ||
-    t.includes('thinking') || t.includes('routing') || t.includes('task_queued') || t.includes('task_started') ||
+    t.includes('thinking') || t.includes('intent') || t.includes('routing') || t.includes('task_queued') || t.includes('task_started') ||
     t.includes('task_completed') || t.includes('task_failed') || t.includes('task_approved') ||
     t.includes('task_rejected') || t.includes('subagent_started') || t.includes('context_compacted') ||
     t.includes('model_response') ||
@@ -348,6 +348,7 @@ function sessionThinkingSummary(event, block) {
   if (type.includes('task_failed')) return event?.message || 'Task failed';
   if (type.includes('task_completed')) return 'Finished thinking';
   if (type.includes('agent_thinking')) return event?.message || 'Thinking';
+  if (type.includes('agent_intent')) return event?.message || 'Choosing next step';
   if (type.includes('agent_routing')) return event?.message || 'Routing task';
   if (data.tool) return `Using ${data.tool}`;
   if (data.command) return `Running ${data.command}`;
@@ -364,6 +365,7 @@ function toolActivityTitle(item) {
   const t = String(event.type || '').toLowerCase();
   if (data.tool) return String(data.tool);
   if (data.command) return 'exec_command';
+  if (t.includes('intent')) return 'current_intent';
   if (t.includes('web_search')) return 'search_web';
   if (t.includes('web_fetch')) return 'fetch_web';
   if (t.includes('artifact')) return 'artifact';
@@ -380,6 +382,7 @@ function toolActivityBody(item) {
   if (data.command) lines.push(`$ ${data.command}`);
   if (data.input) lines.push(typeof data.input === 'string' ? data.input : JSON.stringify(data.input, null, 2));
   if (text && !lines.includes(text)) lines.push(text);
+  if (data.thought && !lines.includes(String(data.thought))) lines.push(String(data.thought));
   if (data.output && !String(text).includes(String(data.output))) lines.push(String(data.output));
   if (data.stderr) lines.push(`stderr:\n${data.stderr}`);
   if (data.exit_code != null) lines.push(`exit code: ${data.exit_code}`);
@@ -3183,7 +3186,7 @@ async function selectSession(id) {
   // EventSource cannot set auth headers, so auth-enabled deployments should use the snapshot refresh path or put UI/API behind same auth proxy.
   source = new EventSource(`/v1/sessions/${id}/events`);
   source.onmessage = e => { try { appendEvent('message', JSON.parse(e.data)); } catch { appendEvent('message', e.data); } };
-  ['user_message','agent_routing','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','full_control_enabled','subagent_started'].forEach(t => source.addEventListener(t, e => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
+  ['user_message','agent_routing','agent_intent','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','full_control_enabled','subagent_started'].forEach(t => source.addEventListener(t, e => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
 }
 function appendEvent(type, payload) {
   const event = normalizeEvent(type, payload);
