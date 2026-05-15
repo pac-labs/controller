@@ -225,6 +225,17 @@ function appendText(parent, tag, className, text) {
   parent.appendChild(el);
   return el;
 }
+function appendChatText(parent, role, text) {
+  if (text == null || text === '') return null;
+  if (typeof marked !== 'undefined' && (role === 'assistant' || role === 'system' || role === 'error')) {
+    const el = document.createElement('div');
+    el.className = 'chat-bubble-text markdown-body';
+    el.innerHTML = marked.parse(String(text));
+    parent.appendChild(el);
+    return el;
+  }
+  return appendText(parent, 'div', 'chat-bubble-text', text);
+}
 function normalizeTimelineBlock(event) {
   const data = event?.data && typeof event.data === 'object' ? event.data : {};
   const block = data.timeline || data.card || data.block || null;
@@ -694,7 +705,7 @@ function renderSessionTimelineEvent(event) {
   meta.innerHTML = `<span>${escapeHtml(label)}</span><span>${escapeHtml(formatEventTime(event.created_at))}</span>`;
   bubble.appendChild(meta);
   const text = timelineText(event, block);
-  if (text) appendText(bubble, 'div', 'chat-bubble-text', text);
+  if (text) appendChatText(bubble, role, text);
   if (role === 'assistant') {
     bubble.tabIndex = 0;
     bubble.classList.add('selectable-reply');
