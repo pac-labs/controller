@@ -138,6 +138,8 @@ def _ui_build_info() -> dict[str, Any]:
         _web_dir() / 'app.js',
         _web_dir() / 'styles.css',
         _web_dir() / 'assets' / 'logo.png',
+        _web_dir() / 'assets' / 'pac-logo-lockup-transparent.png',
+        _web_dir() / 'assets' / 'pac-logo-compact-transparent.png',
         _web_dir() / 'assets' / 'pac-brand-mark-transparent-128.png',
         _web_dir() / 'assets' / 'pac-brand-mark-transparent-32.png',
     ]
@@ -164,6 +166,8 @@ def _render_web_index() -> HTMLResponse:
         '/ui/app.js': f"/ui/app.js?v={info['asset_stamp']}",
         '/ui/assets/pac-brand-mark-transparent-32.png': f"/ui/assets/pac-brand-mark-transparent-32.png?v={info['asset_stamp']}",
         '/ui/assets/logo.png': f"/ui/assets/logo.png?v={info['asset_stamp']}",
+        '/ui/assets/pac-logo-lockup-transparent.png': f"/ui/assets/pac-logo-lockup-transparent.png?v={info['asset_stamp']}",
+        '/ui/assets/pac-logo-compact-transparent.png': f"/ui/assets/pac-logo-compact-transparent.png?v={info['asset_stamp']}",
         '/ui/assets/pac-brand-mark-transparent-128.png': f"/ui/assets/pac-brand-mark-transparent-128.png?v={info['asset_stamp']}",
         '/ui/assets/pac-loader.svg': f"/ui/assets/pac-loader.svg?v={info['asset_stamp']}",
     }
