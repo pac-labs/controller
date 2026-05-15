@@ -78,7 +78,7 @@
     <div class="context-menu-wrap"><button id="composerAddContext" class="composer-icon-button square" type="button" title="Add context" aria-label="Add context">+</button><div id="composerContextMenu" class="composer-context-menu" hidden><b>Context</b><button type="button">▱ Files & Directories</button><button type="button">⌘ Symbols</button><button type="button">◌ Threads</button><button type="button">▣ Rules</button><button type="button">▧ Image</button><button type="button">Ⅰ Selection</button><button type="button">⌁ Branch Diff</button><button type="button" onclick="alert(slashCommandHelpText())">/ Slash commands</button></div></div>
     <select id="taskModel" title="Model"><option value="">session model</option></select>
     <select id="taskExecution" title="Destination"><option value="host">endpoint</option><option value="container">container</option><option value="pi_container">pi.dev</option></select>
-    <button id="runTask" class="composer-send-button square" title="Send" aria-label="Send">➤</button>
+    <button id="runTask" class="composer-send-button square" title="Send" aria-label="Send" data-mode="send">➤</button>
   </div>
   <input id="taskCommand" hidden value="" />
   <input id="taskImage" hidden placeholder="Container image" />

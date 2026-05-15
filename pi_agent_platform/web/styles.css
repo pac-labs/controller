@@ -737,6 +737,16 @@ pre#events, pre#diff { min-width: 0; width: 100%; overflow: auto; white-space: p
 }
 .composer-icon-button:hover,
 .composer-send-button:hover { background: #111827; color: #fff; border-color: #111827; }
+.composer-send-button.stop-mode {
+  background: #7f1d1d;
+  color: #fff;
+  border-color: #7f1d1d;
+}
+.composer-send-button.stop-mode:hover {
+  background: #991b1b;
+  color: #fff;
+  border-color: #991b1b;
+}
 .composer-controls.integrated {
   display: grid;
   grid-template-columns: minmax(110px,140px) minmax(180px,1fr) minmax(130px,170px) minmax(110px,135px) minmax(140px,1fr);

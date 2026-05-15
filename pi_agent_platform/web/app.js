@@ -52,6 +52,7 @@ let sessionPendingRows = new Map();
 let sessionApprovalRows = new Map();
 let sessionLatestEventId = null;
 let sessionPoll = null;
+let activeSessionTaskId = null;
 let setupStatus = null;
 let sessionSlashCommands = [];
 let pacThemeMode = 'system';
@@ -595,6 +596,52 @@ function removeSessionApprovalRow(taskId) {
   const row = sessionApprovalRows.get(taskId);
   if (row && row.parentElement) row.remove();
   sessionApprovalRows.delete(taskId);
+}
+async function refreshSessionRunButton() {
+  const btn = document.getElementById('runTask');
+  if (!btn) return;
+  if (!selectedSession?.id) {
+    activeSessionTaskId = null;
+    btn.dataset.mode = 'send';
+    btn.textContent = '➤';
+    btn.title = 'Send';
+    btn.setAttribute('aria-label', 'Send');
+    btn.classList.remove('stop-mode');
+    btn.disabled = false;
+    return;
+  }
+  try {
+    const tasks = await api(`/v1/sessions/${selectedSession.id}/tasks`);
+    const active = (tasks || [])
+      .filter((task) => ['queued', 'running', 'approval_required'].includes(String(task.status || '')))
+      .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0] || null;
+    activeSessionTaskId = active?.id || null;
+    if (activeSessionTaskId) {
+      btn.dataset.mode = 'stop';
+      btn.textContent = '■';
+      btn.title = 'Stop';
+      btn.setAttribute('aria-label', 'Stop');
+      btn.classList.add('stop-mode');
+    } else {
+      btn.dataset.mode = 'send';
+      btn.textContent = '➤';
+      btn.title = 'Send';
+      btn.setAttribute('aria-label', 'Send');
+      btn.classList.remove('stop-mode');
+    }
+    btn.disabled = false;
+  } catch (_) {}
+}
+async function stopActiveSessionTask() {
+  if (!selectedSession?.id) return;
+  if (!activeSessionTaskId) {
+    await refreshSessionRunButton().catch(()=>{});
+  }
+  if (!activeSessionTaskId) return;
+  await api(`/v1/tasks/${activeSessionTaskId}/stop`, {method:'POST'});
+  await pollSessionEvents(selectedSession.id).catch(()=>{});
+  await loadSessions().catch(()=>{});
+  await refreshSessionRunButton().catch(()=>{});
 }
 function approvalPurpose(event) {
   const data = event?.data && typeof event.data === 'object' ? event.data : {};
@@ -3338,9 +3385,11 @@ async function loadSessions() {
   if (picker) picker.innerHTML = '<option value="">Select session</option>';
   if (!sessions.length) {
     selectedSession = null;
+    activeSessionTaskId = null;
     if (dashboard) dashboard.innerHTML = '<div class="muted">No sessions yet. Create one from the Sessions page.</div>';
     if (picker) picker.innerHTML = '<option value="">No sessions yet</option>';
     syncSessionPermissionQuick();
+    refreshSessionRunButton().catch(()=>{});
     renderModelActiveSessionsPanel();
     renderProfileUsagePanel();
     renderWorkspaceActivityPanel();
@@ -3393,12 +3442,14 @@ async function selectSession(id) {
   source.onmessage = e => { try { appendEvent('message', JSON.parse(e.data)); } catch { appendEvent('message', e.data); } };
   ['user_message','agent_routing','agent_intent','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','full_control_enabled','subagent_started'].forEach(t => source.addEventListener(t, e => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
   startSessionPolling(id);
+  await refreshSessionRunButton().catch(()=>{});
 }
 function appendEvent(type, payload) {
   const event = normalizeEvent(type, payload);
   renderSessionTimelineEvent(event);
   renderGlobalEvent(event);
   loadApprovals().catch(()=>{});
+  refreshSessionRunButton().catch(()=>{});
 }
 async function loadApprovals() {
   const tasks = await api('/v1/tasks/pending-approvals');
@@ -3462,6 +3513,8 @@ async function sendSessionComposer(){
   autosizeSessionPrompt();
   const created = await api(`/v1/sessions/${selectedSession.id}/tasks`,{method:'POST',body:JSON.stringify({prompt:rawPrompt,command:'',metadata})});
   if (created && created.id) {
+    activeSessionTaskId = created.id;
+    refreshSessionRunButton().catch(()=>{});
     const localEvent = {
       id: `local_user_${created.id}`,
       session_id: selectedSession.id,
@@ -3530,19 +3583,26 @@ function autosizeSessionPrompt() {
   el.style.height = Math.min(160, Math.max(28, el.scrollHeight)) + 'px';
 }
 
-if (runTaskBtn) runTaskBtn.onclick=()=>sendSessionComposer().catch(e=>alert(e.message));
+if (runTaskBtn) runTaskBtn.onclick = async () => {
+  try {
+    if (runTaskBtn.dataset.mode === 'stop') await stopActiveSessionTask();
+    else await sendSessionComposer();
+  } catch (e) {
+    alert(e.message);
+  }
+};
 const taskPromptInput = document.getElementById('taskPrompt');
 if (taskPromptInput) {
   taskPromptInput.addEventListener('input', autosizeSessionPrompt);
   taskPromptInput.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter' && !ev.shiftKey && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
       ev.preventDefault();
-      sendSessionComposer().catch(e=>alert(e.message));
+      (runTaskBtn?.dataset.mode === 'stop' ? stopActiveSessionTask() : sendSessionComposer()).catch(e=>alert(e.message));
       return;
     }
     if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
       ev.preventDefault();
-      sendSessionComposer().catch(e=>alert(e.message));
+      (runTaskBtn?.dataset.mode === 'stop' ? stopActiveSessionTask() : sendSessionComposer()).catch(e=>alert(e.message));
     }
   });
   autosizeSessionPrompt();

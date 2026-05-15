@@ -3225,6 +3225,34 @@ def reject_task(task_id: str, reason: str = 'Rejected by user', _auth: None = De
     return task
 
 
+@app.post('/v1/tasks/{task_id}/stop', response_model=Task)
+def stop_task(task_id: str, _auth: None = Depends(require_auth)) -> Task:
+    task = store.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail='Task not found')
+    session = store.get_session(task.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    if task.status in {TaskStatus.completed, TaskStatus.failed}:
+        return task
+    task.metadata = dict(task.metadata or {})
+    task.metadata['stop_requested'] = True
+    task.metadata['stop_requested_at'] = datetime.now(timezone.utc).isoformat()
+    if task.status in {TaskStatus.queued, TaskStatus.approval_required}:
+        task.status = TaskStatus.completed
+        task.output = 'Agent stopped by user.'
+        task.error = None
+        store.add_task(task)
+        store.add_event(Event(session_id=session.id, task_id=task.id, type='agent_stop', message='Agent stopped by user', data={'stop_reason': 'user_stop'}))
+        store.add_event(Event(session_id=session.id, task_id=task.id, type='result', message=task.output, data={'role': 'assistant', 'model': session.model, 'endpoint_id': task.metadata.get('runner_id'), 'agent_profile': session.agent_profile, 'permission_profile': session.permission_profile, 'stop_reason': 'user_stop'}))
+        session.status = SessionStatus.created
+        store.add_session(session)
+        return task
+    store.add_task(task)
+    store.add_event(Event(session_id=session.id, task_id=task.id, type='agent_stop', message='Stop requested; the agent will stop after the current step.', data={'stop_reason': 'user_stop'}))
+    return task
+
+
 
 
 @app.get('/v1/events/recent')

@@ -413,17 +413,25 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             return task
         messages.append({"role": "assistant", "content": json.dumps(pending)})
         messages.append({"role": "user", "content": "Tool result:\n" + observation})
-
-    configured_max_steps = task.metadata.get("max_agent_steps")
-    if configured_max_steps is None:
-        configured_max_steps = getattr(agent, "max_agent_steps", 48) if agent else 48
-    max_steps = max(1, int(configured_max_steps))
     max_runtime_minutes = max(1, int(task.metadata.get("max_runtime_minutes") or (getattr(agent, "max_runtime_minutes", 60) if agent else 60)))
     deadline = time.monotonic() + (max_runtime_minutes * 60)
     transcript: list[dict[str, Any]] = task.metadata.get("agent_transcript") or []
     rolling_summary = task.metadata.get("rolling_context_summary")
-
-    for step in range(max_steps):
+    step = 0
+    while True:
+        step += 1
+        latest_task = store.get_task(task.id) or task
+        stop_requested = bool((latest_task.metadata or {}).get("stop_requested"))
+        if stop_requested:
+            task = latest_task
+            task.status = TaskStatus.completed
+            task.output = "Agent stopped by user."
+            task.metadata["agent_transcript"] = transcript[-20:]
+            store.add_task(task)
+            store.add_event(Event(session_id=session.id, task_id=task.id, type="result", message=task.output, data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "agent_profile": session.agent_profile, "permission_profile": session.permission_profile, "stop_reason": "user_stop"}))
+            session.status = SessionStatus.created
+            store.add_session(session)
+            return task
         if time.monotonic() >= deadline:
             task.status = TaskStatus.completed
             task.output = f"Agent stopped after reaching the runtime limit of {max_runtime_minutes} minute(s). Check the timeline and diff for partial work."
@@ -444,7 +452,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                 store.add_event(Event(session_id=session.id, task_id=task.id, type="context_compacted", message=f"Compacted context from ~{current_tokens} tokens to ~{message_tokens(messages)} tokens", data={"before_tokens": current_tokens, "after_tokens": message_tokens(messages), "budget_tokens": budget.budget_tokens}))
 
         remaining_seconds = max(0, int(deadline - time.monotonic()))
-        store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_thinking", message=f"Agent step {step + 1}/{max_steps} (~{message_tokens(messages)}/{budget.input_budget_tokens} input tokens, ~{remaining_seconds}s left)"))
+        store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_thinking", message=f"Agent step {step} (~{message_tokens(messages)}/{budget.input_budget_tokens} input tokens, ~{remaining_seconds}s left)"))
         try:
             raw = await asyncio.to_thread(chat_complete, config, session.model, messages, max_tokens=min(ctx["reserve_output_tokens"], 4096))
         except Exception as exc:
@@ -454,8 +462,8 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             store.add_event(Event(session_id=session.id, task_id=task.id, type="task_failed", message=task.error))
             return task
 
-        transcript.append({"step": step + 1, "model": raw})
-        store.add_event(Event(session_id=session.id, task_id=task.id, type="model_response", message=raw[-4000:], data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "step": step + 1}))
+        transcript.append({"step": step, "model": raw})
+        store.add_event(Event(session_id=session.id, task_id=task.id, type="model_response", message=raw[-4000:], data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "step": step}))
         try:
             action = _extract_json(raw)
         except Exception:
@@ -467,7 +475,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             return task
 
         thought_summary, thought_meta = _summarize_model_action(action)
-        store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_intent", message=thought_summary, data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "step": step + 1, **thought_meta}))
+        store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_intent", message=thought_summary, data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "step": step, **thought_meta}))
 
         if action.get("type") == "final":
             task.status = TaskStatus.completed
@@ -484,10 +492,21 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             inp = action.get("input") or {}
             store.add_event(Event(session_id=session.id, task_id=task.id, type="tool_call", message=tool, data={"tool": tool, "input": inp}))
             observation, paused = await execute_tool(session, task, tool, inp, config)
-            transcript.append({"step": step + 1, "tool": tool, "input": inp, "observation": observation[-4000:]})
+            transcript.append({"step": step, "tool": tool, "input": inp, "observation": observation[-4000:]})
             task.metadata["agent_transcript"] = transcript[-20:]
             store.add_task(task)
             if paused:
+                return task
+            latest_task = store.get_task(task.id) or task
+            if (latest_task.metadata or {}).get("stop_requested"):
+                task = latest_task
+                task.status = TaskStatus.completed
+                task.output = "Agent stopped by user."
+                task.metadata["agent_transcript"] = transcript[-20:]
+                store.add_task(task)
+                store.add_event(Event(session_id=session.id, task_id=task.id, type="result", message=task.output, data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "agent_profile": session.agent_profile, "permission_profile": session.permission_profile, "stop_reason": "user_stop"}))
+                session.status = SessionStatus.created
+                store.add_session(session)
                 return task
             if task.metadata.pop("_compact_now", False):
                 before_tokens = message_tokens(messages)
@@ -505,12 +524,3 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             continue
 
         messages.append({"role": "user", "content": "Invalid action. Return either a final answer or a valid tool_call JSON object."})
-
-    task.status = TaskStatus.completed
-    task.output = f"Agent stopped after reaching the step limit of {max_steps}. Check the timeline and diff for partial work."
-    task.metadata["agent_transcript"] = transcript[-20:]
-    store.add_task(task)
-    store.add_event(Event(session_id=session.id, task_id=task.id, type="result", message=task.output, data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "agent_profile": session.agent_profile, "permission_profile": session.permission_profile, "stop_reason": "step_limit"}))
-    session.status = SessionStatus.created
-    store.add_session(session)
-    return task
