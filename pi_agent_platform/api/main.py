@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field
 
 from pi_agent_platform.core.config import AppConfig, ProviderConfig, AgentProfile, WorkspaceProfile, SourceContextConfig, save_config, load_config, default_config_path, MAIN_PI_DEV_PROFILE, AGENT_CONTROL_WORKSPACE, MODEL_NOT_SELECTED
 from pi_agent_platform.core.platform_home import ensure_pacp_layout, pacp_path
-from pi_agent_platform.core.models import Event, Session, SessionCreate, Task, TaskCreate, TaskStatus, Runner, RunnerCreateRequest, RunnerRegisterRequest, RunnerHeartbeat, RunnerStatus, RunnerJobCreate, RunnerJob, RunnerJobStatus, RunnerJobUpdate, RunnerJobLog, RunnerExecutionMode
+from pi_agent_platform.core.models import Event, Session, SessionCreate, Task, TaskCreate, TaskStatus, SessionStatus, Runner, RunnerCreateRequest, RunnerRegisterRequest, RunnerHeartbeat, RunnerStatus, RunnerJobCreate, RunnerJob, RunnerJobStatus, RunnerJobUpdate, RunnerJobLog, RunnerExecutionMode
 from pi_agent_platform.core.runtime import git_diff, git_status, run_shell_task
 from pi_agent_platform.core.agent_loop import run_agent_loop
 from pi_agent_platform.core.session_commands import list_session_slash_commands, parse_session_slash_command, slash_help_text

@@ -58,6 +58,10 @@ let sessionSlashCommands = [];
 let pacThemeMode = 'system';
 let marketplaceResultCache = [];
 let currentVersionInfo = null;
+let approvalsRequest = null;
+let sessionRunButtonRequest = null;
+let sessionPollRequest = null;
+let sessionPollingActiveFor = null;
 
 const SESSION_SLASH_COMMANDS = {
   command: {kind:'tool', label:'/command <tool> [args]', description:'Run a registered endpoint tool on the locked host endpoint. Example: /command rg TODO'},
@@ -675,27 +679,34 @@ async function refreshSessionRunButton() {
     btn.disabled = false;
     return;
   }
-  try {
-    const tasks = await api(`/v1/sessions/${selectedSession.id}/tasks`);
-    const active = (tasks || [])
-      .filter((task) => ['queued', 'running', 'approval_required'].includes(String(task.status || '')))
-      .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0] || null;
-    activeSessionTaskId = active?.id || null;
-    if (activeSessionTaskId) {
-      btn.dataset.mode = 'stop';
-      btn.textContent = '■';
-      btn.title = 'Stop';
-      btn.setAttribute('aria-label', 'Stop');
-      btn.classList.add('stop-mode');
-    } else {
-      btn.dataset.mode = 'send';
-      btn.textContent = '➤';
-      btn.title = 'Send';
-      btn.setAttribute('aria-label', 'Send');
-      btn.classList.remove('stop-mode');
+  if (sessionRunButtonRequest) return sessionRunButtonRequest;
+  sessionRunButtonRequest = (async () => {
+    try {
+      const tasks = await api(`/v1/sessions/${selectedSession.id}/tasks`);
+      const active = (tasks || [])
+        .filter((task) => ['queued', 'running', 'approval_required'].includes(String(task.status || '')))
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0] || null;
+      activeSessionTaskId = active?.id || null;
+      if (activeSessionTaskId) {
+        btn.dataset.mode = 'stop';
+        btn.textContent = '■';
+        btn.title = 'Stop';
+        btn.setAttribute('aria-label', 'Stop');
+        btn.classList.add('stop-mode');
+      } else {
+        btn.dataset.mode = 'send';
+        btn.textContent = '➤';
+        btn.title = 'Send';
+        btn.setAttribute('aria-label', 'Send');
+        btn.classList.remove('stop-mode');
+      }
+      btn.disabled = false;
+    } catch (_) {
+    } finally {
+      sessionRunButtonRequest = null;
     }
-    btn.disabled = false;
-  } catch (_) {}
+  })();
+  return sessionRunButtonRequest;
 }
 async function stopActiveSessionTask() {
   if (!selectedSession?.id) return;
@@ -779,19 +790,35 @@ async function applySessionPermissionProfile() {
 }
 async function pollSessionEvents(sessionId) {
   if (!sessionId || !selectedSession || selectedSession.id !== sessionId) return;
-  try {
-    const qs = sessionLatestEventId ? `?after_id=${encodeURIComponent(sessionLatestEventId)}&limit=120` : '?limit=120';
-    const snapshot = await api(`/v1/sessions/${sessionId}/events/snapshot${qs}`);
-    (snapshot || []).forEach(ev => appendEvent(ev.type || 'message', ev));
-  } catch (_) {}
+  if (sessionPollRequest) return sessionPollRequest;
+  sessionPollRequest = (async () => {
+    try {
+      const qs = sessionLatestEventId ? `?after_id=${encodeURIComponent(sessionLatestEventId)}&limit=120` : '?limit=120';
+      const snapshot = await api(`/v1/sessions/${sessionId}/events/snapshot${qs}`);
+      (snapshot || []).forEach(ev => appendEvent(ev.type || 'message', ev));
+    } catch (_) {
+    } finally {
+      sessionPollRequest = null;
+    }
+  })();
+  return sessionPollRequest;
 }
 function startSessionPolling(sessionId) {
+  if (sessionPollingActiveFor === sessionId && sessionPoll) return;
   if (sessionPoll) {
     clearInterval(sessionPoll);
     sessionPoll = null;
   }
   if (!sessionId) return;
+  sessionPollingActiveFor = sessionId;
   sessionPoll = setInterval(() => { pollSessionEvents(sessionId).catch(()=>{}); }, 1500);
+}
+function stopSessionPolling() {
+  if (sessionPoll) {
+    clearInterval(sessionPoll);
+    sessionPoll = null;
+  }
+  sessionPollingActiveFor = null;
 }
 function addPendingRow(taskId) {
   const el = document.getElementById('events');
@@ -3618,29 +3645,54 @@ async function selectSession(id) {
   if (source) source.close();
   // EventSource cannot set auth headers, so auth-enabled deployments should use the snapshot refresh path or put UI/API behind same auth proxy.
   source = new EventSource(`/v1/sessions/${id}/events`);
-  source.onerror = () => { startSessionPolling(id); };
+  source.onerror = () => {
+    if (source) {
+      source.close();
+      source = null;
+    }
+    startSessionPolling(id);
+  };
   source.onmessage = e => { try { appendEvent('message', JSON.parse(e.data)); } catch { appendEvent('message', e.data); } };
   ['user_message','agent_routing','agent_intent','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','full_control_enabled','subagent_started'].forEach(t => source.addEventListener(t, e => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
-  startSessionPolling(id);
+  stopSessionPolling();
   await refreshSessionRunButton().catch(()=>{});
 }
 function appendEvent(type, payload) {
   const event = normalizeEvent(type, payload);
   renderSessionTimelineEvent(event);
   renderGlobalEvent(event);
-  loadApprovals().catch(()=>{});
-  refreshSessionRunButton().catch(()=>{});
+  const eventType = String(event?.type || type || '').toLowerCase();
+  if (
+    eventType.includes('approval') ||
+    eventType.includes('task_queued') ||
+    eventType.includes('task_started') ||
+    eventType.includes('task_completed') ||
+    eventType.includes('task_failed') ||
+    eventType.includes('result') ||
+    eventType.includes('agent_stop')
+  ) {
+    loadApprovals().catch(()=>{});
+    refreshSessionRunButton().catch(()=>{});
+  }
 }
 async function loadApprovals() {
-  const tasks = await api('/v1/tasks/pending-approvals');
-  const el = document.getElementById('approvals'); el.innerHTML = '';
-  tasks.forEach(t => {
-    const row=document.createElement('div'); row.className='row';
-    row.innerHTML=`<div><b>${t.command || t.prompt}</b><br><span class="muted">${t.session_id}</span></div>`;
-    const a=document.createElement('button'); a.textContent='Approve'; a.onclick=async()=>{await resolveSessionApproval(t.id, true);};
-    const r=document.createElement('button'); r.textContent='Reject'; r.onclick=async()=>{await resolveSessionApproval(t.id, false);};
-    row.append(a,r); el.appendChild(row);
-  });
+  if (approvalsRequest) return approvalsRequest;
+  approvalsRequest = (async () => {
+    const tasks = await api('/v1/tasks/pending-approvals');
+    const el = document.getElementById('approvals'); el.innerHTML = '';
+    tasks.forEach(t => {
+      const row=document.createElement('div'); row.className='row';
+      row.innerHTML=`<div><b>${t.command || t.prompt}</b><br><span class="muted">${t.session_id}</span></div>`;
+      const a=document.createElement('button'); a.textContent='Approve'; a.onclick=async()=>{await resolveSessionApproval(t.id, true);};
+      const r=document.createElement('button'); r.textContent='Reject'; r.onclick=async()=>{await resolveSessionApproval(t.id, false);};
+      row.append(a,r); el.appendChild(row);
+    });
+  })();
+  try {
+    return await approvalsRequest;
+  } finally {
+    approvalsRequest = null;
+  }
 }
 document.getElementById('refresh').onclick=()=>init();
 const themeModeSelect = document.getElementById('themeMode');
