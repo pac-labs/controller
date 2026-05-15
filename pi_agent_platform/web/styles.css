@@ -2760,6 +2760,35 @@ html[data-theme="dark"] .recommendation-card p{color:#dbe7ff}
   padding:.55rem;
 }
 .app-footer .app-version{display:inline-flex;margin-left:auto}
+.settings-subnav{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.4rem;
+  margin-bottom:1rem;
+  padding-bottom:.8rem;
+  border-bottom:1px solid rgba(96,165,250,.18);
+}
+.settings-sub-btn{
+  min-height:2rem;
+  padding:.45rem .8rem;
+}
+.settings-panel{
+  display:block;
+}
+.settings-panel-inner{
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:1rem;
+  align-items:start;
+}
+.settings-panel-single .settings-main{
+  min-width:0;
+}
+.settings-main{
+  display:grid;
+  gap:1rem;
+  min-width:0;
+}
 .health-grid{
   display:grid;
   grid-template-columns:repeat(2,minmax(0,1fr));

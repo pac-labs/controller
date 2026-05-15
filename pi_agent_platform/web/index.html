@@ -502,137 +502,186 @@
     </section>
 
     <section id="settings-tab" class="tab-panel">
-      <div class="settings-cube-grid">
-        <section class="card setting-cube wide">
-          <div class="section-heading compact-heading"><div><h2>Updates</h2><p class="muted">Apply platform updates and feature/source packs from one place.</p></div></div>
-          <div class="updates-layout">
-            <div class="updates-main">
-              <div class="updates-pac-status">
-                <div class="pac-status-line"><span class="pac-status-label">Running</span><span id="pacCurrentVersion" class="pac-status-version">v?</span></div>
-                <div class="pac-status-line"><span class="pac-status-label">Archives</span><span id="pacArchiveStatus" class="pac-status-badge">checking</span></div>
-              </div>
-          <div class="button-row settings-update-actions">
-            <button id="checkPacRelease" class="ghost-button">Check PAC release</button>
-            <button id="applyPacRelease" class="ghost-button" disabled>Apply latest release</button>
-            <span id="pacReleaseStatus" class="muted small-text">GitHub release checks have not run yet.</span>
-          </div>
-          <div class="feature-pack-actions settings-update-actions">
-            <input id="featurePackFile" type="file" accept=".zip,.pac">
-            <button id="inspectFeaturePack" class="ghost-button">Preview update</button>
-            <button id="applyFeaturePack" class="ghost-button" disabled>Apply update</button>
-          </div>
-          <div id="featurePackPreview" class="feature-pack-preview muted">Choose a PAC update or feature pack zip to preview.</div>
-          <div class="online-source-updates">
-            <div class="button-row"><button id="checkSourceUpdates" class="ghost-button">Check source modules online</button><span id="sourceUpdateStatus" class="muted small-text"></span></div>
-            <div id="sourceOnlineUpdates" class="feature-pack-preview muted">Online source module updates have not been checked yet.</div>
-          </div>
-              <div class="updates-archive-section">
-                <div class="button-row">
-                  <input id="localDiffVersion" placeholder="1.0.108" />
-                  <button id="generateLocalDiff" class="ghost-button">Generate local diff</button>
-                  <span id="localDiffStatus" class="muted small-text"></span>
+      <div class="settings-subnav">
+        <button class="settings-sub-btn active" data-settings-panel="updates">Updates</button>
+        <button class="settings-sub-btn" data-settings-panel="users">Users</button>
+        <button class="settings-sub-btn" data-settings-panel="pi-dev">pi.dev</button>
+        <button class="settings-sub-btn" data-settings-panel="endpoint">Endpoint</button>
+        <button class="settings-sub-btn" data-settings-panel="service">Service</button>
+        <button class="settings-sub-btn" data-settings-panel="tls">TLS / CA</button>
+        <button class="settings-sub-btn" data-settings-panel="config">Config</button>
+      </div>
+
+      <div id="settings-updates" class="settings-panel">
+        <div class="settings-panel-inner settings-panel-single">
+          <div class="settings-main">
+            <section class="card setting-cube wide">
+              <div class="section-heading compact-heading"><div><h2>Updates</h2><p class="muted">Apply platform updates and feature/source packs from one place.</p></div></div>
+              <div class="updates-layout">
+                <div class="updates-main">
+                  <div class="updates-pac-status">
+                    <div class="pac-status-line"><span class="pac-status-label">Running</span><span id="pacCurrentVersion" class="pac-status-version">v?</span></div>
+                    <div class="pac-status-line"><span class="pac-status-label">Archives</span><span id="pacArchiveStatus" class="pac-status-badge">checking</span></div>
+                  </div>
+                  <div class="button-row settings-update-actions">
+                    <button id="checkPacRelease" class="ghost-button">Check PAC release</button>
+                    <button id="applyPacRelease" class="ghost-button" disabled>Apply latest release</button>
+                    <span id="pacReleaseStatus" class="muted small-text">GitHub release checks have not run yet.</span>
+                  </div>
+                  <div class="feature-pack-actions settings-update-actions">
+                    <input id="featurePackFile" type="file" accept=".zip,.pac">
+                    <button id="inspectFeaturePack" class="ghost-button">Preview update</button>
+                    <button id="applyFeaturePack" class="ghost-button" disabled>Apply update</button>
+                  </div>
+                  <div id="featurePackPreview" class="feature-pack-preview muted">Choose a PAC update or feature pack zip to preview.</div>
+                  <div class="online-source-updates">
+                    <div class="button-row"><button id="checkSourceUpdates" class="ghost-button">Check source modules online</button><span id="sourceUpdateStatus" class="muted small-text"></span></div>
+                    <div id="sourceOnlineUpdates" class="feature-pack-preview muted">Online source module updates have not been checked yet.</div>
+                  </div>
+                  <div class="updates-archive-section">
+                    <div class="button-row">
+                      <input id="localDiffVersion" placeholder="1.0.108" />
+                      <button id="generateLocalDiff" class="ghost-button">Generate local diff</button>
+                      <span id="localDiffStatus" class="muted small-text"></span>
+                    </div>
+                    <div id="localDiffList" class="update-delta-list"><div class="muted small-text">No generated local diffs yet.</div></div>
+                  </div>
+                  <div class="updates-archive-section">
+                    <div class="button-row"><button id="refreshUpdateArchives" class="ghost-button">Refresh archives</button><span id="updateArchiveHint" class="muted small-text"></span></div>
+                    <div id="updateArchivesList" class="update-delta-list"><div class="muted small-text">No update archives loaded yet.</div></div>
+                  </div>
                 </div>
-                <div id="localDiffList" class="update-delta-list"><div class="muted small-text">No generated local diffs yet.</div></div>
+                <aside class="updates-detail-panel">
+                  <div class="updates-detail-header">
+                    <span id="updatesDetailTitle">Release details</span>
+                    <span id="updatesDetailVersion" class="muted"></span>
+                  </div>
+                  <div class="updates-detail-body" id="updatesDetailBody">
+                    <div class="muted small-text">Preview a PAC update or select an archive to inspect local preservation details.</div>
+                  </div>
+                </aside>
               </div>
-              <div class="updates-archive-section">
-                <div class="button-row"><button id="refreshUpdateArchives" class="ghost-button">Refresh archives</button><span id="updateArchiveHint" class="muted small-text"></span></div>
-                <div id="updateArchivesList" class="update-delta-list"><div class="muted small-text">No update archives loaded yet.</div></div>
+            </section>
+          </div>
+        </div>
+      </div>
+
+      <div id="settings-users" class="settings-panel" style="display:none">
+        <div class="settings-panel-inner settings-panel-single">
+          <div class="settings-main">
+            <section class="card setting-cube compact-setting-card">
+              <h2>PAC home</h2>
+              <div id="pacpInfo" class="kv compact-kv"></div>
+              <p class="muted">Override with <code>PACP_HOME=/path/to/.pacp</code>. Default is <code>~/.pacp</code>.</p>
+            </section>
+            <section class="card setting-cube compact-setting-card">
+              <h2>Users and auth</h2>
+              <p class="muted">Named PAC users, roles, and bearer-backed session tokens.</p>
+              <div id="authInfo" class="kv compact-kv"></div>
+              <div class="form-grid compact-form">
+                <label>Username <input id="newUsername" placeholder="developer" /></label>
+                <label>Display name <input id="newDisplayName" placeholder="Developer" /></label>
+                <label>Password <input id="newUserPassword" type="password" placeholder="min 8 characters" /></label>
+                <label>Role <select id="newUserRole"><option value="user">user</option><option value="admin">admin</option><option value="readonly">readonly</option></select></label>
               </div>
-            </div>
-            <aside class="updates-detail-panel">
-              <div class="updates-detail-header">
-                <span id="updatesDetailTitle">Release details</span>
-                <span id="updatesDetailVersion" class="muted"></span>
+              <div class="button-row"><button id="createUserBtn">Create user</button><button id="refreshUsersBtn" class="ghost-button">Refresh users</button></div>
+              <div id="usersList" class="stacked-output compact-scroll-output"><div class="muted small-text">No users loaded.</div></div>
+              <pre id="usersResult" class="inline-result compact-result"></pre>
+            </section>
+          </div>
+        </div>
+      </div>
+
+      <div id="settings-pi-dev" class="settings-panel" style="display:none">
+        <div class="settings-panel-inner settings-panel-single">
+          <div class="settings-main">
+            <section class="card wide setting-cube">
+              <h2>Controller pi.dev</h2>
+              <p class="muted">Keep one built-in PAC session connected to pi.dev using the PAC platform workspace.</p>
+              <div id="controllerHarnessStatus" class="kv compact-kv"></div>
+              <div class="form-grid compact-form">
+                <label class="checkbox-line"><input id="harnessEnabled" type="checkbox" /> Enable controller pi.dev</label>
+                <label class="checkbox-line"><input id="harnessAutoBootstrap" type="checkbox" /> Build/install local PAC wrapper and pi.dev on startup</label>
+                <label class="checkbox-line"><input id="harnessAutoBuildWrapper" type="checkbox" /> Auto-build missing PAC wrapper binary</label>
+                <label class="checkbox-line"><input id="harnessAutoInstallPiDev" type="checkbox" /> Auto-install missing pi.dev container</label>
+                <label class="checkbox-line"><input id="harnessAutoSession" type="checkbox" /> Always create/keep one session</label>
+                <label>Session name <input id="harnessSessionName" placeholder="PAC controller pi.dev" /></label>
+                <label>Workspace profile <input id="harnessWorkspaceProfile" placeholder="pac-controller" /></label>
+                <label>Profile <select id="harnessAgentProfile"><option value="">none</option></select></label>
+                <label>Model override <select id="harnessModel"><option value="">profile default</option></select></label>
+                <label>Permission profile <select id="harnessPermission"><option value="ask-first">ask-first</option></select></label>
+                <label>Context mode <select id="harnessContextMode"><option>low</option><option>medium</option><option>high</option><option>max</option></select></label>
+                <label>Runner id <input id="harnessRunnerId" placeholder="controller-harness" /></label>
+                <label class="checkbox-line"><input id="harnessExposeTools" type="checkbox" /> Expose platform tools to pi.dev</label>
               </div>
-              <div class="updates-detail-body" id="updatesDetailBody">
-                <div class="muted small-text">Preview a PAC update or select an archive to inspect local preservation details.</div>
+              <div class="button-row"><button id="saveControllerHarness">Save pi.dev settings</button><button id="bootstrapControllerHarness" class="ghost-button">Build/install controller pi.dev</button><button id="openControllerHarnessSession" class="ghost-button">Open pi.dev session</button></div>
+              <pre id="controllerHarnessResult" class="inline-result compact-result"></pre>
+            </section>
+          </div>
+        </div>
+      </div>
+
+      <div id="settings-endpoint" class="settings-panel" style="display:none">
+        <div class="settings-panel-inner settings-panel-single">
+          <div class="settings-main">
+            <section class="card setting-cube compact-setting-card">
+              <h2>Endpoint connection</h2>
+              <p class="muted">Use an explicit controller URL for endpoint binaries when mDNS is unavailable. IP addresses are fine.</p>
+              <div class="form-grid compact-form">
+                <label>Controller URL <input id="endpointPublicUrl" placeholder="https://192.168.1.20:443" /></label>
+                <label class="checkbox-line"><input id="endpointMdnsEnabled" type="checkbox" /> Advertise with mDNS</label>
               </div>
-            </aside>
+              <div class="button-row"><button id="saveEndpointConnection">Save endpoint URL</button></div>
+              <pre id="endpointConnectionResult" class="inline-result compact-result"></pre>
+            </section>
           </div>
-        </section>
+        </div>
+      </div>
 
-        <section class="card setting-cube compact-setting-card">
-          <h2>PAC home</h2>
-          <div id="pacpInfo" class="kv compact-kv"></div>
-          <p class="muted">Override with <code>PACP_HOME=/path/to/.pacp</code>. Default is <code>~/.pacp</code>.</p>
-        </section>
-
-        <section class="card setting-cube compact-setting-card">
-          <h2>Endpoint connection</h2>
-          <p class="muted">Use an explicit controller URL for endpoint binaries when mDNS is unavailable. IP addresses are fine.</p>
-          <div class="form-grid compact-form">
-            <label>Controller URL <input id="endpointPublicUrl" placeholder="https://192.168.1.20:443" /></label>
-            <label class="checkbox-line"><input id="endpointMdnsEnabled" type="checkbox" /> Advertise with mDNS</label>
+      <div id="settings-service" class="settings-panel" style="display:none">
+        <div class="settings-panel-inner settings-panel-single">
+          <div class="settings-main">
+            <section class="card setting-cube compact-setting-card">
+              <h2>Service mode</h2>
+              <p class="muted">Run PAC as a user service for simple installs, or as a host/system service for port 443 and machine-wide startup.</p>
+              <div id="serviceModeInfo" class="kv compact-kv"></div>
+              <div class="segmented-control" role="group" aria-label="PAC service mode">
+                <button id="setUserService" class="ghost-button">Use user service</button>
+                <button id="setHostService">Use host service</button>
+              </div>
+              <pre id="serviceModeResult" class="inline-result compact-result"></pre>
+            </section>
           </div>
-          <div class="button-row"><button id="saveEndpointConnection">Save endpoint URL</button></div>
-          <pre id="endpointConnectionResult" class="inline-result compact-result"></pre>
-        </section>
+        </div>
+      </div>
 
-        <section class="card setting-cube compact-setting-card">
-          <h2>Service mode</h2>
-          <p class="muted">Run PAC as a user service for simple installs, or as a host/system service for port 443 and machine-wide startup.</p>
-          <div id="serviceModeInfo" class="kv compact-kv"></div>
-          <div class="segmented-control" role="group" aria-label="PAC service mode">
-            <button id="setUserService" class="ghost-button">Use user service</button>
-            <button id="setHostService">Use host service</button>
+      <div id="settings-tls" class="settings-panel" style="display:none">
+        <div class="settings-panel-inner settings-panel-single">
+          <div class="settings-main">
+            <section class="card setting-cube compact-setting-card">
+              <h2>TLS / local CA</h2>
+              <p class="muted">PAC generates a 30-year local root CA, signs the HTTPS server certificate for admin.pac.local, and advertises the admin service over mDNS.</p>
+              <div id="tlsInfo" class="kv compact-kv"></div>
+              <div class="button-row">
+                <button id="refreshTlsStatus">Refresh TLS</button>
+                <a class="button-link" href="/v1/tls/ca.pem" download>Download CA</a>
+              </div>
+            </section>
           </div>
-          <pre id="serviceModeResult" class="inline-result compact-result"></pre>
-        </section>
+        </div>
+      </div>
 
-        <section class="card setting-cube compact-setting-card">
-          <h2>Users and auth</h2>
-          <p class="muted">Named PAC users, roles, and bearer-backed session tokens.</p>
-          <div id="authInfo" class="kv compact-kv"></div>
-          <div class="form-grid compact-form">
-            <label>Username <input id="newUsername" placeholder="developer" /></label>
-            <label>Display name <input id="newDisplayName" placeholder="Developer" /></label>
-            <label>Password <input id="newUserPassword" type="password" placeholder="min 8 characters" /></label>
-            <label>Role <select id="newUserRole"><option value="user">user</option><option value="admin">admin</option><option value="readonly">readonly</option></select></label>
+      <div id="settings-config" class="settings-panel" style="display:none">
+        <div class="settings-panel-inner settings-panel-single">
+          <div class="settings-main">
+            <section class="card wide setting-cube">
+              <h2>Configuration editor</h2>
+              <p class="muted">Raw JSON config. Saved server-side as YAML in the PAC home directory.</p>
+              <textarea id="configEditor"></textarea>
+              <button id="saveConfig">Save config</button>
+            </section>
           </div>
-          <div class="button-row"><button id="createUserBtn">Create user</button><button id="refreshUsersBtn" class="ghost-button">Refresh users</button></div>
-          <div id="usersList" class="stacked-output compact-scroll-output"><div class="muted small-text">No users loaded.</div></div>
-          <pre id="usersResult" class="inline-result compact-result"></pre>
-        </section>
-
-        <section class="card setting-cube compact-setting-card">
-          <h2>TLS / local CA</h2>
-          <p class="muted">PAC generates a 30-year local root CA, signs the HTTPS server certificate for admin.pac.local, and advertises the admin service over mDNS.</p>
-          <div id="tlsInfo" class="kv compact-kv"></div>
-          <div class="button-row">
-            <button id="refreshTlsStatus">Refresh TLS</button>
-            <a class="button-link" href="/v1/tls/ca.pem" download>Download CA</a>
-          </div>
-        </section>
-
-        <section class="card wide setting-cube">
-          <h2>Controller pi.dev</h2>
-          <p class="muted">Keep one built-in PAC session connected to pi.dev using the PAC platform workspace.</p>
-          <div id="controllerHarnessStatus" class="kv compact-kv"></div>
-          <div class="form-grid compact-form">
-            <label class="checkbox-line"><input id="harnessEnabled" type="checkbox" /> Enable controller pi.dev</label>
-            <label class="checkbox-line"><input id="harnessAutoBootstrap" type="checkbox" /> Build/install local PAC wrapper and pi.dev on startup</label>
-            <label class="checkbox-line"><input id="harnessAutoBuildWrapper" type="checkbox" /> Auto-build missing PAC wrapper binary</label>
-            <label class="checkbox-line"><input id="harnessAutoInstallPiDev" type="checkbox" /> Auto-install missing pi.dev container</label>
-            <label class="checkbox-line"><input id="harnessAutoSession" type="checkbox" /> Always create/keep one session</label>
-            <label>Session name <input id="harnessSessionName" placeholder="PAC controller pi.dev" /></label>
-            <label>Workspace profile <input id="harnessWorkspaceProfile" placeholder="pac-controller" /></label>
-            <label>Profile <select id="harnessAgentProfile"><option value="">none</option></select></label>
-            <label>Model override <select id="harnessModel"><option value="">profile default</option></select></label>
-            <label>Permission profile <select id="harnessPermission"><option value="ask-first">ask-first</option></select></label>
-            <label>Context mode <select id="harnessContextMode"><option>low</option><option>medium</option><option>high</option><option>max</option></select></label>
-            <label>Runner id <input id="harnessRunnerId" placeholder="controller-harness" /></label>
-            <label class="checkbox-line"><input id="harnessExposeTools" type="checkbox" /> Expose platform tools to pi.dev</label>
-          </div>
-          <div class="button-row"><button id="saveControllerHarness">Save pi.dev settings</button><button id="bootstrapControllerHarness" class="ghost-button">Build/install controller pi.dev</button><button id="openControllerHarnessSession" class="ghost-button">Open pi.dev session</button></div>
-          <pre id="controllerHarnessResult" class="inline-result compact-result"></pre>
-        </section>
-
-        <section class="card wide setting-cube">
-          <h2>Configuration editor</h2>
-          <p class="muted">Raw JSON config. Saved server-side as YAML in the PAC home directory.</p>
-          <textarea id="configEditor"></textarea>
-          <button id="saveConfig">Save config</button>
-        </section>
+        </div>
       </div>
     </section>
   </main>

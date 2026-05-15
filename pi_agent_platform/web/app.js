@@ -1054,8 +1054,31 @@ function setupTabs() {
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById(btn.dataset.tab).classList.add('active');
+      if (btn.dataset.tab === 'settings-tab') switchSettingsPanel('updates');
     };
   });
+}
+
+function switchSettingsPanel(name) {
+  document.querySelectorAll('.settings-panel').forEach((panel) => { panel.style.display = 'none'; panel.classList.remove('active'); });
+  document.querySelectorAll('.settings-sub-btn').forEach((btn) => btn.classList.remove('active'));
+  const panel = document.getElementById('settings-' + name);
+  if (panel) {
+    panel.style.display = 'block';
+    panel.classList.add('active');
+  }
+  const btn = document.querySelector(`.settings-sub-btn[data-settings-panel="${name}"]`);
+  if (btn) btn.classList.add('active');
+  if (name === 'users') loadUsersList().catch(()=>{});
+  if (name === 'pi-dev') renderControllerHarnessSettings();
+  if (name === 'endpoint') renderEndpointConnectionSettings();
+  if (name === 'service') renderServiceMode();
+  if (name === 'tls') renderTlsInfo();
+  if (name === 'config') {
+    const editor = document.getElementById('configEditor');
+    if (editor) editor.value = JSON.stringify(config, null, 2);
+    renderSystemInfo();
+  }
 }
 
 function tokenHeaders() {
@@ -3534,6 +3557,7 @@ async function saveControllerHarnessSettings() {
   const status = await api('/v1/controller-harness/settings', {method:'POST', body:JSON.stringify(payload)});
   if (result) result.textContent = status.message || 'Controller pi.dev settings saved.';
   await loadConfig();
+  switchSettingsPanel('updates');
   await loadSessions();
   if (status?.session?.id) { selectedSession = status.session; }
   await loadGlobalEvents(true).catch(()=>{});
@@ -3926,6 +3950,9 @@ const authTokenInput = document.getElementById('token');
 if (authTokenInput) authTokenInput.addEventListener('input', () => renderHeaderAuthBox());
 document.getElementById('loginBtn')?.addEventListener('click', () => openLoginModal(authStatus?.needs_setup ? 'setup' : 'login'));
 document.getElementById('userChipLogout')?.addEventListener('click', () => { document.getElementById('userMenu')?.setAttribute('hidden', ''); logoutUser(); });
+document.querySelectorAll('.settings-sub-btn').forEach((btn) => {
+  btn.addEventListener('click', () => switchSettingsPanel(btn.dataset.settingsPanel));
+});
 document.getElementById('userChip')?.addEventListener('click', (ev) => {
   ev.stopPropagation();
   const menu = document.getElementById('userMenu');
