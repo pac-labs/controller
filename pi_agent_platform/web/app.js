@@ -49,6 +49,7 @@ let sessionThinkingGroup = null;
 let sessionEventSeen = new Set();
 let sessionMessageSeen = new Set();
 let sessionPendingRows = new Map();
+let sessionApprovalRows = new Map();
 let sessionLatestEventId = null;
 let sessionPoll = null;
 let setupStatus = null;
@@ -432,6 +433,7 @@ async function resolveSessionApproval(taskId, approved) {
   if (!taskId) return;
   if (approved) await api(`/v1/tasks/${taskId}/approve`, {method:'POST'});
   else await api(`/v1/tasks/${taskId}/reject?reason=Rejected`, {method:'POST'});
+  removeSessionApprovalRow(taskId);
   await loadApprovals().catch(()=>{});
 }
 function updateSessionThinkingRow(group) {
@@ -568,6 +570,50 @@ function removePendingRow(taskId) {
   if (row && row.parentElement) row.remove();
   sessionPendingRows.delete(taskId);
 }
+function removeSessionApprovalRow(taskId) {
+  if (!taskId) return;
+  const row = sessionApprovalRows.get(taskId);
+  if (row && row.parentElement) row.remove();
+  sessionApprovalRows.delete(taskId);
+}
+function approvalPurpose(event) {
+  const data = event?.data && typeof event.data === 'object' ? event.data : {};
+  return data.command || data.path || data.url || data.query || event?.message || 'Requested action';
+}
+function renderSessionApprovalRow(event) {
+  const el = document.getElementById('events');
+  const taskId = event?.task_id || '';
+  if (!el || !taskId || sessionApprovalRows.has(taskId)) return;
+  const data = event?.data && typeof event.data === 'object' ? event.data : {};
+  const reason = data.reason || '';
+  const row = document.createElement('article');
+  row.className = 'chat-message-row system approval-row';
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-bubble warning approval-bubble';
+  bubble.innerHTML = `<div class="chat-bubble-meta"><span>Permission needed</span><span>${escapeHtml(formatEventTime(event.created_at))}</span></div>
+    <div class="chat-bubble-text">
+      <div class="approval-purpose">${escapeHtml(approvalPurpose(event))}</div>
+      ${reason ? `<div class="approval-reason">${escapeHtml(reason)}</div>` : ''}
+    </div>`;
+  const actions = document.createElement('div');
+  actions.className = 'approval-actions';
+  const approve = document.createElement('button');
+  approve.type = 'button';
+  approve.className = 'thought-action approve';
+  approve.textContent = 'Approve';
+  approve.onclick = async () => { approve.disabled = true; reject.disabled = true; await resolveSessionApproval(taskId, true); };
+  const reject = document.createElement('button');
+  reject.type = 'button';
+  reject.className = 'thought-action reject';
+  reject.textContent = 'Reject';
+  reject.onclick = async () => { approve.disabled = true; reject.disabled = true; await resolveSessionApproval(taskId, false); };
+  actions.append(approve, reject);
+  bubble.appendChild(actions);
+  row.appendChild(bubble);
+  sessionApprovalRows.set(taskId, row);
+  el.appendChild(row);
+  el.scrollTop = el.scrollHeight;
+}
 async function pollSessionEvents(sessionId) {
   if (!sessionId || !selectedSession || selectedSession.id !== sessionId) return;
   try {
@@ -616,6 +662,7 @@ function renderSessionTimelineEvent(event) {
   if (event.type === 'user_message' || event.type === 'result' || event.type === 'assistant_message') sessionMessageSeen.add(messageKey);
   const typeLower = String(event.type || '').toLowerCase();
   if (typeLower.includes('task_completed') || typeLower.includes('task_failed') || typeLower.includes('result')) removePendingRow(event.task_id);
+  if (typeLower.includes('task_approved') || typeLower.includes('task_rejected') || typeLower.includes('task_completed') || typeLower.includes('task_failed') || typeLower.includes('result')) removeSessionApprovalRow(event.task_id);
   const empty = el.querySelector('.empty-timeline');
   if (empty) empty.remove();
   const block = normalizeTimelineBlock(event);
@@ -627,6 +674,7 @@ function renderSessionTimelineEvent(event) {
     group.lastEvent = event;
     group.summary = sessionThinkingSummary(event, block);
     updateSessionThinkingRow(group);
+    if (typeLower.includes('approval_required')) renderSessionApprovalRow(event);
     if (String(event?.type || '').toLowerCase().includes('task_completed') || String(event?.type || '').toLowerCase().includes('task_failed')) {
       flushSessionThinkingGroup(event);
     }
@@ -672,6 +720,7 @@ function renderSessionTimelineEvent(event) {
 function renderGlobalEvent(event, prepend=false) {
   const list = document.getElementById('globalEvents');
   if (!list || !event) return;
+  if (shouldSuppressGlobalEvent(event)) return;
   if (event.id && globalEventSeen.has(event.id)) return;
   if (event.id) globalEventSeen.add(event.id);
   const cat = eventCategory(event.type);
@@ -717,6 +766,10 @@ function renderGlobalEvent(event, prepend=false) {
   if (list.firstChild) list.insertBefore(card, list.firstChild); else list.appendChild(card);
   while (list.children.length > 120) list.removeChild(list.lastChild);
   list.scrollTop = 0;
+}
+function shouldSuppressGlobalEvent(event) {
+  const type = String(event?.type || '').toLowerCase();
+  return type === 'runner_heartbeat' || type === 'endpoint_heartbeat' || type === 'provider_heartbeat';
 }
 async function loadGlobalEvents(reset=false) {
   const list = document.getElementById('globalEvents');
@@ -1826,6 +1879,7 @@ async function applyPacRelease() {
       });
       await loadUpdateArchives().catch(()=>{});
     }
+    if (result.restart_scheduled) scheduleHiddenReloadAfterRestart();
   } finally {
     if (btn) btn.textContent = 'Apply latest release';
   }
@@ -3199,6 +3253,7 @@ async function selectSession(id) {
   sessionEventSeen = new Set();
   sessionMessageSeen = new Set();
   sessionPendingRows = new Map();
+  sessionApprovalRows = new Map();
   sessionLatestEventId = null;
   try {
     const snapshot = await api(`/v1/sessions/${id}/events/snapshot?limit=120`);

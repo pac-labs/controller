@@ -1322,8 +1322,10 @@ def metrics_summary(_auth: None = Depends(require_auth)) -> dict[str, Any]:
     day_keys = [(now - timedelta(days=idx)).date().isoformat() for idx in range(6, -1, -1)]
     events_by_day = {key: 0 for key in day_keys}
     event_types: dict[str, int] = {}
+    noisy_metric_events = {'runner_heartbeat', 'endpoint_heartbeat', 'provider_heartbeat'}
     for event in recent_events:
-        event_types[event.type] = event_types.get(event.type, 0) + 1
+        if event.type not in noisy_metric_events:
+            event_types[event.type] = event_types.get(event.type, 0) + 1
         key = event.created_at.astimezone(timezone.utc).date().isoformat()
         if key in events_by_day:
             events_by_day[key] += 1
