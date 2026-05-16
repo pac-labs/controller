@@ -66,6 +66,8 @@ let currentUser = null;
 let authStatus = null;
 let suppressSessionAutoScroll = false;
 let sessionHydrationToken = 0;
+let sessionHydrationActiveFor = null;
+let sessionHydrationBufferedEvents = [];
 
 const AUTH_TOKEN_KEY = 'pac_auth_token';
 
@@ -880,6 +882,7 @@ function resetSessionTimelineState() {
   sessionPendingRows = new Map();
   sessionApprovalRows = new Map();
   sessionLatestEventId = null;
+  sessionHydrationBufferedEvents = [];
 }
 function renderSessionSnapshotFast(snapshot, sessionId) {
   const timeline = document.getElementById('events');
@@ -889,26 +892,41 @@ function renderSessionSnapshotFast(snapshot, sessionId) {
   const hydrateChunkSize = 36;
   const tail = events.slice(-initialChunkSize);
   const token = ++sessionHydrationToken;
+  sessionHydrationActiveFor = sessionId;
   timeline.innerHTML = tail.length ? '' : '<div class="empty-timeline">No session events yet.</div>';
   resetSessionTimelineState();
   suppressSessionAutoScroll = true;
   tail.forEach((ev) => renderSessionTimelineEvent(ev));
   suppressSessionAutoScroll = false;
   timeline.scrollTop = timeline.scrollHeight;
-  if (events.length <= initialChunkSize) return;
+  if (events.length <= initialChunkSize) {
+    sessionHydrationActiveFor = null;
+    return;
+  }
   window.setTimeout(() => {
     if (!selectedSession || selectedSession.id !== sessionId || sessionHydrationToken !== token) return;
+    const buffered = Array.isArray(sessionHydrationBufferedEvents) ? sessionHydrationBufferedEvents.slice() : [];
+    sessionHydrationActiveFor = null;
+    sessionHydrationBufferedEvents = [];
+    const merged = [...events];
+    const seen = new Set(merged.map((item) => item?.id).filter(Boolean));
+    buffered.forEach((item) => {
+      if (!item || (item.id && seen.has(item.id))) return;
+      merged.push(item);
+      if (item.id) seen.add(item.id);
+    });
+    merged.sort((a, b) => new Date(a?.created_at || 0).getTime() - new Date(b?.created_at || 0).getTime());
     timeline.innerHTML = '';
     resetSessionTimelineState();
     let index = 0;
     const paintChunk = () => {
       if (!selectedSession || selectedSession.id !== sessionId || sessionHydrationToken !== token) return;
       suppressSessionAutoScroll = true;
-      for (let count = 0; count < hydrateChunkSize && index < events.length; count += 1, index += 1) {
-        renderSessionTimelineEvent(events[index]);
+      for (let count = 0; count < hydrateChunkSize && index < merged.length; count += 1, index += 1) {
+        renderSessionTimelineEvent(merged[index]);
       }
       suppressSessionAutoScroll = false;
-      if (index < events.length) {
+      if (index < merged.length) {
         window.requestAnimationFrame(paintChunk);
         return;
       }
@@ -3931,6 +3949,9 @@ async function selectSession(id) {
 }
 function appendEvent(type, payload) {
   const event = normalizeEvent(type, payload);
+  if (selectedSession?.id && sessionHydrationActiveFor === selectedSession.id) {
+    sessionHydrationBufferedEvents.push(event);
+  }
   renderSessionTimelineEvent(event);
   renderGlobalEvent(event);
   const eventType = String(event?.type || type || '').toLowerCase();
