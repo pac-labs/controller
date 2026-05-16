@@ -102,10 +102,30 @@ class SQLiteStore:
         return [Event.model_validate_json(r['payload']) for r in rows]
 
 
-    def list_recent_events(self, limit: int = 200) -> list[Event]:
-        with self._connect() as conn:
-            rows = conn.execute('select payload from events order by created_at desc limit ?', (limit,)).fetchall()
-        return [Event.model_validate_json(r['payload']) for r in rows]
+    def list_recent_events(self, limit: int = 200, exclude_types: set[str] | None = None) -> list[Event]:
+        excluded = {str(item) for item in (exclude_types or set())}
+        batch_size = max(limit * 4, 200)
+        offset = 0
+        items: list[Event] = []
+        while len(items) < limit:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    'select payload from events order by created_at desc limit ? offset ?',
+                    (batch_size, offset),
+                ).fetchall()
+            if not rows:
+                break
+            for row in rows:
+                event = Event.model_validate_json(row['payload'])
+                if event.type in excluded:
+                    continue
+                items.append(event)
+                if len(items) >= limit:
+                    break
+            if len(rows) < batch_size:
+                break
+            offset += batch_size
+        return items
 
     def add_runner(self, runner: Runner) -> Runner:
         runner.touch()

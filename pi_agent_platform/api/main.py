@@ -1678,21 +1678,22 @@ def healthz() -> dict[str, str]:
 
 
 
+NOISY_EVENT_TYPES = {'runner_heartbeat', 'endpoint_heartbeat', 'provider_heartbeat'}
+
+
 @app.get('/v1/metrics/summary')
 def metrics_summary(_auth: None = Depends(require_auth)) -> dict[str, Any]:
     _refresh_local_runner_metadata(emit_event=False)
     sessions = store.list_sessions()
     tasks = store.list_tasks()
     runners = store.list_runners()
-    recent_events = store.list_recent_events(limit=500)
+    recent_events = store.list_recent_events(limit=500, exclude_types=NOISY_EVENT_TYPES)
     now = datetime.now(timezone.utc)
     day_keys = [(now - timedelta(days=idx)).date().isoformat() for idx in range(6, -1, -1)]
     events_by_day = {key: 0 for key in day_keys}
     event_types: dict[str, int] = {}
-    noisy_metric_events = {'runner_heartbeat', 'endpoint_heartbeat', 'provider_heartbeat'}
     for event in recent_events:
-        if event.type not in noisy_metric_events:
-            event_types[event.type] = event_types.get(event.type, 0) + 1
+        event_types[event.type] = event_types.get(event.type, 0) + 1
         key = event.created_at.astimezone(timezone.utc).date().isoformat()
         if key in events_by_day:
             events_by_day[key] += 1
@@ -3613,8 +3614,8 @@ def stop_task(task_id: str, _auth: None = Depends(require_auth)) -> Task:
 
 
 @app.get('/v1/events/recent')
-def recent_events(limit: int = Query(default=80, ge=1, le=500), _auth: None = Depends(require_auth)) -> list[Event]:
-    return store.list_recent_events(limit=limit)
+def recent_events(limit: int = Query(default=80, ge=1, le=500), include_noisy: bool = False, _auth: None = Depends(require_auth)) -> list[Event]:
+    return store.list_recent_events(limit=limit, exclude_types=None if include_noisy else NOISY_EVENT_TYPES)
 
 
 @app.post('/v1/sessions/{session_id}/events', response_model=Event)
