@@ -10,6 +10,7 @@ from typing import Any
 GITHUB_REPO = os.environ.get("PAC_GITHUB_REPO", "pac-labs/controller").strip() or "pac-labs/controller"
 GITHUB_RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 GITHUB_REPO_URL = f"https://github.com/{GITHUB_REPO}"
+GITHUB_COMPARE_API = f"https://api.github.com/repos/{GITHUB_REPO}/compare"
 PACKAGE_NAME = "pac-full.zip"
 
 
@@ -48,6 +49,27 @@ def _body_changes(body: str) -> list[str]:
     return changes
 
 
+def _compare_changes(current_version: str | None, latest_version: str | None) -> list[str]:
+    current = str(current_version or "").strip().lstrip("v")
+    latest = str(latest_version or "").strip().lstrip("v")
+    if not current or not latest or _version_tuple(latest) <= _version_tuple(current):
+        return []
+    compare = _fetch_json(f"{GITHUB_COMPARE_API}/v{current}...v{latest}")
+    if not compare:
+        return []
+    changes: list[str] = []
+    for commit in compare.get("commits") or []:
+        message = str(((commit.get("commit") or {}).get("message")) or "").strip()
+        title = message.splitlines()[0].strip()
+        if not title:
+            continue
+        if title not in changes:
+            changes.append(title)
+        if len(changes) >= 20:
+            break
+    return changes
+
+
 def fetch_latest_release_metadata(current_version: str) -> dict[str, Any]:
     release = _fetch_json(GITHUB_RELEASES_API)
     if not release:
@@ -62,6 +84,8 @@ def fetch_latest_release_metadata(current_version: str) -> dict[str, Any]:
     tag = str(release.get("tag_name") or "").strip()
     latest_version = tag.lstrip("v") or None
     body = str(release.get("body") or "").strip()
+    body_changes = _body_changes(body)
+    compare_changes = _compare_changes(current_version, latest_version)
     download_url = None
     for asset in release.get("assets") or []:
         if str(asset.get("name") or "") == PACKAGE_NAME:
@@ -76,9 +100,10 @@ def fetch_latest_release_metadata(current_version: str) -> dict[str, Any]:
         "download_url": download_url,
         "published_at": release.get("published_at"),
         "tag": tag or None,
-        "body": body[:4000] if body else None,
-        "changes": _body_changes(body),
-        "change_count": len(_body_changes(body)),
+        "body": body[:20000] if body else None,
+        "changes": body_changes,
+        "change_count": len(body_changes),
+        "compare_changes": compare_changes,
         "repo": GITHUB_REPO,
     }
 

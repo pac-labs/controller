@@ -239,6 +239,11 @@ function normalizeEvent(type, payload) {
   return {id:`local_${Date.now()}_${Math.random()}`, type, message:String(payload || ''), created_at:new Date().toISOString(), session_id:selectedSession?.id || null};
 }
 
+function isServerBackedEventId(eventId) {
+  const value = String(eventId || '').trim();
+  return !!value && !value.startsWith('local_');
+}
+
 function eventTone(type) {
   const cat = eventCategory(type);
   if (cat === 'completed') return 'ok';
@@ -1011,7 +1016,7 @@ function renderSessionTimelineEvent(event, options = {}) {
   const prepend = !!options.prepend;
   if (event.id && sessionEventSeen.has(event.id)) return;
   if (event.id) sessionEventSeen.add(event.id);
-  if (event.id) sessionLatestEventId = event.id;
+  if (isServerBackedEventId(event.id)) sessionLatestEventId = event.id;
   const messageKey = `${event.type || ''}:${event.task_id || ''}:${event.message || ''}`;
   if ((event.type === 'user_message' || event.type === 'result' || event.type === 'assistant_message' || event.type === 'final') && sessionMessageSeen.has(messageKey)) return;
   if (event.type === 'user_message' || event.type === 'result' || event.type === 'assistant_message' || event.type === 'final') sessionMessageSeen.add(messageKey);
@@ -2219,15 +2224,46 @@ function setUpdatesDetail(meta=null) {
   const formatDetailBody = (value) => {
     const raw = String(value || '').trim();
     if (!raw) return '';
-    const linked = raw.split('\n').map((line) => {
-      const match = line.match(/^"([^"]+)":\s*(https?:\/\/\S+)$/);
-      if (match) {
-        const [, label, url] = match;
-        return `<b>${escapeHtml(label)}</b>: <a href="${url}" target="_blank" rel="noreferrer">${escapeHtml(url)}</a>`;
+    const lines = raw.split('\n');
+    const parts = [];
+    let listItems = [];
+    const flushList = () => {
+      if (!listItems.length) return;
+      parts.push(`<ul>${listItems.join('')}</ul>`);
+      listItems = [];
+    };
+    const linkify = (text) => escapeHtml(text).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noreferrer">$1</a>');
+    lines.forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        flushList();
+        return;
       }
-      return escapeHtml(line).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noreferrer">$1</a>');
-    }).join('<br>');
-    return `<div class="small-text updates-detail-copy">${linked}</div>`;
+      if (/^#{1,6}\s+/.test(trimmed)) {
+        flushList();
+        parts.push(`<div class="update-delta-title">${linkify(trimmed.replace(/^#{1,6}\s+/, ''))}</div>`);
+        return;
+      }
+      const quoteLink = trimmed.match(/^"?([^":]+)"?:\s*(https?:\/\/\S+)$/);
+      if (quoteLink) {
+        flushList();
+        const [, label, url] = quoteLink;
+        parts.push(`<div><b>${escapeHtml(label)}</b>: <a href="${url}" target="_blank" rel="noreferrer">${escapeHtml(url)}</a></div>`);
+        return;
+      }
+      if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        listItems.push(`<li>${linkify(trimmed.slice(2).trim())}</li>`);
+        return;
+      }
+      if (/^\d+\.\s+/.test(trimmed)) {
+        listItems.push(`<li>${linkify(trimmed.replace(/^\d+\.\s+/, ''))}</li>`);
+        return;
+      }
+      flushList();
+      parts.push(`<div>${linkify(trimmed)}</div>`);
+    });
+    flushList();
+    return `<div class="small-text updates-detail-copy">${parts.join('')}</div>`;
   };
   if (!title || !version || !body) return;
   if (!meta) {
@@ -2402,23 +2438,25 @@ function renderPacReleaseStatus(meta=null) {
     if (applyBtn) applyBtn.disabled = true;
     return;
   }
-  if (meta.has_update) {
-    status.textContent = `Latest release: v${meta.latest_version}`;
-    if (applyBtn) applyBtn.disabled = false;
-    const currentVersion = meta.current_version || config?.version || config?.setup_status?.version || '';
-    api(`/v1/updates/release-notes?from_version=${encodeURIComponent(currentVersion)}&to_version=${encodeURIComponent(meta.latest_version || '')}`)
-      .then((notes) => {
-        setUpdatesDetail({
-          title:'Available release',
-          version:meta.latest_version,
-          entries:(notes?.entries || []).length ? (notes.entries || []) : ((meta.changes || []).length ? [{title:`PAC v${meta.latest_version}`, version:meta.latest_version, changes:meta.changes || []}] : []),
-          body: meta.body || '',
+    if (meta.has_update) {
+      status.textContent = `Latest release: v${meta.latest_version}`;
+      if (applyBtn) applyBtn.disabled = false;
+      const currentVersion = meta.current_version || config?.version || config?.setup_status?.version || '';
+      api(`/v1/updates/release-notes?from_version=${encodeURIComponent(currentVersion)}&to_version=${encodeURIComponent(meta.latest_version || '')}`)
+        .then((notes) => {
+          const fallbackChanges = (meta.changes || []).length ? (meta.changes || []) : (meta.compare_changes || []);
+          setUpdatesDetail({
+            title:'Available release',
+            version:meta.latest_version,
+            entries:(notes?.entries || []).length ? (notes.entries || []) : (fallbackChanges.length ? [{title:`PAC v${meta.latest_version}`, version:meta.latest_version, changes:fallbackChanges}] : []),
+            body: meta.body || '',
+          });
+        })
+        .catch(() => {
+          const fallbackChanges = (meta.changes || []).length ? (meta.changes || []) : (meta.compare_changes || []);
+          setUpdatesDetail({title:'Available release', version:meta.latest_version, entries:fallbackChanges.length ? [{title:`PAC v${meta.latest_version}`, version:meta.latest_version, changes:fallbackChanges}] : [], body: meta.body || ''});
         });
-      })
-      .catch(() => {
-        setUpdatesDetail({title:'Available release', version:meta.latest_version, entries:(meta.changes || []).length ? [{title:`PAC v${meta.latest_version}`, version:meta.latest_version, changes:meta.changes || []}] : [], body: meta.body || ''});
-      });
-    return;
+      return;
   }
   status.textContent = `PAC is up to date${meta.latest_version ? ` at v${meta.latest_version}` : ''}.`;
   if (applyBtn) applyBtn.disabled = true;
