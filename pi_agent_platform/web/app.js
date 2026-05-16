@@ -1287,14 +1287,17 @@ function fillSelects() {
   syncSessionPermissionQuick();
 }
 function emitUiEvent(type, message, data=null) {
-  renderGlobalEvent({
+  window.__pacLastUiEvent = {
     id: `${type}_${Date.now()}_${Math.random()}`,
     type,
     message: message || prettyEventType(type),
     created_at: new Date().toISOString(),
     session_id: 'system',
-    data: data ? {details: data} : {},
-  }, true);
+    data: data ? {details: data, source: 'ui'} : {source: 'ui'},
+  };
+  if (document.getElementById('eventsRail') && !document.getElementById('eventsRail')?.hidden) {
+    loadGlobalEvents(true).catch(()=>{});
+  }
 }
 function showInline(id, obj) {
   if (id === 'modelFormResult') {

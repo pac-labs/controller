@@ -867,6 +867,16 @@ section.card:has(#sessions){
 .composer-context-menu button:hover { background:rgba(17,24,39,.08); }
 @media(max-width:1180px){ .composer-controls.integrated.editor-like { grid-template-columns: auto 1fr 1fr auto; } }
 @media(max-width:720px){ .composer-controls.integrated.editor-like { grid-template-columns: auto 1fr auto; } }
+@media(max-width:1180px){
+  .session-composer .composer-controls.integrated.editor-like{
+    grid-template-columns:auto 1fr 1fr auto !important;
+  }
+}
+@media(max-width:720px){
+  .session-composer .composer-controls.integrated.editor-like{
+    grid-template-columns:auto 1fr auto !important;
+  }
+}
 
 /* v1.0.74: integrated session picker, slash commands and container destination modal. */
 #sessions-tab.sessions-workspace { display:none; }
@@ -994,34 +1004,42 @@ body:not(.light) .compact-destination-controls select {
   max-width:100%;
   background:transparent;
   overflow:visible;
+  margin-top:auto;
+  padding-top:.65rem;
 }
 .session-composer .composer-input-shell {
-  background:transparent;
+  background:rgba(15,23,42,.70);
   color:var(--text);
-  border-color:rgba(148,163,184,.22);
+  border:1px solid rgba(148,163,184,.20);
+  border-radius:16px 16px 0 0;
   border-bottom:0;
 }
 .session-composer textarea#taskPrompt {
   color:var(--text);
   background:transparent;
+  min-height:72px;
 }
 .session-composer .composer-controls.integrated.editor-like {
-  background:transparent;
+  background:rgba(15,23,42,.70);
   color:var(--text);
-  border-color:rgba(148,163,184,.22);
+  border:1px solid rgba(148,163,184,.20);
   border-top:0;
+  border-radius:0 0 16px 16px;
+  grid-template-columns:auto minmax(120px,150px) minmax(180px,1fr) minmax(120px,150px) minmax(120px,1fr) auto;
+  gap:.4rem;
 }
 .session-composer .composer-controls.integrated.editor-like select,
 .session-composer .composer-controls.integrated.editor-like input {
-  background:rgba(255,255,255,.045);
+  background:rgba(10,8,16,.82);
   color:var(--text);
-  border-color:rgba(148,163,184,.16);
+  border-color:rgba(148,163,184,.20);
 }
 .session-composer .composer-icon-button.square,
 .session-composer .composer-send-button.square {
   background:rgba(255,255,255,.055);
   color:var(--text);
   border-color:rgba(148,163,184,.18);
+  min-height:38px;
 }
 .session-composer .composer-send-button.square:hover,
 .session-composer .composer-icon-button.square:hover {
@@ -1387,7 +1405,7 @@ button,
   gap: .3rem !important;
 }
 .composer-controls.integrated.editor-like {
-  grid-template-columns: auto minmax(92px,120px) minmax(120px,1fr) minmax(108px,145px) minmax(92px,120px) minmax(112px,1fr) auto !important;
+  grid-template-columns: auto minmax(120px,150px) minmax(180px,1fr) minmax(120px,150px) minmax(120px,1fr) auto !important;
 }
 .session-top-select {
   max-width: 320px;
@@ -1402,9 +1420,7 @@ button,
 .composer-controls.integrated.editor-like,
 .session-composer .composer-input-shell,
 .session-composer .composer-controls.integrated.editor-like {
-  background: rgba(15,23,42,.70) !important;
   color: #f4f1ff !important;
-  border-color: rgba(148,163,184,.20) !important;
   box-shadow: none !important;
 }
 .session-composer textarea#taskPrompt,
