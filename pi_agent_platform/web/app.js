@@ -2237,6 +2237,19 @@ function setUpdatesDetail(meta=null) {
   const title = document.getElementById('updatesDetailTitle');
   const version = document.getElementById('updatesDetailVersion');
   const body = document.getElementById('updatesDetailBody');
+  const formatDetailBody = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const linked = raw.split('\n').map((line) => {
+      const match = line.match(/^"([^"]+)":\s*(https?:\/\/\S+)$/);
+      if (match) {
+        const [, label, url] = match;
+        return `<b>${escapeHtml(label)}</b>: <a href="${url}" target="_blank" rel="noreferrer">${escapeHtml(url)}</a>`;
+      }
+      return escapeHtml(line).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noreferrer">$1</a>');
+    }).join('<br>');
+    return `<div class="small-text updates-detail-copy">${linked}</div>`;
+  };
   if (!title || !version || !body) return;
   if (!meta) {
     title.textContent = 'Release details';
@@ -2249,9 +2262,9 @@ function setUpdatesDetail(meta=null) {
   const entries = meta.entries || [];
   const bodyHtml = meta.html_body || null;
   if (entries.length) {
-    body.innerHTML = `<div class="update-delta-list">${entries.map(entry => `<div class="update-delta-version"><div class="update-delta-title">${escapeHtml(entry.title || ('PAC v' + (entry.version || '')))}</div><ul>${(entry.changes || []).map(change => `<li>${escapeHtml(change)}</li>`).join('')}</ul></div>`).join('')}</div>${bodyHtml ? `<div class="muted small-text" style="margin-top:.6rem">${bodyHtml}</div>` : (meta.body ? `<div class="muted small-text" style="margin-top:.6rem">${escapeHtml(meta.body)}</div>` : '')}`;
+    body.innerHTML = `<div class="update-delta-list">${entries.map(entry => `<div class="update-delta-version"><div class="update-delta-title">${escapeHtml(entry.title || ('PAC v' + (entry.version || '')))}</div><ul>${(entry.changes || []).map(change => `<li>${escapeHtml(change)}</li>`).join('')}</ul></div>`).join('')}</div>${bodyHtml ? `<div class="muted small-text" style="margin-top:.6rem">${bodyHtml}</div>` : formatDetailBody(meta.body)}`;
   } else {
-    body.innerHTML = bodyHtml ? `<div class="muted small-text">${bodyHtml}</div>` : (meta.body ? `<div class="muted small-text">${escapeHtml(meta.body)}</div>` : '<div class="muted small-text">No additional details available.</div>');
+    body.innerHTML = bodyHtml ? `<div class="muted small-text">${bodyHtml}</div>` : (meta.body ? formatDetailBody(meta.body) : '<div class="muted small-text">No additional details available.</div>');
   }
 }
 function setBackupDetail(meta=null) {
