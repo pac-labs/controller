@@ -2863,26 +2863,29 @@ body[data-theme="light"] .health-row b{
 
 /* v1.0.136+: use the transparent PAC lockup in the header, not the full hero banner */
 .app-header{
-  min-height:72px !important;
-  height:auto !important;
-  padding:.7rem 1.25rem !important;
+  min-height:68px !important;
+  height:68px !important;
+  padding:.4rem .85rem !important;
   gap:1rem !important;
   align-items:center !important;
   background:
     linear-gradient(90deg, rgba(6,14,24,.985), rgba(7,16,29,.975)) !important;
   border-bottom:1px solid rgba(96,165,250,.16) !important;
+  overflow:hidden;
 }
 .brand-block{
   flex:0 1 auto;
   min-width:0;
   align-items:center !important;
+  height:100%;
 }
 .brand-logo{
   display:block;
-  width:320px !important;
-  max-width:min(34vw,320px) !important;
-  height:auto !important;
+  width:390px !important;
+  max-width:min(40vw,390px) !important;
+  height:60px !important;
   object-fit:contain;
+  object-position:left center;
   filter:none !important;
 }
 .top-actions{
@@ -2892,20 +2895,55 @@ body[data-theme="light"] .health-row b{
   gap:.45rem;
   flex:1 1 auto;
   min-width:0;
+  height:100%;
+  flex-wrap:nowrap;
 }
 .tabs{
-  padding:.5rem 1rem !important;
+  min-height:42px;
+  padding:.35rem .75rem !important;
   background:rgba(6,14,24,.97) !important;
   border-bottom:1px solid rgba(96,165,250,.14) !important;
+  align-items:stretch;
 }
 .top-icon-button,
 .theme-select-wrap select,
 .user-chip,
 .user-login-button,
 #refresh{
-  min-height:2.15rem;
+  height:34px;
+  min-height:34px;
   background:rgba(15,23,42,.54) !important;
   border-color:rgba(96,165,250,.22) !important;
+}
+.top-icon-button{
+  width:34px !important;
+  min-width:34px;
+  border-radius:0 !important;
+}
+.theme-select-wrap select,
+.user-chip,
+.user-login-button,
+#refresh{
+  border-radius:0 !important;
+}
+.theme-select-wrap select{
+  min-width:124px !important;
+  padding:.35rem 1.9rem .35rem .65rem !important;
+}
+.user-chip{
+  min-width:auto !important;
+  max-width:160px;
+  padding:.35rem .6rem !important;
+}
+.user-menu-wrap{
+  height:34px;
+}
+.user-menu-dropdown{
+  min-width:174px;
+}
+.user-menu-dropdown button{
+  min-height:34px;
+  padding:.5rem .7rem;
 }
 .app-footer{
   background:#070d17 !important;
@@ -2927,20 +2965,59 @@ body[data-theme="light"] .app-footer{
     padding:.7rem 1rem !important;
   }
   .brand-logo{
-    width:280px !important;
-    max-width:min(60vw,280px) !important;
+    width:300px !important;
+    max-width:min(56vw,300px) !important;
   }
 }
 @media(max-width:720px){
   .app-header{
+    height:auto !important;
+    min-height:0 !important;
     align-items:flex-start !important;
+    padding:.55rem .75rem !important;
   }
   .brand-logo{
-    width:220px !important;
-    max-width:min(78vw,220px) !important;
+    width:240px !important;
+    max-width:min(78vw,240px) !important;
+    height:auto !important;
   }
   .top-actions{
     width:100%;
     justify-content:flex-start;
+    flex-wrap:wrap;
+    height:auto;
   }
+}
+
+html[data-theme="dark"],
+body[data-theme="dark"]{
+  scrollbar-color:#166534 #090712;
+}
+html[data-theme="light"],
+body[data-theme="light"]{
+  scrollbar-color:#16a34a #e2e8f0;
+}
+html[data-theme="light"] ::-webkit-scrollbar,
+body[data-theme="light"] ::-webkit-scrollbar{
+  width:12px;
+  height:12px;
+}
+html[data-theme="light"] ::-webkit-scrollbar-track,
+body[data-theme="light"] ::-webkit-scrollbar-track{
+  background:#e2e8f0;
+}
+html[data-theme="light"] ::-webkit-scrollbar-thumb,
+body[data-theme="light"] ::-webkit-scrollbar-thumb{
+  background:#16a34a;
+  border:2px solid #e2e8f0;
+}
+html[data-theme="light"] .content-area,
+html[data-theme="light"] .tab-panel.active,
+html[data-theme="light"] .events-list,
+html[data-theme="light"] .setting-cube,
+body[data-theme="light"] .content-area,
+body[data-theme="light"] .tab-panel.active,
+body[data-theme="light"] .events-list,
+body[data-theme="light"] .setting-cube{
+  scrollbar-color:#16a34a #e2e8f0 !important;
 }
