@@ -64,6 +64,7 @@ let sessionPollRequest = null;
 let sessionPollingActiveFor = null;
 let currentUser = null;
 let authStatus = null;
+let suppressSessionAutoScroll = false;
 
 const AUTH_TOKEN_KEY = 'pac_auth_token';
 
@@ -779,6 +780,88 @@ function syncSessionPermissionQuick() {
   select.disabled = !profiles.length;
   button.disabled = !profiles.length || select.value === (selectedSession.permission_profile || '');
 }
+function ensureSessionWorkspaceChrome() {
+  const layout = document.querySelector('#sessions-tab .session-chat-layout');
+  const main = document.querySelector('#sessions-tab .session-chat-main');
+  if (!layout || !main) return;
+  layout.classList.remove('single');
+  layout.classList.add('with-sidebar');
+  let sidebar = document.querySelector('#sessions-tab .sessions-list-card');
+  if (!sidebar) {
+    sidebar = document.createElement('aside');
+    sidebar.className = 'sessions-list-card';
+    sidebar.innerHTML = `<div class="section-heading compact-heading"><div><h3>Sessions</h3><p class="muted">Select or reopen a session quickly.</p></div></div><div id="sessionSidebarList" class="session-sidebar-list muted">No sessions yet.</div>`;
+    layout.insertBefore(sidebar, main);
+  }
+  const topQuick = document.querySelector('#sessions-tab .session-quick-controls');
+  if (topQuick) topQuick.style.display = 'none';
+  const controls = document.querySelector('#sessions-tab .composer-controls.integrated.editor-like');
+  const permissionSelect = document.getElementById('sessionPermissionQuick');
+  const permissionApply = document.getElementById('applySessionPermission');
+  if (controls && permissionSelect && permissionApply && permissionSelect.parentElement !== controls) {
+    const runTask = document.getElementById('runTask');
+    controls.insertBefore(permissionSelect, runTask || null);
+    controls.insertBefore(permissionApply, runTask || null);
+    permissionSelect.title = 'Permissions';
+    permissionApply.classList.add('mini-apply-button');
+  }
+  if (!document.getElementById('composerFileInput')) {
+    const input = document.createElement('input');
+    input.id = 'composerFileInput';
+    input.type = 'file';
+    input.multiple = true;
+    input.hidden = true;
+    main.appendChild(input);
+  }
+  if (!document.getElementById('composerDirectoryInput')) {
+    const input = document.createElement('input');
+    input.id = 'composerDirectoryInput';
+    input.type = 'file';
+    input.multiple = true;
+    input.hidden = true;
+    input.setAttribute('webkitdirectory', '');
+    input.setAttribute('directory', '');
+    main.appendChild(input);
+  }
+  const fileInput = document.getElementById('composerFileInput');
+  if (fileInput && !fileInput.dataset.bound) {
+    fileInput.addEventListener('change', async (ev) => {
+      const input = ev.currentTarget;
+      const files = Array.from(input.files || []);
+      if (files.length) await appendSelectedFilesToPrompt(files, 'Attached files');
+      input.value = '';
+      input.accept = '';
+    });
+    fileInput.dataset.bound = '1';
+  }
+  const dirInput = document.getElementById('composerDirectoryInput');
+  if (dirInput && !dirInput.dataset.bound) {
+    dirInput.addEventListener('change', async (ev) => {
+      const input = ev.currentTarget;
+      const files = Array.from(input.files || []);
+      if (files.length) await appendSelectedFilesToPrompt(files, 'Attached directory files');
+      input.value = '';
+    });
+    dirInput.dataset.bound = '1';
+  }
+}
+function renderSessionSidebar(sessions = window.__pacSessions || []) {
+  const list = document.getElementById('sessionSidebarList');
+  if (!list) return;
+  if (!sessions.length) {
+    list.innerHTML = '<div class="muted">No sessions yet.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  sessions.slice().reverse().forEach((s) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = `session-sidebar-item${selectedSession?.id === s.id ? ' active' : ''}`;
+    item.innerHTML = `<strong>${escapeHtml(s.name || s.id)}</strong><div class="session-sidebar-meta">${escapeHtml(s.agent_profile || '-')} · ${escapeHtml(s.model || '-')} · ${escapeHtml(s.permission_profile || '-')}</div><div class="session-sidebar-meta">${escapeHtml(s.workspace_path || '')}</div>`;
+    item.onclick = () => { switchToTab('sessions-tab'); selectSession(s.id); };
+    list.appendChild(item);
+  });
+}
 async function applySessionPermissionProfile() {
   if (!selectedSession?.id) return;
   const select = document.getElementById('sessionPermissionQuick');
@@ -791,6 +874,7 @@ async function applySessionPermissionProfile() {
   document.getElementById('selectedSession').innerHTML = `<span class="session-lock-dot"></span><span>Profile: ${escapeHtml(selectedSession.agent_profile || 'default')}</span><span>Permissions: ${escapeHtml(selectedSession.permission_profile || '-')}</span><span>Endpoint: ${escapeHtml(endpointName)}</span><span>Mode: ${escapeHtml(selectedSession.metadata?.execution_mode || (selectedSession.metadata?.agent_enabled === false ? 'direct model' : 'pi.dev'))}</span><span>Model: ${escapeHtml(selectedSession.model || '')}</span><span>${escapeHtml(selectedSession.workspace_path || '')}</span>`;
   if (document.getElementById('sessionEndpointLock')) sessionEndpointLock.textContent = `Profile: ${selectedSession.agent_profile || 'default'} · permissions: ${selectedSession.permission_profile || '-'} · endpoint: ${endpointName} · model: ${selectedSession.model || 'session default'}`;
   syncSessionPermissionQuick();
+  renderSessionSidebar(window.__pacSessions || []);
   emitUiEvent('session_permission_profile_changed', `Session permissions changed to ${next}`, {session_id: selectedSession.id, permission_profile: next});
 }
 async function pollSessionEvents(sessionId) {
@@ -800,9 +884,16 @@ async function pollSessionEvents(sessionId) {
     try {
       const qs = sessionLatestEventId ? `?after_id=${encodeURIComponent(sessionLatestEventId)}&limit=120` : '?limit=120';
       const snapshot = await api(`/v1/sessions/${sessionId}/events/snapshot${qs}`);
-      (snapshot || []).forEach(ev => appendEvent(ev.type || 'message', ev));
+      const events = snapshot || [];
+      const deferScroll = events.length > 1;
+      if (deferScroll) suppressSessionAutoScroll = true;
+      events.forEach(ev => appendEvent(ev.type || 'message', ev));
+      suppressSessionAutoScroll = false;
+      const el = document.getElementById('events');
+      if (deferScroll && el) el.scrollTop = el.scrollHeight;
     } catch (_) {
     } finally {
+      suppressSessionAutoScroll = false;
       sessionPollRequest = null;
     }
   })();
@@ -909,7 +1000,7 @@ function renderSessionTimelineEvent(event) {
   row.appendChild(bubble);
   el.appendChild(row);
   while (el.children.length > 250) el.removeChild(el.firstChild);
-  el.scrollTop = el.scrollHeight;
+  if (!suppressSessionAutoScroll) el.scrollTop = el.scrollHeight;
 }
 
 function renderGlobalEvent(event, prepend=false) {
@@ -3626,6 +3717,7 @@ async function loadConfig() {
 async function loadSessions() {
   const sessions = await api('/v1/sessions');
   window.__pacSessions = sessions;
+  ensureSessionWorkspaceChrome();
   const dashboard = document.getElementById('sessions');
   const picker = document.getElementById('sessionTopSelect');
   if (dashboard) dashboard.innerHTML = '';
@@ -3640,6 +3732,7 @@ async function loadSessions() {
     renderModelActiveSessionsPanel();
     renderProfileUsagePanel();
     renderWorkspaceActivityPanel();
+    renderSessionSidebar([]);
     return;
   }
   sessions.slice().reverse().forEach(s => {
@@ -3655,11 +3748,13 @@ async function loadSessions() {
     }
   });
   if (picker && selectedSession?.id) picker.value = selectedSession.id;
+  renderSessionSidebar(sessions);
   renderModelActiveSessionsPanel();
   renderProfileUsagePanel();
   renderWorkspaceActivityPanel();
 }
 async function selectSession(id) {
+  ensureSessionWorkspaceChrome();
   selectedSession = await api(`/v1/sessions/${id}`);
   const preferredEndpoint = selectedSession.metadata?.preferred_endpoint || '';
   const endpointName = (window.__pacEndpoints || []).find(e => e.id === preferredEndpoint)?.name || preferredEndpoint || 'PAC/local';
@@ -3676,12 +3771,18 @@ async function selectSession(id) {
   sessionPendingRows = new Map();
   sessionApprovalRows = new Map();
   sessionLatestEventId = null;
+  renderSessionSidebar(window.__pacSessions || []);
   try {
     const snapshot = await api(`/v1/sessions/${id}/events/snapshot?limit=120`);
     if (timeline) timeline.innerHTML = snapshot.length ? '' : '<div class="empty-timeline">No session events yet.</div>';
     sessionThinkingGroup = null;
+    suppressSessionAutoScroll = true;
     snapshot.forEach(ev => renderSessionTimelineEvent(ev));
-  } catch (_) {}
+    suppressSessionAutoScroll = false;
+    if (timeline) timeline.scrollTop = timeline.scrollHeight;
+  } catch (_) {
+    suppressSessionAutoScroll = false;
+  }
   if (source) source.close();
   // EventSource cannot set auth headers, so auth-enabled deployments should use the snapshot refresh path or put UI/API behind same auth proxy.
   source = new EventSource(`/v1/sessions/${id}/events`);
@@ -4068,9 +4169,28 @@ const composerContextMenu = document.getElementById('composerContextMenu');
 if (composerAddContextBtn && composerContextMenu) {
   composerAddContextBtn.onclick = (ev) => { ev.stopPropagation(); composerContextMenu.hidden = !composerContextMenu.hidden; };
   composerContextMenu.onclick = (ev) => ev.stopPropagation();
+  composerContextMenu.querySelectorAll('button').forEach((btn) => {
+    btn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const rawText = (btn.textContent || '').toLowerCase();
+      const action =
+        btn.dataset.contextAction ||
+        btn.getAttribute('data-context-action') ||
+        (rawText.includes('files') ? 'files' :
+        rawText.includes('image') ? 'image' :
+        rawText.includes('branch') ? 'branch_diff' :
+        rawText.includes('symbol') ? 'symbols' :
+        rawText.includes('thread') ? 'threads' :
+        rawText.includes('rule') ? 'rules' :
+        rawText.includes('selection') ? 'selection' :
+        rawText.includes('/ slash') ? 'slash_help' : '');
+      composerContextMenu.hidden = true;
+      handleComposerContextAction(action);
+    });
+  });
   document.addEventListener('click', () => { composerContextMenu.hidden = true; });
 }
-
 const sessionTopSelect = document.getElementById('sessionTopSelect');
 if (sessionTopSelect) sessionTopSelect.onchange = () => { if (sessionTopSelect.value) { switchToTab('sessions-tab'); selectSession(sessionTopSelect.value); } };
 const sessionPermissionQuick = document.getElementById('sessionPermissionQuick');
@@ -4116,6 +4236,75 @@ function autosizeSessionPrompt() {
   if (!el) return;
   el.style.height = 'auto';
   el.style.height = Math.min(160, Math.max(28, el.scrollHeight)) + 'px';
+}
+function appendPromptContextBlock(label, content) {
+  const prompt = document.getElementById('taskPrompt');
+  if (!prompt) return;
+  const block = `\n[${label}]\n${content}\n`;
+  prompt.value = `${prompt.value || ''}${block}`.trimStart();
+  autosizeSessionPrompt();
+  prompt.focus();
+}
+function handleComposerContextAction(action) {
+  const fileInput = document.getElementById('composerFileInput');
+  const dirInput = document.getElementById('composerDirectoryInput');
+  if (action === 'slash_help') {
+    alert(slashCommandHelpText());
+    return;
+  }
+  if (action === 'files') {
+    fileInput?.click();
+    return;
+  }
+  if (action === 'directories') {
+    dirInput?.click();
+    return;
+  }
+  if (action === 'image') {
+    if (fileInput) {
+      fileInput.accept = 'image/*';
+      fileInput.click();
+    }
+    return;
+  }
+  if (action === 'branch_diff') {
+    appendPromptContextBlock('Context request', 'Please inspect the current branch diff for this session workspace before answering.');
+    return;
+  }
+  if (action === 'symbols') {
+    appendPromptContextBlock('Context request', 'Please inspect the relevant symbols, functions, and files in this workspace before answering.');
+    return;
+  }
+  if (action === 'threads') {
+    appendPromptContextBlock('Context request', 'Please consider prior thread context and summarize the relevant decisions before continuing.');
+    return;
+  }
+  if (action === 'rules') {
+    appendPromptContextBlock('Context request', 'Please follow the configured session and repository rules while answering.');
+    return;
+  }
+  if (action === 'selection') {
+    appendPromptContextBlock('Context request', 'Please work from the currently selected text or file context.');
+    return;
+  }
+}
+async function appendSelectedFilesToPrompt(files, label='Attached files') {
+  if (!files?.length) return;
+  const summaries = [];
+  for (const file of Array.from(files).slice(0, 8)) {
+    if (file.type && file.type.startsWith('image/')) {
+      summaries.push(`${file.name} [image attachment]`);
+      continue;
+    }
+    try {
+      const text = await file.text();
+      const trimmed = text.length > 6000 ? `${text.slice(0, 6000)}\n... [truncated]` : text;
+      summaries.push(`--- ${file.name} ---\n${trimmed}`);
+    } catch (_) {
+      summaries.push(`${file.name} [binary or unreadable attachment]`);
+    }
+  }
+  appendPromptContextBlock(label, summaries.join('\n\n'));
 }
 
 if (runTaskBtn) runTaskBtn.onclick = async () => {
