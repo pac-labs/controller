@@ -169,6 +169,34 @@ def _permission(session: Session, config: AppConfig):
     return config.permission_profiles.get(session.permission_profile)
 
 
+def _session_history_messages(session: Session, current_task_id: str | None = None, max_messages: int = 24) -> list[dict[str, str]]:
+    """Rebuild user/assistant chat history from prior session events."""
+    events = store.get_events(session.id, limit=800, latest=True)
+    messages: list[dict[str, str]] = []
+    seen_pairs: set[tuple[str, str, str]] = set()
+    for event in events:
+        if current_task_id and event.task_id == current_task_id:
+            continue
+        event_type = str(event.type or "").lower()
+        if event_type not in {"user_message", "result", "final", "assistant_message"}:
+            continue
+        data = event.data if isinstance(event.data, dict) else {}
+        role = str(data.get("role") or ("user" if event_type == "user_message" else "assistant")).lower()
+        if role not in {"user", "assistant"}:
+            continue
+        content = str(event.message or "").strip()
+        if not content:
+            continue
+        signature = (role, event.task_id or "", content)
+        if signature in seen_pairs:
+            continue
+        seen_pairs.add(signature)
+        messages.append({"role": role, "content": content})
+    if max_messages > 0 and len(messages) > max_messages:
+        messages = messages[-max_messages:]
+    return messages
+
+
 async def _run_shell(session: Session, task: Task, command: str, config: AppConfig) -> tuple[str, bool]:
     decision, reason = command_policy(command, session, config)
     if decision == "deny":
@@ -448,8 +476,9 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
 
     messages: list[dict[str, str]] = [
         {"role": "system", "content": (agent.system_prompt if agent else "You are a remote coding agent.") + "\n\n" + TOOL_HELP},
-        {"role": "user", "content": task.prompt},
     ]
+    messages.extend(_session_history_messages(session, current_task_id=task.id, max_messages=24))
+    messages.append({"role": "user", "content": task.prompt})
 
     pending = task.metadata.pop("pending_tool", None)
     if pending:
