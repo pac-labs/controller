@@ -1524,6 +1524,7 @@ async function refreshProviderHealth(name, provider) {
     providerHealthCache.set(name, {ok:false, error:error.message || String(error), checked_at:new Date().toISOString()});
   }
   renderProviders();
+  renderModels();
 }
 function collectProviderRuntimeFields(existing={}) {
   const mem = Number(document.getElementById('providerDeviceMemory')?.value || 0);
@@ -1885,6 +1886,7 @@ function renderModels() {
     for (const [name, model] of models) {
       const availability = modelAvailability(name);
       const provider = config.providers?.[model.provider || ''];
+      const health = providerHealthSummary(model.provider || '', provider || {});
       const sessionCount = (window.__pacSessions || []).filter(item => item.model === name).length;
       const card = document.createElement('article');
       card.className = 'model-card model-overview-card clickable-row';
@@ -1902,6 +1904,7 @@ function renderModels() {
         model.model || '',
       ].filter(Boolean).join(' • ');
       card.innerHTML = `<div class="provider-card-head"><div class="provider-title-block"><h3>${escapeHtml(name)}</h3><span class="muted">${escapeHtml(providerLabel(model.provider || '-'))}</span></div><span class="pill ${availability.ok ? 'ok-pill' : 'warn-pill'}">${escapeHtml(availability.ok ? 'available' : 'attention')}</span></div>
+        <div class="provider-health-strip"><span class="pill ${escapeHtml(health.klass)}">${escapeHtml(health.pill)}</span><span class="small-text">${escapeHtml(health.detail)}</span></div>
         <div class="model-card-subline">${escapeHtml(cardMeta)}</div>
         ${caps ? `<div class="provider-pill-list model-cap-list">${caps}</div>` : ''}
         <div class="workspace-card-grid model-stats-grid">
@@ -2460,7 +2463,14 @@ async function loadUpdateArchives() {
   const data = await api('/v1/updates/status');
   renderUpdateArchives(data);
   const notes = await api('/v1/updates/release-notes').catch(()=>null);
-  setUpdatesDetail({title:'Current release', version:data?.current_version || config.version || config.setup_status?.version || '', entries:notes?.entries || [], body:data?.latest_archive?.summary ? 'Latest preserved local change summary is available through Backups.' : ''});
+  const fallbackBody = data?.latest_archive?.summary ? 'Latest preserved local change summary is available through Backups.' : '';
+  setUpdatesDetail({
+    title:'Current release',
+    version:data?.current_version || config.version || config.setup_status?.version || '',
+    entries:notes?.entries || [],
+    body:notes?.body || fallbackBody,
+    html_body:notes?.release_url ? `Release page: <a href="${notes.release_url}" target="_blank" rel="noreferrer">${notes.release_url}</a>` : '',
+  });
   if (!window.__pacReleaseMeta) checkPacRelease().catch(()=>{});
   setBackupDetail();
 }
@@ -2494,12 +2504,13 @@ function renderPacReleaseStatus(meta=null) {
       const currentVersion = meta.current_version || config?.version || config?.setup_status?.version || '';
       api(`/v1/updates/release-notes?from_version=${encodeURIComponent(currentVersion)}&to_version=${encodeURIComponent(meta.latest_version || '')}`)
         .then((notes) => {
-          const fallbackChanges = (meta.changes || []).length ? (meta.changes || []) : (meta.compare_changes || []);
+          const fallbackChanges = (notes?.compare_changes || []).length ? (notes.compare_changes || []) : ((meta.changes || []).length ? (meta.changes || []) : (meta.compare_changes || []));
           setUpdatesDetail({
             title:'Available release',
             version:meta.latest_version,
             entries:(notes?.entries || []).length ? (notes.entries || []) : (fallbackChanges.length ? [{title:`PAC v${meta.latest_version}`, version:meta.latest_version, changes:fallbackChanges}] : []),
-            body: meta.body || '',
+            body: notes?.body || meta.body || '',
+            html_body: notes?.release_url ? `Release page: <a href="${notes.release_url}" target="_blank" rel="noreferrer">${notes.release_url}</a>` : '',
           });
         })
         .catch(() => {
@@ -2514,12 +2525,13 @@ function renderPacReleaseStatus(meta=null) {
     const currentVersion = meta.current_version || config?.version || config?.setup_status?.version || meta.latest_version;
     api(`/v1/updates/release-notes?from_version=0.0.0&to_version=${encodeURIComponent(meta.latest_version || '')}`)
       .then((notes) => {
-        const fallbackChanges = (meta.changes || []).length ? (meta.changes || []) : (meta.compare_changes || []);
+        const fallbackChanges = (notes?.compare_changes || []).length ? (notes.compare_changes || []) : ((meta.changes || []).length ? (meta.changes || []) : (meta.compare_changes || []));
         setUpdatesDetail({
           title:'Current release',
           version:meta.latest_version,
           entries:(notes?.entries || []).length ? (notes.entries || []) : (fallbackChanges.length ? [{title:`PAC v${meta.latest_version}`, version:meta.latest_version, changes:fallbackChanges}] : []),
-          body: meta.body || '',
+          body: notes?.body || meta.body || '',
+          html_body: notes?.release_url ? `Release page: <a href="${notes.release_url}" target="_blank" rel="noreferrer">${notes.release_url}</a>` : '',
         });
       })
       .catch(() => {
@@ -3887,6 +3899,8 @@ function renderControllerHarnessSettings(status=null) {
   setVal('harnessContextMode', h.context_mode || 'medium');
   setVal('harnessRunnerId', h.runner_id || 'local-PAC');
   const box = document.getElementById('controllerHarnessStatus');
+  const runtimeBox = document.getElementById('controllerHarnessRuntime');
+  const logsBox = document.getElementById('controllerHarnessLogs');
   if (box) {
     const session = status?.session;
     const runner = status?.runner;
@@ -3902,11 +3916,35 @@ function renderControllerHarnessSettings(status=null) {
     };
     box.innerHTML = Object.entries(rows).map(([k,v]) => `<div><span>${k}</span><code>${escapeHtml(String(v))}</code></div>`).join('');
   }
+  if (runtimeBox) {
+    const diag = status?.diagnostics || {};
+    const wrapper = diag.wrapper_process || {};
+    const daemon = diag.pi_daemon || {};
+    const runnerMeta = status?.runner?.metadata || {};
+    const agentRuntime = runnerMeta.agent_runtime || {};
+    const rows = {
+      'Wrapper state': wrapper.running ? 'running' : 'stopped',
+      'Wrapper pid': wrapper.pid || '-',
+      'Wrapper exit': wrapper.return_code ?? '-',
+      'Wrapper binary': wrapper.path || '-',
+      'pi.dev daemon': daemon.running ? 'running' : 'stopped',
+      'pi.dev daemon pid': daemon.pid || '-',
+      'Agent runtime': agentRuntime.status || '-',
+      'Agent detail': agentRuntime.detail || '-',
+      'Wrapper log': diag.wrapper_log || '-',
+    };
+    runtimeBox.innerHTML = Object.entries(rows).map(([k,v]) => `<div><span>${k}</span><code>${escapeHtml(String(v))}</code></div>`).join('');
+  }
+  if (logsBox) logsBox.textContent = status?.diagnostics?.wrapper_log_tail || '';
 }
 
 async function loadControllerHarnessStatus() {
   try {
-    const status = await api('/v1/controller-harness');
+    const [status, diagnostics] = await Promise.all([
+      api('/v1/controller-harness'),
+      api('/v1/controller-harness/diagnostics').catch(()=>null),
+    ]);
+    if (diagnostics) status.diagnostics = diagnostics;
     renderControllerHarnessSettings(status);
     return status;
   } catch (e) {

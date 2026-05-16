@@ -2326,6 +2326,22 @@ button:hover,
   min-height:calc(100vh - 280px);
   height:100%;
 }
+html[data-theme="dark"] main,
+body[data-theme="dark"] main,
+html[data-theme="dark"] .content-area,
+body[data-theme="dark"] .content-area,
+html[data-theme="dark"] #sessions-tab.sessions-workspace.active,
+body[data-theme="dark"] #sessions-tab.sessions-workspace.active,
+html[data-theme="dark"] #settings-tab,
+body[data-theme="dark"] #settings-tab{
+  background:#080f14 !important;
+  background-image:none !important;
+}
+html[data-theme="dark"] .events-rail,
+body[data-theme="dark"] .events-rail{
+  background:#080f14 !important;
+  background-image:none !important;
+}
 .updates-main{
   display:grid;
   gap:.85rem;

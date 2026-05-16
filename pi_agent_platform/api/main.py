@@ -2155,11 +2155,34 @@ def restore_update_archive(stamp: str, background_tasks: BackgroundTasks, restar
 
 @app.get('/v1/updates/release-notes')
 def get_update_release_notes(from_version: str | None = None, to_version: str | None = None, _auth: None = Depends(require_auth)) -> dict[str, Any]:
-    entries = _changelog_delta(from_version, to_version)
+    target_from = (from_version or PAC_VERSION or '').strip().lstrip('v') or PAC_VERSION
+    target_to = (to_version or (_load_pac_changelog().get('current_version') or PAC_VERSION) or '').strip().lstrip('v') or PAC_VERSION
+    entries = _changelog_delta(target_from, target_to)
+    meta: dict[str, Any] | None = None
+    try:
+        meta = fetch_latest_release_metadata(target_from)
+    except Exception:
+        meta = None
+    compare_changes: list[str] = []
+    body = None
+    release_url = None
+    if meta and meta.get('ok') and str(meta.get('latest_version') or '').strip().lstrip('v') == target_to:
+        compare_changes = list(meta.get('compare_changes') or [])
+        body = meta.get('body')
+        release_url = meta.get('release_url')
+    if not entries and compare_changes:
+        entries = [{
+            'title': f'PAC v{target_to}',
+            'version': target_to,
+            'changes': compare_changes,
+        }]
     return {
-        'from_version': from_version or PAC_VERSION,
-        'to_version': to_version or (_load_pac_changelog().get('current_version') or PAC_VERSION),
+        'from_version': target_from,
+        'to_version': target_to,
         'entries': entries,
+        'compare_changes': compare_changes,
+        'body': body,
+        'release_url': release_url,
     }
 
 
@@ -3426,6 +3449,26 @@ def api_get_artifact(session_id: str, task_id: str, name: str, _auth: None = Dep
 @app.get('/v1/controller-harness')
 def controller_harness_status(_auth: None = Depends(require_auth)) -> dict[str, Any]:
     return _ensure_controller_harness_session()
+
+
+@app.get('/v1/controller-harness/diagnostics')
+def controller_harness_diagnostics(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    status = _ensure_controller_harness_session()
+    log_file = pacp_path('logs') / 'controller-pac-wrapper.log'
+    log_tail = ''
+    if log_file.exists():
+        try:
+            lines = log_file.read_text(encoding='utf-8', errors='replace').splitlines()
+            log_tail = '\n'.join(lines[-120:])
+        except Exception as exc:
+            log_tail = f'Could not read wrapper log: {exc}'
+    return {
+        'status': status,
+        'wrapper_process': _wrapper_process_state(),
+        'pi_daemon': _pi_dev_daemon_state(),
+        'wrapper_log': str(log_file),
+        'wrapper_log_tail': log_tail,
+    }
 
 
 @app.post('/v1/controller-harness/bootstrap')
