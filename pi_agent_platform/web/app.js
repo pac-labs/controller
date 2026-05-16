@@ -45,7 +45,7 @@ let editingEndpointId = null;
 let commandEndpointId = null;
 let eventsFetchFailureCount = 0;
 let eventsFetchLastNotice = null;
-let sessionThinkingGroup = null;
+let sessionThinkingGroups = new Map();
 let sessionEventSeen = new Set();
 let sessionMessageSeen = new Set();
 let sessionPendingRows = new Map();
@@ -395,7 +395,12 @@ function sessionThinkingSummary(event, block) {
   if (type.includes('task_failed')) return event?.message || 'Task failed';
   if (type.includes('task_completed')) return 'Finished thinking';
   if (type.includes('agent_thinking')) return event?.message || 'Thinking';
-  if (type.includes('agent_intent')) return event?.message || 'Choosing next step';
+  if (type.includes('agent_intent')) {
+    if (data.tool) return `Preparing ${data.tool}`;
+    if (data.command) return `Preparing command ${data.command}`;
+    if (data.action_type === 'final') return 'Preparing final response';
+    return event?.message || 'Choosing next step';
+  }
   if (type.includes('agent_routing')) return event?.message || 'Routing task';
   if (data.tool) return `Using ${data.tool}`;
   if (data.command) return `Running ${data.command}`;
@@ -596,20 +601,23 @@ function updateSessionThinkingRow(group) {
   }
 }
 function ensureSessionThinkingGroup(event) {
-  if (!sessionThinkingGroup || sessionThinkingGroup.closed) {
+  const taskId = event?.task_id || '';
+  let group = getThinkingGroup(taskId);
+  if (!group || group.closed || (taskId && group.taskId !== taskId)) {
     const el = document.getElementById('events');
     const row = document.createElement('article');
     row.className = 'thought-card live';
     if (el) el.appendChild(row);
-    sessionThinkingGroup = {events: [], startedAt: sessionEventDate(event), endedAt: null, row, closed: false, taskId: event?.task_id || ''};
+    group = {events: [], startedAt: sessionEventDate(event), endedAt: null, row, closed: false, taskId};
   }
-  if (!sessionThinkingGroup.startedAt) sessionThinkingGroup.startedAt = sessionEventDate(event);
-  if (!sessionThinkingGroup.taskId && event?.task_id) sessionThinkingGroup.taskId = event.task_id;
-  removePendingRow(event?.task_id);
-  return sessionThinkingGroup;
+  if (!group.startedAt) group.startedAt = sessionEventDate(event);
+  if (!group.taskId && taskId) group.taskId = taskId;
+  if (taskId) sessionThinkingGroups.set(taskId, group);
+  removePendingRow(taskId);
+  return group;
 }
 function flushSessionThinkingGroup(endEvent) {
-  const group = sessionThinkingGroup;
+  const group = getThinkingGroup(endEvent?.task_id || '');
   if (!group || group.closed || !group.events.length) return;
   group.closed = true;
   group.endedAt = endEvent ? sessionEventDate(endEvent) : new Date();
@@ -678,6 +686,11 @@ function sessionEventMetaLines(event) {
 }
 function removePendingRow(taskId) {
   if (!taskId) return;
+  const group = sessionThinkingGroups.get(taskId);
+  if (group?.events?.length || group?.closed) {
+    sessionPendingRows.delete(taskId);
+    return;
+  }
   const row = sessionPendingRows.get(taskId);
   if (row && row.parentElement) row.remove();
   sessionPendingRows.delete(taskId);
@@ -890,13 +903,18 @@ function renderSessionSidebar(sessions = window.__pacSessions || []) {
   });
 }
 function resetSessionTimelineState() {
-  sessionThinkingGroup = null;
+  sessionThinkingGroups = new Map();
   sessionEventSeen = new Set();
   sessionMessageSeen = new Set();
   sessionPendingRows = new Map();
   sessionApprovalRows = new Map();
   sessionLatestEventId = null;
   sessionHydrationBufferedEvents = [];
+}
+function getThinkingGroup(taskId) {
+  if (taskId && sessionThinkingGroups.has(taskId)) return sessionThinkingGroups.get(taskId);
+  const groups = Array.from(sessionThinkingGroups.values());
+  return groups.length ? groups[groups.length - 1] : null;
 }
 function renderSessionSnapshotFast(snapshot, sessionId) {
   const timeline = document.getElementById('events');
@@ -1007,23 +1025,18 @@ function stopSessionPolling() {
 }
 function addPendingRow(taskId) {
   const el = document.getElementById('events');
-  if (!el || !taskId || sessionPendingRows.has(taskId)) return;
-  const row = document.createElement('article');
-  row.className = 'thought-card live pending-only';
-  row.innerHTML = `<div class="thought-card-main">
-    <span class="thought-icon-shell"><span class="tiny-spinner square" aria-hidden="true"></span></span>
-    <span class="thought-copy">
-      <span class="thought-kicker">Current task</span>
-      <span class="thought-summary">Thinking...</span>
-      <span class="thought-meta"><span>Waiting to start</span></span>
-    </span>
-  </div>`;
-  row.onclick = () => {
-    const group = sessionThinkingGroup && !sessionThinkingGroup.closed ? sessionThinkingGroup : {events: [], startedAt: new Date(), endedAt: null};
-    openSessionThinkingModal(group);
-  };
-  sessionPendingRows.set(taskId, row);
-  el.appendChild(row);
+  if (!el || !taskId) return;
+  let group = sessionThinkingGroups.get(taskId);
+  if (!group) {
+    const row = document.createElement('article');
+    row.className = 'thought-card live pending-only';
+    group = {events: [], startedAt: new Date(), endedAt: null, row, closed: false, taskId, summary: 'Thinking...' };
+    sessionThinkingGroups.set(taskId, group);
+    row.onclick = () => openSessionThinkingModal(group);
+    el.appendChild(row);
+  }
+  sessionPendingRows.set(taskId, group.row);
+  updateSessionThinkingRow(group);
   el.scrollTop = el.scrollHeight;
 }
 function renderSessionTimelineEvent(event, options = {}) {
@@ -4326,6 +4339,11 @@ async function sendSessionComposer(){
   taskPrompt.value='';
   taskCommand.value='';
   autosizeSessionPrompt();
+  if (sessionHydrationActiveFor === selectedSession.id) {
+    sessionHydrationToken += 1;
+    sessionHydrationActiveFor = null;
+    sessionHydrationBufferedEvents = [];
+  }
   const created = await api(`/v1/sessions/${selectedSession.id}/tasks`,{method:'POST',body:JSON.stringify({prompt:rawPrompt,command:'',metadata})});
   if (created && created.id) {
     activeSessionTaskId = created.id;
