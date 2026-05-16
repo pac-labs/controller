@@ -455,7 +455,21 @@ function openSessionThinkingModal(group) {
   if (title) title.textContent = 'Thought details';
   if (body) {
     body.className = 'modal-scroll-output tool-activity-modal';
-    body.innerHTML = sessionThinkingDetailsHtml(group.events || []);
+    const duration = formatDurationMs(((group.endedAt || new Date()).getTime()) - (group.startedAt || new Date()).getTime());
+    const planSteps = deriveThinkingPlanSteps(group);
+    const summary = escapeHtml(group.summary || 'Thinking');
+    body.innerHTML = `
+      <div class="thought-modal-summary">
+        <div class="thought-modal-kicker">${escapeHtml(group.closed ? 'Thought completed' : 'Currently thinking')}</div>
+        <div class="thought-modal-title">${summary}</div>
+        <div class="thought-modal-meta">
+          <span>${escapeHtml(group.closed ? `Thought for ${duration}` : `Thinking for ${duration}`)}</span>
+          <span>${thinkingGroupToolCount(group)} ${thinkingGroupToolCount(group) === 1 ? 'tool' : 'tools'}</span>
+          <span>${escapeHtml(thinkingGroupNeedsApproval(group) ? 'Awaiting approval' : group.closed ? 'Completed' : 'Active')}</span>
+        </div>
+      </div>
+      ${planSteps.length ? `<div class="thought-modal-plan">${planSteps.map((step, index) => `<div class="thought-modal-plan-item ${escapeHtml(step.status)}"><span class="thought-modal-plan-index">${index + 1}</span><span class="thought-modal-plan-label">${escapeHtml(step.label)}</span><span class="thought-modal-plan-state">${escapeHtml(step.status === 'running' ? 'Active' : step.status === 'attention' ? 'Needs approval' : step.status === 'failed' ? 'Failed' : 'Done')}</span></div>`).join('')}</div>` : ''}
+      ${sessionThinkingDetailsHtml(group.events || [])}`;
   }
   modal.hidden = false;
 }
@@ -538,7 +552,7 @@ function updateSessionThinkingRow(group) {
     <span class="thought-copy">
       <span class="thought-kicker">${escapeHtml(group.closed ? 'Thought' : 'Current task')}</span>
       <span class="thought-summary">${escapeHtml(summary)}</span>
-      <span class="thought-meta"><span>${escapeHtml(duration)}</span><span>${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}</span><span>${escapeHtml(approvalPending ? 'Awaiting approval' : group.closed ? 'Completed' : 'Thinking')}</span></span>
+      <span class="thought-meta"><span>${escapeHtml(group.closed ? `Thought for ${duration}` : `Thinking for ${duration}`)}</span><span>${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}</span><span>${escapeHtml(approvalPending ? 'Awaiting approval' : group.closed ? 'Completed' : 'Thinking')}</span></span>
     </span>
     <span class="thought-open">Details</span>`;
   main.onclick = () => openSessionThinkingModal(group);
@@ -916,21 +930,23 @@ function renderSessionSnapshotFast(snapshot, sessionId) {
       if (item.id) seen.add(item.id);
     });
     merged.sort((a, b) => new Date(a?.created_at || 0).getTime() - new Date(b?.created_at || 0).getTime());
-    timeline.innerHTML = '';
-    resetSessionTimelineState();
-    let index = 0;
+    const older = merged.slice(0, Math.max(0, merged.length - initialChunkSize));
+    let index = older.length - 1;
     const paintChunk = () => {
       if (!selectedSession || selectedSession.id !== sessionId || sessionHydrationToken !== token) return;
+      const beforeHeight = timeline.scrollHeight;
+      const beforeTop = timeline.scrollTop;
       suppressSessionAutoScroll = true;
-      for (let count = 0; count < hydrateChunkSize && index < merged.length; count += 1, index += 1) {
-        renderSessionTimelineEvent(merged[index]);
+      for (let count = 0; count < hydrateChunkSize && index >= 0; count += 1, index -= 1) {
+        renderSessionTimelineEvent(older[index], {prepend:true, fromHydration:true});
       }
       suppressSessionAutoScroll = false;
-      if (index < merged.length) {
+      const afterHeight = timeline.scrollHeight;
+      timeline.scrollTop = beforeTop + (afterHeight - beforeHeight);
+      if (index >= 0) {
         window.requestAnimationFrame(paintChunk);
         return;
       }
-      timeline.scrollTop = timeline.scrollHeight;
     };
     window.requestAnimationFrame(paintChunk);
   }, 40);
@@ -1010,9 +1026,10 @@ function addPendingRow(taskId) {
   el.appendChild(row);
   el.scrollTop = el.scrollHeight;
 }
-function renderSessionTimelineEvent(event) {
+function renderSessionTimelineEvent(event, options = {}) {
   const el = document.getElementById('events');
   if (!el || !event) return;
+  const prepend = !!options.prepend;
   if (event.id && sessionEventSeen.has(event.id)) return;
   if (event.id) sessionEventSeen.add(event.id);
   if (event.id) sessionLatestEventId = event.id;
@@ -1027,7 +1044,10 @@ function renderSessionTimelineEvent(event) {
   const block = normalizeTimelineBlock(event);
   const role = sessionEventRole(event);
   const internal = isInternalSessionEvent(event);
-  if (internal || typeLower === 'final') {
+  if (internal && prepend) {
+    return;
+  }
+  if (internal) {
     const group = ensureSessionThinkingGroup(event);
     group.events.push({event, block});
     group.lastEvent = event;
@@ -1071,7 +1091,8 @@ function renderSessionTimelineEvent(event) {
     bubble.appendChild(more);
   }
   row.appendChild(bubble);
-  el.appendChild(row);
+  if (prepend && el.firstChild) el.insertBefore(row, el.firstChild);
+  else el.appendChild(row);
   while (el.children.length > 250) el.removeChild(el.firstChild);
   if (!suppressSessionAutoScroll) el.scrollTop = el.scrollHeight;
 }
