@@ -790,8 +790,18 @@ function ensureSessionWorkspaceChrome() {
   if (!sidebar) {
     sidebar = document.createElement('aside');
     sidebar.className = 'sessions-list-card';
-    sidebar.innerHTML = `<div class="section-heading compact-heading"><div><h3>Sessions</h3><p class="muted">Select or reopen a session quickly.</p></div></div><div id="sessionSidebarList" class="session-sidebar-list muted">No sessions yet.</div>`;
+    sidebar.innerHTML = `<div class="section-heading compact-heading sidebar-heading"><div><h3>Sessions</h3><p class="muted">Select or reopen a session quickly.</p></div><div class="sidebar-heading-actions"></div></div><div id="sessionSidebarList" class="session-sidebar-list muted">No sessions yet.</div>`;
     layout.insertBefore(sidebar, main);
+  }
+  const pickerWrap = document.querySelector('#sessions-tab .session-picker-wrap');
+  if (pickerWrap) pickerWrap.style.display = 'none';
+  const sessionMeta = document.querySelector('#sessions-tab .session-session-meta');
+  if (sessionMeta) sessionMeta.style.display = 'none';
+  const sidebarActions = sidebar.querySelector('.sidebar-heading-actions');
+  const openButton = document.getElementById('openSessionModal');
+  if (sidebarActions && openButton && openButton.parentElement !== sidebarActions) {
+    sidebarActions.appendChild(openButton);
+    openButton.classList.add('sidebar-create-session');
   }
   const topQuick = document.querySelector('#sessions-tab .session-quick-controls');
   if (topQuick) topQuick.style.display = 'none';

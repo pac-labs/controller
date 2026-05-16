@@ -3211,6 +3211,7 @@ body[data-theme="light"] .status-strip{
   max-width:300px;
   border-right:1px solid rgba(148,163,184,.14);
   padding-right:.85rem;
+  overflow:hidden;
 }
 #sessions-tab .session-chat-layout.with-sidebar{
   display:grid !important;
@@ -3218,11 +3219,29 @@ body[data-theme="light"] .status-strip{
   gap:1rem;
   min-height:0;
 }
+#sessions-tab .integrated-session-head{
+  display:none !important;
+}
+#sessions-tab .sidebar-heading{
+  align-items:center;
+}
+#sessions-tab .sidebar-heading-actions{
+  display:flex;
+  align-items:center;
+  gap:.35rem;
+}
+#sessions-tab .sidebar-create-session{
+  width:30px;
+  height:30px;
+  min-width:30px;
+  padding:0 !important;
+}
 #sessions-tab .session-sidebar-list{
   display:grid;
   gap:.5rem;
   max-height:calc(100vh - 260px);
   overflow:auto;
+  overflow-x:hidden;
   padding-right:.15rem;
 }
 .session-sidebar-item{
@@ -3233,6 +3252,9 @@ body[data-theme="light"] .status-strip{
   background:rgba(255,255,255,.03);
   cursor:pointer;
   text-align:left;
+  min-width:0;
+  max-width:100%;
+  overflow:hidden;
 }
 .session-sidebar-item.active{
   border-color:rgba(36,195,107,.45);
@@ -3241,11 +3263,15 @@ body[data-theme="light"] .status-strip{
 }
 .session-sidebar-item strong{
   font-size:.88rem;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
 }
 .session-sidebar-meta{
   color:var(--muted);
   font-size:.74rem;
   line-height:1.35;
+  overflow-wrap:anywhere;
 }
 .mini-apply-button{
   min-width:60px;
