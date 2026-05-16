@@ -2863,13 +2863,13 @@ body[data-theme="light"] .health-row b{
 
 /* v1.0.136+: use the transparent PAC lockup in the header, not the full hero banner */
 .app-header{
-  min-height:68px !important;
-  height:68px !important;
-  padding:.4rem .85rem !important;
-  gap:1rem !important;
+  min-height:86px !important;
+  height:86px !important;
+  padding:.35rem .85rem .2rem !important;
+  gap:.85rem !important;
   align-items:center !important;
   background:
-    linear-gradient(90deg, rgba(6,14,24,.985), rgba(7,16,29,.975)) !important;
+    linear-gradient(90deg, rgba(8,15,22,.992), rgba(8,15,22,.984)) !important;
   border-bottom:1px solid rgba(96,165,250,.16) !important;
   overflow:hidden;
 }
@@ -2881,9 +2881,9 @@ body[data-theme="light"] .health-row b{
 }
 .brand-logo{
   display:block;
-  width:390px !important;
-  max-width:min(40vw,390px) !important;
-  height:60px !important;
+  width:540px !important;
+  max-width:min(52vw,540px) !important;
+  height:78px !important;
   object-fit:contain;
   object-position:left center;
   filter:none !important;
@@ -2899,11 +2899,17 @@ body[data-theme="light"] .health-row b{
   flex-wrap:nowrap;
 }
 .tabs{
-  min-height:42px;
-  padding:.35rem .75rem !important;
-  background:rgba(6,14,24,.97) !important;
+  min-height:40px;
+  margin-top:-20px;
+  padding:.2rem .75rem .4rem 34rem !important;
+  background:linear-gradient(90deg, rgba(8,15,22,.992), rgba(8,15,22,.984)) !important;
   border-bottom:1px solid rgba(96,165,250,.14) !important;
   align-items:stretch;
+  z-index:21;
+}
+.tab{
+  min-height:30px;
+  padding:.45rem .8rem !important;
 }
 .top-icon-button,
 .theme-select-wrap select,
@@ -2962,11 +2968,17 @@ body[data-theme="light"] .app-footer{
 }
 @media(max-width:1100px){
   .app-header{
-    padding:.7rem 1rem !important;
+    min-height:80px !important;
+    height:80px !important;
+    padding:.4rem .8rem .15rem !important;
   }
   .brand-logo{
-    width:300px !important;
-    max-width:min(56vw,300px) !important;
+    width:420px !important;
+    max-width:min(48vw,420px) !important;
+    height:70px !important;
+  }
+  .tabs{
+    padding-left:26rem !important;
   }
 }
 @media(max-width:720px){
@@ -2977,8 +2989,8 @@ body[data-theme="light"] .app-footer{
     padding:.55rem .75rem !important;
   }
   .brand-logo{
-    width:240px !important;
-    max-width:min(78vw,240px) !important;
+    width:280px !important;
+    max-width:min(82vw,280px) !important;
     height:auto !important;
   }
   .top-actions{
@@ -2986,6 +2998,10 @@ body[data-theme="light"] .app-footer{
     justify-content:flex-start;
     flex-wrap:wrap;
     height:auto;
+  }
+  .tabs{
+    margin-top:0;
+    padding:.35rem .55rem !important;
   }
 }
 
@@ -2997,17 +3013,25 @@ html[data-theme="light"],
 body[data-theme="light"]{
   scrollbar-color:#16a34a #e2e8f0;
 }
+html[data-theme="light"] *,
+body[data-theme="light"] *{
+  scrollbar-color:#16a34a #e2e8f0 !important;
+}
 html[data-theme="light"] ::-webkit-scrollbar,
 body[data-theme="light"] ::-webkit-scrollbar{
   width:12px;
   height:12px;
 }
 html[data-theme="light"] ::-webkit-scrollbar-track,
-body[data-theme="light"] ::-webkit-scrollbar-track{
+body[data-theme="light"] ::-webkit-scrollbar-track,
+html[data-theme="light"] *::-webkit-scrollbar-track,
+body[data-theme="light"] *::-webkit-scrollbar-track{
   background:#e2e8f0;
 }
 html[data-theme="light"] ::-webkit-scrollbar-thumb,
-body[data-theme="light"] ::-webkit-scrollbar-thumb{
+body[data-theme="light"] ::-webkit-scrollbar-thumb,
+html[data-theme="light"] *::-webkit-scrollbar-thumb,
+body[data-theme="light"] *::-webkit-scrollbar-thumb{
   background:#16a34a;
   border:2px solid #e2e8f0;
 }
