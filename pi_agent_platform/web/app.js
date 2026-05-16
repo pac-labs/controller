@@ -1215,7 +1215,7 @@ function switchSettingsPanel(name) {
   }
   const btn = document.querySelector(`.settings-sub-btn[data-settings-panel="${name}"]`);
   if (btn) btn.classList.add('active');
-  if (name === 'users') loadUsersList().catch(()=>{});
+  if (name === 'users') { loadUsersList().catch(()=>{}); loadGroupsList().catch(()=>{}); }
   if (name === 'pi-dev') renderControllerHarnessSettings();
   if (name === 'endpoint') renderEndpointConnectionSettings();
   if (name === 'service') renderServiceMode();
@@ -4222,24 +4222,6 @@ document.addEventListener('click', (ev) => {
   }
 });
 document.getElementById('refreshUsersBtn')?.addEventListener('click', () => loadUsersList().catch((e)=>paneError('Users could not be refreshed', e.message || String(e))));
-document.getElementById('createUserBtn')?.addEventListener('click', async () => {
-  const username = document.getElementById('newUsername')?.value.trim() || '';
-  const display_name = document.getElementById('newDisplayName')?.value.trim() || username;
-  const password = document.getElementById('newUserPassword')?.value || '';
-  const role = document.getElementById('newUserRole')?.value || 'user';
-  const result = document.getElementById('usersResult');
-  try {
-    if (!username || !password) throw new Error('Username and password are required.');
-    await api('/v1/users', {method:'POST', body: JSON.stringify({username, display_name, password, role})});
-    if (result) result.textContent = `User created: ${username}`;
-    ['newUsername', 'newDisplayName', 'newUserPassword'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
-    await fetchAuthStatus();
-    renderAuthInfo();
-    await loadUsersList();
-  } catch (error) {
-    if (result) result.textContent = `Failed: ${error.message || String(error)}`;
-  }
-});
 if (document.getElementById('dismissSetupWizard')) document.getElementById('dismissSetupWizard').onclick = () => hideSetupWizard();
 if (document.getElementById('recheckSetupWizard')) document.getElementById('recheckSetupWizard').onclick = () => loadConfig().catch(e => paneError('Setup recheck failed', e.message));
 document.getElementById('createSession').onclick=async()=>{
@@ -5115,6 +5097,135 @@ async function searchMarketplaceModal() {
   }
 }
 
+function renderAuthInfo() {
+  const el = document.getElementById('authInfo');
+  if (!el) return;
+  const info = authStatus || config?.auth || {};
+  el.innerHTML = '';
+  [
+    ['Mode', String(info.mode || 'open')],
+    ['Enabled', info.enabled ? 'yes' : 'no'],
+    ['Users', String(info.user_count ?? '-')],
+    ['Groups', String(info.group_count ?? '-')],
+    ['Access requests', String(info.pending_access_requests ?? 0)],
+    ['TTL', `${info.token_ttl_hours || config?.auth?.token_ttl_hours || 720}h`],
+  ].forEach(([label, value]) => {
+    const row = document.createElement('div');
+    row.innerHTML = `<span>${escapeHtml(label)}</span><code>${escapeHtml(value)}</code>`;
+    el.appendChild(row);
+  });
+}
+
+async function loadUsersList() {
+  const el = document.getElementById('usersList');
+  if (!el) return;
+  if (!(authStatus?.enabled && authStatus?.mode === 'user-password')) {
+    el.innerHTML = '<div class="muted small-text">User management is available when auth mode is set to user-password.</div>';
+    return;
+  }
+  try {
+    const [users, groups] = await Promise.all([api('/v1/users'), api('/v1/groups').catch(() => [])]);
+    const groupIds = (groups || []).map((group) => String(group.id || ''));
+    if (!users.length) {
+      el.innerHTML = '<div class="muted small-text">No users found.</div>';
+      return;
+    }
+    el.innerHTML = users.map((user) => `
+      <div class="row">
+        <div><b>${escapeHtml(user.display_name || user.username)}</b><br><span class="muted small-text">${escapeHtml(user.username)} · ${escapeHtml(user.role || 'user')}</span><br><span class="muted small-text">groups: ${escapeHtml((user.groups || []).join(', ') || '-')}</span></div>
+        <div class="button-row">
+          <input class="user-groups-input" data-user-id="${escapeHtml(user.id)}" value="${escapeHtml((user.groups || []).join(', '))}" placeholder="group-a,group-b" />
+          <button class="ghost-button save-user-groups-btn" data-user-id="${escapeHtml(user.id)}" type="button">Save</button>
+          ${user.id === currentUser?.id ? '<span class="muted small-text">current</span>' : `<button class="ghost-button delete-user-btn" data-user-id="${escapeHtml(user.id)}" type="button">Delete</button>`}
+        </div>
+      </div>`).join('');
+    el.querySelectorAll('.save-user-groups-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const userId = btn.dataset.userId || '';
+        const input = btn.parentElement?.querySelector('.user-groups-input');
+        const selected = String(input?.value || '').split(',').map((item) => item.trim()).filter(Boolean);
+        await api(`/v1/users/${encodeURIComponent(userId)}`, {method:'PUT', body: JSON.stringify({groups:selected})});
+        await fetchAuthStatus();
+        renderAuthInfo();
+        await loadUsersList();
+      });
+    });
+    el.querySelectorAll('.delete-user-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const userId = btn.dataset.userId || '';
+        if (!userId || !confirm(`Delete user ${userId}?`)) return;
+        await api(`/v1/users/${encodeURIComponent(userId)}`, {method:'DELETE'});
+        await fetchAuthStatus();
+        renderAuthInfo();
+        await loadUsersList();
+      });
+    });
+  } catch (error) {
+    el.innerHTML = `<div class="muted small-text">Could not load users: ${escapeHtml(error.message || String(error))}</div>`;
+  }
+}
+
+async function loadGroupsList() {
+  const el = document.getElementById('groupsList');
+  if (!el) return;
+  try {
+    const groups = await api('/v1/groups');
+    if (!groups.length) {
+      el.innerHTML = '<div class="muted small-text">No groups found.</div>';
+      return;
+    }
+    el.innerHTML = groups.map((group) => `
+      <div class="row">
+        <div><b>${escapeHtml(group.name || group.id)}</b><br><span class="muted small-text">${escapeHtml(group.id)}</span><br><span class="muted small-text">${escapeHtml(group.description || '')}</span><br><span class="muted small-text">grants: ${escapeHtml((group.grants || []).map((grant) => `${grant.resource_type}:${grant.pattern}(${grant.access})`).join(', ') || '-')}</span></div>
+        <div class="button-row"><button class="ghost-button delete-group-btn" data-group-id="${escapeHtml(group.id)}" type="button">Delete</button></div>
+      </div>`).join('');
+    el.querySelectorAll('.delete-group-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const groupId = btn.dataset.groupId || '';
+        if (!groupId || !confirm(`Delete group ${groupId}?`)) return;
+        await api(`/v1/groups/${encodeURIComponent(groupId)}`, {method:'DELETE'});
+        await fetchAuthStatus();
+        renderAuthInfo();
+        await loadGroupsList();
+        await loadUsersList();
+      });
+    });
+  } catch (error) {
+    el.innerHTML = `<div class="muted small-text">Could not load groups: ${escapeHtml(error.message || String(error))}</div>`;
+  }
+}
+
+async function loadApprovals() {
+  if (approvalsRequest) return approvalsRequest;
+  approvalsRequest = (async () => {
+    const [tasks, accessRequests] = await Promise.all([
+      api('/v1/tasks/pending-approvals'),
+      api('/v1/access-requests').catch(() => []),
+    ]);
+    const el = document.getElementById('approvals');
+    if (!el) return;
+    el.innerHTML = '';
+    accessRequests.forEach((req) => {
+      const row=document.createElement('div'); row.className='row';
+      row.innerHTML=`<div><b>${escapeHtml(req.username || req.user_id)}</b><br><span class="muted">${escapeHtml(`${req.access} ${req.resource_type} ${req.resource_id}`)}</span>${req.reason ? `<br><span class="muted">${escapeHtml(req.reason)}</span>` : ''}</div>`;
+      const a=document.createElement('button'); a.textContent='Grant access'; a.onclick=async()=>{await api(`/v1/access-requests/${encodeURIComponent(req.id)}/approve`, {method:'POST'}); await fetchAuthStatus(); renderAuthInfo(); await loadApprovals(); await loadUsersList().catch(()=>{});};
+      const r=document.createElement('button'); r.textContent='Reject'; r.onclick=async()=>{await api(`/v1/access-requests/${encodeURIComponent(req.id)}/reject`, {method:'POST'}); await fetchAuthStatus(); renderAuthInfo(); await loadApprovals();};
+      row.append(a,r); el.appendChild(row);
+    });
+    tasks.forEach((t) => {
+      const row=document.createElement('div'); row.className='row';
+      row.innerHTML=`<div><b>${t.command || t.prompt}</b><br><span class="muted">${t.session_id}</span></div>`;
+      const a=document.createElement('button'); a.textContent='Approve'; a.onclick=async()=>{await resolveSessionApproval(t.id, true);};
+      const r=document.createElement('button'); r.textContent='Reject'; r.onclick=async()=>{await resolveSessionApproval(t.id, false);};
+      row.append(a,r); el.appendChild(row);
+    });
+  })();
+  try {
+    return await approvalsRequest;
+  } finally {
+    approvalsRequest = null;
+  }
+}
 
 async function init(){
   loadThemeMode();
@@ -5127,6 +5238,7 @@ async function init(){
   await loadConfig();
   await loadSessions();
   await loadApprovals();
+  await loadGroupsList().catch(()=>{});
   await loadRunners();
   applySessionBootstrapMode();
   refreshDashboardMetricsOnStartup();
@@ -5234,3 +5346,52 @@ const closeGitDiffBtn = document.getElementById('closeGitDiffModal');
 if (closeGitDiffBtn) closeGitDiffBtn.onclick = closeGitDiffModal;
 const gitDiffModal = document.getElementById('gitDiffModal');
 if (gitDiffModal) gitDiffModal.onclick = (ev) => { if (ev.target === gitDiffModal) closeGitDiffModal(); };
+
+const refreshGroupsBtn = document.getElementById('refreshGroupsBtn');
+if (refreshGroupsBtn) refreshGroupsBtn.onclick = () => loadGroupsList().catch((e)=>paneError('Groups could not be refreshed', e.message || String(e)));
+const createUserBtn = document.getElementById('createUserBtn');
+if (createUserBtn) createUserBtn.onclick = async () => {
+  const username = document.getElementById('newUsername')?.value.trim() || '';
+  const display_name = document.getElementById('newDisplayName')?.value.trim() || username;
+  const password = document.getElementById('newUserPassword')?.value || '';
+  const role = document.getElementById('newUserRole')?.value || 'user';
+  const groups = (document.getElementById('newUserGroups')?.value || '').split(',').map((item) => item.trim()).filter(Boolean);
+  const result = document.getElementById('usersResult');
+  try {
+    if (!username || !password) throw new Error('Username and password are required.');
+    await api('/v1/users', {method:'POST', body: JSON.stringify({username, display_name, password, role, groups})});
+    if (result) result.textContent = `User created: ${username}`;
+    ['newUsername', 'newDisplayName', 'newUserPassword', 'newUserGroups'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+    await fetchAuthStatus();
+    renderAuthInfo();
+    await loadUsersList();
+  } catch (error) {
+    if (result) result.textContent = `Failed: ${error.message || String(error)}`;
+  }
+};
+const createGroupBtn = document.getElementById('createGroupBtn');
+if (createGroupBtn) createGroupBtn.onclick = async () => {
+  const id = document.getElementById('newGroupId')?.value.trim() || '';
+  const name = document.getElementById('newGroupName')?.value.trim() || id;
+  const description = document.getElementById('newGroupDescription')?.value.trim() || '';
+  const grants = (document.getElementById('newGroupGrants')?.value || '').split(',').map((item) => item.trim()).filter(Boolean).map((item) => {
+    const parts = item.split(':');
+    const access = (parts.pop() || 'read').trim();
+    const resource_type = (parts.shift() || 'workspace').trim();
+    const pattern = parts.join(':').trim();
+    return {resource_type, pattern, access};
+  }).filter((item) => item.pattern);
+  const result = document.getElementById('groupsResult');
+  try {
+    if (!id) throw new Error('Group id is required.');
+    await api('/v1/groups', {method:'POST', body: JSON.stringify({id, name, description, grants})});
+    if (result) result.textContent = `Group created: ${id}`;
+    ['newGroupId', 'newGroupName', 'newGroupDescription', 'newGroupGrants'].forEach((inputId) => { const el = document.getElementById(inputId); if (el) el.value = ''; });
+    await fetchAuthStatus();
+    renderAuthInfo();
+    await loadGroupsList();
+    await loadUsersList();
+  } catch (error) {
+    if (result) result.textContent = `Failed: ${error.message || String(error)}`;
+  }
+};

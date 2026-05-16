@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import hashlib
 import json
 import os
@@ -32,7 +33,7 @@ from pydantic import BaseModel, Field
 
 from pi_agent_platform.core.config import AppConfig, ProviderConfig, AgentProfile, WorkspaceProfile, SourceContextConfig, save_config, load_config, default_config_path, MAIN_PI_DEV_PROFILE, AGENT_CONTROL_WORKSPACE, MODEL_NOT_SELECTED
 from pi_agent_platform.core.platform_home import ensure_pacp_layout, pacp_path
-from pi_agent_platform.core.models import Event, Session, SessionCreate, Task, TaskCreate, TaskStatus, SessionStatus, Runner, RunnerCreateRequest, RunnerRegisterRequest, RunnerHeartbeat, RunnerStatus, RunnerJobCreate, RunnerJob, RunnerJobStatus, RunnerJobUpdate, RunnerJobLog, RunnerExecutionMode, User
+from pi_agent_platform.core.models import AccessRequest, AccessRequestStatus, Event, Group, ResourceGrant, Session, SessionCreate, Task, TaskCreate, TaskStatus, SessionStatus, Runner, RunnerCreateRequest, RunnerRegisterRequest, RunnerHeartbeat, RunnerStatus, RunnerJobCreate, RunnerJob, RunnerJobStatus, RunnerJobUpdate, RunnerJobLog, RunnerExecutionMode, User
 from pi_agent_platform.core.runtime import git_diff, git_status, run_shell_task
 from pi_agent_platform.core.agent_loop import run_agent_loop
 from pi_agent_platform.core.session_commands import list_session_slash_commands, parse_session_slash_command, slash_help_text
@@ -1536,15 +1537,111 @@ def get_version() -> dict[str, Any]:
 
 
 def _public_user(user: User) -> dict[str, Any]:
+    grants = user.metadata.get('resource_grants') if isinstance(user.metadata, dict) else []
     return {
         'id': user.id,
         'username': user.username,
         'display_name': user.display_name or user.username,
         'role': user.role,
+        'groups': list(user.groups or []),
+        'resource_grants': grants if isinstance(grants, list) else [],
         'created_at': user.created_at.isoformat(),
         'updated_at': user.updated_at.isoformat(),
         'metadata': user.metadata or {},
     }
+
+
+def _public_group(group: Group) -> dict[str, Any]:
+    return {
+        'id': group.id,
+        'name': group.name,
+        'description': group.description,
+        'grants': [grant.model_dump() for grant in group.grants],
+        'created_at': group.created_at.isoformat(),
+        'updated_at': group.updated_at.isoformat(),
+    }
+
+
+def _resource_grants_from_user(user: User | None) -> list[ResourceGrant]:
+    if not user or not isinstance(user.metadata, dict):
+        return []
+    raw = user.metadata.get('resource_grants')
+    if not isinstance(raw, list):
+        return []
+    grants: list[ResourceGrant] = []
+    for item in raw:
+        try:
+            grants.append(ResourceGrant.model_validate(item))
+        except Exception:
+            continue
+    return grants
+
+
+def _resource_match(rule: ResourceGrant, resource_type: str, resource_id: str, access: str) -> bool:
+    if rule.resource_type != resource_type:
+        return False
+    if rule.access == 'read' and access == 'write':
+        return False
+    return fnmatch.fnmatch(resource_id, rule.pattern)
+
+
+def _user_has_resource_access(auth: CurrentUser, resource_type: str, resource_id: str, access: str = 'read') -> bool:
+    if auth.is_admin or not auth.user:
+        return True
+    for grant in _resource_grants_from_user(auth.user):
+        if _resource_match(grant, resource_type, resource_id, access):
+            return True
+    group_ids = set(auth.user.groups or [])
+    for group in store.list_groups():
+        if group.id not in group_ids:
+            continue
+        for grant in group.grants:
+            if _resource_match(grant, resource_type, resource_id, access):
+                return True
+    return False
+
+
+def _ensure_access_request(auth: CurrentUser, resource_type: str, resource_id: str, access: str = 'read', reason: str | None = None, session_id: str = 'system') -> AccessRequest:
+    if not auth.user:
+        raise HTTPException(status_code=403, detail='Access denied')
+    existing = store.find_pending_access_request(auth.user.id, resource_type, resource_id, access)
+    if existing:
+        return existing
+    request = AccessRequest(
+        user_id=auth.user.id,
+        username=auth.user.username,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        access=access,
+        reason=reason,
+        metadata={'display_name': auth.user.display_name or auth.user.username},
+    )
+    store.add_access_request(request)
+    store.add_event(Event(
+        session_id=session_id,
+        type='access_request_created',
+        message=f'Access requested: {auth.user.username} -> {resource_type}:{resource_id}',
+        data={'request_id': request.id, 'user_id': auth.user.id, 'resource_type': resource_type, 'resource_id': resource_id, 'access': access, 'reason': reason},
+    ))
+    return request
+
+
+def _require_resource_access(auth: CurrentUser, resource_type: str, resource_id: str, access: str = 'read', reason: str | None = None, session_id: str = 'system') -> None:
+    if _user_has_resource_access(auth, resource_type, resource_id, access):
+        return
+    req = _ensure_access_request(auth, resource_type, resource_id, access, reason=reason, session_id=session_id)
+    raise HTTPException(status_code=403, detail=f'Access denied. Request queued: {req.id}')
+
+
+def _session_resource_ref(session: Session) -> tuple[str, str]:
+    profile = ''
+    if isinstance(session.workspace, dict):
+        profile = str(session.workspace.get('profile') or '').strip()
+    else:
+        profile = str(getattr(session.workspace, 'profile', '') or '').strip()
+    if profile:
+        return 'workspace', f'profile:{profile}'
+    return 'workspace', f'path:{session.workspace_path}'
 
 
 @app.get('/v1/auth/status')
@@ -1555,6 +1652,8 @@ def auth_status() -> dict[str, Any]:
         'mode': config.auth.mode,
         'needs_setup': config.auth.mode == 'user-password' and user_count == 0,
         'user_count': user_count,
+        'group_count': len(store.list_groups()),
+        'pending_access_requests': len(store.list_access_requests(status='pending')),
         'token_ttl_hours': config.auth.token_ttl_hours,
     }
 
@@ -1634,11 +1733,35 @@ def create_user(payload: dict[str, Any], _auth: CurrentUser = Depends(require_ad
         username=username,
         display_name=str(payload.get('display_name') or username).strip() or username,
         role=str(payload.get('role') or 'user'),
+        groups=[str(item).strip() for item in (payload.get('groups') or []) if str(item).strip()],
         metadata=payload.get('metadata') or {},
     )
     user.set_password(password)
     store.add_user(user)
     store.add_event(Event(session_id='system', type='user_created', message=f'User created: {username}', data={'username': username}))
+    return {'ok': True, 'user': _public_user(user)}
+
+
+@app.put('/v1/users/{user_id}')
+def update_user(user_id: str, payload: dict[str, Any], _auth: CurrentUser = Depends(require_admin)) -> dict[str, Any]:
+    user = store.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail='User not found')
+    if 'display_name' in payload:
+        user.display_name = str(payload.get('display_name') or user.username).strip() or user.username
+    if 'role' in payload:
+        user.role = str(payload.get('role') or user.role)
+    if 'groups' in payload:
+        user.groups = [str(item).strip() for item in (payload.get('groups') or []) if str(item).strip()]
+    if 'metadata' in payload and isinstance(payload.get('metadata'), dict):
+        user.metadata = payload.get('metadata') or {}
+    if payload.get('password'):
+        password = str(payload.get('password') or '')
+        if len(password) < 8:
+            raise HTTPException(status_code=400, detail='Password must be at least 8 characters')
+        user.set_password(password)
+    store.add_user(user)
+    store.add_event(Event(session_id='system', type='user_updated', message=f'User updated: {user.username}', data={'username': user.username}))
     return {'ok': True, 'user': _public_user(user)}
 
 
@@ -1648,6 +1771,97 @@ def delete_user(user_id: str, _auth: CurrentUser = Depends(require_admin)) -> di
         raise HTTPException(status_code=404, detail='User not found')
     store.add_event(Event(session_id='system', type='user_deleted', message=f'User deleted: {user_id}', data={'user_id': user_id}))
     return {'ok': True}
+
+
+@app.get('/v1/groups')
+def list_groups(_auth: CurrentUser = Depends(require_auth)) -> list[dict[str, Any]]:
+    return [_public_group(group) for group in store.list_groups()]
+
+
+@app.post('/v1/groups')
+def create_group(payload: dict[str, Any], _auth: CurrentUser = Depends(require_admin)) -> dict[str, Any]:
+    group_id = str(payload.get('id') or payload.get('name') or '').strip()
+    if not group_id:
+        raise HTTPException(status_code=400, detail='group id required')
+    if store.get_group(group_id):
+        raise HTTPException(status_code=409, detail='Group already exists')
+    grants = [ResourceGrant.model_validate(item) for item in (payload.get('grants') or [])]
+    group = Group(id=group_id, name=str(payload.get('name') or group_id).strip() or group_id, description=str(payload.get('description') or '').strip() or None, grants=grants)
+    store.add_group(group)
+    store.add_event(Event(session_id='system', type='group_created', message=f'Group created: {group_id}', data={'group_id': group_id}))
+    return {'ok': True, 'group': _public_group(group)}
+
+
+@app.put('/v1/groups/{group_id}')
+def update_group(group_id: str, payload: dict[str, Any], _auth: CurrentUser = Depends(require_admin)) -> dict[str, Any]:
+    group = store.get_group(group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail='Group not found')
+    if 'name' in payload:
+        group.name = str(payload.get('name') or group.name).strip() or group.id
+    if 'description' in payload:
+        group.description = str(payload.get('description') or '').strip() or None
+    if 'grants' in payload:
+        group.grants = [ResourceGrant.model_validate(item) for item in (payload.get('grants') or [])]
+    store.add_group(group)
+    store.add_event(Event(session_id='system', type='group_updated', message=f'Group updated: {group_id}', data={'group_id': group_id}))
+    return {'ok': True, 'group': _public_group(group)}
+
+
+@app.delete('/v1/groups/{group_id}')
+def delete_group(group_id: str, _auth: CurrentUser = Depends(require_admin)) -> dict[str, Any]:
+    if not store.delete_group(group_id):
+        raise HTTPException(status_code=404, detail='Group not found')
+    for user in store.list_users():
+        if group_id in (user.groups or []):
+            user.groups = [item for item in (user.groups or []) if item != group_id]
+            store.add_user(user)
+    store.add_event(Event(session_id='system', type='group_deleted', message=f'Group deleted: {group_id}', data={'group_id': group_id}))
+    return {'ok': True}
+
+
+@app.get('/v1/access-requests')
+def list_access_requests(status: str = Query(default='pending'), _auth: CurrentUser = Depends(require_auth)) -> list[dict[str, Any]]:
+    items = store.list_access_requests(status=status or None)
+    return [item.model_dump(mode='json') for item in items]
+
+
+@app.post('/v1/access-requests/{request_id}/approve')
+def approve_access_request(request_id: str, _auth: CurrentUser = Depends(require_admin)) -> dict[str, Any]:
+    request = store.get_access_request(request_id)
+    if not request:
+        raise HTTPException(status_code=404, detail='Access request not found')
+    if request.status != AccessRequestStatus.pending:
+        return {'ok': True, 'request': request.model_dump(mode='json')}
+    user = store.get_user(request.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail='User not found')
+    grants = _resource_grants_from_user(user)
+    if not any(_resource_match(grant, request.resource_type, request.resource_id, request.access) for grant in grants):
+        grants.append(ResourceGrant(resource_type=request.resource_type, pattern=request.resource_id, access=request.access))
+    metadata = dict(user.metadata or {})
+    metadata['resource_grants'] = [grant.model_dump() for grant in grants]
+    user.metadata = metadata
+    store.add_user(user)
+    request.status = AccessRequestStatus.approved
+    request.resolved_at = datetime.utcnow()
+    request.resolved_by = _auth.user.username if _auth.user else 'controller'
+    store.add_access_request(request)
+    store.add_event(Event(session_id='system', type='access_request_approved', message=f'Access approved: {request.username} -> {request.resource_type}:{request.resource_id}', data={'request_id': request.id, 'resolved_by': request.resolved_by}))
+    return {'ok': True, 'request': request.model_dump(mode='json'), 'user': _public_user(user)}
+
+
+@app.post('/v1/access-requests/{request_id}/reject')
+def reject_access_request(request_id: str, _auth: CurrentUser = Depends(require_admin)) -> dict[str, Any]:
+    request = store.get_access_request(request_id)
+    if not request:
+        raise HTTPException(status_code=404, detail='Access request not found')
+    request.status = AccessRequestStatus.rejected
+    request.resolved_at = datetime.utcnow()
+    request.resolved_by = _auth.user.username if _auth.user else 'controller'
+    store.add_access_request(request)
+    store.add_event(Event(session_id='system', type='access_request_rejected', message=f'Access rejected: {request.username} -> {request.resource_type}:{request.resource_id}', data={'request_id': request.id, 'resolved_by': request.resolved_by}))
+    return {'ok': True, 'request': request.model_dump(mode='json')}
 
 
 @app.get('/v1/auth/tokens')
@@ -3330,12 +3544,19 @@ def delete_workspace_profile(workspace_name: str, _auth: None = Depends(require_
 
 
 @app.get('/v1/sessions', response_model=list[Session])
-def list_sessions(_auth: None = Depends(require_auth)) -> list[Session]:
-    return store.list_sessions()
+def list_sessions(_auth: CurrentUser = Depends(require_auth)) -> list[Session]:
+    if _auth.is_admin or not _auth.user:
+        return store.list_sessions()
+    visible: list[Session] = []
+    for session in store.list_sessions():
+        resource_type, resource_id = _session_resource_ref(session)
+        if _user_has_resource_access(_auth, resource_type, resource_id, 'read'):
+            visible.append(session)
+    return visible
 
 
 @app.post('/v1/sessions', response_model=Session)
-def create_session(payload: SessionCreate, _auth: None = Depends(require_auth)) -> Session:
+def create_session(payload: SessionCreate, _auth: CurrentUser = Depends(require_auth)) -> Session:
     # Resolve workspace first so a workspace default_agent_profile can satisfy
     # session creation. Previously this happened after model resolution, so a
     # modal request with only a workspace profile could fail with
@@ -3349,6 +3570,7 @@ def create_session(payload: SessionCreate, _auth: None = Depends(require_auth)) 
     if workspace.type == 'profile':
         if not workspace.profile or workspace.profile not in config.workspaces:
             raise HTTPException(status_code=400, detail='Unknown workspace profile')
+        _require_resource_access(_auth, 'workspace', f'profile:{workspace.profile}', 'write', reason='Start a session in this workspace profile')
         w = config.workspaces[workspace.profile]
         workspace.type = w.type
         workspace.path = w.path
@@ -3398,6 +3620,8 @@ def create_session(payload: SessionCreate, _auth: None = Depends(require_auth)) 
     root.mkdir(parents=True, exist_ok=True)
     safe_name = (payload.name or payload.agent_profile or 'session').replace('/', '-').replace(' ', '-')
     workspace_path = workspace.path or str(root / f'workspace-{safe_name}')
+    if workspace.type != 'profile':
+        _require_resource_access(_auth, 'workspace', f'path:{workspace_path}', 'write', reason='Start a session in this workspace path')
 
     payload.metadata.setdefault('agent_enabled', True)
     payload.metadata.setdefault('execution_mode', 'pi.dev')
@@ -3433,10 +3657,12 @@ def create_session(payload: SessionCreate, _auth: None = Depends(require_auth)) 
 
 
 @app.get('/v1/sessions/{session_id}', response_model=Session)
-def get_session(session_id: str, _auth: None = Depends(require_auth)) -> Session:
+def get_session(session_id: str, _auth: CurrentUser = Depends(require_auth)) -> Session:
     session = store.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')
+    resource_type, resource_id = _session_resource_ref(session)
+    _require_resource_access(_auth, resource_type, resource_id, 'read', reason='Open this session', session_id=session.id)
     return session
 
 
@@ -3461,17 +3687,22 @@ def update_session(session_id: str, payload: dict[str, Any], _auth: None = Depen
 
 
 @app.get('/v1/sessions/{session_id}/tasks', response_model=list[Task])
-def list_tasks(session_id: str, _auth: None = Depends(require_auth)) -> list[Task]:
-    if not store.get_session(session_id):
+def list_tasks(session_id: str, _auth: CurrentUser = Depends(require_auth)) -> list[Task]:
+    session = store.get_session(session_id)
+    if not session:
         raise HTTPException(status_code=404, detail='Session not found')
+    resource_type, resource_id = _session_resource_ref(session)
+    _require_resource_access(_auth, resource_type, resource_id, 'read', reason='List tasks for this session', session_id=session.id)
     return store.list_tasks(session_id)
 
 
 @app.post('/v1/sessions/{session_id}/tasks', response_model=Task)
-async def create_task(session_id: str, payload: TaskCreate, background_tasks: BackgroundTasks, wait: bool = Query(default=False), _auth: None = Depends(require_auth)) -> Task:
+async def create_task(session_id: str, payload: TaskCreate, background_tasks: BackgroundTasks, wait: bool = Query(default=False), _auth: CurrentUser = Depends(require_auth)) -> Task:
     session = store.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')
+    resource_type, resource_id = _session_resource_ref(session)
+    _require_resource_access(_auth, resource_type, resource_id, 'write', reason='Send prompts or commands to this session', session_id=session.id)
 
     metadata = dict(payload.metadata or {})
     parsed_slash = parse_session_slash_command(payload.prompt)
@@ -4067,8 +4298,12 @@ def put_source_content(payload: SourceWriteRequest, _auth: None = Depends(requir
 
 @app.get('/v1/source-contexts')
 @app.get('/v1/ide/contexts')
-def list_source_contexts(_auth: None = Depends(require_auth)) -> dict[str, Any]:
-    items = [{'name': name, **ctx.model_dump()} for name, ctx in sorted((config.source_contexts or {}).items())]
+def list_source_contexts(_auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    items = []
+    for name, ctx in sorted((config.source_contexts or {}).items()):
+        resource_id = f'context:{name}'
+        if _user_has_resource_access(_auth, 'source_context', resource_id, 'read'):
+            items.append({'name': name, **ctx.model_dump()})
     return {'contexts': items}
 
 
@@ -4085,6 +4320,10 @@ def resolve_source_context(
     runner = _runner_from_auth_headers(authorization, x_pac_runner_id, x_pac_runner_key)
     include_secret_values = include_secrets and (_admin_auth_valid(authorization) or runner is not None)
     result = _resolve_source_context(path=path, name=name, include_secret_values=include_secret_values)
+    context_name = str(result.get('name') or name or '').strip()
+    if context_name and runner is None and not _admin_auth_valid(authorization):
+        auth = _get_user_from_auth(authorization)
+        _require_resource_access(auth, 'source_context', f'context:{context_name}', 'read', reason='Resolve this source context')
     if runner:
         result['requested_by'] = {'kind': 'endpoint', 'runner_id': runner.id, 'runner_name': runner.name}
     elif _admin_auth_valid(authorization):
@@ -4094,8 +4333,9 @@ def resolve_source_context(
 
 @app.get('/v1/source-contexts/{name}')
 @app.get('/v1/ide/contexts/{name}')
-def get_source_context(name: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+def get_source_context(name: str, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
     key = _normalise_source_context_name(name)
+    _require_resource_access(_auth, 'source_context', f'context:{key}', 'read', reason='View this source context')
     context = config.source_contexts.get(key)
     if not context:
         raise HTTPException(status_code=404, detail='Source context not found')
@@ -4104,17 +4344,19 @@ def get_source_context(name: str, _auth: None = Depends(require_auth)) -> dict[s
 
 @app.put('/v1/source-contexts/{name}')
 @app.put('/v1/ide/contexts/{name}')
-def put_source_context(name: str, payload: SourceContextUpdateRequest, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+def put_source_context(name: str, payload: SourceContextUpdateRequest, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
     key = _normalise_source_context_name(name)
+    _require_resource_access(_auth, 'source_context', f'context:{key}', 'write', reason='Edit this source context')
     result = _save_source_context(key, payload)
     return {'status': 'saved', 'name': key, **result}
 
 
 @app.delete('/v1/source-contexts/{name}')
 @app.delete('/v1/ide/contexts/{name}')
-def delete_source_context(name: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+def delete_source_context(name: str, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
     global config
     key = _normalise_source_context_name(name)
+    _require_resource_access(_auth, 'source_context', f'context:{key}', 'write', reason='Delete this source context')
     if key not in config.source_contexts:
         raise HTTPException(status_code=404, detail='Source context not found')
     del config.source_contexts[key]
@@ -4273,25 +4515,34 @@ def put_workspace_ram(workspace: str, payload: PacRamWriteRequest, _auth: None =
 
 @app.get('/v1/secrets')
 @app.get('/v1/ide/secrets')
-def list_secrets(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+def list_secrets(_auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
     try:
-        return {'secrets': secret_store.list()}
+        items = secret_store.list()
+        if _auth.is_admin or not _auth.user:
+            return {'secrets': items}
+        filtered = [item for item in items if _user_has_resource_access(_auth, 'secret', f"secret:{item.get('id')}", 'read')]
+        return {'secrets': filtered}
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.get('/v1/secrets/audit')
 @app.get('/v1/ide/secrets/audit')
-def list_secret_audit(limit: int = 20, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+def list_secret_audit(limit: int = 20, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
     try:
-        return {'items': secret_store.audit_tail(max(1, min(limit, 200)))}
+        items = secret_store.audit_tail(max(1, min(limit, 200)))
+        if _auth.is_admin or not _auth.user:
+            return {'items': items}
+        filtered = [item for item in items if _user_has_resource_access(_auth, 'secret', f"secret:{item.get('secret_id')}", 'read')]
+        return {'items': filtered}
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.put('/v1/secrets/{secret_id}')
 @app.put('/v1/ide/secrets/{secret_id}')
-def put_secret(secret_id: str, payload: SecretUpdateRequest, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+def put_secret(secret_id: str, payload: SecretUpdateRequest, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    _require_resource_access(_auth, 'secret', f'secret:{secret_id}', 'write', reason='Update this secret')
     try:
         item = secret_store.set(secret_id, payload.value, actor='web-ui', meta=payload.meta)
     except RuntimeError as exc:
@@ -4302,7 +4553,8 @@ def put_secret(secret_id: str, payload: SecretUpdateRequest, _auth: None = Depen
 
 @app.delete('/v1/secrets/{secret_id}')
 @app.delete('/v1/ide/secrets/{secret_id}')
-def delete_secret(secret_id: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+def delete_secret(secret_id: str, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    _require_resource_access(_auth, 'secret', f'secret:{secret_id}', 'write', reason='Delete this secret')
     try:
         deleted = secret_store.delete(secret_id, actor='web-ui')
     except RuntimeError as exc:
@@ -4322,6 +4574,9 @@ def get_secret(
     x_pac_runner_key: str | None = Header(default=None, alias='X-PAC-Runner-Key'),
 ) -> dict[str, Any]:
     runner = _runner_from_auth_headers(authorization, x_pac_runner_id, x_pac_runner_key)
+    if not runner and not _admin_auth_valid(authorization):
+        auth = _get_user_from_auth(authorization)
+        _require_resource_access(auth, 'secret', f'secret:{secret_id}', 'read', reason='Read this secret')
     try:
         value = secret_store.get(secret_id)
     except RuntimeError as exc:

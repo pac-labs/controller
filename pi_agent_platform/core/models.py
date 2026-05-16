@@ -231,6 +231,7 @@ class User(BaseModel):
     password_hash: str | None = None
     display_name: str | None = None
     role: Literal["admin", "user", "readonly"] = "user"
+    groups: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -264,3 +265,46 @@ class User(BaseModel):
 
         salt = secrets.token_bytes(32)
         self.password_hash = salt.hex() + "::" + hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 200000).hex()
+
+
+class ResourceGrant(BaseModel):
+    resource_type: Literal["workspace", "source_context", "secret", "session"] = "workspace"
+    pattern: str
+    access: Literal["read", "write"] = "read"
+
+
+class Group(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    grants: list[ResourceGrant] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+
+    def touch(self) -> None:
+        self.updated_at = now_utc()
+
+
+class AccessRequestStatus(str, Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+
+class AccessRequest(BaseModel):
+    id: str = Field(default_factory=lambda: f"acc_{uuid4().hex[:12]}")
+    user_id: str
+    username: str
+    resource_type: Literal["workspace", "source_context", "secret", "session"] = "workspace"
+    resource_id: str
+    access: Literal["read", "write"] = "read"
+    reason: str | None = None
+    status: AccessRequestStatus = AccessRequestStatus.pending
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+    resolved_at: datetime | None = None
+    resolved_by: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def touch(self) -> None:
+        self.updated_at = now_utc()

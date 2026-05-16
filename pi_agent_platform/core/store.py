@@ -6,7 +6,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Iterable
 
-from .models import Event, Session, Task, Runner, RunnerJob, RunnerJobStatus, User, now_utc
+from .models import AccessRequest, Event, Group, Session, Task, Runner, RunnerJob, RunnerJobStatus, User, now_utc
 from .platform_home import pacp_path
 
 
@@ -36,6 +36,9 @@ class SQLiteStore:
             conn.execute('create table if not exists users (id text primary key, payload text not null, updated_at text not null)')
             conn.execute('create table if not exists user_tokens (token text primary key, user_id text not null, expires_at text not null, created_at text not null)')
             conn.execute('create index if not exists idx_user_tokens_user on user_tokens(user_id, expires_at)')
+            conn.execute('create table if not exists groups (id text primary key, payload text not null, updated_at text not null)')
+            conn.execute('create table if not exists access_requests (id text primary key, user_id text not null, status text not null, payload text not null, updated_at text not null)')
+            conn.execute('create index if not exists idx_access_requests_status on access_requests(status, updated_at)')
 
     def add_session(self, session: Session) -> Session:
         session.touch()
@@ -258,6 +261,58 @@ class SQLiteStore:
     def delete_user_token(self, token: str) -> None:
         with self._lock, self._connect() as conn:
             conn.execute('delete from user_tokens where token = ?', (token,))
+
+    def add_group(self, group: Group) -> Group:
+        group.touch()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'insert or replace into groups(id, payload, updated_at) values (?, ?, ?)',
+                (group.id, group.model_dump_json(), group.updated_at.isoformat()),
+            )
+        return group
+
+    def get_group(self, group_id: str) -> Group | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from groups where id = ?', (group_id,)).fetchone()
+        return Group.model_validate_json(row['payload']) if row else None
+
+    def list_groups(self) -> list[Group]:
+        with self._connect() as conn:
+            rows = conn.execute('select payload from groups order by updated_at desc').fetchall()
+        return [Group.model_validate_json(r['payload']) for r in rows]
+
+    def delete_group(self, group_id: str) -> bool:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute('delete from groups where id = ?', (group_id,))
+        return cur.rowcount > 0
+
+    def add_access_request(self, request: AccessRequest) -> AccessRequest:
+        request.touch()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'insert or replace into access_requests(id, user_id, status, payload, updated_at) values (?, ?, ?, ?, ?)',
+                (request.id, request.user_id, request.status.value if hasattr(request.status, 'value') else str(request.status), request.model_dump_json(), request.updated_at.isoformat()),
+            )
+        return request
+
+    def get_access_request(self, request_id: str) -> AccessRequest | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from access_requests where id = ?', (request_id,)).fetchone()
+        return AccessRequest.model_validate_json(row['payload']) if row else None
+
+    def list_access_requests(self, status: str | None = None) -> list[AccessRequest]:
+        with self._connect() as conn:
+            if status:
+                rows = conn.execute('select payload from access_requests where status = ? order by updated_at desc', (status,)).fetchall()
+            else:
+                rows = conn.execute('select payload from access_requests order by updated_at desc').fetchall()
+        return [AccessRequest.model_validate_json(r['payload']) for r in rows]
+
+    def find_pending_access_request(self, user_id: str, resource_type: str, resource_id: str, access: str) -> AccessRequest | None:
+        for item in self.list_access_requests(status='pending'):
+            if item.user_id == user_id and item.resource_type == resource_type and item.resource_id == resource_id and item.access == access:
+                return item
+        return None
 
 
 store = SQLiteStore()

@@ -2813,6 +2813,7 @@ html[data-theme="dark"] .recommendation-card p{color:#dbe7ff}
 .settings-panel{
   display:block;
   min-height:0;
+  flex:1 1 auto;
 }
 .settings-panel-inner{
   display:grid;
@@ -2829,6 +2830,22 @@ html[data-theme="dark"] .recommendation-card p{color:#dbe7ff}
   display:grid;
   gap:1rem;
   min-width:0;
+  min-height:100%;
+  align-content:start;
+}
+#settings-tab.active{
+  display:flex;
+  flex-direction:column;
+  min-height:calc(100vh - 176px);
+}
+#settings-tab .settings-panel{
+  min-height:100%;
+}
+#settings-tab .settings-panel-inner,
+#settings-tab .settings-main{
+  min-height:100%;
+}
+#settings-tab .setting-cube.wide{
   min-height:100%;
 }
 .health-grid{
