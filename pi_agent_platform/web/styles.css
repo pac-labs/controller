@@ -774,6 +774,32 @@ pre#events, pre#diff { min-width: 0; width: 100%; overflow: auto; white-space: p
 
 /* v1.0.71: dashboard cleanup and editor-style integrated composer controls. */
 .dashboard-metrics { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.dashboard-metrics{
+  align-items:start;
+}
+.dashboard-metrics > .card:not(.hero){
+  min-height:0 !important;
+  padding:.85rem .9rem !important;
+}
+.dashboard-metrics > .card h2{
+  margin:0 0 .65rem !important;
+  font-size:1rem;
+}
+.dashboard-metrics .health-grid,
+.dashboard-metrics .bar-chart,
+.dashboard-metrics .kv{
+  gap:.45rem;
+}
+.dashboard-metrics .health-section{
+  padding:.5rem .55rem !important;
+}
+.dashboard-metrics .health-row{
+  padding:.18rem 0 !important;
+}
+section.card:has(#eventActivityChart),
+section.card:has(#sessions){
+  display:none !important;
+}
 .composer-input-shell {
   display:block;
   border-radius: 10px 10px 0 0;
@@ -3335,29 +3361,31 @@ body[data-theme="light"] .session-sidebar-meta{
   left:0;
   top:0;
   z-index:30;
-  width:470px;
+  width:520px;
   height:128px;
-  overflow:visible !important;
+  overflow:hidden !important;
   display:flex;
   align-items:flex-start;
   justify-content:flex-start;
   pointer-events:none;
 }
 .brand-logo{
-  width:470px !important;
+  position:absolute;
+  left:-10px;
+  top:-6px;
+  width:520px !important;
   max-width:none !important;
   height:auto;
   display:block;
   object-fit:contain;
   object-position:left top;
-  transform:scale(1.08);
-  transform-origin:left top;
+  transform:none;
 }
 .tabs{
   position:relative;
   z-index:18;
   margin-top:0;
-  padding:.6rem 1rem .7rem 33.5rem;
+  padding:.6rem 1rem .7rem 35rem;
   min-height:56px;
   border-bottom:0 !important;
   background:#080f14 !important;
@@ -3459,17 +3487,18 @@ body[data-theme="light"] #sessions-tab .session-sidebar-list::-webkit-scrollbar-
 }
 @media(max-width:1280px){
   .brand-logo{
-    width:420px !important;
-    transform:scale(1.04);
+    left:-8px;
+    top:-4px;
+    width:460px !important;
   }
   .brand-block{
     left:0;
     top:0;
-    width:420px;
+    width:460px;
     height:118px;
   }
   .tabs{
-    padding-left:29.5rem;
+    padding-left:31rem;
   }
 }
 @media(max-width:1040px){
@@ -3482,9 +3511,13 @@ body[data-theme="light"] #sessions-tab .session-sidebar-list::-webkit-scrollbar-
     top:auto;
     width:min(72vw,320px);
     height:auto;
+    overflow:visible !important;
     pointer-events:auto;
   }
   .brand-logo{
+    position:relative;
+    left:auto;
+    top:auto;
     width:min(72vw,320px) !important;
     transform:none;
   }
