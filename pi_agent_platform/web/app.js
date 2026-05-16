@@ -65,6 +65,7 @@ let sessionPollingActiveFor = null;
 let currentUser = null;
 let authStatus = null;
 let suppressSessionAutoScroll = false;
+let sessionHydrationToken = 0;
 
 const AUTH_TOKEN_KEY = 'pac_auth_token';
 
@@ -871,6 +872,50 @@ function renderSessionSidebar(sessions = window.__pacSessions || []) {
     item.onclick = () => { switchToTab('sessions-tab'); selectSession(s.id); };
     list.appendChild(item);
   });
+}
+function resetSessionTimelineState() {
+  sessionThinkingGroup = null;
+  sessionEventSeen = new Set();
+  sessionMessageSeen = new Set();
+  sessionPendingRows = new Map();
+  sessionApprovalRows = new Map();
+  sessionLatestEventId = null;
+}
+function renderSessionSnapshotFast(snapshot, sessionId) {
+  const timeline = document.getElementById('events');
+  if (!timeline) return;
+  const events = Array.isArray(snapshot) ? snapshot : [];
+  const initialChunkSize = 80;
+  const hydrateChunkSize = 36;
+  const tail = events.slice(-initialChunkSize);
+  const token = ++sessionHydrationToken;
+  timeline.innerHTML = tail.length ? '' : '<div class="empty-timeline">No session events yet.</div>';
+  resetSessionTimelineState();
+  suppressSessionAutoScroll = true;
+  tail.forEach((ev) => renderSessionTimelineEvent(ev));
+  suppressSessionAutoScroll = false;
+  timeline.scrollTop = timeline.scrollHeight;
+  if (events.length <= initialChunkSize) return;
+  window.setTimeout(() => {
+    if (!selectedSession || selectedSession.id !== sessionId || sessionHydrationToken !== token) return;
+    timeline.innerHTML = '';
+    resetSessionTimelineState();
+    let index = 0;
+    const paintChunk = () => {
+      if (!selectedSession || selectedSession.id !== sessionId || sessionHydrationToken !== token) return;
+      suppressSessionAutoScroll = true;
+      for (let count = 0; count < hydrateChunkSize && index < events.length; count += 1, index += 1) {
+        renderSessionTimelineEvent(events[index]);
+      }
+      suppressSessionAutoScroll = false;
+      if (index < events.length) {
+        window.requestAnimationFrame(paintChunk);
+        return;
+      }
+      timeline.scrollTop = timeline.scrollHeight;
+    };
+    window.requestAnimationFrame(paintChunk);
+  }, 40);
 }
 async function applySessionPermissionProfile() {
   if (!selectedSession?.id) return;
@@ -3765,6 +3810,7 @@ async function loadSessions() {
 }
 async function selectSession(id) {
   ensureSessionWorkspaceChrome();
+  sessionHydrationToken += 1;
   selectedSession = await api(`/v1/sessions/${id}`);
   const preferredEndpoint = selectedSession.metadata?.preferred_endpoint || '';
   const endpointName = (window.__pacEndpoints || []).find(e => e.id === preferredEndpoint)?.name || preferredEndpoint || 'PAC/local';
@@ -3775,21 +3821,11 @@ async function selectSession(id) {
   syncSessionPermissionQuick();
   const timeline = document.getElementById('events');
   if (timeline) timeline.innerHTML = '<div class="empty-timeline">Waiting for session events.</div>';
-  sessionThinkingGroup = null;
-  sessionEventSeen = new Set();
-  sessionMessageSeen = new Set();
-  sessionPendingRows = new Map();
-  sessionApprovalRows = new Map();
-  sessionLatestEventId = null;
+  resetSessionTimelineState();
   renderSessionSidebar(window.__pacSessions || []);
   try {
     const snapshot = await api(`/v1/sessions/${id}/events/snapshot?limit=120`);
-    if (timeline) timeline.innerHTML = snapshot.length ? '' : '<div class="empty-timeline">No session events yet.</div>';
-    sessionThinkingGroup = null;
-    suppressSessionAutoScroll = true;
-    snapshot.forEach(ev => renderSessionTimelineEvent(ev));
-    suppressSessionAutoScroll = false;
-    if (timeline) timeline.scrollTop = timeline.scrollHeight;
+    renderSessionSnapshotFast(snapshot, id);
   } catch (_) {
     suppressSessionAutoScroll = false;
   }
@@ -3847,6 +3883,7 @@ function showUserChip(user) {
       chip.hidden = true;
       chip.style.display = 'none';
       chip.setAttribute('aria-expanded', 'false');
+      chip.closest('.user-menu-wrap')?.classList.remove('open');
       document.getElementById('userMenu')?.setAttribute('hidden', '');
     }
   }
@@ -4060,7 +4097,12 @@ if (themeModeSelect) themeModeSelect.onchange = () => applyThemeMode(themeModeSe
 const authTokenInput = document.getElementById('token');
 if (authTokenInput) authTokenInput.addEventListener('input', () => renderHeaderAuthBox());
 document.getElementById('loginBtn')?.addEventListener('click', () => openLoginModal(authStatus?.needs_setup ? 'setup' : 'login'));
-document.getElementById('userChipLogout')?.addEventListener('click', () => { document.getElementById('userMenu')?.setAttribute('hidden', ''); logoutUser(); });
+document.getElementById('userChipLogout')?.addEventListener('click', () => {
+  document.getElementById('userMenu')?.setAttribute('hidden', '');
+  document.getElementById('userChip')?.setAttribute('aria-expanded', 'false');
+  document.querySelector('.user-menu-wrap')?.classList.remove('open');
+  logoutUser();
+});
 document.querySelectorAll('.settings-sub-btn').forEach((btn) => {
   btn.addEventListener('click', () => switchSettingsPanel(btn.dataset.settingsPanel));
 });
@@ -4068,19 +4110,23 @@ document.getElementById('userChip')?.addEventListener('click', (ev) => {
   ev.stopPropagation();
   const menu = document.getElementById('userMenu');
   const chip = document.getElementById('userChip');
+  const wrap = chip?.closest('.user-menu-wrap');
   if (!menu || !chip || chip.hidden) return;
   const open = !menu.hasAttribute('hidden');
   if (open) {
     menu.setAttribute('hidden', '');
     chip.setAttribute('aria-expanded', 'false');
+    wrap?.classList.remove('open');
   } else {
     menu.removeAttribute('hidden');
     chip.setAttribute('aria-expanded', 'true');
+    wrap?.classList.add('open');
   }
 });
 document.getElementById('userMenuSettings')?.addEventListener('click', () => {
   document.getElementById('userMenu')?.setAttribute('hidden', '');
   document.getElementById('userChip')?.setAttribute('aria-expanded', 'false');
+  document.querySelector('.user-menu-wrap')?.classList.remove('open');
   switchToTab('settings-tab');
 });
 document.addEventListener('click', (ev) => {
@@ -4090,6 +4136,7 @@ document.addEventListener('click', (ev) => {
   if (!menu.hasAttribute('hidden') && !menu.contains(ev.target) && !chip.contains(ev.target)) {
     menu.setAttribute('hidden', '');
     chip.setAttribute('aria-expanded', 'false');
+    chip.closest('.user-menu-wrap')?.classList.remove('open');
   }
 });
 document.getElementById('refreshUsersBtn')?.addEventListener('click', () => loadUsersList().catch((e)=>paneError('Users could not be refreshed', e.message || String(e))));

@@ -3311,3 +3311,141 @@ body[data-theme="light"] .session-sidebar-meta{
     max-height:220px;
   }
 }
+
+/* v1.0.150: header overlap, real user menu, and bottom-first session loading polish */
+.app-header{
+  overflow:visible !important;
+  min-height:96px;
+  padding:1rem 1.25rem .95rem;
+}
+.brand-block{
+  position:relative;
+  z-index:26;
+  margin-bottom:-1.15rem;
+  align-self:flex-start;
+}
+.brand-logo{
+  width:520px !important;
+  max-width:min(60vw,520px) !important;
+  height:auto;
+  display:block;
+  transform-origin:left top;
+}
+.tabs{
+  position:relative;
+  z-index:18;
+  margin-top:-.35rem;
+  padding:.8rem 1rem .7rem 25.5rem;
+  min-height:56px;
+  background:linear-gradient(180deg,#09131c,#0b1420 72%,#0d1722) !important;
+}
+.top-actions{
+  align-items:flex-start;
+}
+.theme-select-wrap select,
+.user-chip,
+.top-icon-button,
+#refresh{
+  min-height:36px;
+}
+.user-menu-wrap{
+  position:relative;
+  z-index:80;
+  overflow:visible !important;
+}
+.user-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:.55rem;
+  min-width:110px;
+  justify-content:space-between;
+}
+.user-menu-wrap.open .user-chip{
+  border-color:rgba(36,195,107,.45);
+  box-shadow:0 0 0 1px rgba(36,195,107,.12);
+}
+.user-menu-dropdown{
+  top:calc(100% + .45rem) !important;
+  right:0;
+  min-width:180px;
+  padding:.3rem 0;
+  border:1px solid rgba(36,195,107,.18);
+  background:#0c151d !important;
+  box-shadow:0 18px 36px rgba(2,6,23,.32);
+}
+.user-menu-dropdown button{
+  background:transparent !important;
+  border:0 !important;
+  min-height:36px;
+  color:#e2e8f0 !important;
+}
+.user-menu-dropdown button:hover{
+  background:rgba(36,195,107,.1) !important;
+  color:#ffffff !important;
+}
+#sessions-tab .sidebar-create-session{
+  background:rgba(255,255,255,.04) !important;
+  border-color:rgba(148,163,184,.22) !important;
+}
+html[data-theme="light"] #sessions-tab .sidebar-create-session,
+body[data-theme="light"] #sessions-tab .sidebar-create-session{
+  background:#ffffff !important;
+  border-color:rgba(148,163,184,.22) !important;
+  color:#0f172a !important;
+}
+html[data-theme="light"] .app-header,
+body[data-theme="light"] .app-header,
+html[data-theme="light"] .tabs,
+body[data-theme="light"] .tabs{
+  background:linear-gradient(180deg,#09131c,#0b1420 72%,#0d1722) !important;
+}
+html[data-theme="light"] .content-area,
+body[data-theme="light"] .content-area,
+html[data-theme="light"] .events-list,
+body[data-theme="light"] .events-list,
+html[data-theme="light"] #sessions-tab .session-sidebar-list,
+body[data-theme="light"] #sessions-tab .session-sidebar-list{
+  scrollbar-color:#22c55e #e2e8f0 !important;
+}
+html[data-theme="light"] .content-area::-webkit-scrollbar-track,
+body[data-theme="light"] .content-area::-webkit-scrollbar-track,
+html[data-theme="light"] .events-list::-webkit-scrollbar-track,
+body[data-theme="light"] .events-list::-webkit-scrollbar-track,
+html[data-theme="light"] #sessions-tab .session-sidebar-list::-webkit-scrollbar-track,
+body[data-theme="light"] #sessions-tab .session-sidebar-list::-webkit-scrollbar-track{
+  background:#e2e8f0 !important;
+}
+html[data-theme="light"] .content-area::-webkit-scrollbar-thumb,
+body[data-theme="light"] .content-area::-webkit-scrollbar-thumb,
+html[data-theme="light"] .events-list::-webkit-scrollbar-thumb,
+body[data-theme="light"] .events-list::-webkit-scrollbar-thumb,
+html[data-theme="light"] #sessions-tab .session-sidebar-list::-webkit-scrollbar-thumb,
+body[data-theme="light"] #sessions-tab .session-sidebar-list::-webkit-scrollbar-thumb{
+  background:#22c55e !important;
+  border:2px solid #e2e8f0 !important;
+}
+@media(max-width:1280px){
+  .brand-logo{
+    width:460px !important;
+    max-width:min(56vw,460px) !important;
+  }
+  .tabs{
+    padding-left:21rem;
+  }
+}
+@media(max-width:1040px){
+  .app-header{
+    min-height:auto;
+  }
+  .brand-block{
+    margin-bottom:0;
+  }
+  .brand-logo{
+    width:min(70vw,360px) !important;
+    max-width:min(70vw,360px) !important;
+  }
+  .tabs{
+    margin-top:0;
+    padding-left:1rem;
+  }
+}
