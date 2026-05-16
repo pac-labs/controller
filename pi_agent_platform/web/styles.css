@@ -2878,6 +2878,7 @@ body[data-theme="light"] .health-row b{
   min-width:0;
   align-items:center !important;
   height:100%;
+  overflow:visible;
 }
 .brand-logo{
   display:block;
@@ -2887,6 +2888,8 @@ body[data-theme="light"] .health-row b{
   object-fit:contain;
   object-position:left center;
   filter:none !important;
+  transform:scale(1.42);
+  transform-origin:left center;
 }
 .top-actions{
   display:flex;
@@ -2995,6 +2998,7 @@ body[data-theme="light"] #refresh{
     width:520px !important;
     max-width:min(58vw,520px) !important;
     height:78px !important;
+    transform:scale(1.34);
   }
   .tabs{
     padding-left:31rem !important;
@@ -3011,6 +3015,7 @@ body[data-theme="light"] #refresh{
     width:280px !important;
     max-width:min(82vw,280px) !important;
     height:auto !important;
+    transform:none;
   }
   .top-actions{
     width:100%;
