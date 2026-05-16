@@ -2871,7 +2871,7 @@ body[data-theme="light"] .health-row b{
   background:
     linear-gradient(90deg, rgba(8,15,22,.992), rgba(8,15,22,.984)) !important;
   border-bottom:1px solid rgba(96,165,250,.16) !important;
-  overflow:hidden;
+  overflow:visible;
 }
 .brand-block{
   flex:0 1 auto;
@@ -2879,6 +2879,8 @@ body[data-theme="light"] .health-row b{
   align-items:center !important;
   height:100%;
   overflow:visible;
+  position:relative;
+  z-index:24;
 }
 .brand-logo{
   display:block;
@@ -3068,4 +3070,94 @@ body[data-theme="light"] .tab-panel.active,
 body[data-theme="light"] .events-list,
 body[data-theme="light"] .setting-cube{
   scrollbar-color:#16a34a #e2e8f0 !important;
+}
+
+html[data-theme="light"] #sessions-tab .session-chat-main,
+body[data-theme="light"] #sessions-tab .session-chat-main{
+  background:#ffffff !important;
+  border-color:rgba(148,163,184,.22) !important;
+}
+html[data-theme="light"] #sessions-tab .session-composer,
+html[data-theme="light"] #sessions-tab .composer-input-shell,
+html[data-theme="light"] #sessions-tab .composer-controls.integrated.editor-like,
+body[data-theme="light"] #sessions-tab .session-composer,
+body[data-theme="light"] #sessions-tab .composer-input-shell,
+body[data-theme="light"] #sessions-tab .composer-controls.integrated.editor-like{
+  background:#ffffff !important;
+  color:#0f172a !important;
+  border-color:rgba(148,163,184,.18) !important;
+}
+html[data-theme="light"] #sessions-tab .session-composer textarea#taskPrompt,
+html[data-theme="light"] #sessions-tab .composer-controls.integrated.editor-like input,
+html[data-theme="light"] #sessions-tab .composer-controls.integrated.editor-like select,
+body[data-theme="light"] #sessions-tab .session-composer textarea#taskPrompt,
+body[data-theme="light"] #sessions-tab .composer-controls.integrated.editor-like input,
+body[data-theme="light"] #sessions-tab .composer-controls.integrated.editor-like select{
+  background:#ffffff !important;
+  color:#0f172a !important;
+  border-color:rgba(148,163,184,.18) !important;
+}
+html[data-theme="light"] #sessions-tab .composer-icon-button.square,
+html[data-theme="light"] #sessions-tab .composer-send-button.square,
+body[data-theme="light"] #sessions-tab .composer-icon-button.square,
+body[data-theme="light"] #sessions-tab .composer-send-button.square{
+  background:#f8fafc !important;
+  color:#0f172a !important;
+  border-color:rgba(148,163,184,.22) !important;
+}
+
+html[data-theme="light"] #sources-tab .source-workbench-toolbar,
+body[data-theme="light"] #sources-tab .source-workbench-toolbar{
+  background:linear-gradient(180deg,#f8fafc,#eef2f7) !important;
+  border-color:rgba(148,163,184,.2) !important;
+}
+html[data-theme="light"] #sources-tab .source-workbench,
+body[data-theme="light"] #sources-tab .source-workbench{
+  background:#ffffff !important;
+  border-color:rgba(148,163,184,.2) !important;
+}
+html[data-theme="light"] #sources-tab .source-workbench-tree,
+body[data-theme="light"] #sources-tab .source-workbench-tree{
+  background:#f8fafc !important;
+  border-right-color:rgba(148,163,184,.18) !important;
+}
+html[data-theme="light"] #sources-tab .source-workbench-editor,
+html[data-theme="light"] #sources-tab .source-tabs,
+html[data-theme="light"] #sources-tab .source-code-editor,
+body[data-theme="light"] #sources-tab .source-workbench-editor,
+body[data-theme="light"] #sources-tab .source-tabs,
+body[data-theme="light"] #sources-tab .source-code-editor{
+  background:#ffffff !important;
+  color:#0f172a !important;
+}
+html[data-theme="light"] #sources-tab .source-tab,
+body[data-theme="light"] #sources-tab .source-tab{
+  background:#eef2f7 !important;
+  color:#334155 !important;
+  border-color:rgba(148,163,184,.18) !important;
+}
+html[data-theme="light"] #sources-tab .source-tab.active,
+body[data-theme="light"] #sources-tab .source-tab.active{
+  background:#ffffff !important;
+  color:#0f172a !important;
+  border-color:rgba(96,165,250,.28) !important;
+}
+html[data-theme="light"] #sources-tab .source-row,
+html[data-theme="light"] #sources-tab .source-row-wrap:not(.buildable-source-row),
+body[data-theme="light"] #sources-tab .source-row,
+body[data-theme="light"] #sources-tab .source-row-wrap:not(.buildable-source-row){
+  background:#ffffff !important;
+  border-color:rgba(148,163,184,.16) !important;
+  box-shadow:inset 0 -1px 0 rgba(226,232,240,.7);
+}
+html[data-theme="light"] #sources-tab .source-row:hover,
+body[data-theme="light"] #sources-tab .source-row:hover{
+  background:#f8fafc !important;
+  border-color:rgba(96,165,250,.22) !important;
+}
+html[data-theme="light"] #sources-tab .source-file,
+html[data-theme="light"] #sources-tab .source-dir,
+body[data-theme="light"] #sources-tab .source-file,
+body[data-theme="light"] #sources-tab .source-dir{
+  color:#0f172a !important;
 }
