@@ -299,8 +299,13 @@
           <label>Execution endpoint <select id="modelRunsOn"><option value="">PAC/local</option></select><small class="muted">Endpoint used by default for sessions using this model.</small></label>
           <label>Context window <input id="modelContextWindow" type="number" value="4096" /></label>
           <label>Max output tokens <input id="modelMaxOutput" type="number" value="1024" /></label>
+          <label>Reasoning level <select id="modelReasoning"><option value="none">none</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select></label>
+          <label>Input price / 1M <input id="modelInputPrice" type="number" step="0.0001" placeholder="optional" /></label>
+          <label>Output price / 1M <input id="modelOutputPrice" type="number" step="0.0001" placeholder="optional" /></label>
         </div>
         <div class="check-grid">
+          <label><input id="modelSupportsChat" type="checkbox" checked /> Chat</label>
+          <label><input id="modelSupportsTools" type="checkbox" /> Tool use</label>
           <label><input id="modelSupportsVision" type="checkbox" /> Vision input</label>
           <label><input id="modelSupportsJson" type="checkbox" /> JSON output</label>
           <label><input id="modelSupportsStreaming" type="checkbox" checked /> Streaming output</label>

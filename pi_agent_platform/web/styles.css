@@ -3680,6 +3680,13 @@ body[data-theme="light"] .endpoint-meta,
 body[data-theme="light"] .download-pill small{
   color:var(--light-text-muted) !important;
 }
+.recommendation-summary{
+  padding:.65rem .25rem 0;
+}
+#modelsRecommendationsPanel{
+  max-height:520px;
+  overflow:auto;
+}
 html[data-theme="light"] .hardware-grid b,
 html[data-theme="light"] .hardware-grid span,
 html[data-theme="light"] .workspace-card-title b,

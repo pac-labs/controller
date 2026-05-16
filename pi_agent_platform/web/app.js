@@ -1356,7 +1356,30 @@ async function fetchProviderModels(name) {
   catch (e) { return {ok:false, error:e.message, models:[]}; }
 }
 function configuredModelMatchesProviderModel(providerName, modelId) {
-  return Object.entries(config.models || {}).some(([name, item]) => name === modelId || (item.provider === providerName && String(item.model || '') === String(modelId || '')));
+  return !!findConfiguredModelByProviderModel(providerName, modelId);
+}
+function normalizedProviderModelCandidates(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return [];
+  const clean = raw.replace(/\\/g, '/');
+  const base = clean.includes('/') ? clean.split('/').pop() : clean;
+  const compact = clean.replace(/[^a-z0-9]+/g, '');
+  const baseCompact = base.replace(/[^a-z0-9]+/g, '');
+  return Array.from(new Set([raw, clean, base, compact, baseCompact].filter(Boolean)));
+}
+function findConfiguredModelByProviderModel(providerName, modelId, excludeName='') {
+  const candidates = new Set(normalizedProviderModelCandidates(modelId));
+  return Object.entries(config.models || {}).find(([name, item]) => {
+    if (excludeName && name === excludeName) return false;
+    if (item.provider !== providerName) return false;
+    const values = [
+      name,
+      item.model || '',
+      providerModelKey(item.provider, item.model || ''),
+      providerModelKey(item.provider, name),
+    ];
+    return values.some(value => normalizedProviderModelCandidates(value).some(candidate => candidates.has(candidate)));
+  }) || null;
 }
 function providerStatus(p) {
   if (p.enabled === false) return 'disabled';
@@ -1711,7 +1734,9 @@ function renderModelRecommendations() {
   }
   const liveProviderModels = Object.entries(config.providers || {}).reduce((count, [providerName, provider]) => count + ((provider.cached_models || []).filter(model => !configuredModelMatchesProviderModel(providerName, model.id || model.name || model.model)).length), 0);
   if (liveProviderModels > 0) recommendations.push(recommendationCardHtml('info', 'Additional provider models are available', `${liveProviderModels} live model(s) are visible from connected providers but not configured in PAC yet.`, 'Browse providers to promote them into session models.'));
-  body.innerHTML = recommendations.join('') || '<div class="muted small-text">No adaptation recommendations right now.</div>';
+  const visible = recommendations.slice(0, 6);
+  const hiddenCount = Math.max(0, recommendations.length - visible.length);
+  body.innerHTML = (visible.join('') || '<div class="muted small-text">No adaptation recommendations right now.</div>') + (hiddenCount ? `<div class="muted small-text recommendation-summary">+ ${hiddenCount} more recommendation(s). Resolve current issues to reduce this list.</div>` : '');
   panel.hidden = false;
 }
 function renderModelActiveSessionsPanel() {
@@ -1784,18 +1809,32 @@ function renderModels() {
     for (const [name, model] of models) {
       const availability = modelAvailability(name);
       const provider = config.providers?.[model.provider || ''];
+      const sessionCount = (window.__pacSessions || []).filter(item => item.model === name).length;
       const card = document.createElement('article');
       card.className = 'model-card clickable-row';
       const runtime = model.extra?.lmstudio_runtime || {};
+      const caps = [
+        model.capabilities?.supports_chat ? 'chat' : '',
+        model.capabilities?.supports_tools ? 'tools' : '',
+        model.capabilities?.supports_vision ? 'vision' : '',
+        model.capabilities?.supports_json ? 'json' : '',
+        model.capabilities?.supports_streaming ? 'streaming' : '',
+        model.capabilities?.reasoning && model.capabilities.reasoning !== 'none' ? `reasoning:${model.capabilities.reasoning}` : '',
+      ].filter(Boolean).map(value => `<span class="pill">${escapeHtml(value)}</span>`).join('');
       card.innerHTML = `<div class="provider-card-head"><div class="provider-title-block"><h3>${escapeHtml(name)}</h3><span class="muted">${escapeHtml(providerLabel(model.provider || '-'))}</span></div><span class="pill ${availability.ok ? 'ok-pill' : 'warn-pill'}">${escapeHtml(availability.ok ? 'available' : 'attention')}</span></div>
         <div class="workspace-card-grid">
           <div><small>model id</small><b>${escapeHtml(model.model || '-')}</b></div>
           <div><small>endpoint</small><b>${escapeHtml(endpointName(model.runs_on))}</b></div>
           <div><small>context</small><b>${escapeHtml(model.context_window || '-')}</b></div>
           <div><small>max output</small><b>${escapeHtml(model.max_output_tokens || '-')}</b></div>
+          <div><small>reasoning</small><b>${escapeHtml(model.capabilities?.reasoning || 'none')}</b></div>
+          <div><small>sessions</small><b>${escapeHtml(sessionCount || 0)}</b></div>
+          <div><small>input price / 1M</small><b>${escapeHtml(model.input_price_per_million ?? '-')}</b></div>
+          <div><small>output price / 1M</small><b>${escapeHtml(model.output_price_per_million ?? '-')}</b></div>
         </div>
+        ${caps ? `<div class="provider-pill-list">${caps}</div>` : ''}
         <div class="muted small-text">${escapeHtml(availability.ok ? 'Configured and visible to PAC.' : `Issue: ${availability.reason}`)}</div>
-        ${provider?.type === 'lmstudio' ? `<div class="muted small-text">LM Studio runtime: ctx ${escapeHtml(runtime.context_length || model.context_window || '-')}, gpu offload ${escapeHtml(runtime.gpu_offload || 'default')}, batch ${escapeHtml(runtime.batch_size || 'default')}</div>` : ''}`;
+        ${provider?.type === 'lmstudio' ? `<div class="muted small-text">LM Studio runtime: ctx ${escapeHtml(runtime.context_length || model.context_window || '-')}, gpu offload ${escapeHtml(runtime.gpu_offload || 'default')}, batch ${escapeHtml(runtime.eval_batch_size || runtime.batch_size || 'default')}, temp ${escapeHtml(runtime.temperature ?? 'default')}</div>` : ''}`;
       card.onclick = () => openModelModal(name);
       const actions = document.createElement('div');
       actions.className = 'button-row';
@@ -2035,7 +2074,7 @@ function openModelModal(name='') {
   fillModelEndpointOptions();
   if (name) fillModelForm(name); else {
     modelName.value=''; modelProvider.value=modelProvider.options[0]?.value || ''; modelId.value=''; modelRunsOn.value=''; modelContextWindow.value=4096; modelMaxOutput.value=1024;
-    modelSupportsVision.checked=false; modelSupportsJson.checked=false; modelSupportsStreaming.checked=true; fillLmStudioRuntimeFields({});
+    modelSupportsChat.checked=true; modelSupportsTools.checked=false; modelSupportsVision.checked=false; modelSupportsJson.checked=false; modelSupportsStreaming.checked=true; modelReasoning.value='none'; modelInputPrice.value=''; modelOutputPrice.value=''; fillLmStudioRuntimeFields({});
   }
   updateLmStudioModelControls();
   setModalStatus('modelModalStatus');
@@ -2055,8 +2094,11 @@ function fillModelForm(name) {
   const m = config.models?.[name]; if (!m) return;
   modelName.value=name; modelProvider.value=m.provider || ''; modelId.value=m.model || ''; modelRunsOn.value=m.runs_on || '';
   modelContextWindow.value=m.context_window || 4096; modelMaxOutput.value=m.max_output_tokens || 1024;
-  modelSupportsVision.checked=!!m.capabilities?.supports_vision; modelSupportsJson.checked=!!m.capabilities?.supports_json;
+  modelSupportsChat.checked=m.capabilities?.supports_chat !== false; modelSupportsTools.checked=!!m.capabilities?.supports_tools; modelSupportsVision.checked=!!m.capabilities?.supports_vision; modelSupportsJson.checked=!!m.capabilities?.supports_json;
   modelSupportsStreaming.checked=m.capabilities?.supports_streaming !== false;
+  modelReasoning.value=m.capabilities?.reasoning || 'none';
+  modelInputPrice.value=m.input_price_per_million ?? '';
+  modelOutputPrice.value=m.output_price_per_million ?? '';
   fillLmStudioRuntimeFields(m.extra?.lmstudio_runtime || {});
   updateLmStudioModelControls();
 }
@@ -4547,6 +4589,8 @@ async function saveProviderFromForm() {
 async function saveModelFromForm() {
   if (!modelName.value.trim()) return alert('Model name is required');
   if (!modelProvider.value) return alert('Provider is required');
+  const duplicate = findConfiguredModelByProviderModel(modelProvider.value, modelId.value.trim() || modelName.value.trim(), modelName.value.trim());
+  if (duplicate) return alert(`This provider model is already configured as '${duplicate[0]}'. Edit that entry instead of creating a duplicate.`);
   config.models = config.models || {};
   config.models[modelName.value.trim()] = {
     provider: modelProvider.value,
@@ -4554,13 +4598,15 @@ async function saveModelFromForm() {
     runs_on: modelRunsOn.value.trim() || null,
     context_window: Number(modelContextWindow.value || 4096),
     max_output_tokens: Number(modelMaxOutput.value || 1024),
+    input_price_per_million: numberOrNull(modelInputPrice.value),
+    output_price_per_million: numberOrNull(modelOutputPrice.value),
     capabilities: {
-      supports_chat: true,
-      supports_tools: false,
+      supports_chat: !!modelSupportsChat.checked,
+      supports_tools: !!modelSupportsTools.checked,
       supports_vision: !!modelSupportsVision.checked,
       supports_json: !!modelSupportsJson.checked,
       supports_streaming: !!modelSupportsStreaming.checked,
-      reasoning: 'none'
+      reasoning: modelReasoning.value || 'none'
     },
     extra: currentModelProvider()?.type === 'lmstudio' ? {lmstudio_runtime: collectLmStudioRuntimeFields()} : {},
   };
