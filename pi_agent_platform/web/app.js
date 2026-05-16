@@ -654,12 +654,24 @@ function timelineText(event, block) {
   const data = event.data && typeof event.data === 'object' ? event.data : {};
   const lines = [];
   if (event.message) lines.push(event.message);
+  if (typeof data.message === 'string' && data.message.trim()) lines.push(data.message);
+  if (typeof data.text === 'string' && data.text.trim()) lines.push(data.text);
+  if (typeof data.content === 'string' && data.content.trim()) lines.push(data.content);
+  if (Array.isArray(data.content)) {
+    const contentText = data.content.map((item) => {
+      if (typeof item === 'string') return item;
+      if (item && typeof item === 'object') return item.text || item.content || item.value || '';
+      return '';
+    }).filter(Boolean).join('\n');
+    if (contentText) lines.push(contentText);
+  }
   if (data.command) lines.push(`$ ${data.command}`);
   if (data.tool) lines.push(`tool: ${data.tool}`);
   if (data.output) lines.push(String(data.output));
+  if (data.summary && !lines.includes(String(data.summary))) lines.push(String(data.summary));
   if (data.stderr) lines.push(`stderr:\n${data.stderr}`);
   if (data.exit_code != null) lines.push(`exit code: ${data.exit_code}`);
-  return lines.join('\n').trim();
+  return [...new Set(lines.map((line) => String(line || '').trim()).filter(Boolean))].join('\n').trim();
 }
 
 function sessionEventDate(event) {
@@ -1057,6 +1069,7 @@ function renderSessionTimelineEvent(event, options = {}) {
   meta.innerHTML = `<span>${escapeHtml(label)}</span><span>${escapeHtml(formatEventTime(event.created_at))}</span>`;
   bubble.appendChild(meta);
   const text = timelineText(event, block);
+  if (!text && role === 'assistant' && !block) return;
   if (text) appendChatText(bubble, role, text);
   if (role === 'assistant') {
     bubble.tabIndex = 0;
@@ -2412,6 +2425,7 @@ async function loadUpdateArchives() {
   renderUpdateArchives(data);
   const notes = await api('/v1/updates/release-notes').catch(()=>null);
   setUpdatesDetail({title:'Current release', version:data?.current_version || config.version || config.setup_status?.version || '', entries:notes?.entries || [], body:data?.latest_archive?.summary ? 'Latest preserved local change summary is available through Backups.' : ''});
+  if (!window.__pacReleaseMeta) checkPacRelease().catch(()=>{});
   setBackupDetail();
 }
 function openBackupsModal() {
@@ -2464,15 +2478,17 @@ function renderPacReleaseStatus(meta=null) {
     const currentVersion = meta.current_version || config?.version || config?.setup_status?.version || meta.latest_version;
     api(`/v1/updates/release-notes?from_version=0.0.0&to_version=${encodeURIComponent(meta.latest_version || '')}`)
       .then((notes) => {
+        const fallbackChanges = (meta.changes || []).length ? (meta.changes || []) : (meta.compare_changes || []);
         setUpdatesDetail({
           title:'Current release',
           version:meta.latest_version,
-          entries:(notes?.entries || []).length ? (notes.entries || []) : ((meta.changes || []).length ? [{title:`PAC v${meta.latest_version}`, version:meta.latest_version, changes:meta.changes || []}] : []),
+          entries:(notes?.entries || []).length ? (notes.entries || []) : (fallbackChanges.length ? [{title:`PAC v${meta.latest_version}`, version:meta.latest_version, changes:fallbackChanges}] : []),
           body: meta.body || '',
         });
       })
       .catch(() => {
-        setUpdatesDetail({title:'Current release', version:meta.latest_version, entries:(meta.changes || []).length ? [{title:`PAC v${meta.latest_version}`, version:meta.latest_version, changes:meta.changes || []}] : [], body: meta.body || ''});
+        const fallbackChanges = (meta.changes || []).length ? (meta.changes || []) : (meta.compare_changes || []);
+        setUpdatesDetail({title:'Current release', version:meta.latest_version, entries:fallbackChanges.length ? [{title:`PAC v${meta.latest_version}`, version:meta.latest_version, changes:fallbackChanges}] : [], body: meta.body || ''});
       });
   }
 }
