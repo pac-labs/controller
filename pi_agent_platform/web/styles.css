@@ -1645,7 +1645,7 @@ button,
   overflow: auto;
 }
 .settings-update-actions {
-  grid-template-columns: minmax(220px, 1fr) auto auto;
+  grid-template-columns: auto auto auto minmax(0,1fr);
   display: grid;
   gap: .55rem;
   align-items: center;
@@ -1654,12 +1654,13 @@ button,
   display:grid;
   grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);
   gap:1rem;
-  align-items:start;
+  align-items:stretch;
 }
 .updates-main{
   display:grid;
   gap:.85rem;
   min-width:0;
+  min-height:100%;
 }
 .updates-detail-panel{
   align-self:stretch;
@@ -2235,8 +2236,9 @@ button:hover,
   display:grid;
   grid-template-columns:minmax(0,1.45fr) minmax(280px,.95fr);
   gap:1rem;
-  align-items:start;
+  align-items:stretch;
   margin-top:.75rem;
+  min-height:calc(100vh - 280px);
 }
 .updates-main > div{margin-bottom:1rem;}
 .updates-pac-status{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;}
@@ -2268,7 +2270,9 @@ button:hover,
 .updates-detail-panel{
   border:1px solid rgba(96,165,250,.18);
   background:linear-gradient(180deg, rgba(9,14,28,.96), rgba(7,12,24,.96));
-  min-height:240px;
+  min-height:100%;
+  display:flex;
+  flex-direction:column;
 }
 .updates-detail-header{
   display:flex;
@@ -2280,8 +2284,12 @@ button:hover,
 }
 .updates-detail-body{
   padding:.9rem;
-  max-height:420px;
+  max-height:none;
+  flex:1 1 auto;
   overflow:auto;
+}
+.backups-modal-layout{
+  min-height:560px;
 }
 .marketplace-card-button{
   display:block;
@@ -2804,20 +2812,24 @@ html[data-theme="dark"] .recommendation-card p{color:#dbe7ff}
 }
 .settings-panel{
   display:block;
+  min-height:0;
 }
 .settings-panel-inner{
   display:grid;
   grid-template-columns:minmax(0,1fr);
   gap:1rem;
   align-items:start;
+  min-height:100%;
 }
 .settings-panel-single .settings-main{
   min-width:0;
+  min-height:100%;
 }
 .settings-main{
   display:grid;
   gap:1rem;
   min-width:0;
+  min-height:100%;
 }
 .health-grid{
   display:grid;
@@ -3620,6 +3632,30 @@ body[data-theme="light"] .model-runtime-strip{
 html[data-theme="light"] .model-runtime-strip span:first-child,
 body[data-theme="light"] .model-runtime-strip span:first-child{
   color:var(--light-text) !important;
+}
+html[data-theme="light"] .updates-detail-panel,
+html[data-theme="light"] .update-delta-list,
+html[data-theme="light"] .update-archive-row,
+body[data-theme="light"] .updates-detail-panel,
+body[data-theme="light"] .update-delta-list,
+body[data-theme="light"] .update-archive-row{
+  background:var(--light-panel) !important;
+  color:var(--light-text) !important;
+  border-color:var(--light-border) !important;
+}
+html[data-theme="light"] .updates-detail-header,
+body[data-theme="light"] .updates-detail-header{
+  border-color:var(--light-border) !important;
+}
+html[data-theme="light"] .pac-status-version,
+html[data-theme="light"] .update-delta-title,
+body[data-theme="light"] .pac-status-version,
+body[data-theme="light"] .update-delta-title{
+  color:var(--light-text) !important;
+}
+html[data-theme="light"] .pac-status-label,
+body[data-theme="light"] .pac-status-label{
+  color:var(--light-text-soft) !important;
 }
 html[data-theme="light"] .clickable-row:hover,
 html[data-theme="light"] .model-card:hover,

@@ -527,6 +527,7 @@
                   <div class="button-row settings-update-actions">
                     <button id="checkPacRelease" class="ghost-button">Check PAC release</button>
                     <button id="applyPacRelease" class="ghost-button" disabled>Apply latest release</button>
+                    <button id="openBackupsModal" class="ghost-button">Backups</button>
                     <span id="pacReleaseStatus" class="muted small-text">GitHub release checks have not run yet.</span>
                   </div>
                   <div class="feature-pack-actions settings-update-actions">
@@ -548,8 +549,7 @@
                     <div id="localDiffList" class="update-delta-list"><div class="muted small-text">No generated local diffs yet.</div></div>
                   </div>
                   <div class="updates-archive-section">
-                    <div class="button-row"><button id="refreshUpdateArchives" class="ghost-button">Refresh archives</button><span id="updateArchiveHint" class="muted small-text"></span></div>
-                    <div id="updateArchivesList" class="update-delta-list"><div class="muted small-text">No update archives loaded yet.</div></div>
+                    <div class="button-row"><span id="updateArchiveHint" class="muted small-text">No preserved controller archives yet.</span></div>
                   </div>
                 </div>
                 <aside class="updates-detail-panel">
@@ -565,6 +565,33 @@
             </section>
           </div>
         </div>
+      </div>
+
+      <div id="backupsModal" class="modal-backdrop" hidden>
+        <section class="modal-card wide-modal" role="dialog" aria-modal="true" aria-labelledby="backupsModalTitle">
+          <div class="section-heading">
+            <div><h2 id="backupsModalTitle">Backups and restore</h2><p class="muted">Browse preserved PAC application backups, inspect local-change summaries, and restore a previous controller app state.</p></div>
+            <button id="closeBackupsModal" class="ghost-button">Close</button>
+          </div>
+          <div class="updates-layout backups-modal-layout">
+            <div class="updates-main">
+              <div class="button-row settings-update-actions">
+                <button id="refreshUpdateArchives" class="ghost-button">Refresh backups</button>
+                <span id="backupsModalHint" class="muted small-text"></span>
+              </div>
+              <div id="updateArchivesList" class="update-delta-list"><div class="muted small-text">No update archives loaded yet.</div></div>
+            </div>
+            <aside class="updates-detail-panel">
+              <div class="updates-detail-header">
+                <span id="backupDetailTitle">Backup details</span>
+                <span id="backupDetailVersion" class="muted"></span>
+              </div>
+              <div class="updates-detail-body" id="backupDetailBody">
+                <div class="muted small-text">Select a preserved backup to inspect downloads, local-change summary, or restore the controller.</div>
+              </div>
+            </aside>
+          </div>
+        </section>
       </div>
 
       <div id="settings-users" class="settings-panel" style="display:none">

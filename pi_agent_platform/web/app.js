@@ -2212,6 +2212,21 @@ function setUpdatesDetail(meta=null) {
     body.innerHTML = bodyHtml ? `<div class="muted small-text">${bodyHtml}</div>` : (meta.body ? `<div class="muted small-text">${escapeHtml(meta.body)}</div>` : '<div class="muted small-text">No additional details available.</div>');
   }
 }
+function setBackupDetail(meta=null) {
+  const title = document.getElementById('backupDetailTitle');
+  const version = document.getElementById('backupDetailVersion');
+  const body = document.getElementById('backupDetailBody');
+  if (!title || !version || !body) return;
+  if (!meta) {
+    title.textContent = 'Backup details';
+    version.textContent = '';
+    body.innerHTML = '<div class="muted small-text">Select a preserved backup to inspect downloads, local-change summary, or restore the controller.</div>';
+    return;
+  }
+  title.textContent = meta.title || 'Backup details';
+  version.textContent = meta.version ? `v${meta.version}` : '';
+  body.innerHTML = meta.html_body ? `<div class="muted small-text">${meta.html_body}</div>` : (meta.body ? `<div class="muted small-text">${escapeHtml(meta.body)}</div>` : '<div class="muted small-text">No additional details available.</div>');
+}
 function renderLocalDiffs(data) {
   const list = document.getElementById('localDiffList');
   const status = document.getElementById('localDiffStatus');
@@ -2284,16 +2299,19 @@ async function generateLocalDiffNow() {
 function renderUpdateArchives(data) {
   const list = document.getElementById('updateArchivesList');
   const hint = document.getElementById('updateArchiveHint');
+  const modalHint = document.getElementById('backupsModalHint');
   const badge = document.getElementById('pacArchiveStatus');
   const current = document.getElementById('pacCurrentVersion');
   if (current) current.textContent = `v${data?.current_version || config.setup_status?.version || '?'}`;
-  if (!list || !hint || !badge) return;
+  if (!list || !badge) return;
   const archives = data?.archives || [];
   badge.textContent = archives.length ? `${archives.length} archived` : 'none yet';
   badge.className = `pac-status-badge ${archives.length ? 'current-badge' : ''}`.trim();
-  hint.textContent = archives.length ? `Latest archive: ${archives[0].stamp}` : 'No preserved controller archives yet.';
+  if (hint) hint.textContent = archives.length ? `Latest archive: ${archives[0].stamp}` : 'No preserved controller archives yet.';
+  if (modalHint) modalHint.textContent = archives.length ? `${archives.length} preserved backup(s) available.` : 'No preserved controller backups yet.';
   if (!archives.length) {
     list.innerHTML = '<div class="muted small-text">No update archives available yet. Archives will appear after PAC app updates are applied.</div>';
+    setBackupDetail();
     return;
   }
   list.innerHTML = archives.map(item => {
@@ -2310,24 +2328,36 @@ function renderUpdateArchives(data) {
       detail.diff_path ? `<a href="/v1/updates/archives/${encodeURIComponent(stamp)}/download?kind=diff">user diff</a>` : '',
       detail.summary_path ? `<a href="/v1/updates/archives/${encodeURIComponent(stamp)}/download?kind=summary">summary json</a>` : '',
     ].filter(Boolean).join(' • ');
-    setUpdatesDetail({
+    setBackupDetail({
       title: 'Preserved local changes',
       version: '',
-      body: `${stamp}\nmodified: ${fileCount.modified || 0}\nadded: ${fileCount.added || 0}\nremoved: ${fileCount.removed || 0}`,
-      html_body: links ? `Downloads: ${links}` : '',
+      html_body: `${escapeHtml(stamp)}<br>modified: ${escapeHtml(String(fileCount.modified || 0))}<br>added: ${escapeHtml(String(fileCount.added || 0))}<br>removed: ${escapeHtml(String(fileCount.removed || 0))}${links ? `<br><br>Downloads: ${links}` : ''}<br><br><button id="restoreBackupArchive" class="ghost-button">Restore this backup</button>`,
     });
+    const restoreBtn = document.getElementById('restoreBackupArchive');
+    if (restoreBtn) restoreBtn.onclick = () => restoreBackupArchive(stamp).catch(e=>paneError('Backup restore failed', e.message));
   });
 }
 async function loadUpdateArchives() {
   const data = await api('/v1/updates/status');
   renderUpdateArchives(data);
-  const latest = data.latest_archive;
-  if (latest?.summary) {
-    const notes = await api(`/v1/updates/release-notes?from_version=${encodeURIComponent(config.version || config.setup_status?.version || '')}&to_version=${encodeURIComponent(config.version || config.setup_status?.version || '')}`).catch(()=>null);
-    setUpdatesDetail({title:'Current release', version:config.version || config.setup_status?.version || '', entries:notes?.entries || [], body: latest.summary ? 'Latest preserved local change summary is available in the archive list.' : ''});
-  } else {
-    setUpdatesDetail();
-  }
+  const notes = await api('/v1/updates/release-notes').catch(()=>null);
+  setUpdatesDetail({title:'Current release', version:data?.current_version || config.version || config.setup_status?.version || '', entries:notes?.entries || [], body:data?.latest_archive?.summary ? 'Latest preserved local change summary is available through Backups.' : ''});
+  setBackupDetail();
+}
+function openBackupsModal() {
+  const modal = document.getElementById('backupsModal');
+  if (modal) modal.hidden = false;
+}
+function closeBackupsModal() {
+  const modal = document.getElementById('backupsModal');
+  if (modal) modal.hidden = true;
+}
+async function restoreBackupArchive(stamp) {
+  if (!stamp) return;
+  if (!confirm(`Restore PAC from backup ${stamp}? The current app state will be preserved first, then PAC will restart.`)) return;
+  const result = await api(`/v1/updates/archives/${encodeURIComponent(stamp)}/restore?restart_after_restore=true`, {method:'POST'});
+  setBackupDetail({title:'Backup restore scheduled', body:`PAC scheduled a restart after restoring backup ${stamp}. Current app state was preserved before the restore.`});
+  if (result.restart_scheduled) scheduleHiddenReloadAfterRestart();
 }
 function renderPacReleaseStatus(meta=null) {
   const applyBtn = document.getElementById('applyPacRelease');
@@ -4551,6 +4581,10 @@ const checkPacReleaseBtn = document.getElementById('checkPacRelease');
 if (checkPacReleaseBtn) checkPacReleaseBtn.onclick = () => checkPacRelease().catch(e=>paneError('PAC release check failed', e.message));
 const applyPacReleaseBtn = document.getElementById('applyPacRelease');
 if (applyPacReleaseBtn) applyPacReleaseBtn.onclick = () => applyPacRelease().catch(e=>paneError('PAC release apply failed', e.message));
+const openBackupsModalBtn = document.getElementById('openBackupsModal');
+if (openBackupsModalBtn) openBackupsModalBtn.onclick = () => { openBackupsModal(); loadUpdateArchives().catch(e=>paneError('Update archives unavailable', e.message)); };
+const closeBackupsModalBtn = document.getElementById('closeBackupsModal');
+if (closeBackupsModalBtn) closeBackupsModalBtn.onclick = () => closeBackupsModal();
 const openMarketplaceBtn = document.getElementById('openMarketplaceModal');
 if (openMarketplaceBtn) openMarketplaceBtn.onclick = () => openMarketplaceModal();
 const closeMarketplaceBtn = document.getElementById('closeMarketplaceModal');

@@ -10,6 +10,7 @@ import shutil
 import shlex
 import subprocess
 import tempfile
+import tarfile
 import threading
 import time
 import sys
@@ -45,7 +46,7 @@ from pi_agent_platform.core.secrets import secret_store
 from pi_agent_platform.core.pac_ram import read_ram, write_ram, list_ram, all_ram
 from pi_agent_platform.core.source_variables import source_variable_store
 from pi_agent_platform.core.source_library import ensure_source_library, list_tree as source_list_tree, read_text as source_read_text, write_text as source_write_text, make_archive as source_make_archive, build_container as source_build_container, build_binary as source_build_binary, list_binary_artifacts as source_list_binary_artifacts, binary_artifact_path as source_binary_artifact_path, delete_binary_artifact as source_delete_binary_artifact, prune_binary_artifacts as source_prune_binary_artifacts, inspect_feature_pack as source_inspect_feature_pack, apply_feature_pack as source_apply_feature_pack, create_entry as source_create_entry, rename_entry as source_rename_entry, delete_entry as source_delete_entry, fetch_online_package_updates as source_fetch_online_package_updates
-from pi_agent_platform.core.update_preservation import build_backup_archive, compare_trees, generate_local_diff, list_generated_diffs
+from pi_agent_platform.core.update_preservation import TRACKED_ROOTS, build_backup_archive, compare_trees, generate_local_diff, list_generated_diffs
 from pi_agent_platform.updates import fetch_latest_release_metadata, download_release_package
 
 
@@ -1826,6 +1827,61 @@ def download_update_archive(stamp: str, kind: str = 'archive', _auth: None = Dep
     if not path or not Path(path).exists():
         raise HTTPException(status_code=404, detail='Requested archive file not found')
     return FileResponse(Path(path), filename=Path(path).name)
+
+
+def _restore_tracked_backup_archive(archive_path: Path, app_dir: Path) -> dict[str, Any]:
+    if not archive_path.is_file():
+        raise HTTPException(status_code=404, detail='Backup archive file not found')
+    members: list[tarfile.TarInfo] = []
+    with tarfile.open(archive_path, 'r:gz') as archive:
+        for member in archive.getmembers():
+            name = str(member.name or '').strip()
+            if not name or name.startswith('/') or '..' in Path(name).parts:
+                raise HTTPException(status_code=400, detail='Backup archive contains unsafe paths')
+            members.append(member)
+        for root_name in TRACKED_ROOTS:
+            target = app_dir / root_name
+            if target.is_dir():
+                shutil.rmtree(target, ignore_errors=True)
+            elif target.exists():
+                target.unlink(missing_ok=True)
+        archive.extractall(app_dir, members=members)
+    return {'restored_files': len([member for member in members if member.isfile()])}
+
+
+@app.post('/v1/updates/archives/{stamp}/restore')
+def restore_update_archive(stamp: str, background_tasks: BackgroundTasks, restart_after_restore: bool = Query(default=True), _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    target = _update_backups_root() / stamp
+    archive_path = target / 'backup.tar.gz'
+    if not target.is_dir() or not archive_path.is_file():
+        raise HTTPException(status_code=404, detail='Update archive not found')
+    app_dir = _app_dir()
+    restore_stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    preservation_dir = pacp_path('backups', f'restore-{restore_stamp}')
+    current_archive: dict[str, Any] | None = None
+    if app_dir.exists():
+        current_archive = build_backup_archive(app_dir, preservation_dir / 'backup.tar.gz')
+    restore_meta = _restore_tracked_backup_archive(archive_path, app_dir)
+    pip_result = _pip_install_editable(app_dir)
+    run_script_result = _write_runtime_run_script(app_dir)
+    marker = pacp_path('run', 'restart-required')
+    marker.write_text(f'PAC backup restored at {restore_stamp}\nsource={archive_path}\n', encoding='utf-8')
+    result = {
+        'status': 'restored_restarting' if restart_after_restore else 'restored_restart_required',
+        'stamp': stamp,
+        'archive_path': str(archive_path),
+        'current_preservation_archive': current_archive,
+        'restore': restore_meta,
+        'pip': pip_result,
+        'run_script': run_script_result,
+        'restart_required': True,
+        'restart_scheduled': restart_after_restore,
+        'restart_marker': str(marker),
+    }
+    store.add_event(Event(session_id='system', type='backup_restored', message=f'PAC backup restored from {stamp}. Restart required.', data=result))
+    if restart_after_restore:
+        _schedule_local_restart(background_tasks, f'PAC local restart scheduled after restoring backup: {stamp}')
+    return result
 
 
 @app.get('/v1/updates/release-notes')
