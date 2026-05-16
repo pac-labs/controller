@@ -3317,6 +3317,8 @@ body[data-theme="light"] .session-sidebar-meta{
   overflow:visible !important;
   min-height:96px;
   padding:1rem 1.25rem .95rem;
+  border-bottom:0 !important;
+  box-shadow:none !important;
 }
 .brand-block{
   position:relative;
@@ -3325,8 +3327,8 @@ body[data-theme="light"] .session-sidebar-meta{
   align-self:flex-start;
 }
 .brand-logo{
-  width:520px !important;
-  max-width:min(60vw,520px) !important;
+  width:580px !important;
+  max-width:min(66vw,580px) !important;
   height:auto;
   display:block;
   transform-origin:left top;
@@ -3335,9 +3337,10 @@ body[data-theme="light"] .session-sidebar-meta{
   position:relative;
   z-index:18;
   margin-top:-.35rem;
-  padding:.8rem 1rem .7rem 25.5rem;
+  padding:.8rem 1rem .7rem 29rem;
   min-height:56px;
-  background:linear-gradient(180deg,#09131c,#0b1420 72%,#0d1722) !important;
+  border-bottom:0 !important;
+  background:linear-gradient(180deg,#09131c,#0b1420 78%,#0b1420) !important;
 }
 .top-actions{
   align-items:flex-start;
@@ -3426,11 +3429,11 @@ body[data-theme="light"] #sessions-tab .session-sidebar-list::-webkit-scrollbar-
 }
 @media(max-width:1280px){
   .brand-logo{
-    width:460px !important;
-    max-width:min(56vw,460px) !important;
+    width:510px !important;
+    max-width:min(62vw,510px) !important;
   }
   .tabs{
-    padding-left:21rem;
+    padding-left:24rem;
   }
 }
 @media(max-width:1040px){
@@ -3708,4 +3711,66 @@ body[data-theme="light"] .source-marketplace-results .marketplace-card,
 body[data-theme="light"] #sources-tab .source-marketplace-results .marketplace-card{
   background:#ffffff !important;
   border-color:var(--light-border) !important;
+}
+html[data-theme="light"] .provider-card,
+html[data-theme="light"] .provider-card-head,
+html[data-theme="light"] .provider-device-panel,
+html[data-theme="light"] .provider-meta-line span,
+html[data-theme="light"] .remote-provider,
+html[data-theme="light"] .remote-provider ul,
+html[data-theme="light"] .remote-provider li,
+html[data-theme="light"] .remote-models,
+html[data-theme="light"] .provider-title-block h3,
+body[data-theme="light"] .provider-card,
+body[data-theme="light"] .provider-card-head,
+body[data-theme="light"] .provider-device-panel,
+body[data-theme="light"] .provider-meta-line span,
+body[data-theme="light"] .remote-provider,
+body[data-theme="light"] .remote-provider ul,
+body[data-theme="light"] .remote-provider li,
+body[data-theme="light"] .remote-models,
+body[data-theme="light"] .provider-title-block h3{
+  color:var(--light-text) !important;
+}
+html[data-theme="light"] .provider-card,
+html[data-theme="light"] .remote-provider,
+body[data-theme="light"] .provider-card,
+body[data-theme="light"] .remote-provider{
+  background:linear-gradient(180deg,var(--light-panel),var(--light-panel-soft)) !important;
+  border-color:var(--light-border) !important;
+}
+html[data-theme="light"] .provider-device-panel,
+body[data-theme="light"] .provider-device-panel{
+  background:linear-gradient(180deg,var(--light-panel-soft),var(--light-panel-muted)) !important;
+  border-color:rgba(34,197,94,.20) !important;
+}
+html[data-theme="light"] .provider-device-panel b,
+body[data-theme="light"] .provider-device-panel b{
+  color:var(--light-text) !important;
+}
+html[data-theme="light"] .provider-device-panel small,
+html[data-theme="light"] .provider-meta-line,
+html[data-theme="light"] .remote-models,
+body[data-theme="light"] .provider-device-panel small,
+body[data-theme="light"] .provider-meta-line,
+body[data-theme="light"] .remote-models{
+  color:var(--light-text-muted) !important;
+}
+html[data-theme="light"] .provider-meta-line span,
+body[data-theme="light"] .provider-meta-line span{
+  background:var(--light-panel-muted) !important;
+  border-color:var(--light-border) !important;
+}
+html[data-theme="light"] .remote-provider.failed,
+body[data-theme="light"] .remote-provider.failed{
+  border-color:rgba(239,68,68,.30) !important;
+  background:linear-gradient(180deg,#fff7f7,#ffffff) !important;
+}
+html[data-theme="light"] .link-button,
+body[data-theme="light"] .link-button{
+  color:#166534 !important;
+}
+html[data-theme="light"] .link-button:hover,
+body[data-theme="light"] .link-button:hover{
+  color:#15803d !important;
 }

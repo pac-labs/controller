@@ -92,6 +92,7 @@ _SINGLE_INSTANCE_LOCK = _acquire_single_instance_lock()
 
 _CONTROLLER_WRAPPER_PROC: subprocess.Popen[str] | None = None
 _CONTROLLER_WRAPPER_SUPERVISOR_ACTIVE = False
+_LAST_CONTROLLER_WRAPPER_EVENT_SIGNATURE: str | None = None
 _CONTROLLER_PI_CONTAINER_NAME = "pac-pi-dev-controller"
 
 def _read_pac_version() -> str:
@@ -832,7 +833,7 @@ def _start_controller_wrapper_once() -> dict[str, Any]:
 
 
 def _controller_wrapper_supervisor() -> None:
-    global _CONTROLLER_WRAPPER_SUPERVISOR_ACTIVE
+    global _CONTROLLER_WRAPPER_SUPERVISOR_ACTIVE, _LAST_CONTROLLER_WRAPPER_EVENT_SIGNATURE
     if _CONTROLLER_WRAPPER_SUPERVISOR_ACTIVE:
         return
     _CONTROLLER_WRAPPER_SUPERVISOR_ACTIVE = True
@@ -846,7 +847,11 @@ def _controller_wrapper_supervisor() -> None:
                 continue
             if not state.get('running'):
                 result = _start_controller_wrapper_once()
-                store.add_event(Event(session_id='system', type='controller_wrapper_started' if result.get('ok') else 'controller_wrapper_start_failed', message=result.get('message', 'PAC wrapper start checked'), data=result))
+                event_type = 'controller_wrapper_started' if result.get('ok') else 'controller_wrapper_start_failed'
+                signature = f"{event_type}:{result.get('status')}:{result.get('message')}:{(result.get('process') or {}).get('pid') or 'none'}"
+                if signature != _LAST_CONTROLLER_WRAPPER_EVENT_SIGNATURE:
+                    _LAST_CONTROLLER_WRAPPER_EVENT_SIGNATURE = signature
+                    store.add_event(Event(session_id='system', type=event_type, message=result.get('message', 'PAC wrapper start checked'), data=result))
             time.sleep(10)
     finally:
         _CONTROLLER_WRAPPER_SUPERVISOR_ACTIVE = False
@@ -3646,10 +3651,10 @@ async def stream_events(session_id: str, _auth: None = Depends(require_auth)):
 
 
 @app.get('/v1/sessions/{session_id}/events/snapshot')
-def event_snapshot(session_id: str, after_id: str | None = None, limit: int = 500, _auth: None = Depends(require_auth)) -> list[Event]:
+def event_snapshot(session_id: str, after_id: str | None = None, limit: int = 500, latest: bool = False, _auth: None = Depends(require_auth)) -> list[Event]:
     if not store.get_session(session_id):
         raise HTTPException(status_code=404, detail='Session not found')
-    return store.get_events(session_id, after_id=after_id, limit=limit)
+    return store.get_events(session_id, after_id=after_id, limit=limit, latest=latest if not after_id else False)
 
 
 @app.get('/v1/sessions/{session_id}/files')

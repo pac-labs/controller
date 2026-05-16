@@ -3824,7 +3824,7 @@ async function selectSession(id) {
   resetSessionTimelineState();
   renderSessionSidebar(window.__pacSessions || []);
   try {
-    const snapshot = await api(`/v1/sessions/${id}/events/snapshot?limit=120`);
+    const snapshot = await api(`/v1/sessions/${id}/events/snapshot?latest=true&limit=220`);
     renderSessionSnapshotFast(snapshot, id);
   } catch (_) {
     suppressSessionAutoScroll = false;

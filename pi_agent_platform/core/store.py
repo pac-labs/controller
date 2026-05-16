@@ -86,7 +86,7 @@ class SQLiteStore:
             )
         return event
 
-    def get_events(self, session_id: str, after_id: str | None = None, limit: int = 500) -> list[Event]:
+    def get_events(self, session_id: str, after_id: str | None = None, limit: int = 500, latest: bool = False) -> list[Event]:
         with self._connect() as conn:
             if after_id:
                 marker = conn.execute('select created_at from events where id = ?', (after_id,)).fetchone()
@@ -96,10 +96,15 @@ class SQLiteStore:
                         (session_id, marker['created_at'], limit),
                     ).fetchall()
                 else:
-                    rows = conn.execute('select payload from events where session_id = ? order by created_at asc limit ?', (session_id, limit)).fetchall()
+                    order = 'desc' if latest else 'asc'
+                    rows = conn.execute(f'select payload from events where session_id = ? order by created_at {order} limit ?', (session_id, limit)).fetchall()
             else:
-                rows = conn.execute('select payload from events where session_id = ? order by created_at asc limit ?', (session_id, limit)).fetchall()
-        return [Event.model_validate_json(r['payload']) for r in rows]
+                order = 'desc' if latest else 'asc'
+                rows = conn.execute(f'select payload from events where session_id = ? order by created_at {order} limit ?', (session_id, limit)).fetchall()
+        events = [Event.model_validate_json(r['payload']) for r in rows]
+        if latest:
+            events.reverse()
+        return events
 
 
     def list_recent_events(self, limit: int = 200, exclude_types: set[str] | None = None) -> list[Event]:
