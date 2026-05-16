@@ -3332,11 +3332,11 @@ body[data-theme="light"] .session-sidebar-meta{
 }
 .brand-block{
   position:absolute;
-  left:1rem;
-  top:.15rem;
+  left:0;
+  top:0;
   z-index:30;
-  width:430px;
-  height:96px;
+  width:470px;
+  height:128px;
   overflow:visible !important;
   display:flex;
   align-items:flex-start;
@@ -3344,20 +3344,20 @@ body[data-theme="light"] .session-sidebar-meta{
   pointer-events:none;
 }
 .brand-logo{
-  width:430px !important;
+  width:470px !important;
   max-width:none !important;
   height:auto;
   display:block;
   object-fit:contain;
   object-position:left top;
-  transform:scale(1.12);
+  transform:scale(1.08);
   transform-origin:left top;
 }
 .tabs{
   position:relative;
   z-index:18;
   margin-top:0;
-  padding:.6rem 1rem .7rem 31rem;
+  padding:.6rem 1rem .7rem 33.5rem;
   min-height:56px;
   border-bottom:0 !important;
   background:#080f14 !important;
@@ -3459,17 +3459,17 @@ body[data-theme="light"] #sessions-tab .session-sidebar-list::-webkit-scrollbar-
 }
 @media(max-width:1280px){
   .brand-logo{
-    width:390px !important;
-    transform:scale(1.08);
+    width:420px !important;
+    transform:scale(1.04);
   }
   .brand-block{
-    left:.9rem;
-    top:.2rem;
-    width:390px;
-    height:86px;
+    left:0;
+    top:0;
+    width:420px;
+    height:118px;
   }
   .tabs{
-    padding-left:27rem;
+    padding-left:29.5rem;
   }
 }
 @media(max-width:1040px){
