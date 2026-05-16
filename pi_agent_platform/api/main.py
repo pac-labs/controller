@@ -44,7 +44,7 @@ from pi_agent_platform.core.providers import effective_context, model_card, prov
 from pi_agent_platform.core.store import store
 from pi_agent_platform.core.artifacts import write_artifact, list_artifacts, task_artifact_dir, safe_artifact_path
 from pi_agent_platform.core.secrets import secret_store
-from pi_agent_platform.core.pac_ram import read_ram, write_ram, list_ram, all_ram
+from pi_agent_platform.core.pac_ram import read_ram, write_ram, list_ram, all_ram, bundle_ram, search_ram
 from pi_agent_platform.core.source_variables import source_variable_store
 from pi_agent_platform.core.source_library import ensure_source_library, list_tree as source_list_tree, read_text as source_read_text, write_text as source_write_text, make_archive as source_make_archive, build_container as source_build_container, build_binary as source_build_binary, list_binary_artifacts as source_list_binary_artifacts, binary_artifact_path as source_binary_artifact_path, delete_binary_artifact as source_delete_binary_artifact, prune_binary_artifacts as source_prune_binary_artifacts, inspect_feature_pack as source_inspect_feature_pack, apply_feature_pack as source_apply_feature_pack, create_entry as source_create_entry, rename_entry as source_rename_entry, delete_entry as source_delete_entry, fetch_online_package_updates as source_fetch_online_package_updates
 from pi_agent_platform.core.update_preservation import TRACKED_ROOTS, build_backup_archive, compare_trees, generate_local_diff, list_generated_diffs
@@ -4439,6 +4439,40 @@ def get_all_pac_ram(
 ) -> dict[str, Any]:
     _require_admin_or_runner(authorization, x_pac_runner_id, x_pac_runner_key)
     return all_ram()
+
+
+@app.get('/v1/pac-ram/bundle')
+@app.get('/v1/ide/pac-ram/bundle')
+def get_pac_ram_bundle(
+    profile: str | None = None,
+    user: str | None = None,
+    workspace: str | None = None,
+    authorization: str | None = Header(default=None),
+    x_pac_runner_id: str | None = Header(default=None, alias='X-PAC-Runner-ID'),
+    x_pac_runner_key: str | None = Header(default=None, alias='X-PAC-Runner-Key'),
+) -> dict[str, Any]:
+    _require_admin_or_runner(authorization, x_pac_runner_id, x_pac_runner_key)
+    try:
+        return bundle_ram(profile=profile, user=user, workspace=workspace)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get('/v1/pac-ram/search')
+@app.get('/v1/ide/pac-ram/search')
+def search_pac_ram(
+    q: str,
+    kind: str | None = None,
+    limit: int = 10,
+    authorization: str | None = Header(default=None),
+    x_pac_runner_id: str | None = Header(default=None, alias='X-PAC-Runner-ID'),
+    x_pac_runner_key: str | None = Header(default=None, alias='X-PAC-Runner-Key'),
+) -> dict[str, Any]:
+    _require_admin_or_runner(authorization, x_pac_runner_id, x_pac_runner_key)
+    try:
+        return search_ram(q, kind=kind, limit=max(1, min(limit, 50)))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get('/v1/pac-ram/profile/{profile}')

@@ -124,3 +124,45 @@ def all_ram() -> dict[str, list[dict[str, Any]]]:
         "users": [read_ram("user", name) for name in listing["users"]],
         "workspaces": [read_ram("workspace", name) for name in listing["workspaces"]],
     }
+
+
+def bundle_ram(profile: str | None = None, user: str | None = None, workspace: str | None = None) -> dict[str, Any]:
+    result: dict[str, Any] = {"items": []}
+    if profile:
+        result["items"].append(read_ram("profile", profile))
+    if user:
+        result["items"].append(read_ram("user", user))
+    if workspace:
+        result["items"].append(read_ram("workspace", workspace))
+    return result
+
+
+def search_ram(query: str, kind: str | None = None, limit: int = 10) -> dict[str, Any]:
+    needle = str(query or "").strip().lower()
+    if not needle:
+        raise ValueError("query is required")
+    allowed_kinds = [kind] if kind in {"profile", "user", "workspace"} else ["profile", "user", "workspace"]
+    items: list[dict[str, Any]] = []
+    for current_kind in allowed_kinds:
+        listing = list_ram()
+        keys = listing["profiles"] if current_kind == "profile" else listing["users"] if current_kind == "user" else listing["workspaces"]
+        for key in keys:
+            record = read_ram(current_kind, key)
+            haystack = f"{record['key']}\n{record['content']}".lower()
+            if needle not in haystack:
+                continue
+            content = str(record.get("content") or "")
+            idx = haystack.find(needle)
+            start = max(0, idx - 120)
+            end = min(len(content), idx + len(needle) + 220)
+            snippet = content[start:end].strip()
+            items.append({
+                "kind": current_kind,
+                "key": record["key"],
+                "path": record["path"],
+                "updated_at": record["updated_at"],
+                "snippet": snippet,
+            })
+            if len(items) >= max(1, limit):
+                return {"query": query, "items": items}
+    return {"query": query, "items": items}

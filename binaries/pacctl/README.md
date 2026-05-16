@@ -11,7 +11,10 @@ Current commands:
 - `pacctl secret get github/pat --value-only`
 - `pacctl variable list`
 - `pacctl variable get GIT_AUTHOR_EMAIL --value-only`
-- `pacctl ram get profile doc-reader`
+- `pacctl ram list`
+- `pacctl ram get profile doc-reader --content-only`
+- `pacctl ram bundle --profile doc-reader --user dorbian --workspace customer-a`
+- `pacctl ram search "git author email" --kind user --limit 5`
 
 Runtime configuration:
 

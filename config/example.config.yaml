@@ -210,6 +210,9 @@ tools:
   consult_model:
     enabled: true
     description: Allow the internal PAC agent to consult one or more configured models for planning or review help.
+  remote_memory:
+    enabled: true
+    description: Allow the internal PAC agent and pacctl to retrieve PAC RAM profile, user, and workspace memory from the controller.
   internet:
     enabled: true
     description: Meta-tool enabling both web_search and web_fetch.

@@ -125,7 +125,10 @@ Usage:
   pacctl secret get SECRET_ID [--value-only]
   pacctl variable list
   pacctl variable get VARIABLE_ID [--value-only]
-  pacctl ram get <profile|user|workspace> KEY
+  pacctl ram list
+  pacctl ram get <profile|user|workspace> KEY [--content-only]
+  pacctl ram bundle [--profile NAME] [--user NAME] [--workspace NAME] [--content-only]
+  pacctl ram search QUERY [--kind profile|user|workspace] [--limit N]
 
 Environment:
   PAC_URL         Controller base URL, for example https://192.168.0.7:8443
@@ -152,6 +155,39 @@ func flagValue(args []string, name string) string {
 		}
 	}
 	return ""
+}
+
+func flagIntValue(args []string, name string, fallback int) int {
+	raw := strings.TrimSpace(flagValue(args, name))
+	if raw == "" {
+		return fallback
+	}
+	var value int
+	if _, err := fmt.Sscanf(raw, "%d", &value); err != nil || value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+func printRAMContentOnly(payload map[string]any) {
+	printValueOnly(payload["content"])
+}
+
+func printRAMBundleOnly(payload map[string]any) {
+	items, _ := payload["items"].([]any)
+	first := true
+	for _, item := range items {
+		record, _ := item.(map[string]any)
+		if record == nil {
+			continue
+		}
+		if !first {
+			fmt.Println()
+		}
+		first = false
+		fmt.Printf("=== %s:%s ===\n", fmt.Sprint(record["kind"]), fmt.Sprint(record["key"]))
+		printValueOnly(record["content"])
+	}
 }
 
 func main() {
@@ -260,18 +296,77 @@ func main() {
 			os.Exit(2)
 		}
 	case "ram":
-		if len(args) < 4 || args[1] != "get" {
+		if len(args) < 2 {
 			usage()
 			os.Exit(2)
 		}
-		kind := args[2]
-		key := args[3]
-		payload, err := c.requestJSON(ctx, "GET", "/v1/pac-ram/"+url.PathEscape(kind)+"/"+url.PathEscape(key), nil)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+		switch args[1] {
+		case "list":
+			payload, err := c.requestJSON(ctx, "GET", "/v1/pac-ram/list", nil)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			_ = printJSON(payload)
+		case "get":
+			if len(args) < 4 {
+				usage()
+				os.Exit(2)
+			}
+			kind := args[2]
+			key := args[3]
+			payload, err := c.requestJSON(ctx, "GET", "/v1/pac-ram/"+url.PathEscape(kind)+"/"+url.PathEscape(key), nil)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			if contains(args, "--content-only") {
+				printRAMContentOnly(payload)
+			} else {
+				_ = printJSON(payload)
+			}
+		case "bundle":
+			values := url.Values{}
+			if profile := flagValue(args, "--profile"); profile != "" {
+				values.Set("profile", profile)
+			}
+			if user := flagValue(args, "--user"); user != "" {
+				values.Set("user", user)
+			}
+			if workspace := flagValue(args, "--workspace"); workspace != "" {
+				values.Set("workspace", workspace)
+			}
+			payload, err := c.requestJSON(ctx, "GET", "/v1/pac-ram/bundle?"+values.Encode(), nil)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			if contains(args, "--content-only") {
+				printRAMBundleOnly(payload)
+			} else {
+				_ = printJSON(payload)
+			}
+		case "search":
+			if len(args) < 3 {
+				usage()
+				os.Exit(2)
+			}
+			values := url.Values{}
+			values.Set("q", args[2])
+			if kind := flagValue(args, "--kind"); kind != "" {
+				values.Set("kind", kind)
+			}
+			values.Set("limit", fmt.Sprintf("%d", flagIntValue(args, "--limit", 10)))
+			payload, err := c.requestJSON(ctx, "GET", "/v1/pac-ram/search?"+values.Encode(), nil)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			_ = printJSON(payload)
+		default:
+			usage()
+			os.Exit(2)
 		}
-		_ = printJSON(payload)
 	default:
 		usage()
 		os.Exit(2)

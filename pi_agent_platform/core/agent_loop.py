@@ -50,6 +50,8 @@ Tool call:
 {"type":"tool_call","tool":"web_fetch","input":{"url":"https://example.com","max_chars":12000}}
 {"type":"tool_call","tool":"web_search","input":{"query":"search terms","max_results":5}}
 {"type":"tool_call","tool":"consult_model","input":{"models":["deep-thinker","fast-coder"],"prompt":"Review this plan and suggest the next 3 steps.","max_tokens":1200}}
+{"type":"tool_call","tool":"remote_memory","input":{"mode":"bundle","profile":"doc-reader","user":"dorbian","workspace":"customer-a"}}
+{"type":"tool_call","tool":"remote_memory","input":{"mode":"search","query":"git author email","kind":"user","limit":5}}
 {"type":"tool_call","tool":"save_artifact","input":{"name":"notes/result.txt","content":"..."}}
 {"type":"tool_call","tool":"list_artifacts","input":{}}
 {"type":"tool_call","tool":"slash_command","input":{"command":"/rg TODO src"}}
@@ -62,6 +64,7 @@ Rules:
 - For small-context models, prefer workspace_manifest, read_file_chunk, web_fetch max_chars, and batch_analyze_file over loading many large files at once.
 - Use web_search before web_fetch when you do not know the exact URL.
 - Use consult_model when you want a second opinion from another configured PAC model or want to fan out a planning question to multiple models.
+- Use remote_memory when profile/user/workspace memory may contain relevant prior preferences, customer context, or durable notes.
 - Save important generated files/results with save_artifact when the user may want to download them.
 """.strip()
 
@@ -391,6 +394,32 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
         results = await asyncio.gather(*[_consult(model_name) for model_name in target_models])
         store.add_event(Event(session_id=session.id, task_id=task.id, type="model_consult", message=f"Consulted {len(target_models)} model(s)", data={"models": target_models, "ok": sum(1 for item in results if item.get('ok')), "failed": sum(1 for item in results if not item.get('ok'))}))
         return as_json_text({"results": results}), False
+
+    if tool == "remote_memory":
+        if "remote_memory" not in allowed and "pac_memory" not in allowed:
+            return "DENIED: remote_memory tool is not enabled for this session", False
+        mode = str(inp.get("mode") or "get").strip().lower()
+        if mode == "get":
+            kind = str(inp.get("kind") or "workspace").strip().lower()
+            key = str(inp.get("key") or "").strip()
+            if not key:
+                return "REMOTE_MEMORY_FAILED: key is required for get mode", False
+            from .pac_ram import read_ram
+            return as_json_text(read_ram(kind, key)), False
+        if mode == "bundle":
+            from .pac_ram import bundle_ram
+            return as_json_text(bundle_ram(
+                profile=str(inp.get("profile") or "").strip() or None,
+                user=str(inp.get("user") or "").strip() or None,
+                workspace=str(inp.get("workspace") or "").strip() or None,
+            )), False
+        if mode == "search":
+            query = str(inp.get("query") or "").strip()
+            if not query:
+                return "REMOTE_MEMORY_FAILED: query is required for search mode", False
+            from .pac_ram import search_ram
+            return as_json_text(search_ram(query, kind=str(inp.get("kind") or "").strip() or None, limit=int(inp.get("limit") or 8))), False
+        return f"REMOTE_MEMORY_FAILED: unsupported mode {mode}", False
 
     if tool == "web_fetch":
         if "web_fetch" not in allowed and "internet" not in allowed:

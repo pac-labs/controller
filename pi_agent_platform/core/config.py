@@ -345,7 +345,7 @@ def prune_packaged_demo_entries(cfg: AppConfig) -> bool:
             context_mode="high",
             context_profile="high" if "high" in cfg.context_profiles else None,
             permission_profile=harness_cfg.permission_profile or "ask-first",
-            tools=[name for name in ["shell", "git", "ripgrep", "fd", "jq", "podman", "artifacts"] if name in cfg.tools],
+            tools=[name for name in ["shell", "git", "ripgrep", "fd", "jq", "podman", "artifacts", "consult_model", "remote_memory"] if name in cfg.tools],
             system_prompt=(
                 "You are the main pi.dev runtime for PAC. Use the PAC controller workspace as the source of truth, "
                 "keep changes scoped to the requested task, and surface build/update diagnostics clearly."
@@ -439,9 +439,18 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             description="Ask one or more configured PAC models for planning or review help during an agent run.",
         )
         changed = True
+    if "remote_memory" not in cfg.tools:
+        cfg.tools["remote_memory"] = ToolConfig(
+            enabled=True,
+            description="Read PAC RAM profile, user, and workspace memory from the controller during an agent run.",
+        )
+        changed = True
     main_profile = cfg.agent_profiles.get(MAIN_PI_DEV_PROFILE)
     if main_profile and "consult_model" in cfg.tools and "consult_model" not in (main_profile.tools or []):
         main_profile.tools = [*(main_profile.tools or []), "consult_model"]
+        changed = True
+    if main_profile and "remote_memory" in cfg.tools and "remote_memory" not in (main_profile.tools or []):
+        main_profile.tools = [*(main_profile.tools or []), "remote_memory"]
         changed = True
     if changed:
         config_path.write_text(yaml.safe_dump(cfg.model_dump(mode="json", exclude_none=True), sort_keys=False), encoding="utf-8")
