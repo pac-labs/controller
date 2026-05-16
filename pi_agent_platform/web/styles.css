@@ -3331,33 +3331,40 @@ body[data-theme="light"] .session-sidebar-meta{
 .brand-block{
   position:relative;
   z-index:26;
-  margin-bottom:-1.05rem;
+  margin-bottom:-1.35rem;
   align-self:flex-start;
-  width:332px;
-  height:62px;
+  width:430px;
+  height:84px;
   overflow:visible !important;
   display:flex;
   align-items:flex-start;
   justify-content:flex-start;
 }
 .brand-logo{
-  width:332px !important;
+  width:430px !important;
   max-width:none !important;
   height:auto;
   display:block;
   object-fit:contain;
   object-position:left top;
-  transform:scale(1.1);
+  transform:scale(1.14);
   transform-origin:left top;
 }
 .tabs{
   position:relative;
   z-index:18;
-  margin-top:-.35rem;
-  padding:.8rem 1rem .7rem 27.5rem;
+  margin-top:-.55rem;
+  padding:1rem 1rem .7rem 31rem;
   min-height:56px;
   border-bottom:0 !important;
   background:#080f14 !important;
+  overflow:visible !important;
+}
+.tab{
+  box-shadow:inset 0 1px 0 rgba(148,163,184,.28);
+}
+.tab.active{
+  box-shadow:inset 0 1px 0 rgba(148,163,184,.32), inset 0 -2px 0 var(--accent);
 }
 .top-actions{
   align-items:flex-start;
@@ -3449,15 +3456,15 @@ body[data-theme="light"] #sessions-tab .session-sidebar-list::-webkit-scrollbar-
 }
 @media(max-width:1280px){
   .brand-logo{
-    width:306px !important;
-    transform:scale(1.08);
+    width:390px !important;
+    transform:scale(1.1);
   }
   .brand-block{
-    width:306px;
-    height:58px;
+    width:390px;
+    height:76px;
   }
   .tabs{
-    padding-left:22.75rem;
+    padding-left:27rem;
   }
 }
 @media(max-width:1040px){
