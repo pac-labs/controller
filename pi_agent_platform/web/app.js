@@ -1801,6 +1801,7 @@ function renderWorkspaceActivityPanel() {
 function renderModels() {
   const el = document.getElementById('models');
   if (!el) return;
+  el.className = 'model-card-grid';
   const models = Object.entries(config.models || {});
   if (!models.length) {
     el.innerHTML = '<div class="muted">No configured models yet. Add one from Marketplace or Browse providers.</div>';
@@ -1811,18 +1812,24 @@ function renderModels() {
       const provider = config.providers?.[model.provider || ''];
       const sessionCount = (window.__pacSessions || []).filter(item => item.model === name).length;
       const card = document.createElement('article');
-      card.className = 'model-card clickable-row';
+      card.className = 'model-card model-overview-card clickable-row';
       const runtime = model.extra?.lmstudio_runtime || {};
       const caps = [
-        model.capabilities?.supports_chat ? 'chat' : '',
-        model.capabilities?.supports_tools ? 'tools' : '',
-        model.capabilities?.supports_vision ? 'vision' : '',
-        model.capabilities?.supports_json ? 'json' : '',
-        model.capabilities?.supports_streaming ? 'streaming' : '',
-        model.capabilities?.reasoning && model.capabilities.reasoning !== 'none' ? `reasoning:${model.capabilities.reasoning}` : '',
-      ].filter(Boolean).map(value => `<span class="pill">${escapeHtml(value)}</span>`).join('');
+        model.capabilities?.supports_chat ? ['chat', 'general chat and instruction following'] : null,
+        model.capabilities?.supports_tools ? ['tool use', 'function and tool invocation'] : null,
+        model.capabilities?.supports_vision ? ['pictures', 'image / vision input'] : null,
+        model.capabilities?.supports_json ? ['json', 'structured JSON output'] : null,
+        model.capabilities?.supports_streaming ? ['streaming', 'streaming output enabled'] : null,
+        model.capabilities?.reasoning && model.capabilities.reasoning !== 'none' ? [`reasoning ${model.capabilities.reasoning}`, 'reasoning-oriented model'] : null,
+      ].filter(Boolean).map(([label, title]) => `<span class="pill model-cap-pill" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`).join('');
+      const cardMeta = [
+        provider?.type ? `${provider.type}` : '',
+        model.model || '',
+      ].filter(Boolean).join(' • ');
       card.innerHTML = `<div class="provider-card-head"><div class="provider-title-block"><h3>${escapeHtml(name)}</h3><span class="muted">${escapeHtml(providerLabel(model.provider || '-'))}</span></div><span class="pill ${availability.ok ? 'ok-pill' : 'warn-pill'}">${escapeHtml(availability.ok ? 'available' : 'attention')}</span></div>
-        <div class="workspace-card-grid">
+        <div class="model-card-subline">${escapeHtml(cardMeta)}</div>
+        ${caps ? `<div class="provider-pill-list model-cap-list">${caps}</div>` : ''}
+        <div class="workspace-card-grid model-stats-grid">
           <div><small>model id</small><b>${escapeHtml(model.model || '-')}</b></div>
           <div><small>endpoint</small><b>${escapeHtml(endpointName(model.runs_on))}</b></div>
           <div><small>context</small><b>${escapeHtml(model.context_window || '-')}</b></div>
@@ -1832,12 +1839,11 @@ function renderModels() {
           <div><small>input price / 1M</small><b>${escapeHtml(model.input_price_per_million ?? '-')}</b></div>
           <div><small>output price / 1M</small><b>${escapeHtml(model.output_price_per_million ?? '-')}</b></div>
         </div>
-        ${caps ? `<div class="provider-pill-list">${caps}</div>` : ''}
         <div class="muted small-text">${escapeHtml(availability.ok ? 'Configured and visible to PAC.' : `Issue: ${availability.reason}`)}</div>
-        ${provider?.type === 'lmstudio' ? `<div class="muted small-text">LM Studio runtime: ctx ${escapeHtml(runtime.context_length || model.context_window || '-')}, gpu offload ${escapeHtml(runtime.gpu_offload || 'default')}, batch ${escapeHtml(runtime.eval_batch_size || runtime.batch_size || 'default')}, temp ${escapeHtml(runtime.temperature ?? 'default')}</div>` : ''}`;
+        ${provider?.type === 'lmstudio' ? `<div class="model-runtime-strip"><span>LM Studio</span><span>ctx ${escapeHtml(runtime.context_length || model.context_window || '-')}</span><span>gpu ${escapeHtml(runtime.gpu_offload || 'default')}</span><span>batch ${escapeHtml(runtime.eval_batch_size || runtime.batch_size || 'default')}</span><span>temp ${escapeHtml(runtime.temperature ?? 'default')}</span></div>` : ''}`;
       card.onclick = () => openModelModal(name);
       const actions = document.createElement('div');
-      actions.className = 'button-row';
+      actions.className = 'button-row model-card-actions';
       const edit = document.createElement('button');
       edit.textContent = 'Edit';
       edit.onclick = ev => { ev.stopPropagation(); openModelModal(name); };

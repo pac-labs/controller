@@ -3602,6 +3602,25 @@ body[data-theme="light"] .provider-row{
   color:var(--light-text) !important;
   border-color:var(--light-border) !important;
 }
+html[data-theme="light"] .model-overview-card,
+body[data-theme="light"] .model-overview-card{
+  background:var(--light-panel) !important;
+  box-shadow:0 12px 24px rgba(15,23,42,.08) !important;
+}
+html[data-theme="light"] .model-card-subline,
+body[data-theme="light"] .model-card-subline{
+  color:var(--light-text-soft) !important;
+}
+html[data-theme="light"] .model-runtime-strip,
+body[data-theme="light"] .model-runtime-strip{
+  background:var(--light-panel-muted) !important;
+  color:var(--light-text-soft) !important;
+  border-color:var(--light-border) !important;
+}
+html[data-theme="light"] .model-runtime-strip span:first-child,
+body[data-theme="light"] .model-runtime-strip span:first-child{
+  color:var(--light-text) !important;
+}
 html[data-theme="light"] .clickable-row:hover,
 html[data-theme="light"] .model-card:hover,
 html[data-theme="light"] .workspace-card:hover,
@@ -3686,6 +3705,66 @@ body[data-theme="light"] .download-pill small{
 #modelsRecommendationsPanel{
   max-height:520px;
   overflow:auto;
+}
+.model-card-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(360px,1fr));
+  gap:1rem;
+  align-items:start;
+}
+.model-overview-card{
+  border:1px solid rgba(36,195,107,.16);
+  border-radius:var(--radius);
+  padding:.9rem;
+  background:linear-gradient(180deg,#0e1511,#090d0b);
+  box-shadow:0 12px 28px rgba(2,6,23,.16);
+  display:grid;
+  gap:.75rem;
+  min-width:0;
+}
+.model-card-subline{
+  margin-top:-.25rem;
+  color:var(--muted);
+  font-size:.76rem;
+  line-height:1.35;
+  overflow-wrap:anywhere;
+}
+.model-cap-list{
+  gap:.4rem;
+  margin-top:-.15rem;
+}
+.model-cap-pill{
+  margin:0;
+  font-size:.72rem;
+  letter-spacing:.02em;
+}
+.model-stats-grid{
+  margin-bottom:0;
+}
+.model-runtime-strip{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.35rem;
+  align-items:center;
+  padding:.55rem .65rem;
+  border:1px solid rgba(148,163,184,.16);
+  border-radius:.55rem;
+  background:rgba(15,23,42,.28);
+  color:var(--muted);
+  font-size:.76rem;
+}
+.model-runtime-strip span:first-child{
+  color:#f8fafc;
+  font-weight:700;
+}
+.model-card-actions{
+  margin-top:.1rem;
+  margin-bottom:0;
+}
+@media(max-width:900px){
+  .model-card-grid{
+    grid-template-columns:1fr;
+  }
 }
 html[data-theme="light"] .hardware-grid b,
 html[data-theme="light"] .hardware-grid span,
