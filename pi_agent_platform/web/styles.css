@@ -76,7 +76,7 @@ body {
   height: 100%;
   overflow: auto;
   padding: 0 .2rem 0 0;
-  scrollbar-color: #4c2d87 #090712;
+  scrollbar-color: #166534 #090712;
 }
 .events-rail {
   position: relative;
@@ -90,7 +90,7 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  scrollbar-color: #4c2d87 #090712;
+  scrollbar-color: #166534 #090712;
 }
 .app-footer {
   flex: 0 0 auto;
@@ -167,7 +167,7 @@ select[multiple]{min-height:9rem}.mini-button{padding:.2rem .45rem;margin-right:
 
 /* v1.0.52: keep long settings/model/endpoint content inside scrollable panes */
 .card, .setting-cube, .endpoint-card, .event-card, .modal-card { min-width:0; }
-.setting-cube { max-height: min(62vh, 620px); overflow:auto; scrollbar-color:#4c2d87 #090712; }
+.setting-cube { max-height: min(62vh, 620px); overflow:auto; scrollbar-color:#166534 #090712; }
 .setting-cube.wide { max-height: min(72vh, 760px); }
 #mcpBuildStatus, #zedMcpConfigLocal, #zedMcpConfigRemote, .inline-result, .compact-result { overflow:auto; overflow-wrap:anywhere; word-break:break-word; }
 #mcpBuildStatus pre, .event-details pre, .endpoint-card pre { white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; }
