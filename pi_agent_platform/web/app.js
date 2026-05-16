@@ -920,9 +920,8 @@ function renderSessionSnapshotFast(snapshot, sessionId) {
   const timeline = document.getElementById('events');
   if (!timeline) return;
   const events = Array.isArray(snapshot) ? snapshot : [];
-  const initialChunkSize = 80;
-  const hydrateChunkSize = 36;
-  const tail = events.slice(-initialChunkSize);
+  const recentChunkSize = 220;
+  const tail = events.slice(-recentChunkSize);
   const token = ++sessionHydrationToken;
   sessionHydrationActiveFor = sessionId;
   timeline.innerHTML = tail.length ? '' : '<div class="empty-timeline">No session events yet.</div>';
@@ -931,43 +930,10 @@ function renderSessionSnapshotFast(snapshot, sessionId) {
   tail.forEach((ev) => renderSessionTimelineEvent(ev));
   suppressSessionAutoScroll = false;
   timeline.scrollTop = timeline.scrollHeight;
-  if (events.length <= initialChunkSize) {
-    sessionHydrationActiveFor = null;
-    return;
-  }
-  window.setTimeout(() => {
-    if (!selectedSession || selectedSession.id !== sessionId || sessionHydrationToken !== token) return;
-    const buffered = Array.isArray(sessionHydrationBufferedEvents) ? sessionHydrationBufferedEvents.slice() : [];
+  if (selectedSession && selectedSession.id === sessionId && sessionHydrationToken === token) {
     sessionHydrationActiveFor = null;
     sessionHydrationBufferedEvents = [];
-    const merged = [...events];
-    const seen = new Set(merged.map((item) => item?.id).filter(Boolean));
-    buffered.forEach((item) => {
-      if (!item || (item.id && seen.has(item.id))) return;
-      merged.push(item);
-      if (item.id) seen.add(item.id);
-    });
-    merged.sort((a, b) => new Date(a?.created_at || 0).getTime() - new Date(b?.created_at || 0).getTime());
-    const older = merged.slice(0, Math.max(0, merged.length - initialChunkSize));
-    let index = older.length - 1;
-    const paintChunk = () => {
-      if (!selectedSession || selectedSession.id !== sessionId || sessionHydrationToken !== token) return;
-      const beforeHeight = timeline.scrollHeight;
-      const beforeTop = timeline.scrollTop;
-      suppressSessionAutoScroll = true;
-      for (let count = 0; count < hydrateChunkSize && index >= 0; count += 1, index -= 1) {
-        renderSessionTimelineEvent(older[index], {prepend:true, fromHydration:true});
-      }
-      suppressSessionAutoScroll = false;
-      const afterHeight = timeline.scrollHeight;
-      timeline.scrollTop = beforeTop + (afterHeight - beforeHeight);
-      if (index >= 0) {
-        window.requestAnimationFrame(paintChunk);
-        return;
-      }
-    };
-    window.requestAnimationFrame(paintChunk);
-  }, 40);
+  }
 }
 async function applySessionPermissionProfile() {
   if (!selectedSession?.id) return;
@@ -2439,12 +2405,38 @@ function renderPacReleaseStatus(meta=null) {
   if (meta.has_update) {
     status.textContent = `Latest release: v${meta.latest_version}`;
     if (applyBtn) applyBtn.disabled = false;
-    setUpdatesDetail({title:'Available release', version:meta.latest_version, entries:(meta.changes || []).length ? [{title:`PAC v${meta.latest_version}`, version:meta.latest_version, changes:meta.changes || []}] : [], body: meta.body || ''});
+    const currentVersion = meta.current_version || config?.version || config?.setup_status?.version || '';
+    api(`/v1/updates/release-notes?from_version=${encodeURIComponent(currentVersion)}&to_version=${encodeURIComponent(meta.latest_version || '')}`)
+      .then((notes) => {
+        setUpdatesDetail({
+          title:'Available release',
+          version:meta.latest_version,
+          entries:(notes?.entries || []).length ? (notes.entries || []) : ((meta.changes || []).length ? [{title:`PAC v${meta.latest_version}`, version:meta.latest_version, changes:meta.changes || []}] : []),
+          body: meta.body || '',
+        });
+      })
+      .catch(() => {
+        setUpdatesDetail({title:'Available release', version:meta.latest_version, entries:(meta.changes || []).length ? [{title:`PAC v${meta.latest_version}`, version:meta.latest_version, changes:meta.changes || []}] : [], body: meta.body || ''});
+      });
     return;
   }
   status.textContent = `PAC is up to date${meta.latest_version ? ` at v${meta.latest_version}` : ''}.`;
   if (applyBtn) applyBtn.disabled = true;
-  if (meta.latest_version) setUpdatesDetail({title:'Current release', version:meta.latest_version, entries:(meta.changes || []).length ? [{title:`PAC v${meta.latest_version}`, version:meta.latest_version, changes:meta.changes || []}] : [], body: meta.body || ''});
+  if (meta.latest_version) {
+    const currentVersion = meta.current_version || config?.version || config?.setup_status?.version || meta.latest_version;
+    api(`/v1/updates/release-notes?from_version=0.0.0&to_version=${encodeURIComponent(meta.latest_version || '')}`)
+      .then((notes) => {
+        setUpdatesDetail({
+          title:'Current release',
+          version:meta.latest_version,
+          entries:(notes?.entries || []).length ? (notes.entries || []) : ((meta.changes || []).length ? [{title:`PAC v${meta.latest_version}`, version:meta.latest_version, changes:meta.changes || []}] : []),
+          body: meta.body || '',
+        });
+      })
+      .catch(() => {
+        setUpdatesDetail({title:'Current release', version:meta.latest_version, entries:(meta.changes || []).length ? [{title:`PAC v${meta.latest_version}`, version:meta.latest_version, changes:meta.changes || []}] : [], body: meta.body || ''});
+      });
+  }
 }
 async function checkPacRelease() {
   const meta = await api('/v1/updates/check');
