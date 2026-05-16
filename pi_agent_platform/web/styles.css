@@ -3321,24 +3321,27 @@ body[data-theme="light"] .session-sidebar-meta{
 
 /* v1.0.150: header overlap, real user menu, and bottom-first session loading polish */
 .app-header{
+  position:relative;
   overflow:visible !important;
-  min-height:94px;
-  padding:.7rem 1.25rem .7rem;
+  min-height:72px;
+  padding:.5rem 1.25rem .5rem;
   border-bottom:0 !important;
   box-shadow:none !important;
   background:#080f14 !important;
+  align-items:flex-start;
 }
 .brand-block{
-  position:relative;
-  z-index:26;
-  margin-bottom:-1.35rem;
-  align-self:flex-start;
+  position:absolute;
+  left:1rem;
+  top:.15rem;
+  z-index:30;
   width:430px;
-  height:84px;
+  height:96px;
   overflow:visible !important;
   display:flex;
   align-items:flex-start;
   justify-content:flex-start;
+  pointer-events:none;
 }
 .brand-logo{
   width:430px !important;
@@ -3347,14 +3350,14 @@ body[data-theme="light"] .session-sidebar-meta{
   display:block;
   object-fit:contain;
   object-position:left top;
-  transform:scale(1.14);
+  transform:scale(1.12);
   transform-origin:left top;
 }
 .tabs{
   position:relative;
   z-index:18;
-  margin-top:-.55rem;
-  padding:1rem 1rem .7rem 31rem;
+  margin-top:0;
+  padding:.6rem 1rem .7rem 31rem;
   min-height:56px;
   border-bottom:0 !important;
   background:#080f14 !important;
@@ -3457,11 +3460,13 @@ body[data-theme="light"] #sessions-tab .session-sidebar-list::-webkit-scrollbar-
 @media(max-width:1280px){
   .brand-logo{
     width:390px !important;
-    transform:scale(1.1);
+    transform:scale(1.08);
   }
   .brand-block{
+    left:.9rem;
+    top:.2rem;
     width:390px;
-    height:76px;
+    height:86px;
   }
   .tabs{
     padding-left:27rem;
@@ -3472,9 +3477,12 @@ body[data-theme="light"] #sessions-tab .session-sidebar-list::-webkit-scrollbar-
     min-height:auto;
   }
   .brand-block{
-    margin-bottom:0;
+    position:relative;
+    left:auto;
+    top:auto;
     width:min(72vw,320px);
     height:auto;
+    pointer-events:auto;
   }
   .brand-logo{
     width:min(72vw,320px) !important;
