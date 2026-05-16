@@ -3361,9 +3361,9 @@ body[data-theme="light"] .session-sidebar-meta{
   left:0;
   top:0;
   z-index:30;
-  width:520px;
-  height:128px;
-  overflow:hidden !important;
+  width:600px;
+  height:152px;
+  overflow:visible !important;
   display:flex;
   align-items:flex-start;
   justify-content:flex-start;
@@ -3371,13 +3371,13 @@ body[data-theme="light"] .session-sidebar-meta{
 }
 .brand-logo{
   position:absolute;
-  left:-10px;
-  top:-6px;
-  width:520px !important;
+  left:0;
+  top:0;
+  width:auto !important;
   max-width:none !important;
-  height:auto;
+  height:152px !important;
   display:block;
-  object-fit:contain;
+  object-fit:cover;
   object-position:left top;
   transform:none;
 }
@@ -3385,7 +3385,7 @@ body[data-theme="light"] .session-sidebar-meta{
   position:relative;
   z-index:18;
   margin-top:0;
-  padding:.6rem 1rem .7rem 35rem;
+  padding:.6rem 1rem .7rem 39rem;
   min-height:56px;
   border-bottom:0 !important;
   background:#080f14 !important;
@@ -3487,18 +3487,19 @@ body[data-theme="light"] #sessions-tab .session-sidebar-list::-webkit-scrollbar-
 }
 @media(max-width:1280px){
   .brand-logo{
-    left:-8px;
-    top:-4px;
-    width:460px !important;
+    left:0;
+    top:0;
+    width:auto !important;
+    height:140px !important;
   }
   .brand-block{
     left:0;
     top:0;
-    width:460px;
-    height:118px;
+    width:520px;
+    height:140px;
   }
   .tabs{
-    padding-left:31rem;
+    padding-left:34rem;
   }
 }
 @media(max-width:1040px){
@@ -3519,6 +3520,7 @@ body[data-theme="light"] #sessions-tab .session-sidebar-list::-webkit-scrollbar-
     left:auto;
     top:auto;
     width:min(72vw,320px) !important;
+    height:auto !important;
     transform:none;
   }
   .tabs{
