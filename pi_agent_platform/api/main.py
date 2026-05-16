@@ -1711,6 +1711,29 @@ def users_me(_auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
     return auth_me(_auth)
 
 
+@app.put('/v1/users/me')
+def update_users_me(payload: dict[str, Any], _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    if not _auth.user:
+        return {'ok': True, 'user': auth_me(_auth)}
+    user = _auth.user
+    if 'display_name' in payload:
+        user.display_name = str(payload.get('display_name') or '').strip() or user.username
+    metadata = dict(user.metadata or {})
+    if 'email' in payload:
+        email = str(payload.get('email') or '').strip()
+        if email:
+            metadata['email'] = email
+        else:
+            metadata.pop('email', None)
+    if 'preferences' in payload:
+        prefs = payload.get('preferences')
+        metadata['preferences'] = prefs if isinstance(prefs, dict) else {}
+    user.metadata = metadata
+    store.add_user(user)
+    store.add_event(Event(session_id='system', type='user_profile_updated', message=f'User profile updated: {user.username}', data={'user_id': user.id}))
+    return {'ok': True, 'user': _public_user(user)}
+
+
 @app.get('/v1/users')
 def list_users(_auth: CurrentUser = Depends(require_auth)) -> list[dict[str, Any]]:
     return [_public_user(user) for user in store.list_users()]
@@ -1867,6 +1890,38 @@ def reject_access_request(request_id: str, _auth: CurrentUser = Depends(require_
 @app.get('/v1/auth/tokens')
 def auth_tokens(_auth: CurrentUser = Depends(require_admin)) -> list[dict[str, Any]]:
     return store.list_user_tokens()
+
+
+@app.get('/v1/users/me/tokens')
+def current_user_tokens(_auth: CurrentUser = Depends(require_auth)) -> list[dict[str, Any]]:
+    if not _auth.user:
+        return []
+    return [item for item in store.list_user_tokens() if item.get('user_id') == _auth.user.id]
+
+
+@app.post('/v1/users/me/tokens')
+def create_current_user_token(payload: dict[str, Any], _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    if not _auth.user:
+        raise HTTPException(status_code=400, detail='Controller auth does not mint user tokens')
+    ttl_hours = int(payload.get('ttl_hours') or config.auth.token_ttl_hours or 720)
+    ttl_hours = max(1, min(ttl_hours, 24 * 365))
+    token = uuid.uuid4().hex + uuid.uuid4().hex
+    expires_at = (datetime.utcnow() + timedelta(hours=ttl_hours)).isoformat()
+    store.add_user_token(token, _auth.user.id, expires_at)
+    store.add_event(Event(session_id='system', type='token_created', message=f'Token minted for: {_auth.user.username}', data={'username': _auth.user.username, 'created_by': _auth.user.username}))
+    return {'ok': True, 'token': token, 'expires_at': expires_at, 'user': _public_user(_auth.user)}
+
+
+@app.delete('/v1/users/me/tokens/{token}')
+def revoke_current_user_token(token: str, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    if not _auth.user:
+        raise HTTPException(status_code=400, detail='Controller auth does not manage user tokens')
+    matches = [item for item in store.list_user_tokens() if item.get('user_id') == _auth.user.id and item.get('token') == token]
+    if not matches:
+        raise HTTPException(status_code=404, detail='Token not found')
+    store.delete_user_token(token)
+    store.add_event(Event(session_id='system', type='token_revoked', message=f'Token revoked for: {_auth.user.username}', data={'username': _auth.user.username}))
+    return {'ok': True, 'revoked': token}
 
 
 @app.post('/v1/auth/tokens')
@@ -4511,6 +4566,28 @@ def get_user_ram(
         return read_ram('user', user_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get('/v1/users/me/ram')
+def get_current_user_ram(_auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    if not _auth.user:
+        raise HTTPException(status_code=400, detail='Controller auth does not have user memory')
+    try:
+        return read_ram('user', _auth.user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put('/v1/users/me/ram')
+def put_current_user_ram(payload: PacRamWriteRequest, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    if not _auth.user:
+        raise HTTPException(status_code=400, detail='Controller auth does not have user memory')
+    try:
+        result = write_ram('user', _auth.user.id, payload.content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    store.add_event(Event(session_id='system', type='pac_ram_saved', message=f'PAC RAM user saved: {result["key"]}', data={'kind': 'user', **result}))
+    return result
 
 
 @app.put('/v1/pac-ram/user/{user_id}')

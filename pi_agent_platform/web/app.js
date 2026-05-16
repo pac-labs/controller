@@ -68,6 +68,7 @@ let suppressSessionAutoScroll = false;
 let sessionHydrationToken = 0;
 let sessionHydrationActiveFor = null;
 let sessionHydrationBufferedEvents = [];
+let providerHealthCache = new Map();
 
 const AUTH_TOKEN_KEY = 'pac_auth_token';
 
@@ -1497,6 +1498,33 @@ function providerCapabilityPills(p) {
   const pills = [r.execution_type || r.executionType || 'unknown', d.category || 'unknown-device', h.kind || 'unknown-host', ...accelerators].filter(Boolean);
   return pills.map(x => `<span class="pill provider-capability-pill">${escapeHtml(String(x))}</span>`).join('');
 }
+function providerHealthSummary(name, provider) {
+  const health = providerHealthCache.get(name) || {};
+  const inspect = health.inspect || {};
+  const models = Array.isArray(health.models) ? health.models : [];
+  if (provider?.enabled === false) return {pill:'disabled', klass:'warn-pill', detail:'Provider disabled'};
+  if (health.ok === true) {
+    const bits = [`${models.length} live model${models.length === 1 ? '' : 's'}`];
+    if (provider?.type === 'lmstudio' && inspect.ok) bits.push('LM Studio responding');
+    return {pill:'healthy', klass:'ok-pill', detail:bits.join(' · ')};
+  }
+  if (health.ok === false) {
+    const reason = health.error || health.response?.error || inspect.error || provider?.last_error || 'provider check failed';
+    return {pill:'failed', klass:'danger-pill', detail:reason};
+  }
+  return {pill:'checking', klass:'ghost-pill', detail:'Checking provider health…'};
+}
+async function refreshProviderHealth(name, provider) {
+  try {
+    const health = await api(`/v1/providers/${encodeURIComponent(name)}/test`, {method:'POST'});
+    let inspect = null;
+    if (provider?.type === 'lmstudio') inspect = await api(`/v1/providers/${encodeURIComponent(name)}/lmstudio/inspect`).catch(()=>null);
+    providerHealthCache.set(name, {...health, inspect, checked_at:new Date().toISOString()});
+  } catch (error) {
+    providerHealthCache.set(name, {ok:false, error:error.message || String(error), checked_at:new Date().toISOString()});
+  }
+  renderProviders();
+}
 function collectProviderRuntimeFields(existing={}) {
   const mem = Number(document.getElementById('providerDeviceMemory')?.value || 0);
   return {
@@ -1549,12 +1577,14 @@ function renderProviders() {
     const status = providerStatus(p);
     const r = providerRuntime(p);
     const h = providerHost(p);
+    const health = providerHealthSummary(name, p);
     const card = document.createElement('div'); card.className='provider-card';
     card.innerHTML = `
       <div class="provider-card-head">
         <div class="provider-title-block"><h3>${escapeHtml(name)}</h3><span class="muted">${escapeHtml(p.type || 'provider')}</span></div>
         <span class="pill ${providerStatusClass(status)}">${escapeHtml(status)}</span>
       </div>
+      <div class="provider-health-strip"><span class="pill ${escapeHtml(health.klass)}">${escapeHtml(health.pill)}</span><span class="small-text">${escapeHtml(health.detail)}</span></div>
       <div class="provider-device-panel">
         <b>${escapeHtml(fmtProviderDevice(p))}</b>
         <small>${escapeHtml(r.execution_type || r.executionType || 'unknown')} inference · ${escapeHtml(h.kind || 'unknown host')}${h.os ? ` · ${escapeHtml(h.os)}` : ''}${h.arch ? ` · ${escapeHtml(h.arch)}` : ''}</small>
@@ -1569,16 +1599,22 @@ function renderProviders() {
     const slider = document.createElement('span'); slider.className='switch-slider';
     input.onchange = async(ev)=>{ ev.stopPropagation(); input.disabled=true; try { await toggleProvider(name, input.checked); } catch(e){ alert(e.message); input.checked=false; } finally { input.disabled=false; } };
     label.appendChild(input); label.appendChild(slider);
+    const probe=document.createElement('button'); probe.textContent='Check health'; probe.className='ghost-button'; probe.onclick=(ev)=>{ ev.stopPropagation(); refreshProviderHealth(name, p).catch(e=>alert(e.message)); };
     if (p.type === 'lmstudio') {
       const inspect=document.createElement('button'); inspect.textContent='Inspect'; inspect.className='ghost-button'; inspect.onclick=(ev)=>{ ev.stopPropagation(); inspectLmStudioProvider(name).catch(e=>alert(e.message)); };
       const script=document.createElement('button'); script.textContent='Companion'; script.className='ghost-button'; script.onclick=(ev)=>{ ev.stopPropagation(); showLmStudioCompanionScript(name).catch(e=>alert(e.message)); };
       const load=document.createElement('button'); load.textContent='Load'; load.className='ghost-button'; load.onclick=(ev)=>{ ev.stopPropagation(); lmStudioLoadModel(name).catch(e=>alert(e.message)); };
-      actions.appendChild(inspect); actions.appendChild(script); actions.appendChild(load);
+      actions.appendChild(probe); actions.appendChild(inspect); actions.appendChild(script); actions.appendChild(load);
+    } else {
+      actions.appendChild(probe);
     }
     const edit=document.createElement('button'); edit.textContent='Edit'; edit.onclick=(ev)=>{ ev.stopPropagation(); openProviderModal(name); };
     const del=document.createElement('button'); del.textContent='Delete'; del.className='danger-button'; del.onclick=(ev)=>{ ev.stopPropagation(); deleteProvider(name).catch(e=>alert(e.message)); };
     actions.appendChild(label); actions.appendChild(edit); actions.appendChild(del); card.appendChild(actions); el.appendChild(card);
-    if (p.enabled !== false) refreshProviderModelPreview(name).catch(()=>{});
+    if (p.enabled !== false) {
+      refreshProviderModelPreview(name).catch(()=>{});
+      if (!providerHealthCache.has(name)) refreshProviderHealth(name, p).catch(()=>{});
+    }
   }
   renderProvidersLivePanel().catch(()=>{});
 }
@@ -4271,6 +4307,113 @@ function renderHeaderAuthBox() {
   if (loginBtn) loginBtn.textContent = auth.needs_setup ? 'Set up account' : 'Log in';
   showUserChip(currentUser);
 }
+function closePersonalSettingsModal() {
+  document.getElementById('personalSettingsModal')?.remove();
+}
+async function loadPersonalSettingsData() {
+  const [me, tokens, ram] = await Promise.all([
+    api('/v1/users/me'),
+    api('/v1/users/me/tokens').catch(() => []),
+    api('/v1/users/me/ram').catch(() => ({content:''})),
+  ]);
+  return {me, tokens, ram};
+}
+function renderPersonalTokens(target, tokens, latestToken='') {
+  if (!target) return;
+  const items = Array.isArray(tokens) ? tokens : [];
+  target.innerHTML = `
+    ${latestToken ? `<div class="inline-result">${escapeHtml(latestToken)}</div>` : ''}
+    ${items.length ? items.map((item) => `<div class="row"><div><b>${escapeHtml(item.username || currentUser?.username || 'token')}</b><br><span class="muted small-text">expires ${escapeHtml(item.expires_at || '-')}</span></div><div class="button-row"><button class="ghost-button revoke-self-token-btn" data-token="${escapeHtml(item.token)}" type="button">Revoke</button></div></div>`).join('') : '<div class="muted small-text">No personal tokens yet.</div>'}`;
+  target.querySelectorAll('.revoke-self-token-btn').forEach((btn) => btn.addEventListener('click', async () => {
+    const token = btn.dataset.token || '';
+    if (!token || !confirm('Revoke this token?')) return;
+    await api(`/v1/users/me/tokens/${encodeURIComponent(token)}`, {method:'DELETE'});
+    const refreshed = await api('/v1/users/me/tokens').catch(() => []);
+    renderPersonalTokens(target, refreshed);
+  }));
+}
+async function openPersonalSettingsModal() {
+  if (!currentUser && authStatus?.enabled) {
+    openLoginModal(authStatus?.needs_setup ? 'setup' : 'login');
+    return;
+  }
+  closePersonalSettingsModal();
+  const modal = document.createElement('div');
+  modal.id = 'personalSettingsModal';
+  modal.className = 'modal-backdrop';
+  modal.innerHTML = `
+    <section class="modal-card auth-modal-card personal-settings-modal" role="dialog" aria-modal="true" aria-labelledby="personalSettingsTitle">
+      <div class="section-heading">
+        <div><h2 id="personalSettingsTitle">Personal settings</h2><p class="muted">Profile, personal tokens, and the memory PAC stores for your user.</p></div>
+        <button id="closePersonalSettingsBtn" class="ghost-button" type="button">Close</button>
+      </div>
+      <div class="split personal-settings-grid">
+        <section class="card setting-cube compact-setting-card">
+          <h3>Profile</h3>
+          <div class="form-grid compact-form">
+            <label>Username <input id="personalUsername" disabled /></label>
+            <label>Display name <input id="personalDisplayName" /></label>
+            <label>Email <input id="personalEmail" placeholder="name@example.com" /></label>
+          </div>
+          <label>Preferences JSON <textarea id="personalPreferences" rows="8"></textarea></label>
+          <div class="button-row"><button id="savePersonalProfileBtn" type="button">Save profile</button></div>
+          <div id="personalProfileStatus" class="inline-result" hidden></div>
+        </section>
+        <section class="card setting-cube compact-setting-card">
+          <h3>Access tokens</h3>
+          <div class="button-row">
+            <button id="mintPersonalTokenBtn" type="button">Generate token</button>
+            <label>TTL hours <input id="personalTokenTtl" type="number" value="720" min="1" max="8760" /></label>
+          </div>
+          <div id="personalTokensList" class="stacked-output compact-scroll-output"><div class="muted small-text">Loading tokens…</div></div>
+        </section>
+      </div>
+      <section class="card setting-cube compact-setting-card" style="margin-top:1rem">
+        <h3>Personal PAC RAM</h3>
+        <p class="muted">This is the remote memory bundle PAC can use for your user.</p>
+        <label><textarea id="personalRamContent" rows="10"></textarea></label>
+        <div class="button-row"><button id="savePersonalRamBtn" type="button">Save memory</button></div>
+        <div id="personalRamStatus" class="inline-result" hidden></div>
+      </section>
+    </section>`;
+  document.body.appendChild(modal);
+  document.getElementById('closePersonalSettingsBtn')?.addEventListener('click', closePersonalSettingsModal);
+  modal.addEventListener('click', (ev) => { if (ev.target === modal) closePersonalSettingsModal(); });
+  const data = await loadPersonalSettingsData();
+  document.getElementById('personalUsername').value = data.me?.username || '';
+  document.getElementById('personalDisplayName').value = data.me?.display_name || data.me?.username || '';
+  document.getElementById('personalEmail').value = data.me?.metadata?.email || '';
+  document.getElementById('personalPreferences').value = JSON.stringify(data.me?.metadata?.preferences || {}, null, 2);
+  document.getElementById('personalRamContent').value = data.ram?.content || '';
+  renderPersonalTokens(document.getElementById('personalTokensList'), data.tokens || []);
+  document.getElementById('savePersonalProfileBtn')?.addEventListener('click', async () => {
+    const status = document.getElementById('personalProfileStatus');
+    try {
+      const preferences = JSON.parse(document.getElementById('personalPreferences').value || '{}');
+      const response = await api('/v1/users/me', {method:'PUT', body: JSON.stringify({display_name: document.getElementById('personalDisplayName').value.trim(), email: document.getElementById('personalEmail').value.trim(), preferences})});
+      currentUser = response.user || currentUser;
+      showUserChip(currentUser);
+      if (status) { status.hidden = false; status.textContent = 'Profile saved.'; }
+    } catch (error) {
+      if (status) { status.hidden = false; status.textContent = `Failed: ${error.message || String(error)}`; }
+    }
+  });
+  document.getElementById('mintPersonalTokenBtn')?.addEventListener('click', async () => {
+    const ttl = Number(document.getElementById('personalTokenTtl').value || 720);
+    const response = await api('/v1/users/me/tokens', {method:'POST', body: JSON.stringify({ttl_hours: ttl})});
+    const refreshed = await api('/v1/users/me/tokens').catch(() => []);
+    renderPersonalTokens(document.getElementById('personalTokensList'), refreshed, response.token || '');
+  });
+  document.getElementById('savePersonalRamBtn')?.addEventListener('click', async () => {
+    const status = document.getElementById('personalRamStatus');
+    try {
+      await api('/v1/users/me/ram', {method:'PUT', body: JSON.stringify({content: document.getElementById('personalRamContent').value})});
+      if (status) { status.hidden = false; status.textContent = 'Personal memory saved.'; }
+    } catch (error) {
+      if (status) { status.hidden = false; status.textContent = `Failed: ${error.message || String(error)}`; }
+    }
+  });
+}
 async function loadApprovals() {
   if (approvalsRequest) return approvalsRequest;
   approvalsRequest = (async () => {
@@ -4326,7 +4469,7 @@ document.getElementById('userMenuSettings')?.addEventListener('click', () => {
   document.getElementById('userMenu')?.setAttribute('hidden', '');
   document.getElementById('userChip')?.setAttribute('aria-expanded', 'false');
   document.querySelector('.user-menu-wrap')?.classList.remove('open');
-  switchToTab('settings-tab');
+  openPersonalSettingsModal().catch((e)=>paneError('Personal settings could not be opened', e.message || String(e)));
 });
 document.addEventListener('click', (ev) => {
   const menu = document.getElementById('userMenu');
