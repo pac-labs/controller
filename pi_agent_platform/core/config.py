@@ -176,8 +176,10 @@ MODEL_NOT_SELECTED = "__pac_model_not_selected__"
 class AgentProfile(BaseModel):
     description: str | None = None
     model: str
+    planner_model: str | None = None
     context_mode: Literal["low", "medium", "high", "max"] = "medium"
     context_profile: str | None = None
+    planner_context_profile: str | None = None
     permission_profile: str = "ask-first"
     tools: list[str] = Field(default_factory=list)
     system_prompt: str = "You are a careful remote coding and infrastructure agent."
@@ -430,6 +432,16 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     ask_first = cfg.permission_profiles.get("ask-first")
     if ask_first and ask_first.network == "ask":
         ask_first.network = "allow"
+        changed = True
+    if "consult_model" not in cfg.tools:
+        cfg.tools["consult_model"] = ToolConfig(
+            enabled=True,
+            description="Ask one or more configured PAC models for planning or review help during an agent run.",
+        )
+        changed = True
+    main_profile = cfg.agent_profiles.get(MAIN_PI_DEV_PROFILE)
+    if main_profile and "consult_model" in cfg.tools and "consult_model" not in (main_profile.tools or []):
+        main_profile.tools = [*(main_profile.tools or []), "consult_model"]
         changed = True
     if changed:
         config_path.write_text(yaml.safe_dump(cfg.model_dump(mode="json", exclude_none=True), sort_keys=False), encoding="utf-8")

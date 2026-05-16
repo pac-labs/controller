@@ -2845,6 +2845,10 @@ def _hf_get_json(url: str) -> Any:
         raise HTTPException(status_code=502, detail=f'Hugging Face API unreachable: {exc.reason or exc}') from exc
 
 
+def _hf_model_api_url(model_id: str) -> str:
+    return f'{HF_API}/models/{urllib.parse.quote(model_id, safe="/")}'
+
+
 def _marketplace_param_billions(model_id: str) -> float | None:
     match = re.search(r'(\d+(?:\.\d+)?)\s*[bB](?:[^a-zA-Z]|$)', model_id or '')
     return float(match.group(1)) if match else None
@@ -2945,8 +2949,7 @@ def _provider_marketplace_fit(params_b: float | None, quants: list[str], profile
 
 
 def _marketplace_model_detail(model_id: str) -> dict[str, Any]:
-    encoded = urllib.parse.quote(model_id, safe='')
-    model = _hf_get_json(f'{HF_API}/models/{encoded}')
+    model = _hf_get_json(_hf_model_api_url(model_id))
     siblings = model.get('siblings', []) or []
     tags = [str(tag) for tag in (model.get('tags') or [])]
     quants = _marketplace_available_quants(siblings)
@@ -2978,7 +2981,7 @@ def marketplace_providers(_auth: None = Depends(require_auth)) -> dict[str, Any]
 
 @app.get('/v1/models/marketplace/search')
 def marketplace_search_models(q: str = '', limit: int = 20, sort: str = 'downloads', capability: str | None = None, _auth: None = Depends(require_auth)) -> dict[str, Any]:
-    params = [('search', q), ('direction', '-1'), ('limit', max(1, min(limit, 50))), ('sort', sort)]
+    params = [('search', q), ('filter', 'gguf'), ('full', 'true'), ('direction', '-1'), ('limit', max(1, min(limit, 50))), ('sort', sort)]
     query = '&'.join(f'{key}={urllib.parse.quote(str(value))}' for key, value in params if str(value))
     raw = _hf_get_json(f'{HF_API}/models?{query}')
     results: list[dict[str, Any]] = []
@@ -2988,7 +2991,7 @@ def marketplace_search_models(q: str = '', limit: int = 20, sort: str = 'downloa
         siblings = item.get('siblings') or []
         if not any(str(sibling.get('rfilename') or '').endswith('.gguf') for sibling in siblings):
             try:
-                detail = _hf_get_json(f'{HF_API}/models/{urllib.parse.quote(model_id, safe="")}')
+                detail = _hf_get_json(_hf_model_api_url(model_id))
                 siblings = detail.get('siblings') or []
             except HTTPException:
                 siblings = []
@@ -3152,6 +3155,10 @@ def list_agent_profiles(_auth: None = Depends(require_auth)) -> dict[str, Any]:
         data['valid'] = available
         data['missing_model'] = None if data['valid'] else profile.model
         data['availability_reason'] = reason
+        if profile.planner_model:
+            planner_available, planner_reason = _model_available(profile.planner_model)
+            data['planner_valid'] = planner_available
+            data['planner_availability_reason'] = planner_reason
         profiles[name] = data
     return profiles
 
@@ -3163,12 +3170,22 @@ def upsert_agent_profile(profile_name: str, payload: dict[str, Any], _auth: None
     available, reason = _model_available(payload['model'])
     if not available:
         raise HTTPException(status_code=400, detail=f'Profile model is not available: {reason}')
+    planner_model = payload.get('planner_model')
+    if planner_model:
+        if planner_model not in config.models:
+            raise HTTPException(status_code=400, detail='Planner model must be an existing configured model')
+        planner_available, planner_reason = _model_available(planner_model)
+        if not planner_available:
+            raise HTTPException(status_code=400, detail=f'Planner model is not available: {planner_reason}')
     permission_profile = payload.get('permission_profile') or 'ask-first'
     if permission_profile not in config.permission_profiles:
         raise HTTPException(status_code=400, detail='Unknown permission profile')
     context_profile = payload.get('context_profile')
     if context_profile and context_profile not in config.context_profiles:
         raise HTTPException(status_code=400, detail='Unknown context profile')
+    planner_context_profile = payload.get('planner_context_profile')
+    if planner_context_profile and planner_context_profile not in config.context_profiles:
+        raise HTTPException(status_code=400, detail='Unknown planner context profile')
     tools = payload.get('tools') or []
     unknown_tools = [tool for tool in tools if tool not in config.tools]
     if unknown_tools:

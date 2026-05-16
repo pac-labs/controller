@@ -207,6 +207,9 @@ tools:
     enabled: true
     package: development
     description: Fetch a URL and return cleaned rendered text via lynx/links2/w3m or built-in HTML cleanup.
+  consult_model:
+    enabled: true
+    description: Allow the internal PAC agent to consult one or more configured models for planning or review help.
   internet:
     enabled: true
     description: Meta-tool enabling both web_search and web_fetch.

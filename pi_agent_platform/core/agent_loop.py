@@ -49,6 +49,7 @@ Tool call:
 {"type":"tool_call","tool":"git_diff","input":{}}
 {"type":"tool_call","tool":"web_fetch","input":{"url":"https://example.com","max_chars":12000}}
 {"type":"tool_call","tool":"web_search","input":{"query":"search terms","max_results":5}}
+{"type":"tool_call","tool":"consult_model","input":{"models":["deep-thinker","fast-coder"],"prompt":"Review this plan and suggest the next 3 steps.","max_tokens":1200}}
 {"type":"tool_call","tool":"save_artifact","input":{"name":"notes/result.txt","content":"..."}}
 {"type":"tool_call","tool":"list_artifacts","input":{}}
 {"type":"tool_call","tool":"slash_command","input":{"command":"/rg TODO src"}}
@@ -60,6 +61,7 @@ Rules:
 - If blocked by policy, explain what approval or permission is needed.
 - For small-context models, prefer workspace_manifest, read_file_chunk, web_fetch max_chars, and batch_analyze_file over loading many large files at once.
 - Use web_search before web_fetch when you do not know the exact URL.
+- Use consult_model when you want a second opinion from another configured PAC model or want to fan out a planning question to multiple models.
 - Save important generated files/results with save_artifact when the user may want to download them.
 """.strip()
 
@@ -319,6 +321,48 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
             shell_args = [str(a) for a in (parsed.get("args") or [])]
             return await execute_tool(session, task, "shell", {"command": shlex_join([shell_tool, *shell_args])}, config)
 
+    if tool == "consult_model":
+        if "consult_model" not in allowed:
+            return "DENIED: consult_model is not enabled for this session", False
+        requested_models = inp.get("models")
+        if isinstance(requested_models, list):
+            target_models = [str(model).strip() for model in requested_models if str(model).strip()]
+        else:
+            single = str(inp.get("model") or "").strip()
+            target_models = [single] if single else []
+        if not target_models:
+            return "CONSULT_MODEL_FAILED: specify model or models", False
+        unknown = [model for model in target_models if model not in config.models]
+        if unknown:
+            return f"CONSULT_MODEL_FAILED: unknown configured model(s): {', '.join(unknown)}", False
+        prompt = str(inp.get("prompt") or inp.get("question") or "").strip()
+        if not prompt:
+            return "CONSULT_MODEL_FAILED: prompt is required", False
+        max_tokens = int(inp.get("max_tokens") or 1200)
+        include_recent = bool(inp.get("include_recent_context", True))
+        recent_context = ""
+        if include_recent:
+            transcript = list(task.metadata.get("agent_transcript") or [])[-6:]
+            if transcript:
+                recent_context = "\n\nRecent agent context:\n" + json.dumps(transcript, indent=2)
+        consult_messages = [
+            {
+                "role": "system",
+                "content": "You are an internal PAC planning consultant. Be concise, actionable, and explicit about risks or missing information.",
+            },
+            {"role": "user", "content": prompt + recent_context},
+        ]
+
+        async def _consult(target_model: str) -> dict[str, Any]:
+            try:
+                response = await asyncio.to_thread(chat_complete, config, target_model, consult_messages, max_tokens=max_tokens)
+                return {"model": target_model, "ok": True, "response": response}
+            except Exception as exc:
+                return {"model": target_model, "ok": False, "error": str(exc)}
+
+        results = await asyncio.gather(*[_consult(model_name) for model_name in target_models])
+        store.add_event(Event(session_id=session.id, task_id=task.id, type="model_consult", message=f"Consulted {len(target_models)} model(s)", data={"models": target_models, "ok": sum(1 for item in results if item.get('ok')), "failed": sum(1 for item in results if not item.get('ok'))}))
+        return as_json_text({"results": results}), False
 
     if tool == "web_fetch":
         if "web_fetch" not in allowed and "internet" not in allowed:
@@ -393,10 +437,12 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
 
     agent = config.agent_profiles.get(session.agent_profile or "")
     context_name = (agent.context_profile if agent and agent.context_profile else session.context_mode)
-    ctx = effective_context(config, session.model, context_name)
-    budget = get_context_budget(config, session.model, context_name)
+    decision_model = agent.planner_model if agent and agent.planner_model else session.model
+    decision_context_name = agent.planner_context_profile if agent and agent.planner_context_profile else context_name
+    ctx = effective_context(config, decision_model, decision_context_name)
+    budget = get_context_budget(config, decision_model, decision_context_name)
     full_control = session.permission_profile == "full-control"
-    store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_loop_started", message="Agent loop started", data={"model": session.model, "permission_profile": session.permission_profile, "full_control": full_control, "effective_context": ctx, "endpoint_id": task.metadata.get("runner_id"), "endpoint_locked": task.metadata.get("endpoint_locked"), "agent_enabled": task.metadata.get("agent_enabled", True), "requested_command": task.metadata.get("requested_command"), "routing": task.metadata.get("routing", "agent")}))
+    store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_loop_started", message="Agent loop started", data={"model": session.model, "decision_model": decision_model, "planner_model": agent.planner_model if agent else None, "permission_profile": session.permission_profile, "full_control": full_control, "effective_context": ctx, "endpoint_id": task.metadata.get("runner_id"), "endpoint_locked": task.metadata.get("endpoint_locked"), "agent_enabled": task.metadata.get("agent_enabled", True), "requested_command": task.metadata.get("requested_command"), "routing": task.metadata.get("routing", "agent")}))
     if full_control:
         store.add_event(Event(session_id=session.id, task_id=task.id, type="full_control_enabled", message="FULL CONTROL MODE ENABLED: approvals are bypassed, but every tool action is logged."))
 
@@ -454,7 +500,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
         remaining_seconds = max(0, int(deadline - time.monotonic()))
         store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_thinking", message=f"Agent step {step} (~{message_tokens(messages)}/{budget.input_budget_tokens} input tokens, ~{remaining_seconds}s left)"))
         try:
-            raw = await asyncio.to_thread(chat_complete, config, session.model, messages, max_tokens=min(ctx["reserve_output_tokens"], 4096))
+            raw = await asyncio.to_thread(chat_complete, config, decision_model, messages, max_tokens=min(ctx["reserve_output_tokens"], 4096))
         except Exception as exc:
             task.status = TaskStatus.failed
             task.error = f"Model call failed: {exc}"
@@ -463,7 +509,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             return task
 
         transcript.append({"step": step, "model": raw})
-        store.add_event(Event(session_id=session.id, task_id=task.id, type="model_response", message=raw[-4000:], data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "step": step}))
+        store.add_event(Event(session_id=session.id, task_id=task.id, type="model_response", message=raw[-4000:], data={"role": "assistant", "model": decision_model, "session_model": session.model, "endpoint_id": task.metadata.get("runner_id"), "step": step}))
         try:
             action = _extract_json(raw)
         except Exception:
@@ -475,7 +521,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             return task
 
         thought_summary, thought_meta = _summarize_model_action(action)
-        store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_intent", message=thought_summary, data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "step": step, **thought_meta}))
+        store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_intent", message=thought_summary, data={"role": "assistant", "model": decision_model, "session_model": session.model, "endpoint_id": task.metadata.get("runner_id"), "step": step, **thought_meta}))
 
         if action.get("type") == "final":
             task.status = TaskStatus.completed

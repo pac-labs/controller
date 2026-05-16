@@ -1258,7 +1258,9 @@ function fillSelects() {
   if (document.getElementById('sessionTopSelect')) document.getElementById('sessionTopSelect').innerHTML = '<option value="">Select session</option>';
   document.getElementById('permissionOverride').innerHTML = '<option value="">profile default</option>';
   if (document.getElementById('profileModel')) profileModel.innerHTML = '';
+  if (document.getElementById('profilePlannerModel')) profilePlannerModel.innerHTML = '<option value="">same as model</option>';
   if (document.getElementById('profileContextProfile')) profileContextProfile.innerHTML = '';
+  if (document.getElementById('profilePlannerContextProfile')) profilePlannerContextProfile.innerHTML = '<option value="">same as profile</option>';
   if (document.getElementById('profilePermission')) profilePermission.innerHTML = '';
   if (document.getElementById('profileTools') && profileTools.tagName === 'SELECT') profileTools.innerHTML = '';
   if (document.getElementById('runnerTools') && runnerTools.tagName === 'SELECT') runnerTools.innerHTML = '';
@@ -1271,11 +1273,11 @@ function fillSelects() {
     const label = [k, ctx.customer_id || '', ctx.workspace_profile || ''].filter(Boolean).join(' · ');
     if (document.getElementById('sessionSourceContext')) opt(sessionSourceContext, k, label);
   });
-  Object.keys(config.models || {}).forEach(k => { if (modelAvailability(k).ok) { opt(modelOverride,k); if (document.getElementById('taskModel')) opt(taskModel,k); } if (document.getElementById('profileModel')) opt(profileModel,k, `${k}${modelAvailability(k).ok ? '' : ' (not available)'}`); });
+  Object.keys(config.models || {}).forEach(k => { if (modelAvailability(k).ok) { opt(modelOverride,k); if (document.getElementById('taskModel')) opt(taskModel,k); } if (document.getElementById('profileModel')) opt(profileModel,k, `${k}${modelAvailability(k).ok ? '' : ' (not available)'}`); if (document.getElementById('profilePlannerModel')) opt(profilePlannerModel,k, `${k}${modelAvailability(k).ok ? '' : ' (not available)'}`); });
   if (document.getElementById('modelProvider')) { modelProvider.innerHTML=''; Object.keys(config.providers || {}).forEach(k => opt(modelProvider,k)); }
   fillModelEndpointOptions();
   Object.keys(config.permission_profiles || {}).forEach(k => { opt(permissionOverride,k); if (document.getElementById('profilePermission')) opt(profilePermission,k); });
-  Object.keys(config.context_profiles || {}).forEach(k => { if (document.getElementById('profileContextProfile')) opt(profileContextProfile,k); });
+  Object.keys(config.context_profiles || {}).forEach(k => { if (document.getElementById('profileContextProfile')) opt(profileContextProfile,k); if (document.getElementById('profilePlannerContextProfile')) opt(profilePlannerContextProfile,k); });
   Object.keys(config.tool_packages || {}).forEach(k => { if (document.getElementById('toolPackage')) opt(toolPackage,k); });
   Object.entries(config.tools || {}).forEach(([k,t]) => {
     const label = `${k}${t.package ? ' · '+t.package : ''}${t.enabled === false ? ' (disabled)' : ''}`;
@@ -3212,7 +3214,7 @@ function renderProfiles() {
     const av = p.model ? modelAvailability(p.model) : {ok:false, reason:'no model'};
     const valid = av.ok;
     const row = document.createElement('div'); row.className = 'model-card clickable-row';
-    row.innerHTML = `<code>${name} ${valid ? '' : '[not selectable]'}\nmodel: ${p.model}\ncontext: ${p.context_profile || p.context_mode}\npermissions: ${p.permission_profile}\ntools: ${(p.tools||[]).join(', ')}${valid ? '' : `\nreason: ${av.reason}`}</code>`;
+    row.innerHTML = `<code>${name} ${valid ? '' : '[not selectable]'}\nmodel: ${p.model}${p.planner_model ? `\nplanner: ${p.planner_model}` : ''}\ncontext: ${p.context_profile || p.context_mode}${p.planner_context_profile ? `\nplanner context: ${p.planner_context_profile}` : ''}\npermissions: ${p.permission_profile}\ntools: ${(p.tools||[]).join(', ')}${valid ? '' : `\nreason: ${av.reason}`}</code>`;
     row.onclick = () => fillProfileForm(name);
     el.appendChild(row);
   }
@@ -3220,6 +3222,8 @@ function renderProfiles() {
 function fillProfileForm(name) {
   const p = config.agent_profiles?.[name]; if (!p) return;
   profileName.value = name; profileModel.value = p.model || ''; profileContextProfile.value = p.context_profile || 'medium'; profileContextMode.value = p.context_mode || 'medium';
+  if (document.getElementById('profilePlannerModel')) profilePlannerModel.value = p.planner_model || '';
+  if (document.getElementById('profilePlannerContextProfile')) profilePlannerContextProfile.value = p.planner_context_profile || '';
   profilePermission.value = p.permission_profile || 'ask-first'; setSelectedToolNames(p.tools || []); profileSystemPrompt.value = p.system_prompt || 'You are a careful remote coding and infrastructure agent.';
 }
 
@@ -4572,7 +4576,9 @@ async function saveProfileFromForm() {
   const body = {
     description: `Session preset for ${profileModel.value}`,
     model: profileModel.value,
+    planner_model: document.getElementById('profilePlannerModel')?.value || null,
     context_profile: profileContextProfile.value || null,
+    planner_context_profile: document.getElementById('profilePlannerContextProfile')?.value || null,
     context_mode: profileContextMode.value || 'medium',
     permission_profile: profilePermission.value || 'ask-first',
     tools: selectedToolNames(),
