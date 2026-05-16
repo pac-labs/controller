@@ -2764,10 +2764,17 @@ html[data-theme="dark"] .recommendation-card p{color:#dbe7ff}
   margin-bottom:1rem;
   padding-bottom:.8rem;
   border-bottom:1px solid rgba(96,165,250,.18);
+  align-items:center;
+  overflow:visible;
 }
 .settings-sub-btn{
-  min-height:2rem;
-  padding:.45rem .8rem;
+  min-height:2.2rem;
+  padding:.5rem .85rem;
+  line-height:1.15;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  overflow:visible;
 }
 .settings-panel{
   display:block;
@@ -3315,22 +3322,32 @@ body[data-theme="light"] .session-sidebar-meta{
 /* v1.0.150: header overlap, real user menu, and bottom-first session loading polish */
 .app-header{
   overflow:visible !important;
-  min-height:96px;
-  padding:1rem 1.25rem .95rem;
+  min-height:94px;
+  padding:.7rem 1.25rem .7rem;
   border-bottom:0 !important;
   box-shadow:none !important;
+  background:#080f14 !important;
 }
 .brand-block{
   position:relative;
   z-index:26;
-  margin-bottom:-1.15rem;
+  margin-bottom:-1.05rem;
   align-self:flex-start;
+  width:308px;
+  height:78px;
+  overflow:hidden;
+  display:flex;
+  align-items:flex-start;
+  justify-content:flex-start;
 }
 .brand-logo{
-  width:580px !important;
-  max-width:min(66vw,580px) !important;
-  height:auto;
+  width:100% !important;
+  max-width:none !important;
+  height:100%;
   display:block;
+  object-fit:cover;
+  object-position:left top;
+  transform:scale(1.08);
   transform-origin:left top;
 }
 .tabs{
@@ -3340,7 +3357,7 @@ body[data-theme="light"] .session-sidebar-meta{
   padding:.8rem 1rem .7rem 29rem;
   min-height:56px;
   border-bottom:0 !important;
-  background:linear-gradient(180deg,#09131c,#0b1420 78%,#0b1420) !important;
+  background:#080f14 !important;
 }
 .top-actions{
   align-items:flex-start;
@@ -3400,7 +3417,7 @@ html[data-theme="light"] .app-header,
 body[data-theme="light"] .app-header,
 html[data-theme="light"] .tabs,
 body[data-theme="light"] .tabs{
-  background:linear-gradient(180deg,#09131c,#0b1420 72%,#0d1722) !important;
+  background:#080f14 !important;
 }
 html[data-theme="light"] .content-area,
 body[data-theme="light"] .content-area,
@@ -3429,8 +3446,11 @@ body[data-theme="light"] #sessions-tab .session-sidebar-list::-webkit-scrollbar-
 }
 @media(max-width:1280px){
   .brand-logo{
-    width:510px !important;
-    max-width:min(62vw,510px) !important;
+    transform:scale(1.07);
+  }
+  .brand-block{
+    width:286px;
+    height:74px;
   }
   .tabs{
     padding-left:24rem;
@@ -3442,10 +3462,11 @@ body[data-theme="light"] #sessions-tab .session-sidebar-list::-webkit-scrollbar-
   }
   .brand-block{
     margin-bottom:0;
+    width:min(72vw,320px);
+    height:72px;
   }
   .brand-logo{
-    width:min(70vw,360px) !important;
-    max-width:min(70vw,360px) !important;
+    transform:scale(1.04);
   }
   .tabs{
     margin-top:0;
