@@ -42,6 +42,11 @@ type Client struct {
 	http        *http.Client
 }
 
+type registerAttemptState struct {
+	Key      string
+	Attempts int
+}
+
 func env(key, fallback string) string {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return v
@@ -220,6 +225,68 @@ func runtimeCapabilities() map[string]any {
 	return caps
 }
 
+func classifyRegisterFailure(err error, code int, data []byte) (string, string) {
+	body := strings.TrimSpace(string(data))
+	switch {
+	case code == http.StatusUnauthorized:
+		return "auth_missing", "endpoint registration is missing authorization; check PAC_TOKEN or the controller service token"
+	case code == http.StatusForbidden:
+		return "auth_forbidden", "endpoint registration is forbidden; verify the controller service token or endpoint auth policy"
+	case err != nil && strings.Contains(strings.ToLower(err.Error()), "connection refused"):
+		return "controller_unavailable", "controller is unavailable at the configured PAC_URL; waiting for PAC to come back"
+	case err != nil:
+		return "transport_error", fmt.Sprintf("endpoint registration transport error: %v", err)
+	case code >= 500:
+		return "server_error", fmt.Sprintf("controller returned HTTP %d during endpoint registration", code)
+	case code >= 400:
+		if body != "" {
+			return fmt.Sprintf("http_%d", code), fmt.Sprintf("endpoint registration rejected with HTTP %d: %s", code, body)
+		}
+		return fmt.Sprintf("http_%d", code), fmt.Sprintf("endpoint registration rejected with HTTP %d", code)
+	default:
+		return "unknown", "endpoint registration failed for an unknown reason"
+	}
+}
+
+func registerWithRetry(ctx context.Context, c Client, reg map[string]any, name string) Runner {
+	backoff := 5 * time.Second
+	maxBackoff := 30 * time.Second
+	state := registerAttemptState{}
+	for {
+		data, code, err := c.request(ctx, "POST", "/v1/endpoints/register", reg)
+		if err == nil && code < 300 {
+			var r Runner
+			json.Unmarshal(data, &r)
+			if r.ID == "" {
+				fmt.Fprintln(os.Stderr, "register response did not include endpoint id")
+			} else {
+				if state.Attempts > 0 {
+					fmt.Fprintf(os.Stderr, "endpoint registration recovered after %d attempt(s)\n", state.Attempts)
+				}
+				fmt.Printf("PAC endpoint %s registered as %s, version %s\n", name, r.ID, version)
+				return r
+			}
+		}
+		key, msg := classifyRegisterFailure(err, code, data)
+		if key != state.Key {
+			state = registerAttemptState{Key: key, Attempts: 1}
+			fmt.Fprintf(os.Stderr, "endpoint registration waiting: %s\n", msg)
+		} else {
+			state.Attempts++
+			if state.Attempts == 2 || state.Attempts%12 == 0 {
+				fmt.Fprintf(os.Stderr, "endpoint registration still waiting (%d attempts): %s\n", state.Attempts, msg)
+			}
+		}
+		time.Sleep(backoff)
+		if backoff < maxBackoff {
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
+	}
+}
+
 func main() {
 	base := strings.TrimRight(env("PAC_URL", ""), "/")
 	token := env("PAC_TOKEN", "")
@@ -235,18 +302,7 @@ func main() {
 	c := Client{base: base, token: token, http: newHTTPClient()}
 	ctx := context.Background()
 	reg := map[string]any{"name": name, "labels": []string{"remote-execution", runtime.GOOS, runtime.GOARCH}, "endpoint": "pac-endpoint://" + name, "allow_host_execution": true, "allow_container_execution": true, "agent_enabled": false, "metadata": map[string]any{"runner_version": version, "binary": binaryName, "os": runtime.GOOS, "arch": runtime.GOARCH, "secure_transport": "bearer-token optional-mtls", "self_update": true}}
-	data, code, err := c.request(ctx, "POST", "/v1/endpoints/register", reg)
-	if err != nil || code >= 300 {
-		fmt.Fprintf(os.Stderr, "register failed: %v %d %s\n", err, code, string(data))
-		os.Exit(1)
-	}
-	var r Runner
-	json.Unmarshal(data, &r)
-	if r.ID == "" {
-		fmt.Fprintln(os.Stderr, "register response did not include endpoint id")
-		os.Exit(1)
-	}
-	fmt.Printf("PAC endpoint %s registered as %s, version %s\n", name, r.ID, version)
+	r := registerWithRetry(ctx, c, reg, name)
 	for {
 		hb := map[string]any{"runner_id": r.ID, "status": "online", "version": version, "labels": reg["labels"], "capabilities": runtimeCapabilities(), "metadata": map[string]any{"command_channel": map[string]any{"available": true, "mode": "controller-queued"}, "self_update": true}}
 		c.request(ctx, "POST", "/v1/endpoints/heartbeat", hb)

@@ -40,6 +40,11 @@ type Client struct {
 	http        *http.Client
 }
 
+type registerAttemptState struct {
+	Key      string
+	Attempts int
+}
+
 func applyEnvAssignments(args []string) []string {
 	kept := make([]string, 0, len(args))
 	for _, arg := range args {
@@ -157,6 +162,68 @@ func workspace(job Job) string {
 	return abs
 }
 
+func classifyRegisterFailure(err error, code int, data []byte) (string, string) {
+	body := strings.TrimSpace(string(data))
+	switch {
+	case code == http.StatusUnauthorized:
+		return "auth_missing", "agent registration is missing authorization; check PAC_TOKEN or the controller service token"
+	case code == http.StatusForbidden:
+		return "auth_forbidden", "agent registration is forbidden; verify the controller service token or endpoint auth policy"
+	case err != nil && strings.Contains(strings.ToLower(err.Error()), "connection refused"):
+		return "controller_unavailable", "controller is unavailable at the configured PAC_URL; waiting for PAC to come back"
+	case err != nil:
+		return "transport_error", fmt.Sprintf("agent registration transport error: %v", err)
+	case code >= 500:
+		return "server_error", fmt.Sprintf("controller returned HTTP %d during agent registration", code)
+	case code >= 400:
+		if body != "" {
+			return fmt.Sprintf("http_%d", code), fmt.Sprintf("agent registration rejected with HTTP %d: %s", code, body)
+		}
+		return fmt.Sprintf("http_%d", code), fmt.Sprintf("agent registration rejected with HTTP %d", code)
+	default:
+		return "unknown", "agent registration failed for an unknown reason"
+	}
+}
+
+func registerWithRetry(ctx context.Context, c Client, reg map[string]any) Runner {
+	backoff := 5 * time.Second
+	maxBackoff := 30 * time.Second
+	state := registerAttemptState{}
+	for {
+		data, code, err := c.req(ctx, "POST", "/v1/endpoints/register", reg)
+		if err == nil && code < 300 {
+			var r Runner
+			_ = json.Unmarshal(data, &r)
+			if r.ID == "" {
+				fmt.Fprintln(os.Stderr, "register response missing endpoint id")
+			} else {
+				if state.Attempts > 0 {
+					fmt.Fprintf(os.Stderr, "agent registration recovered after %d attempt(s)\n", state.Attempts)
+				}
+				fmt.Printf("PAC agent registered as %s, version %s\n", r.ID, version)
+				return r
+			}
+		}
+		key, msg := classifyRegisterFailure(err, code, data)
+		if key != state.Key {
+			state = registerAttemptState{Key: key, Attempts: 1}
+			fmt.Fprintf(os.Stderr, "agent registration waiting: %s\n", msg)
+		} else {
+			state.Attempts++
+			if state.Attempts == 2 || state.Attempts%12 == 0 {
+				fmt.Fprintf(os.Stderr, "agent registration still waiting (%d attempts): %s\n", state.Attempts, msg)
+			}
+		}
+		time.Sleep(backoff)
+		if backoff < maxBackoff {
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
+	}
+}
+
 func main() {
 	os.Args = append(os.Args[:1], applyEnvAssignments(os.Args[1:])...)
 	base := strings.TrimRight(env("PAC_URL", defaultServerURL), "/")
@@ -174,18 +241,7 @@ func main() {
 	ctx := context.Background()
 	labels := []string{"pac-agent", runtime.GOOS, runtime.GOARCH}
 	reg := map[string]any{"name": name, "labels": labels, "endpoint": "pac-agent://" + name, "allow_host_execution": true, "allow_container_execution": false, "agent_enabled": true, "metadata": map[string]any{"runner_version": version, "binary": binaryName, "os": runtime.GOOS, "arch": runtime.GOARCH, "workspace": env("PAC_WORKSPACE", "")}}
-	data, code, err := c.req(ctx, "POST", "/v1/endpoints/register", reg)
-	if err != nil || code >= 300 {
-		fmt.Fprintf(os.Stderr, "register failed: %v %d %s\n", err, code, string(data))
-		os.Exit(1)
-	}
-	var r Runner
-	json.Unmarshal(data, &r)
-	if r.ID == "" {
-		fmt.Fprintln(os.Stderr, "register response missing endpoint id")
-		os.Exit(1)
-	}
-	fmt.Printf("PAC agent registered as %s, version %s\n", r.ID, version)
+	r := registerWithRetry(ctx, c, reg)
 	for {
 		caps := map[string]any{"binary": binaryName, "version": version, "os": runtime.GOOS, "arch": runtime.GOARCH, "workspace": env("PAC_WORKSPACE", filepath.Join(os.TempDir(), "pac-agent-workspace")), "agent": map[string]any{"available": true, "mode": "command-worker"}}
 		c.req(ctx, "POST", "/v1/endpoints/heartbeat", map[string]any{"runner_id": r.ID, "status": "online", "version": version, "labels": labels, "capabilities": caps, "metadata": map[string]any{"agent_enabled": true, "command_channel": map[string]any{"available": true, "mode": "controller-queued"}}})

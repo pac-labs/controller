@@ -86,6 +86,11 @@ type Client struct {
 	http        *http.Client
 }
 
+type registerAttemptState struct {
+	Key      string
+	Attempts int
+}
+
 func applyEnvAssignments(args []string) []string {
 	kept := make([]string, 0, len(args))
 	for _, arg := range args {
@@ -457,6 +462,68 @@ func runtimeCapabilities(runnerEnabled bool) map[string]any {
 	return caps
 }
 
+func classifyRegisterFailure(err error, code int, data []byte) (string, string) {
+	body := strings.TrimSpace(string(data))
+	switch {
+	case code == http.StatusUnauthorized:
+		return "auth_missing", "endpoint registration is missing authorization; check PAC_TOKEN or the controller service token"
+	case code == http.StatusForbidden:
+		return "auth_forbidden", "endpoint registration is forbidden; verify the controller service token or endpoint auth policy"
+	case err != nil && strings.Contains(strings.ToLower(err.Error()), "connection refused"):
+		return "controller_unavailable", "controller is unavailable at the configured PAC_URL; waiting for PAC to come back"
+	case err != nil:
+		return "transport_error", fmt.Sprintf("endpoint registration transport error: %v", err)
+	case code >= 500:
+		return "server_error", fmt.Sprintf("controller returned HTTP %d during endpoint registration", code)
+	case code >= 400:
+		if body != "" {
+			return fmt.Sprintf("http_%d", code), fmt.Sprintf("endpoint registration rejected with HTTP %d: %s", code, body)
+		}
+		return fmt.Sprintf("http_%d", code), fmt.Sprintf("endpoint registration rejected with HTTP %d", code)
+	default:
+		return "unknown", "endpoint registration failed for an unknown reason"
+	}
+}
+
+func registerWithRetry(ctx context.Context, c Client, reg map[string]any, name string, runnerEnabled bool) Runner {
+	backoff := 5 * time.Second
+	maxBackoff := 30 * time.Second
+	state := registerAttemptState{}
+	for {
+		data, code, err := c.request(ctx, "POST", "/v1/endpoints/register", reg)
+		if err == nil && code < 300 {
+			var r Runner
+			json.Unmarshal(data, &r)
+			if r.ID == "" {
+				fmt.Fprintln(os.Stderr, "register response did not include endpoint id")
+			} else {
+				if state.Attempts > 0 {
+					fmt.Fprintf(os.Stderr, "endpoint registration recovered after %d attempt(s)\n", state.Attempts)
+				}
+				fmt.Printf("PAC endpoint %s registered as %s, version %s, runner enabled: %t\n", name, r.ID, version, runnerEnabled)
+				return r
+			}
+		}
+		key, msg := classifyRegisterFailure(err, code, data)
+		if key != state.Key {
+			state = registerAttemptState{Key: key, Attempts: 1}
+			fmt.Fprintf(os.Stderr, "endpoint registration waiting: %s\n", msg)
+		} else {
+			state.Attempts++
+			if state.Attempts == 2 || state.Attempts%12 == 0 {
+				fmt.Fprintf(os.Stderr, "endpoint registration still waiting (%d attempts): %s\n", state.Attempts, msg)
+			}
+		}
+		time.Sleep(backoff)
+		if backoff < maxBackoff {
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
+	}
+}
+
 func main() {
 	os.Args = append(os.Args[:1], applyEnvAssignments(os.Args[1:])...)
 	base := strings.TrimRight(env("PAC_URL", defaultServerURL), "/")
@@ -487,18 +554,7 @@ func main() {
 		metadata["pi_dev_required"] = true
 	}
 	reg := map[string]any{"name": name, "labels": labels, "endpoint": "pac-endpoint://" + name, "allow_host_execution": runnerEnabled, "allow_container_execution": runnerEnabled, "agent_enabled": controllerWrapper, "metadata": metadata}
-	data, code, err := c.request(ctx, "POST", "/v1/endpoints/register", reg)
-	if err != nil || code >= 300 {
-		fmt.Fprintf(os.Stderr, "register failed: %v %d %s\n", err, code, string(data))
-		os.Exit(1)
-	}
-	var r Runner
-	json.Unmarshal(data, &r)
-	if r.ID == "" {
-		fmt.Fprintln(os.Stderr, "register response did not include endpoint id")
-		os.Exit(1)
-	}
-	fmt.Printf("PAC endpoint %s registered as %s, version %s, runner enabled: %t\n", name, r.ID, version, runnerEnabled)
+	r := registerWithRetry(ctx, c, reg, name, runnerEnabled)
 	for {
 		hbMetadata := map[string]any{"command_channel": map[string]any{"available": runnerEnabled, "mode": "controller-queued", "embedded": true}, "runner_enabled": runnerEnabled, "self_update": true, "tool_bridge": true, "required_tools": requiredToolSummary(discoverEndpointTools()), "compiled_server_url": defaultServerURL, "controller_id": defaultControllerID, "update_channel": defaultUpdateChannel, "controller_wrapper": controllerWrapper}
 		if controllerWrapper {
