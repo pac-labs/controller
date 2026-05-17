@@ -25,6 +25,9 @@ var version = "dev"
 var defaultServerURL = ""
 var defaultControllerID = ""
 var defaultUpdateChannel = "stable"
+var defaultEndpointName = ""
+var defaultRunnerEnabled = "true"
+var defaultWorkspaceRoot = ""
 
 const binaryName = "pac-endpoint"
 
@@ -213,7 +216,11 @@ func commandShell(command string) *exec.Cmd {
 func workspaceRoot(job Job) (string, error) {
 	root := strings.TrimSpace(job.WorkspacePath)
 	if root == "" {
-		root = env("PAC_WORKSPACE", filepath.Join(os.TempDir(), "pac-endpoint-workspace"))
+		fallback := strings.TrimSpace(defaultWorkspaceRoot)
+		if fallback == "" {
+			fallback = filepath.Join(os.TempDir(), "pac-endpoint-workspace")
+		}
+		root = env("PAC_WORKSPACE", fallback)
 	}
 	abs, err := filepath.Abs(root)
 	if err != nil {
@@ -528,7 +535,7 @@ func main() {
 	os.Args = append(os.Args[:1], applyEnvAssignments(os.Args[1:])...)
 	base := strings.TrimRight(env("PAC_URL", defaultServerURL), "/")
 	token := env("PAC_TOKEN", "")
-	name := env("PAC_ENDPOINT_NAME", "")
+	name := env("PAC_ENDPOINT_NAME", strings.TrimSpace(defaultEndpointName))
 	if name == "" {
 		h, _ := os.Hostname()
 		name = h
@@ -537,7 +544,14 @@ func main() {
 		fmt.Fprintln(os.Stderr, "PAC_URL is required")
 		os.Exit(2)
 	}
-	runnerEnabled := envBool("PAC_RUNNER_ENABLED", true)
+	runnerEnabledFallback := true
+	switch strings.ToLower(strings.TrimSpace(defaultRunnerEnabled)) {
+	case "", "1", "true", "yes", "on", "enabled":
+		runnerEnabledFallback = true
+	case "0", "false", "no", "off", "disabled":
+		runnerEnabledFallback = false
+	}
+	runnerEnabled := envBool("PAC_RUNNER_ENABLED", runnerEnabledFallback)
 	c := Client{base: base, token: token, http: newHTTPClient()}
 	ctx := context.Background()
 	labels := []string{"endpoint", runtime.GOOS, runtime.GOARCH}

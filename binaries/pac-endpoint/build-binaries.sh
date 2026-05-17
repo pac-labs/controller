@@ -11,6 +11,9 @@ VERSION="${PAC_VERSION:-dev}"
 COMPILED_SERVER_URL="${PAC_COMPILED_SERVER_URL:-${PAC_BUILD_SERVER_URL:-}}"
 COMPILED_CONTROLLER_ID="${PAC_COMPILED_CONTROLLER_ID:-}"
 COMPILED_UPDATE_CHANNEL="${PAC_COMPILED_UPDATE_CHANNEL:-stable}"
+COMPILED_ENDPOINT_NAME="${PAC_COMPILED_ENDPOINT_NAME:-}"
+COMPILED_RUNNER_ENABLED="${PAC_COMPILED_RUNNER_ENABLED:-true}"
+COMPILED_WORKSPACE_ROOT="${PAC_COMPILED_WORKSPACE_ROOT:-}"
 BINARY_NAME="${PAC_BINARY_NAME:-$(basename "$PWD")}"
 # trim possible accidental whitespace from fallback basename
 BINARY_NAME="$(printf '%s' "$BINARY_NAME" | tr -d '[:space:]')"
@@ -34,7 +37,7 @@ for target in $TARGETS; do
   TMP_OUT="${BUILD_OUT}/${NAME}"
   FINAL_OUT="/out/${NAME}"
   echo "building ${target} -> ${FINAL_OUT}"
-  GOOS="$GOOS" GOARCH="$GOARCH" CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION} -X main.defaultServerURL=${COMPILED_SERVER_URL} -X main.defaultControllerID=${COMPILED_CONTROLLER_ID} -X main.defaultUpdateChannel=${COMPILED_UPDATE_CHANNEL}" -o "$TMP_OUT" .
+  GOOS="$GOOS" GOARCH="$GOARCH" CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION} -X main.defaultServerURL=${COMPILED_SERVER_URL} -X main.defaultControllerID=${COMPILED_CONTROLLER_ID} -X main.defaultUpdateChannel=${COMPILED_UPDATE_CHANNEL} -X main.defaultEndpointName=${COMPILED_ENDPOINT_NAME} -X main.defaultRunnerEnabled=${COMPILED_RUNNER_ENABLED} -X main.defaultWorkspaceRoot=${COMPILED_WORKSPACE_ROOT}" -o "$TMP_OUT" .
   install -m 0755 "$TMP_OUT" "$FINAL_OUT"
   IFS=','
 done

@@ -6351,8 +6351,8 @@ function renderEndpointInstallKit(data) {
   const notes = document.getElementById('endpointWizardNotes');
   if (artifact) {
     artifact.textContent = data.artifact_missing
-      ? `No matching pac-endpoint artifact exists yet for ${data.target}. Build it first from binaries/pac-endpoint.`
-      : `Artifact: ${data.artifact?.name || '-'}\nVersion: ${data.artifact?.version || '-'}\nDownload: ${data.download_url || '-'}\nToken: ${data.token_kind || '-'}${data.expires_at ? `\nExpires: ${data.expires_at}` : ''}`;
+      ? `Build failed or no artifact was produced for ${data.target}.`
+      : `Artifact: ${data.artifact?.name || '-'}\nVersion: ${data.build_result?.version || data.artifact?.version || '-'}\nCompiled URL: ${data.build_result?.compiled_server_url || data.public_url || '-'}\nCompiled endpoint: ${data.build_result?.compiled_endpoint_name || data.endpoint_name || '-'}\nRunner default: ${data.build_result?.compiled_runner_enabled === false ? 'disabled' : 'enabled'}\nWorkspace default: ${data.build_result?.compiled_workspace_root || '-'}\nDownload: ${data.download_url || '-'}\nToken: ${data.token_kind || '-'}${data.expires_at ? `\nExpires: ${data.expires_at}` : ''}`;
   }
   if (linux) linux.value = data.commands?.linux || '';
   if (powershell) powershell.value = data.commands?.powershell || '';
@@ -6444,8 +6444,18 @@ if (buildWizardEndpointBinaryBtn) buildWizardEndpointBinaryBtn.onclick = async()
     buildWizardEndpointBinaryBtn.disabled = true;
     if (status) status.textContent = 'Building pac-endpoint…';
     const target = document.getElementById('wizardRunnerTarget')?.value || 'linux/amd64';
-    const result = await api('/v1/sources/build-binary', {method:'POST', body:JSON.stringify({path:'binaries/pac-endpoint', targets:[target], server_url:(config.server?.public_url || '').replace(/\/$/, '')})});
-    if (status) status.textContent = result.ok ? `Built pac-endpoint for ${target}` : `Build failed for ${target}`;
+    const endpointName = document.getElementById('wizardRunnerName')?.value || 'remote-endpoint';
+    const endpointSlug = endpointName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'endpoint';
+    const result = await api('/v1/sources/build-binary', {method:'POST', body:JSON.stringify({
+      path:'binaries/pac-endpoint',
+      targets:[target],
+      server_url:(config.server?.public_url || '').replace(/\/$/, ''),
+      binary_name:`pac-endpoint-${endpointSlug}`,
+      endpoint_name:endpointName,
+      runner_enabled: !!document.getElementById('wizardRunnerEnabled')?.checked,
+      workspace_path: document.getElementById('wizardRunnerWorkspace')?.value?.trim() || null,
+    })});
+    if (status) status.textContent = result.ok ? `Built preconfigured pac-endpoint for ${endpointName} (${target})` : `Build failed for ${target}`;
   } catch (e) {
     if (status) status.textContent = `Failed: ${e.message || String(e)}`;
   } finally {

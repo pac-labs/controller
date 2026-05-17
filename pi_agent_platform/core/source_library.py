@@ -600,7 +600,17 @@ def build_container(folder_path: str, runtime: str = 'auto', tag: str | None = N
     }
 
 
-def build_binary(folder_path: str, targets: list[str] | None = None, runtime: str = 'auto') -> dict[str, Any]:
+def build_binary(
+    folder_path: str,
+    targets: list[str] | None = None,
+    runtime: str = 'auto',
+    *,
+    binary_name: str | None = None,
+    compiled_server_url: str | None = None,
+    compiled_endpoint_name: str | None = None,
+    compiled_runner_enabled: bool | None = None,
+    compiled_workspace_root: str | None = None,
+) -> dict[str, Any]:
     ensure_source_library()
     rel = _safe_rel(folder_path)
     if not rel.parts or rel.parts[0] != 'binaries':
@@ -633,8 +643,18 @@ def build_binary(folder_path: str, targets: list[str] | None = None, runtime: st
         # error in the UI event output.
         pass
     version = _binary_build_version(folder)
-    project_name = 'pac-zed' if folder.name == 'zed-binary' else folder.name
-    compiled_server_url = os.environ.get("PAC_BUILD_SERVER_URL", os.environ.get("PAC_PUBLIC_URL", "")).strip().rstrip('/')
+    project_name = binary_name or ('pac-zed' if folder.name == 'zed-binary' else folder.name)
+    project_name = str(project_name).strip()
+    compiled_server_url = (compiled_server_url or os.environ.get("PAC_BUILD_SERVER_URL", os.environ.get("PAC_PUBLIC_URL", ""))).strip().rstrip('/')
+    compiled_endpoint_name = str(compiled_endpoint_name or os.environ.get("PAC_BUILD_ENDPOINT_NAME", "")).strip()
+    compiled_workspace_root = str(compiled_workspace_root or os.environ.get("PAC_BUILD_WORKSPACE_ROOT", "")).strip()
+    compiled_runner_enabled_value = compiled_runner_enabled
+    if compiled_runner_enabled_value is None:
+        raw_runner_enabled = str(os.environ.get("PAC_BUILD_RUNNER_ENABLED", "")).strip().lower()
+        if raw_runner_enabled in {"1", "true", "yes", "on", "enabled"}:
+            compiled_runner_enabled_value = True
+        elif raw_runner_enabled in {"0", "false", "no", "off", "disabled"}:
+            compiled_runner_enabled_value = False
     target_csv = ','.join(target_list)
     image_name = f'localhost/pac-binary-builder-{_safe_name(folder.name)}:{version}'
     build_cmd = [selected_runtime, 'build', '-t', image_name, '-f', str(containerfile), str(folder)]
@@ -646,6 +666,9 @@ def build_binary(folder_path: str, targets: list[str] | None = None, runtime: st
         '-e', f'PAC_SOURCE_VERSION={version}',
         '-e', f'PAC_CONTROLLER_VERSION={_packaged_version()}',
         '-e', f'PAC_COMPILED_SERVER_URL={compiled_server_url}',
+        '-e', f'PAC_COMPILED_ENDPOINT_NAME={compiled_endpoint_name}',
+        '-e', f'PAC_COMPILED_RUNNER_ENABLED={"true" if compiled_runner_enabled_value is not False else "false"}',
+        '-e', f'PAC_COMPILED_WORKSPACE_ROOT={compiled_workspace_root}',
         '-e', f'PAC_BINARY_NAME={project_name}',
         '-e', f'PAC_TARGETS={target_csv}',
         image_name,
@@ -677,6 +700,9 @@ def build_binary(folder_path: str, targets: list[str] | None = None, runtime: st
         'source_version': version,
         'controller_version': _packaged_version(),
         'compiled_server_url': compiled_server_url,
+        'compiled_endpoint_name': compiled_endpoint_name or None,
+        'compiled_runner_enabled': compiled_runner_enabled_value,
+        'compiled_workspace_root': compiled_workspace_root or None,
         'command': {'build': build_cmd, 'run': run_cmd},
         'exit_code': exit_code,
         'stdout': stdout[-20000:],

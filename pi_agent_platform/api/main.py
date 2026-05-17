@@ -4377,6 +4377,10 @@ class SourceBuildRequest(BaseModel):
     tag: str | None = None
     targets: list[str] | None = None
     server_url: str | None = None
+    binary_name: str | None = None
+    endpoint_name: str | None = None
+    runner_enabled: bool | None = None
+    workspace_path: str | None = None
 
 
 class SourceContextUpdateRequest(BaseModel):
@@ -5034,18 +5038,18 @@ def build_source_binary(payload: SourceBuildRequest, _auth: None = Depends(requi
     global _SOURCE_BUILD_ACTIVE
     _SOURCE_BUILD_ACTIVE = {'kind': 'binary', 'path': payload.path, 'status': 'running', 'message': 'Binary build is running'}
     try:
-        old_build_server_url = os.environ.get('PAC_BUILD_SERVER_URL')
         compiled_url = (payload.server_url or str(config.server.public_url) or '').strip().rstrip('/')
-        if compiled_url:
-            os.environ['PAC_BUILD_SERVER_URL'] = compiled_url
-        try:
-            result = source_build_binary(payload.path, targets=payload.targets, runtime=payload.runtime)
-            result['compiled_server_url'] = compiled_url
-        finally:
-            if old_build_server_url is None:
-                os.environ.pop('PAC_BUILD_SERVER_URL', None)
-            else:
-                os.environ['PAC_BUILD_SERVER_URL'] = old_build_server_url
+        result = source_build_binary(
+            payload.path,
+            targets=payload.targets,
+            runtime=payload.runtime,
+            binary_name=payload.binary_name,
+            compiled_server_url=compiled_url,
+            compiled_endpoint_name=payload.endpoint_name,
+            compiled_runner_enabled=payload.runner_enabled,
+            compiled_workspace_root=payload.workspace_path,
+        )
+        result['compiled_server_url'] = compiled_url
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail='Binary source folder not found')
     except Exception as exc:
@@ -5514,36 +5518,39 @@ def endpoint_onboarding_kit(payload: EndpointOnboardingRequest, _auth: CurrentUs
         raise HTTPException(status_code=400, detail='Controller public_url is not configured')
     target = str(payload.target or 'linux/amd64').strip()
     ttl_hours = max(1, min(int(payload.ttl_hours or 24), 24 * 30))
-    artifact = _binary_artifact_meta('pac-endpoint', target, PAC_VERSION)
     token, expires_at, token_kind = _mint_endpoint_onboarding_token(_auth, ttl_hours)
     endpoint_name = str(payload.endpoint_name or '').strip() or _safe_runner_slug(uuid.uuid4().hex[:8])
     workspace_path = str(payload.workspace_path or '').strip()
     runner_enabled = bool(payload.runner_enabled)
-    binary_filename = artifact.get('name') if artifact else ''
+    endpoint_slug = re.sub(r'[^a-z0-9]+', '-', endpoint_name.lower()).strip('-') or 'endpoint'
+    binary_name = f'pac-endpoint-{endpoint_slug}'
+    build_result = source_build_binary(
+        'binaries/pac-endpoint',
+        targets=[target],
+        runtime='auto',
+        binary_name=binary_name,
+        compiled_server_url=public_url,
+        compiled_endpoint_name=endpoint_name,
+        compiled_runner_enabled=runner_enabled,
+        compiled_workspace_root=workspace_path or None,
+    )
+    artifact = next(iter(build_result.get('artifacts') or []), None)
+    binary_filename = str((artifact or {}).get('name') or '').strip()
     download_url = f'{public_url}/v1/sources/binary-artifacts/pac-endpoint/{binary_filename}' if binary_filename else ''
-    env_pairs = {
-        'PAC_URL': public_url,
-        'PAC_TOKEN': token,
-        'PAC_ENDPOINT_NAME': endpoint_name,
-        'PAC_RUNNER_ENABLED': 'true' if runner_enabled else 'false',
-    }
-    if workspace_path:
-        env_pairs['PAC_WORKSPACE'] = workspace_path
-    env_block = ' '.join(f'{key}="{value}"' for key, value in env_pairs.items())
     linux_path = '$HOME/.local/bin/pac-endpoint'
     linux_install = [
         'mkdir -p "$HOME/.local/bin"',
         f'curl -L -H "Authorization: Bearer {token}" "{download_url}" -o "{linux_path}"' if download_url else '# Build the pac-endpoint binary for this target first.',
         f'chmod +x "{linux_path}"',
-        f'{env_block} "{linux_path}"',
+        f'export PAC_TOKEN={shlex.quote(token)}',
     ]
+    if workspace_path:
+        linux_install.append(f'export PAC_WORKSPACE={shlex.quote(workspace_path)}')
+    linux_install.append(f'"{linux_path}"')
     powershell_install = [
         '$dest = "$env:USERPROFILE\\\\pac-endpoint.exe"',
         f'Invoke-WebRequest -Headers @{{ Authorization = "Bearer {token}" }} -Uri "{download_url}" -OutFile $dest' if download_url else '# Build the pac-endpoint binary for this target first.',
-        '$env:PAC_URL = "' + public_url + '"',
         '$env:PAC_TOKEN = "' + token + '"',
-        '$env:PAC_ENDPOINT_NAME = "' + endpoint_name + '"',
-        '$env:PAC_RUNNER_ENABLED = "' + ('true' if runner_enabled else 'false') + '"',
     ]
     if workspace_path:
         powershell_install.append('$env:PAC_WORKSPACE = "' + workspace_path.replace('\\', '\\\\') + '"')
@@ -5557,6 +5564,7 @@ def endpoint_onboarding_kit(payload: EndpointOnboardingRequest, _auth: CurrentUs
         'token_kind': token_kind,
         'expires_at': expires_at,
         'artifact': artifact,
+        'build_result': build_result,
         'workspace_path': workspace_path or None,
         'runner_enabled': runner_enabled,
         'download_url': download_url or None,
@@ -5565,13 +5573,18 @@ def endpoint_onboarding_kit(payload: EndpointOnboardingRequest, _auth: CurrentUs
             'path': 'binaries/pac-endpoint',
             'targets': [target],
             'server_url': public_url,
+            'binary_name': binary_name,
+            'endpoint_name': endpoint_name,
+            'runner_enabled': runner_enabled,
+            'workspace_path': workspace_path or None,
         },
         'commands': {
             'linux': '\n'.join(linux_install),
             'powershell': '\n'.join(powershell_install),
         },
         'notes': [
-            'The endpoint binary self-registers with PAC when PAC_URL and PAC_TOKEN are set.',
+            'The endpoint binary is preconfigured with the controller URL and endpoint name from this wizard.',
+            'At install time you usually only need PAC_TOKEN. PAC_WORKSPACE remains optional as a host-specific override.',
             'Keep the process running on the endpoint to maintain heartbeats and receive jobs.',
             'Trusted workspaces can expose plugin and tool source live to containerized coding sessions.',
         ],
