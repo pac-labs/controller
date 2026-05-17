@@ -1536,11 +1536,13 @@ function fillSelects() {
   if (document.getElementById('profilePermission')) profilePermission.innerHTML = '';
   if (document.getElementById('profileTools') && profileTools.tagName === 'SELECT') profileTools.innerHTML = '';
   if (document.getElementById('runnerTools') && runnerTools.tagName === 'SELECT') runnerTools.innerHTML = '';
+  if (document.getElementById('wizardRunnerTools') && wizardRunnerTools.tagName === 'SELECT') wizardRunnerTools.innerHTML = '';
   if (document.getElementById('runnerDefaultWorkspace')) runnerDefaultWorkspace.innerHTML = '<option value="">auto</option>';
+  if (document.getElementById('wizardRunnerDefaultWorkspace')) wizardRunnerDefaultWorkspace.innerHTML = '<option value="">auto</option>';
   if (document.getElementById('workspaceEndpoint')) workspaceEndpoint.innerHTML = '<option value="">none</option>';
   if (document.getElementById('toolPackage')) toolPackage.innerHTML = '<option value="">none</option>';
   Object.entries(config.agent_profiles || {}).forEach(([k,p]) => { if (p?.model && modelAvailability(p.model).ok) { opt(agentProfile,k); const wd=document.getElementById('workspaceDefaultProfile'); if (wd) opt(wd,k); } });
-  Object.keys(config.workspaces || {}).forEach(k => { if (document.getElementById('workspaceProfile')) opt(workspaceProfile,k); if (document.getElementById('runnerDefaultWorkspace')) opt(runnerDefaultWorkspace,k); });
+  Object.keys(config.workspaces || {}).forEach(k => { if (document.getElementById('workspaceProfile')) opt(workspaceProfile,k); if (document.getElementById('runnerDefaultWorkspace')) opt(runnerDefaultWorkspace,k); if (document.getElementById('wizardRunnerDefaultWorkspace')) opt(wizardRunnerDefaultWorkspace,k); });
   Object.entries(config.source_contexts || {}).forEach(([k,ctx]) => {
     const label = [k, ctx.customer_id || '', ctx.workspace_profile || ''].filter(Boolean).join(' · ');
     if (document.getElementById('sessionSourceContext')) opt(sessionSourceContext, k, label);
@@ -1555,8 +1557,10 @@ function fillSelects() {
     const label = `${k}${t.package ? ' · '+t.package : ''}${t.enabled === false ? ' (disabled)' : ''}`;
     if (document.getElementById('profileTools') && profileTools.tagName === 'SELECT') opt(profileTools,k,label);
     if (document.getElementById('runnerTools') && runnerTools.tagName === 'SELECT') opt(runnerTools,k,label);
+    if (document.getElementById('wizardRunnerTools') && wizardRunnerTools.tagName === 'SELECT') opt(wizardRunnerTools,k,label);
   });
   syncSessionPermissionQuick();
+  updateWizardToolPackagePreview();
 }
 function emitUiEvent(type, message, data=null) {
   window.__pacLastUiEvent = {
@@ -2299,12 +2303,24 @@ function selectedRunnerToolNames() {
   if (!sel) return [];
   return Array.from(sel.selectedOptions || []).map(o => o.value).filter(Boolean);
 }
+function selectedWizardToolNames() {
+  const sel = document.getElementById('wizardRunnerTools');
+  if (!sel) return [];
+  return Array.from(sel.selectedOptions || []).map(o => o.value).filter(Boolean);
+}
 function setSelectedRunnerToolNames(names) {
   const sel = document.getElementById('runnerTools');
   if (!sel) return;
   const wanted = new Set(names || []);
   Array.from(sel.options || []).forEach(o => { o.selected = wanted.has(o.value); });
   updateRunnerToolPackagePreview();
+}
+function setSelectedWizardToolNames(names) {
+  const sel = document.getElementById('wizardRunnerTools');
+  if (!sel) return;
+  const wanted = new Set(names || []);
+  Array.from(sel.options || []).forEach(o => { o.selected = wanted.has(o.value); });
+  updateWizardToolPackagePreview();
 }
 function packageNamesForTools(names) {
   const selected = new Set(names || []);
@@ -2363,6 +2379,15 @@ function updateRunnerToolPackagePreview() {
   const el = document.getElementById('runnerToolPackagePreview');
   if (!el) return;
   const names = selectedRunnerToolNames();
+  const packages = packageNamesForTools(names);
+  const toolPills = names.map(n => `<span class="pill ok-pill">${escapeHtml(n)}</span>`).join('');
+  const packagePills = packages.map(n => `<span class="pill ok-pill">${escapeHtml(n)} package</span>`).join('');
+  el.innerHTML = packagePills + toolPills || '<span class="muted">No endpoint tools selected.</span>';
+}
+function updateWizardToolPackagePreview() {
+  const el = document.getElementById('wizardToolPackagePreview');
+  if (!el) return;
+  const names = selectedWizardToolNames();
   const packages = packageNamesForTools(names);
   const toolPills = names.map(n => `<span class="pill ok-pill">${escapeHtml(n)}</span>`).join('');
   const packagePills = packages.map(n => `<span class="pill ok-pill">${escapeHtml(n)} package</span>`).join('');
@@ -6286,6 +6311,53 @@ init().catch(e=>paneError('PAC UI could not load', e.message || String(e)));
 
 const openEndpointBtn = document.getElementById('openEndpointModal');
 if (openEndpointBtn) openEndpointBtn.onclick = openEndpointModal;
+function switchEndpointPanel(panelId = 'endpointInventoryPanel') {
+  document.querySelectorAll('#endpointSubnav .subtab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.endpointPanel === panelId);
+  });
+  document.querySelectorAll('#runners-tab .endpoint-subpanel').forEach(panel => {
+    const active = panel.id === panelId;
+    panel.hidden = !active;
+    panel.classList.toggle('active', active);
+  });
+}
+function wizardEndpointBody() {
+  const chosenTools = selectedWizardToolNames();
+  return {
+    name: wizardRunnerName.value || 'remote-endpoint',
+    labels: wizardRunnerLabels.value.split(',').map(x => x.trim()).filter(Boolean),
+    endpoint: null,
+    allow_host_execution: true,
+    allow_container_execution: true,
+    agent_enabled: false,
+    metadata: {
+      agent_tools: chosenTools,
+      tool_packages: packageNamesForTools(chosenTools),
+      default_workspace: document.getElementById('wizardRunnerDefaultWorkspace')?.value || null,
+      desired_workspace_root: document.getElementById('wizardRunnerWorkspace')?.value?.trim() || null,
+      onboarding_target: document.getElementById('wizardRunnerTarget')?.value || 'linux/amd64',
+      onboarding_mode: 'wizard',
+    },
+  };
+}
+async function saveWizardEndpointProfile() {
+  const body = wizardEndpointBody();
+  return api('/v1/endpoints', {method:'POST', body:JSON.stringify(body)});
+}
+function renderEndpointInstallKit(data) {
+  const artifact = document.getElementById('endpointWizardArtifact');
+  const linux = document.getElementById('endpointWizardLinux');
+  const powershell = document.getElementById('endpointWizardPowerShell');
+  const notes = document.getElementById('endpointWizardNotes');
+  if (artifact) {
+    artifact.textContent = data.artifact_missing
+      ? `No matching pac-endpoint artifact exists yet for ${data.target}. Build it first from binaries/pac-endpoint.`
+      : `Artifact: ${data.artifact?.name || '-'}\nVersion: ${data.artifact?.version || '-'}\nDownload: ${data.download_url || '-'}\nToken: ${data.token_kind || '-'}${data.expires_at ? `\nExpires: ${data.expires_at}` : ''}`;
+  }
+  if (linux) linux.value = data.commands?.linux || '';
+  if (powershell) powershell.value = data.commands?.powershell || '';
+  if (notes) notes.textContent = Array.isArray(data.notes) ? data.notes.join('\n') : (data.message || '');
+}
 
 function openEndpointCommandModal(id) {
   commandEndpointId = id;
@@ -6345,8 +6417,67 @@ if (addRunnerBtn) addRunnerBtn.onclick = async()=>{
     addRunnerBtn.disabled = false;
   }
 };
+document.querySelectorAll('#endpointSubnav .subtab').forEach(btn => {
+  btn.onclick = () => switchEndpointPanel(btn.dataset.endpointPanel || 'endpointInventoryPanel');
+});
+const switchToEndpointOnboardingBtn = document.getElementById('switchToEndpointOnboarding');
+if (switchToEndpointOnboardingBtn) switchToEndpointOnboardingBtn.onclick = () => switchEndpointPanel('endpointOnboardingPanel');
+const saveWizardEndpointBtn = document.getElementById('saveWizardEndpoint');
+if (saveWizardEndpointBtn) saveWizardEndpointBtn.onclick = async()=> {
+  const status = document.getElementById('endpointWizardStatus');
+  try {
+    saveWizardEndpointBtn.disabled = true;
+    if (status) status.textContent = 'Saving endpoint profile…';
+    const endpoint = await saveWizardEndpointProfile();
+    if (status) status.textContent = `Saved endpoint profile: ${endpoint.name || endpoint.id}`;
+    await loadRunners();
+  } catch (e) {
+    if (status) status.textContent = `Failed: ${e.message || String(e)}`;
+  } finally {
+    saveWizardEndpointBtn.disabled = false;
+  }
+};
+const buildWizardEndpointBinaryBtn = document.getElementById('buildWizardEndpointBinary');
+if (buildWizardEndpointBinaryBtn) buildWizardEndpointBinaryBtn.onclick = async()=> {
+  const status = document.getElementById('endpointWizardStatus');
+  try {
+    buildWizardEndpointBinaryBtn.disabled = true;
+    if (status) status.textContent = 'Building pac-endpoint…';
+    const target = document.getElementById('wizardRunnerTarget')?.value || 'linux/amd64';
+    const result = await api('/v1/sources/build-binary', {method:'POST', body:JSON.stringify({path:'binaries/pac-endpoint', targets:[target], server_url:(config.server?.public_url || '').replace(/\/$/, '')})});
+    if (status) status.textContent = result.ok ? `Built pac-endpoint for ${target}` : `Build failed for ${target}`;
+  } catch (e) {
+    if (status) status.textContent = `Failed: ${e.message || String(e)}`;
+  } finally {
+    buildWizardEndpointBinaryBtn.disabled = false;
+  }
+};
+const generateWizardEndpointKitBtn = document.getElementById('generateWizardEndpointKit');
+if (generateWizardEndpointKitBtn) generateWizardEndpointKitBtn.onclick = async()=> {
+  const status = document.getElementById('endpointWizardStatus');
+  try {
+    generateWizardEndpointKitBtn.disabled = true;
+    if (status) status.textContent = 'Generating install kit…';
+    await saveWizardEndpointProfile().catch(()=>null);
+    const payload = {
+      endpoint_name: document.getElementById('wizardRunnerName')?.value || 'remote-endpoint',
+      target: document.getElementById('wizardRunnerTarget')?.value || 'linux/amd64',
+      ttl_hours: Number(document.getElementById('wizardTokenTtl')?.value || 24) || 24,
+      workspace_path: document.getElementById('wizardRunnerWorkspace')?.value?.trim() || null,
+      runner_enabled: !!document.getElementById('wizardRunnerEnabled')?.checked,
+    };
+    const data = await api('/v1/endpoints/onboarding-kit', {method:'POST', body:JSON.stringify(payload)});
+    renderEndpointInstallKit(data);
+    if (status) status.textContent = data.artifact_missing ? 'Install kit generated. Build the binary first.' : 'Install kit generated.';
+  } catch (e) {
+    if (status) status.textContent = `Failed: ${e.message || String(e)}`;
+  } finally {
+    generateWizardEndpointKitBtn.disabled = false;
+  }
+};
 const discoverBtn = document.getElementById('discoverLocal');
 if (discoverBtn) discoverBtn.onclick = async()=>{ const r=await api('/v1/endpoints/local/discover'); if(localDiscovery) localDiscovery.textContent='Local host discovery completed. Details are in Events.'; emitUiEvent('local_endpoint_discovered', 'Local host discovery completed', r); };
+if (document.getElementById('wizardRunnerTools')) wizardRunnerTools.addEventListener('change', updateWizardToolPackagePreview);
 const addLocalBtn = document.getElementById('addLocalRunner');
 if (addLocalBtn) addLocalBtn.onclick = async()=>{ const box=document.getElementById('localDiscovery'); try { if(box) box.textContent='Adding local endpoint…'; const r=await api('/v1/endpoints/local',{method:'POST'}); if(box) box.textContent='Local endpoint added. Details are in Events.'; emitUiEvent('local_endpoint_added', 'Local endpoint added', r); await loadRunners(); await loadGlobalEvents(true).catch(()=>{}); } catch(e){ if(box) box.textContent='Local endpoint could not be added. Details are in Events.'; paneError('Local endpoint could not be added', e.message); } };
 

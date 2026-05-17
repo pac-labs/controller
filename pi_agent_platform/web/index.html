@@ -153,11 +153,15 @@
     </div>
 
     <section id="runners-tab" class="tab-panel">
-      <section class="card wide">
+      <nav class="subtab-bar" id="endpointSubnav">
+        <button class="subtab active" data-endpoint-panel="endpointInventoryPanel">Inventory</button>
+        <button class="subtab" data-endpoint-panel="endpointOnboardingPanel">Add endpoint</button>
+      </nav>
+      <section id="endpointInventoryPanel" class="card wide endpoint-subpanel active">
         <div class="section-heading">
-          <div><h2>Endpoints</h2><p class="muted">Compact host inventory, health, versions, containers and maintenance actions.</p></div>
+          <div><h2>Endpoints</h2><p class="muted">Endpoints are runner-capable hosts. They can keep permanent workloads, expose local tool bridges, and run containerized coding sessions.</p></div>
           <div class="button-row">
-            <button id="openEndpointModal">Add remote endpoint</button>
+            <button id="switchToEndpointOnboarding">Endpoint wizard</button>
             <button id="addLocalRunner" class="ghost-button">Add local endpoint</button>
             <button id="discoverLocal" class="ghost-button">Discover local host</button>
           </div>
@@ -166,6 +170,47 @@
         <div class="button-row"><button id="updateAllEndpoints">Update all online endpoints</button><button id="maintenanceAllEndpoints" class="ghost-button">Maintenance all online endpoints</button></div>
         <div id="runners" class="endpoint-grid"></div>
         <pre id="localDiscovery" class="compact-output"></pre>
+      </section>
+      <section id="endpointOnboardingPanel" class="card wide endpoint-subpanel" hidden>
+        <div class="section-heading">
+          <div><h2>Endpoint wizard</h2><p class="muted">Turn a machine into a PAC endpoint by building or selecting the right <code>pac-endpoint</code> binary, minting an onboarding token, and starting the endpoint process.</p></div>
+          <div class="button-row">
+            <button id="openEndpointModal" class="ghost-button">Advanced metadata</button>
+          </div>
+        </div>
+        <div class="updates-layout">
+          <div class="updates-main">
+            <section class="source-sidecard">
+              <div class="section-heading compact-heading"><div><h3>Endpoint profile</h3><p class="muted">Endpoints are like runners with permanent workloads. Save the endpoint profile here, then use the generated install commands on the host.</p></div></div>
+              <div class="form-grid compact-form">
+                <label>Name <input id="wizardRunnerName" value="dev-endpoint-01" /></label>
+                <label>Labels <input id="wizardRunnerLabels" value="linux,endpoint,container" /></label>
+                <label>Binary target <select id="wizardRunnerTarget"><option value="linux/amd64">Linux amd64</option><option value="linux/arm64">Linux arm64</option><option value="windows/amd64">Windows amd64</option><option value="darwin/amd64">macOS amd64</option><option value="darwin/arm64">macOS arm64</option></select></label>
+                <label>Workspace root <input id="wizardRunnerWorkspace" placeholder="/srv/pac/workspaces/dev-endpoint-01" /></label>
+                <label>Default workspace <select id="wizardRunnerDefaultWorkspace"></select><small class="muted">Workspace used when this endpoint runs agent tasks by default.</small></label>
+                <label>Endpoint tools <select id="wizardRunnerTools" multiple size="7"></select><small class="muted">This helps PAC understand what binaries should exist on the endpoint.</small></label>
+                <label>Onboarding token TTL (hours) <input id="wizardTokenTtl" type="number" min="1" value="24" /></label>
+                <label class="checkbox-line"><input id="wizardRunnerEnabled" type="checkbox" checked /> Enable runner/job execution</label>
+              </div>
+              <div class="package-strip"><b>Packages</b><div id="wizardToolPackagePreview" class="pill-list"></div></div>
+              <div class="button-row">
+                <button id="saveWizardEndpoint">Save endpoint profile</button>
+                <button id="buildWizardEndpointBinary" class="ghost-button">Build endpoint binary</button>
+                <button id="generateWizardEndpointKit" class="ghost-button">Generate install kit</button>
+              </div>
+              <div id="endpointWizardStatus" class="inline-result"></div>
+            </section>
+          </div>
+          <aside class="updates-detail-panel">
+            <section class="source-sidecard">
+              <div class="section-heading compact-heading"><div><h3>Install kit</h3><p class="muted">Use the generated commands on the target host. The endpoint will self-register against PAC and expose its capabilities.</p></div></div>
+              <div id="endpointWizardArtifact" class="source-secret-audit muted">No binary selected yet.</div>
+              <label>Linux / macOS <textarea id="endpointWizardLinux" class="source-side-textarea compact" spellcheck="false" readonly placeholder="Generate the install kit to see shell commands."></textarea></label>
+              <label>PowerShell <textarea id="endpointWizardPowerShell" class="source-side-textarea compact" spellcheck="false" readonly placeholder="Generate the install kit to see PowerShell commands."></textarea></label>
+              <div id="endpointWizardNotes" class="source-secret-audit muted">The wizard will mint a short-lived onboarding token and point the host at the current PAC public URL.</div>
+            </section>
+          </aside>
+        </div>
       </section>
     </section>
 

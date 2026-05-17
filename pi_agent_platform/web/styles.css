@@ -924,6 +924,37 @@ section.card:has(#sessions){
     grid-template-columns:auto 1fr 1fr auto !important;
   }
 }
+.subtab-bar {
+  display: flex;
+  gap: .35rem;
+  padding: 0 0 .7rem;
+  flex-wrap: wrap;
+}
+.subtab {
+  border: 1px solid rgba(148,163,184,.20);
+  background: rgba(15,23,42,.60);
+  color: var(--text);
+  padding: .45rem .75rem;
+  font-weight: 700;
+}
+.subtab.active {
+  border-color: var(--accent);
+  background: rgba(37,32,71,.70);
+}
+.endpoint-subpanel {
+  min-height: 0;
+}
+#endpointOnboardingPanel .updates-layout {
+  align-items: start;
+}
+#endpointOnboardingPanel .source-sidecard {
+  height: 100%;
+}
+#endpointWizardLinux,
+#endpointWizardPowerShell {
+  min-height: 180px;
+  font-family: "IBM Plex Mono", "Cascadia Code", monospace;
+}
 @media(max-width:720px){
   .session-composer .composer-controls.integrated.editor-like{
     grid-template-columns:auto 1fr auto !important;

@@ -2740,6 +2740,41 @@ def _safe_cert_name(name: str) -> str:
     return cleaned[:80] or f'endpoint-{uuid.uuid4().hex[:8]}'
 
 
+def _binary_artifact_meta(project: str, target: str, prefer_version: str | None = None) -> dict[str, Any] | None:
+    inventory = source_list_binary_artifacts(project).get('projects', [])
+    project_meta = next((item for item in inventory if item.get('project') == project), None)
+    if not project_meta:
+        return None
+    artifacts = list(project_meta.get('artifacts') or [])
+    if not artifacts:
+        return None
+    target_slug = str(target or '').strip().lower().replace('/', '-')
+    candidates = [item for item in artifacts if target_slug in str(item.get('name') or '').lower()]
+    if prefer_version:
+        versioned = [item for item in candidates if str(item.get('version') or '') == str(prefer_version)]
+        if versioned:
+            candidates = versioned
+    return candidates[0] if candidates else None
+
+
+def _mint_endpoint_onboarding_token(current: CurrentUser, ttl_hours: int) -> tuple[str, str | None, str]:
+    if config.auth.enabled and config.auth.mode == 'dev-token' and config.auth.dev_token:
+        expires = (datetime.utcnow() + timedelta(hours=max(1, ttl_hours))).isoformat()
+        return str(config.auth.dev_token), expires, 'controller-dev-token'
+    if config.auth.enabled and config.auth.mode == 'user-password':
+        token = uuid.uuid4().hex + uuid.uuid4().hex
+        expires = (datetime.utcnow() + timedelta(hours=max(1, ttl_hours))).isoformat()
+        user_id = current.user.id if current.user else 'admin'
+        store.add_user_token(token, user_id, expires)
+        store.add_event(Event(session_id='system', type='endpoint_onboarding_token_created', message=f'Endpoint onboarding token minted for: {current.user.username if current.user else "admin"}', data={'username': current.user.username if current.user else 'admin', 'ttl_hours': ttl_hours}))
+        return token, expires, 'temporary-user-token'
+    token = _controller_auth_token()
+    if token:
+        expires = (datetime.utcnow() + timedelta(hours=max(1, ttl_hours))).isoformat()
+        return token, expires, 'controller-service-token'
+    raise HTTPException(status_code=400, detail='No controller token is available for endpoint onboarding')
+
+
 def _normalise_sans(name: str, sans: list[str] | None) -> list[str]:
     values: list[str] = []
     for item in ([name] + (sans or [])):
@@ -4369,6 +4404,14 @@ class SourceVariableUpdateRequest(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+class EndpointOnboardingRequest(BaseModel):
+    endpoint_name: str
+    target: str = 'linux/amd64'
+    ttl_hours: int = 24
+    workspace_path: str | None = None
+    runner_enabled: bool = True
+
+
 class PacRamWriteRequest(BaseModel):
     content: str
 
@@ -5462,6 +5505,77 @@ def register_runner(payload: RunnerRegisterRequest, _auth: None = Depends(requir
 @app.get('/v1/endpoints/local/discover')
 def local_discover(_auth: None = Depends(require_auth)) -> dict[str, Any]:
     return {'capabilities': discover_host(), 'containers': discover_containers()}
+
+
+@app.post('/v1/endpoints/onboarding-kit')
+def endpoint_onboarding_kit(payload: EndpointOnboardingRequest, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    public_url = str(config.server.public_url or '').strip().rstrip('/')
+    if not public_url:
+        raise HTTPException(status_code=400, detail='Controller public_url is not configured')
+    target = str(payload.target or 'linux/amd64').strip()
+    ttl_hours = max(1, min(int(payload.ttl_hours or 24), 24 * 30))
+    artifact = _binary_artifact_meta('pac-endpoint', target, PAC_VERSION)
+    token, expires_at, token_kind = _mint_endpoint_onboarding_token(_auth, ttl_hours)
+    endpoint_name = str(payload.endpoint_name or '').strip() or _safe_runner_slug(uuid.uuid4().hex[:8])
+    workspace_path = str(payload.workspace_path or '').strip()
+    runner_enabled = bool(payload.runner_enabled)
+    binary_filename = artifact.get('name') if artifact else ''
+    download_url = f'{public_url}/v1/sources/binary-artifacts/pac-endpoint/{binary_filename}' if binary_filename else ''
+    env_pairs = {
+        'PAC_URL': public_url,
+        'PAC_TOKEN': token,
+        'PAC_ENDPOINT_NAME': endpoint_name,
+        'PAC_RUNNER_ENABLED': 'true' if runner_enabled else 'false',
+    }
+    if workspace_path:
+        env_pairs['PAC_WORKSPACE'] = workspace_path
+    env_block = ' '.join(f'{key}="{value}"' for key, value in env_pairs.items())
+    linux_path = '$HOME/.local/bin/pac-endpoint'
+    linux_install = [
+        'mkdir -p "$HOME/.local/bin"',
+        f'curl -L -H "Authorization: Bearer {token}" "{download_url}" -o "{linux_path}"' if download_url else '# Build the pac-endpoint binary for this target first.',
+        f'chmod +x "{linux_path}"',
+        f'{env_block} "{linux_path}"',
+    ]
+    powershell_install = [
+        '$dest = "$env:USERPROFILE\\\\pac-endpoint.exe"',
+        f'Invoke-WebRequest -Headers @{{ Authorization = "Bearer {token}" }} -Uri "{download_url}" -OutFile $dest' if download_url else '# Build the pac-endpoint binary for this target first.',
+        '$env:PAC_URL = "' + public_url + '"',
+        '$env:PAC_TOKEN = "' + token + '"',
+        '$env:PAC_ENDPOINT_NAME = "' + endpoint_name + '"',
+        '$env:PAC_RUNNER_ENABLED = "' + ('true' if runner_enabled else 'false') + '"',
+    ]
+    if workspace_path:
+        powershell_install.append('$env:PAC_WORKSPACE = "' + workspace_path.replace('\\', '\\\\') + '"')
+    powershell_install.append('& $dest')
+    return {
+        'ok': True,
+        'endpoint_name': endpoint_name,
+        'target': target,
+        'public_url': public_url,
+        'token': token,
+        'token_kind': token_kind,
+        'expires_at': expires_at,
+        'artifact': artifact,
+        'workspace_path': workspace_path or None,
+        'runner_enabled': runner_enabled,
+        'download_url': download_url or None,
+        'artifact_missing': not bool(artifact),
+        'build_hint': {
+            'path': 'binaries/pac-endpoint',
+            'targets': [target],
+            'server_url': public_url,
+        },
+        'commands': {
+            'linux': '\n'.join(linux_install),
+            'powershell': '\n'.join(powershell_install),
+        },
+        'notes': [
+            'The endpoint binary self-registers with PAC when PAC_URL and PAC_TOKEN are set.',
+            'Keep the process running on the endpoint to maintain heartbeats and receive jobs.',
+            'Trusted workspaces can expose plugin and tool source live to containerized coding sessions.',
+        ],
+    }
 
 
 @app.post('/v1/runners/local', response_model=Runner)
