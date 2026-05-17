@@ -782,14 +782,14 @@ def _install_wrapper_artifact(project: str, artifact: Path) -> dict[str, Any]:
     return {'installed': True, 'project': project, 'source': str(artifact), 'path': str(target), 'size': target.stat().st_size}
 
 
-def _ensure_controller_wrapper(allow_build: bool = True) -> dict[str, Any]:
+def _ensure_controller_wrapper(allow_build: bool = True, force_rebuild: bool = False) -> dict[str, Any]:
     settings = config.controller_harness
     project = settings.wrapper_binary_project or 'pac-endpoint'
     target = _host_binary_target()
     wrapper_path = _controller_wrapper_path()
-    if wrapper_path.is_file() and os.access(wrapper_path, os.X_OK):
+    if wrapper_path.is_file() and os.access(wrapper_path, os.X_OK) and not force_rebuild:
         return {'ok': True, 'status': 'ready', 'path': str(wrapper_path), 'target': target, 'message': 'PAC wrapper is installed.'}
-    artifact = _find_matching_binary_artifact(project, target)
+    artifact = None if force_rebuild else _find_matching_binary_artifact(project, target)
     if artifact:
         installed = _install_wrapper_artifact(project, artifact)
         return {'ok': True, 'status': 'installed', 'target': target, 'message': 'PAC wrapper installed from existing artifact.', **installed}
@@ -809,8 +809,8 @@ def _ensure_controller_wrapper(allow_build: bool = True) -> dict[str, Any]:
     artifact = _find_matching_binary_artifact(project, target)
     if result.get('ok') and artifact:
         installed = _install_wrapper_artifact(project, artifact)
-        return {'ok': True, 'status': 'built_installed', 'target': target, 'build': result, 'message': 'PAC wrapper built and installed.', **installed}
-    return {'ok': False, 'status': 'build_failed', 'target': target, 'build': result, 'message': 'PAC wrapper build did not produce a host binary.'}
+        return {'ok': True, 'status': 'rebuilt_installed' if force_rebuild else 'built_installed', 'target': target, 'build': result, 'message': 'PAC wrapper rebuilt and installed.' if force_rebuild else 'PAC wrapper built and installed.', **installed}
+    return {'ok': False, 'status': 'build_failed', 'target': target, 'build': result, 'message': 'PAC wrapper rebuild did not produce a host binary.' if force_rebuild else 'PAC wrapper build did not produce a host binary.'}
 
 
 def _required_tool_state() -> dict[str, Any]:
@@ -3588,7 +3588,7 @@ def bootstrap_controller_harness(_auth: None = Depends(require_auth)) -> dict[st
 
 @app.post('/v1/controller-harness/update-wrapper')
 def update_controller_wrapper(_auth: None = Depends(require_auth)) -> dict[str, Any]:
-    wrapper_result = _ensure_controller_wrapper(allow_build=True)
+    wrapper_result = _ensure_controller_wrapper(allow_build=True, force_rebuild=True)
     restart_result = _restart_controller_wrapper() if wrapper_result.get('ok') else {'ok': False, 'status': 'skipped', 'message': 'Wrapper restart skipped because build/install did not succeed.'}
     refreshed = _refresh_local_runner_metadata(emit_event=False)
     payload = {
@@ -5077,7 +5077,7 @@ def _apply_version_package_from_path(package_path: Path, filename: str, restart_
     copied = _copy_package_tree(package_root, app_dir)
     pip_result = _pip_install_editable(app_dir)
     run_script_result = _write_runtime_run_script(app_dir)
-    wrapper_result = _ensure_controller_wrapper(allow_build=True)
+    wrapper_result = _ensure_controller_wrapper(allow_build=True, force_rebuild=True)
     wrapper_restart_result = _restart_controller_wrapper() if wrapper_result.get('ok') else {'ok': False, 'status': 'skipped', 'message': 'Wrapper restart skipped because wrapper update did not succeed.'}
     try:
         _refresh_local_runner_metadata()
