@@ -217,6 +217,15 @@ def _session_history_messages(session: Session, current_task_id: str | None = No
     events = store.get_events(session.id, limit=800, latest=True)
     messages: list[dict[str, str]] = []
     seen_pairs: set[tuple[str, str, str]] = set()
+    def _looks_like_raw_tool_call(content: str) -> bool:
+        text = str(content or "").strip()
+        if not text:
+            return False
+        if "<|tool_call>" in text and "<tool_call|>" in text:
+            return True
+        if text.startswith('{"type":"tool_call"') or text.startswith("{'type':'tool_call'"):
+            return True
+        return False
     for event in events:
         if current_task_id and event.task_id == current_task_id:
             continue
@@ -229,6 +238,8 @@ def _session_history_messages(session: Session, current_task_id: str | None = No
             continue
         content = str(event.message or "").strip()
         if not content:
+            continue
+        if role == "assistant" and _looks_like_raw_tool_call(content):
             continue
         signature = (role, event.task_id or "", content)
         if signature in seen_pairs:
@@ -546,8 +557,8 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     messages: list[dict[str, str]] = [
         {"role": "system", "content": (agent.system_prompt if agent else "You are a remote coding agent.") + "\n\n" + TOOL_HELP},
     ]
-    messages.extend(_session_history_messages(session, current_task_id=task.id, max_messages=24))
-    messages.append({"role": "user", "content": task.prompt})
+    messages.extend(_session_history_messages(session, current_task_id=task.id, max_messages=12))
+    messages.append({"role": "user", "content": "Current user request (answer this now; earlier conversation is context only):\n" + task.prompt})
 
     pending = task.metadata.pop("pending_tool", None)
     if pending:

@@ -419,6 +419,7 @@ function sessionThinkingSummary(event, block) {
   if (type.includes('task_failed')) return event?.message || 'Task failed';
   if (type.includes('task_completed')) return 'Finished thinking';
   if (type.includes('agent_thinking')) return event?.message || 'Thinking';
+  if (type.includes('model_response')) return '';
   if (type.includes('agent_intent')) {
     if (data.tool) return `Preparing ${data.tool}`;
     if (data.command) return `Preparing command ${data.command}`;
@@ -426,6 +427,7 @@ function sessionThinkingSummary(event, block) {
     return event?.message || 'Choosing next step';
   }
   if (type.includes('agent_routing')) return event?.message || 'Routing task';
+  if (type.includes('tool_result')) return '';
   if (data.tool) return `Using ${data.tool}`;
   if (data.command) return `Running ${data.command}`;
   if (data.path) return `Working with ${data.path}`;
@@ -1162,7 +1164,8 @@ function renderSessionTimelineEvent(event, options = {}) {
     const group = ensureSessionThinkingGroup(event);
     group.events.push({event, block});
     group.lastEvent = event;
-    group.summary = sessionThinkingSummary(event, block);
+    const nextSummary = sessionThinkingSummary(event, block);
+    if (nextSummary) group.summary = nextSummary;
     updateSessionThinkingRow(group);
     if (typeLower.includes('approval_required')) renderSessionApprovalRow(event);
     if (String(event?.type || '').toLowerCase().includes('task_completed') || String(event?.type || '').toLowerCase().includes('task_failed')) {
@@ -4785,6 +4788,15 @@ async function sendSessionComposer(){
       data: {role:'user', model: metadata.model || selectedSession.model, endpoint_id: metadata.runner_id || selectedSession.metadata?.preferred_endpoint, command:'', execution_mode: metadata.execution_mode, stored:true, pi_dev_enabled:selectedSession.metadata?.agent_enabled !== false, routing:'pi.dev'}
     };
     renderSessionTimelineEvent(localEvent);
+    renderSessionTimelineEvent({
+      id: `local_thinking_${created.id}`,
+      session_id: selectedSession.id,
+      task_id: created.id,
+      type: 'agent_thinking',
+      message: 'Thinking about your latest request',
+      created_at: created.created_at || new Date().toISOString(),
+      data: {role:'assistant', step: 0, local: true}
+    });
     pollSessionEvents(selectedSession.id).catch(()=>{});
   }
 }
