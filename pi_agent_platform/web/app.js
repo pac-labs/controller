@@ -3661,11 +3661,13 @@ function renderStatCards(metrics) {
   const endpoints = health.endpoints || {};
   const setup = health.setup || {};
   const updates = health.updates || {};
+  const alerts = metrics.alert_counts || {};
   const stats = [
     ['Sessions', metrics.sessions_total, `${metrics.sessions_active || 0} active`],
     ['Tasks', metrics.tasks_total, `${metrics.tasks_running || 0} running/queued`],
     ['Failed', metrics.tasks_failed, 'tasks failed'],
     ['Approvals', metrics.approvals_pending, 'pending'],
+    ['Alerts', alerts.total ?? 0, `${alerts.critical ?? 0} critical`],
     ['Endpoints', metrics.endpoints_total, `${metrics.endpoints_online || 0} online`],
     ['Providers', providers.connected ?? 0, `${providers.enabled ?? 0} enabled`],
     ['Models', models.available ?? 0, `${models.session_capable ?? 0} session-ready`],
@@ -3726,6 +3728,7 @@ function renderCriticalComponentHealth(metrics) {
         {label:'Runtime', value: controller.runtime_status || 'unknown', tone:(controller.runtime_status === 'ready') ? 'ok' : ((controller.runtime_status === 'disabled') ? '' : 'warn')},
         {label:'Wrapper', value: controller.wrapper_running ? 'running' : 'stopped', tone:controller.wrapper_running ? 'ok' : 'warn'},
         {label:'pi.dev', value: controller.pi_dev_running ? 'running' : 'stopped', tone:controller.pi_dev_running ? 'ok' : 'warn'},
+        {label:'Wrapper version', value: controller.wrapper_version || '-', tone:(controller.wrapper_version && controller.wrapper_version !== metrics.version) ? 'danger' : 'ok'},
       ],
     },
   ], 'No component health is available yet.');
@@ -3736,7 +3739,16 @@ function renderOpsReadiness(metrics) {
   const secrets = health.secrets || {};
   const source = health.source || {};
   const updates = health.updates || {};
+  const alerts = metrics.alert_counts || {};
   renderHealthGrid('opsReadiness', [
+    {
+      title: 'Alerts',
+      rows: [
+        {label:'Critical', value: alerts.critical ?? 0, tone:(alerts.critical || 0) ? 'danger' : 'ok'},
+        {label:'Warnings', value: alerts.warning ?? 0, tone:(alerts.warning || 0) ? 'warn' : 'ok'},
+        {label:'Total', value: alerts.total ?? 0, tone:(alerts.total || 0) ? 'warn' : 'ok'},
+      ],
+    },
     {
       title: 'Setup',
       rows: [

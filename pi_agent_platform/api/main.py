@@ -391,6 +391,11 @@ def _setup_status() -> dict[str, Any]:
         model_name, profile_name, _permission = _harness_model_and_profile()
         if not model_name or model_name not in config.models:
             issues.append(_setup_issue('controller_model_missing', 'Select the controller pi.dev model', f'The controller pi.dev runtime is enabled, but profile {profile_name or MAIN_PI_DEV_PROFILE} does not resolve to a configured model.', 'settings-tab', 'Open Settings'))
+        controller = next((runner for runner in store.list_runners() if _runner_bool(runner.metadata or {}, 'local_control_plane', 'controller_pi_dev')), None)
+        controller_meta = (controller.metadata or {}) if controller else {}
+        wrapper_version = str(controller_meta.get('runner_version') or controller_meta.get('endpoint_version') or '').strip()
+        if wrapper_version and wrapper_version != PAC_VERSION:
+            issues.append(_setup_issue('controller_wrapper_version_mismatch', 'Update the local PAC wrapper binary', f'The controller wrapper reports version {wrapper_version}, but the PAC server is running {PAC_VERSION}. Update the local wrapper before trusting controller pi.dev readiness.', 'settings-tab', 'Open Settings'))
     if config.auth.enabled and config.auth.mode == 'dev-token' and str(config.auth.dev_token or '').strip() in {'', 'change-me'}:
         issues.append(_setup_issue('dev_token_default', 'Replace the default bearer token', 'Authentication is enabled, but the bearer token is still the default placeholder.', 'settings-tab', 'Open Settings'))
     if unsupported_models:
@@ -405,6 +410,27 @@ def _setup_status() -> dict[str, Any]:
         'enabled_provider_count': len(enabled_providers),
         'configured_model_count': len(config.models or {}),
     }
+
+
+def _platform_alerts(runners: list[Runner] | None = None) -> list[dict[str, Any]]:
+    runners = runners or store.list_runners()
+    alerts: list[dict[str, Any]] = []
+    controller = next((runner for runner in runners if _runner_bool(runner.metadata or {}, 'local_control_plane', 'controller_pi_dev')), None)
+    if config.controller_harness.enabled:
+        if not controller:
+            alerts.append({'id': 'controller_runner_missing', 'severity': 'critical', 'component': 'controller', 'title': 'Controller pi.dev endpoint is missing', 'detail': 'The local PAC endpoint for controller pi.dev is not registered.', 'metric': 'controller.runner_missing'})
+        else:
+            meta = controller.metadata or {}
+            wrapper_process = meta.get('pac_wrapper_process') or {}
+            pi_daemon = meta.get('pi_dev_daemon') or {}
+            wrapper_version = str(meta.get('runner_version') or meta.get('endpoint_version') or '').strip()
+            if wrapper_version and wrapper_version != PAC_VERSION:
+                alerts.append({'id': 'controller_wrapper_version_mismatch', 'severity': 'critical', 'component': 'controller', 'title': 'Controller wrapper version mismatch', 'detail': f'PAC server is {PAC_VERSION}, but the local wrapper reports {wrapper_version}.', 'metric': 'controller.wrapper_version_mismatch', 'expected_version': PAC_VERSION, 'actual_version': wrapper_version})
+            if not bool(wrapper_process.get('running')):
+                alerts.append({'id': 'controller_wrapper_stopped', 'severity': 'warning', 'component': 'controller', 'title': 'Controller wrapper is not running', 'detail': 'The local PAC wrapper process is required before controller pi.dev sessions can execute.', 'metric': 'controller.wrapper_stopped'})
+            if not bool(pi_daemon.get('running')):
+                alerts.append({'id': 'controller_pi_dev_daemon_stopped', 'severity': 'warning', 'component': 'controller', 'title': 'pi.dev daemon is not running', 'detail': 'The local pi.dev daemon/container is required before controller harness-backed workloads can run.', 'metric': 'controller.pi_dev_daemon_stopped'})
+    return alerts
 
 
 def _config_payload() -> dict[str, Any]:
@@ -520,6 +546,7 @@ def _metrics_component_health(runners: list[Runner]) -> dict[str, Any]:
             'runtime_status': controller_runtime.get('status') or ('disabled' if not config.controller_harness.enabled else 'unknown'),
             'wrapper_running': bool(controller_wrapper.get('running')),
             'pi_dev_running': bool(controller_pi.get('running')),
+            'wrapper_version': str(controller_meta.get('runner_version') or controller_meta.get('endpoint_version') or ''),
             'endpoint_id': controller.id if controller else config.controller_harness.runner_id,
         },
     }
@@ -2030,6 +2057,13 @@ def metrics_summary(_auth: None = Depends(require_auth)) -> dict[str, Any]:
     completed_tasks = task_status.get('completed', 0)
     running_tasks = task_status.get('running', 0) + task_status.get('queued', 0) + task_status.get('approval_required', 0)
     component_health = _metrics_component_health(runners)
+    alerts = _platform_alerts(runners)
+    alert_counts = {
+        'total': len(alerts),
+        'critical': sum(1 for item in alerts if str(item.get('severity') or '') == 'critical'),
+        'warning': sum(1 for item in alerts if str(item.get('severity') or '') == 'warning'),
+        'info': sum(1 for item in alerts if str(item.get('severity') or '') == 'info'),
+    }
     ui = _ui_build_info()
     return {
         'version': PAC_VERSION,
@@ -2049,6 +2083,8 @@ def metrics_summary(_auth: None = Depends(require_auth)) -> dict[str, Any]:
         'events_by_day': [{'date': key, 'count': events_by_day[key]} for key in day_keys],
         'top_event_types': sorted(event_types.items(), key=lambda item: item[1], reverse=True)[:8],
         'component_health': component_health,
+        'alerts': alerts,
+        'alert_counts': alert_counts,
     }
 
 
@@ -5188,8 +5224,9 @@ def _refresh_local_runner_metadata(emit_event: bool = False) -> Runner:
     runner.metadata.update({
         'local_control_plane': True,
         'agent_enabled': True,
-        'endpoint_version': PAC_VERSION,
-        'runner_version': PAC_VERSION,
+        'controller_version': PAC_VERSION,
+        'endpoint_version': runner.metadata.get('endpoint_version') or PAC_VERSION,
+        'runner_version': runner.metadata.get('runner_version') or PAC_VERSION,
         'agent_runtime': _runtime_agent_state('pac-local', agent_status, agent_detail, pi_container=pi_container),
         'pi_container_available': image_present,
         'agent_tools': runner.metadata.get('agent_tools') or [name for name, tool in config.tools.items() if tool.enabled],
