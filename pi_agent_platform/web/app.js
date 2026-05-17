@@ -355,6 +355,7 @@ function renderTimelineBlock(card, event, block) {
 function sessionEventRole(event) {
   const t = String(event?.type || '').toLowerCase();
   if (t.includes('user_message') || t === 'user') return 'user';
+  if (t.includes('tool_result')) return 'tool';
   if (t.includes('result') || t.includes('assistant_message') || t === 'final') return 'assistant';
   if (t.includes('task_queued') || t.includes('prompt')) return 'user';
   if (t.includes('failed') || t.includes('error') || t.includes('stderr') || t.includes('rejected')) return 'error';
@@ -365,6 +366,7 @@ function sessionEventRole(event) {
 function isInternalSessionEvent(event) {
   const t = String(event?.type || '').toLowerCase();
   if (t.includes('user_message')) return false;
+  if (t.includes('tool_result')) return true;
   if (t.includes('result') || t.includes('assistant_message') || t === 'final') return false;
   return t.includes('tool') || t.includes('command') || t.includes('runner') ||
     t.includes('stdout') || t.includes('stderr') || t.includes('approval') ||
