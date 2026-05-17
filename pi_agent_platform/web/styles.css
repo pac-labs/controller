@@ -2231,11 +2231,27 @@ body {
   background: rgba(18, 53, 103, 0.34);
   font-size: .75rem;
 }
+#sources-tab .source-coding-health {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+#sources-tab #sourceCodingOpenFiles .inline-browser-row {
+  margin-bottom: .5rem;
+}
+#sources-tab #sourceCodingOpenFiles .inline-browser-row:last-child {
+  margin-bottom: 0;
+}
+#sourceSetupModal .source-sidecard {
+  height: 100%;
+}
+#sourceSetupModal .updates-layout {
+  align-items: start;
+}
 @media (max-width: 950px) {
   #sources-tab.source-workbench-panel.active { height: auto !important; overflow: visible !important; }
   #sources-tab .source-workbench { grid-template-columns: 1fr !important; height: auto !important; }
   #sources-tab .source-workbench-tree { max-height: 360px !important; overflow: hidden !important; }
   #sources-tab .source-workbench-sidecar { max-height: none !important; }
+  #sources-tab .source-coding-health { grid-template-columns: 1fr; }
 }
 
 

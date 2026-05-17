@@ -36,6 +36,9 @@ let sourceFileState = new Map();
 let selectedSourceEntry = '';
 let sourceExpandedDirs = new Set(['']);
 let sourceTreeCache = new Map();
+let sourceLibraryRoot = '';
+let sourceResolvedContext = null;
+let sourceCodingSessionId = '';
 let source = null;
 let globalEventSeen = new Set();
 let globalEventFilter = 'all';
@@ -268,7 +271,7 @@ function appendText(parent, tag, className, text) {
   return el;
 }
 function normalizeAssistantText(text) {
-  return String(text || '')
+  const normalized = String(text || '')
     .replace(/\$\\rightarrow\$/g, '→')
     .replace(/\$\\leftarrow\$/g, '←')
     .replace(/\{\\rightarrow\}/g, '→')
@@ -279,6 +282,36 @@ function normalizeAssistantText(text) {
     .replace(/\r\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+  const blockLike = (line) => /^\s*(?:[-*+]\s+|\d+\.\s+|#{1,6}\s+|>\s+|```|~~~|\|)/.test(line);
+  const lines = normalized.split('\n');
+  const rebuilt = [];
+  let paragraph = '';
+  const flushParagraph = () => {
+    if (!paragraph) return;
+    rebuilt.push(paragraph);
+    paragraph = '';
+  };
+  lines.forEach((rawLine) => {
+    const line = rawLine.trimEnd();
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushParagraph();
+      if (rebuilt[rebuilt.length - 1] !== '') rebuilt.push('');
+      return;
+    }
+    if (blockLike(line)) {
+      flushParagraph();
+      rebuilt.push(line);
+      return;
+    }
+    if (!paragraph) {
+      paragraph = trimmed;
+      return;
+    }
+    paragraph += ` ${trimmed}`;
+  });
+  flushParagraph();
+  return rebuilt.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 function appendChatText(parent, role, text) {
   if (text == null || text === '') return null;
@@ -425,6 +458,13 @@ function sessionThinkingSummary(event, block) {
   if (type.includes('task_completed')) return 'Finished thinking';
   if (type.includes('agent_thinking')) return '';
   if (type.includes('model_response')) return '';
+  if (type.includes('tool_call')) {
+    if (data.command) return `Running ${data.command}`;
+    if (data.tool === 'list_files') return 'Listing files';
+    if (data.tool === 'read_file' || data.tool === 'read_file_chunk') return `Reading ${data.path || 'file'}`;
+    if (data.tool === 'workspace_manifest') return 'Inspecting workspace';
+    if (data.tool) return `Using ${data.tool}`;
+  }
   if (type.includes('agent_intent')) {
     if (data.tool) return `Preparing ${data.tool}`;
     if (data.command) return `Preparing command ${data.command}`;
@@ -1049,11 +1089,8 @@ function renderComposerThinkingStatus(state) {
   }
   const duration = formatDurationMs(Math.max(0, (Date.now() - new Date(state.startedAt || new Date().toISOString()).getTime())));
   const toolCount = Number(state.toolCount || 0);
-  const stepBits = [];
-  if (state.step) stepBits.push(`step ${state.step}`);
-  if (state.tokensUsed != null && state.tokensBudget != null) stepBits.push(`~${state.tokensUsed}/${state.tokensBudget} tokens`);
   el.hidden = false;
-  el.innerHTML = `<span class="tiny-spinner square" aria-hidden="true"></span><span class="composer-thinking-copy"><span class="composer-thinking-text">${escapeHtml(state.summary || 'Thinking about your latest request')}</span><span class="composer-thinking-meta">Thinking for ${escapeHtml(duration)}${stepBits.length ? ` • ${escapeHtml(stepBits.join(' • '))}` : ''}${toolCount ? ` • ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}` : ''}${state.approvalPending ? ' • awaiting approval' : ''}</span></span>`;
+  el.innerHTML = `<span class="tiny-spinner square" aria-hidden="true"></span><span class="composer-thinking-copy"><span class="composer-thinking-text">${escapeHtml(state.summary || 'Thinking')}</span><span class="composer-thinking-meta">Thinking for ${escapeHtml(duration)}${toolCount ? ` · ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}` : ''}${state.approvalPending ? ' · awaiting approval' : ''}</span></span>`;
 }
 function deriveComposerThinkingState(events) {
   const rows = Array.isArray(events) ? events : [];
@@ -1121,6 +1158,14 @@ function getThinkingGroup(taskId) {
   if (taskId && sessionThinkingGroups.has(taskId)) return sessionThinkingGroups.get(taskId);
   const groups = Array.from(sessionThinkingGroups.values());
   return groups.length ? groups[groups.length - 1] : null;
+}
+function refreshComposerThinkingStatusForTask(taskId='') {
+  const group = getThinkingGroup(taskId);
+  if (group && Array.isArray(group.events) && group.events.length && !group.closed) {
+    renderComposerThinkingStatus(deriveComposerThinkingState(group.events.map(item => item?.event).filter(Boolean)));
+    return;
+  }
+  renderComposerThinkingStatus(null);
 }
 function renderSessionSnapshotFast(snapshot, sessionId) {
   const timeline = document.getElementById('events');
@@ -1242,6 +1287,7 @@ function renderSessionTimelineEvent(event, options = {}) {
     const nextSummary = sessionThinkingSummary(event, block);
     if (nextSummary) group.summary = nextSummary;
     updateSessionThinkingRow(group);
+    refreshComposerThinkingStatusForTask(group.taskId);
     if (typeLower.includes('approval_required')) renderSessionApprovalRow(event);
     if (String(event?.type || '').toLowerCase().includes('task_completed') || String(event?.type || '').toLowerCase().includes('task_failed')) {
       flushSessionThinkingGroup(event);
@@ -2861,6 +2907,7 @@ function activateSourceTab(path) {
   editor.value = state.content || '';
   updateSourceActions();
   renderSourceTabs();
+  updateSourceCodingPanel();
 }
 function closeSourceTab(path) {
   if (sourceFileState.get(path)?.dirty && !confirm(`${path} has unsaved changes. Close it anyway?`)) return;
@@ -2876,6 +2923,7 @@ function closeSourceTab(path) {
     }
   } else renderSourceTabs();
   updateSourceDirtyTreeMarkers();
+  updateSourceCodingPanel();
 }
 function sourceDepth(path) {
   return (path || '').split('/').filter(Boolean).length;
@@ -2961,6 +3009,7 @@ async function renderSources(path='', options={}) {
       rootItems = rootData.top_level.map(name => ({name, path:name, type:'dir'}));
     }
     const rows = sourceChildRows(rootItems, 0);
+    sourceLibraryRoot = rootData.root || sourceLibraryRoot || '';
     tree.classList.remove('muted');
     tree.innerHTML = rows.length ? rows.join('') : '<div class="muted source-empty-folder">No source folders found.</div>';
     selectedSourceFolder = selectedSourceFolder || targetPath || '';
@@ -2969,6 +3018,7 @@ async function renderSources(path='', options={}) {
     await syncDownloadsWithSourcePath(selectedSourceFolder || '');
     bindSourceTreeEvents(tree);
     resolveCurrentSourceContext().catch(()=>{});
+    updateSourceCodingPanel();
   } catch (e) {
     tree.classList.add('muted');
     tree.textContent = e.message || String(e);
@@ -2986,6 +3036,7 @@ async function openSourceFile(path) {
     if (!sourceOpenTabs.includes(data.path)) sourceOpenTabs.push(data.path);
     sourceFileState.set(data.path, {content:data.content || '', saved:data.content || '', dirty:false});
     activateSourceTab(data.path);
+    updateSourceCodingPanel();
   } catch (e) {
     paneError('Source file could not be opened', e.message || String(e));
   }
@@ -3096,7 +3147,7 @@ function updateSourceActions() {
   const hint = document.getElementById('sourceActionHint');
   const cf = selectedBuildFolder('container');
   const bf = selectedBuildFolder('binary');
-  if (hint) hint.textContent = bf ? `Viewing source: ${bf}. Build it from the Source library row.` : (cf ? `Container source: ${cf}. Build it from the Source library row.` : 'Filter by binary source folder.');
+  if (hint) hint.textContent = bf ? `Viewing source: ${bf}. Build it from the IDE row.` : (cf ? `Container source: ${cf}. Build it from the IDE row.` : 'Filter by binary source folder.');
   const title = document.getElementById('sourceBuildPanelTitle');
   if (title) title.textContent = 'Downloads';
 }
@@ -3172,7 +3223,7 @@ function renderBinaryDownloads(projects) {
     return b.version.localeCompare(a.version, undefined, {numeric:true});
   });
   if (!groups.length) {
-    el.innerHTML = '<span class="muted">No downloads available yet for this category. Build binaries from the Source library row.</span>';
+    el.innerHTML = '<span class="muted">No downloads available yet for this category. Build binaries from the IDE row.</span>';
     return;
   }
   el.innerHTML = groups.map(group => {
@@ -3301,12 +3352,15 @@ async function resolveCurrentSourceContext() {
   const explicitName = document.getElementById('sourceContextSelect')?.value || document.getElementById('sourceContextName')?.value?.trim() || '';
   const path = selectedSourceEntry || selectedSourcePath || selectedSourceFolder || '';
   if (!explicitName && !path) {
+    sourceResolvedContext = null;
     out.textContent = 'Select a context or a source path first.';
+    updateSourceCodingPanel();
     return;
   }
   try {
     const qs = explicitName ? `name=${encodeURIComponent(explicitName)}` : `path=${encodeURIComponent(path)}`;
     const data = await api(`/v1/source-contexts/resolve?${qs}&include_secrets=false`);
+    sourceResolvedContext = data || null;
     out.textContent = JSON.stringify(data, null, 2);
     if (data?.name) {
       const select = document.getElementById('sourceContextSelect');
@@ -3314,8 +3368,234 @@ async function resolveCurrentSourceContext() {
       fillSourceContextForm(data.name);
     }
   } catch (e) {
+    sourceResolvedContext = null;
     out.textContent = e.message || String(e);
+  } finally {
+    updateSourceCodingPanel();
   }
+}
+const SOURCE_TECH_MAP = {
+  '.cs': {stack: 'csharp', container: 'localhost/dotnet-dev:latest', profileHints: ['dotnet', 'csharp', 'c#']},
+  '.csproj': {stack: 'csharp', container: 'localhost/dotnet-dev:latest', profileHints: ['dotnet', 'csharp', 'c#']},
+  '.sln': {stack: 'csharp', container: 'localhost/dotnet-dev:latest', profileHints: ['dotnet', 'csharp', 'c#']},
+  '.py': {stack: 'python', container: 'localhost/python-dev:latest', profileHints: ['python', 'py']},
+  '.js': {stack: 'node', container: 'localhost/node-dev:latest', profileHints: ['node', 'javascript', 'js']},
+  '.ts': {stack: 'node', container: 'localhost/node-dev:latest', profileHints: ['node', 'typescript', 'ts']},
+  '.tsx': {stack: 'node', container: 'localhost/node-dev:latest', profileHints: ['node', 'typescript', 'ts']},
+  '.go': {stack: 'go', container: 'localhost/go-dev:latest', profileHints: ['go', 'golang']},
+  '.c': {stack: 'c', container: 'localhost/c-dev:latest', profileHints: ['c', 'cpp']},
+  '.cc': {stack: 'c', container: 'localhost/c-dev:latest', profileHints: ['c', 'cpp']},
+  '.cpp': {stack: 'c', container: 'localhost/c-dev:latest', profileHints: ['c', 'cpp']},
+  '.h': {stack: 'c', container: 'localhost/c-dev:latest', profileHints: ['c', 'cpp']},
+  '.hpp': {stack: 'c', container: 'localhost/c-dev:latest', profileHints: ['c', 'cpp']},
+  '.md': {stack: 'docs', container: 'localhost/docs-search:latest', profileHints: ['doc', 'docs', 'reader']},
+  '.adoc': {stack: 'docs', container: 'localhost/docs-search:latest', profileHints: ['doc', 'docs', 'reader']},
+};
+function detectSourceTech(paths = sourceOpenTabs) {
+  const counts = new Map();
+  for (const path of (paths || [])) {
+    const match = /\.[A-Za-z0-9]+$/.exec(String(path || '').toLowerCase());
+    const key = match ? match[0] : '';
+    const spec = SOURCE_TECH_MAP[key];
+    if (!spec) continue;
+    counts.set(spec.stack, (counts.get(spec.stack) || 0) + 1);
+  }
+  const winner = Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || 'workspace';
+  const byStack = Object.values(SOURCE_TECH_MAP).find(item => item.stack === winner);
+  return {stack: winner, ...(byStack || {container: 'localhost/python-dev:latest', profileHints: ['coder']})};
+}
+function guessProfileForTech(stackSpec) {
+  const ctxProfile = sourceResolvedContext?.context?.profile;
+  if (ctxProfile && config.agent_profiles?.[ctxProfile]) return ctxProfile;
+  const hints = stackSpec?.profileHints || ['coder'];
+  const entries = Object.entries(config.agent_profiles || {});
+  for (const [name] of entries) {
+    const lower = String(name || '').toLowerCase();
+    if (hints.some(h => lower.includes(h))) return name;
+  }
+  return entries[0]?.[0] || '';
+}
+function guessModelForTech(stackSpec, profileName='') {
+  const ctxProfile = profileName && config.agent_profiles?.[profileName];
+  if (ctxProfile?.model) return ctxProfile.model;
+  const entries = Object.entries(config.models || {}).filter(([name, model]) => {
+    const av = modelAvailability(name);
+    return av.ok && (model.supports_tools || model.supports_chat);
+  });
+  const hints = [...(stackSpec?.profileHints || []), 'coder', 'code'];
+  for (const [name] of entries) {
+    const lower = String(name || '').toLowerCase();
+    if (hints.some(h => lower.includes(h))) return name;
+  }
+  return entries[0]?.[0] || '';
+}
+function defaultEndpointForSource() {
+  const ctxEndpoint = sourceResolvedContext?.context?.preferred_endpoint;
+  if (ctxEndpoint) return ctxEndpoint;
+  const sessionEndpoint = selectedSession?.metadata?.preferred_endpoint;
+  if (sessionEndpoint) return sessionEndpoint;
+  return (window.__pacEndpoints || []).find(r => r.status === 'online')?.id || '';
+}
+function sourceWorkspaceAbsolutePath() {
+  const ctx = sourceResolvedContext?.context || {};
+  const rel = ctx.path_prefix || selectedSourceFolder || selectedSourcePath || '';
+  if (!rel) return sourceLibraryRoot || '';
+  if (/^[A-Za-z]:[\\/]/.test(rel) || rel.startsWith('/')) return rel;
+  if (!sourceLibraryRoot) return rel;
+  return `${String(sourceLibraryRoot).replace(/[\\/]+$/, '')}/${String(rel).replace(/^[\\/]+/, '')}`.replace(/\\/g, '/');
+}
+function findCodingSessionForSource(workspacePath, endpointId) {
+  return (window.__pacSessions || []).find((session) => {
+    const meta = session.metadata || {};
+    return !!meta.ide_mode && String(session.workspace_path || '') === String(workspacePath || '') && String(meta.preferred_endpoint || '') === String(endpointId || '');
+  }) || null;
+}
+function sourceCodingDefaults() {
+  const stackSpec = detectSourceTech();
+  const endpointId = defaultEndpointForSource();
+  const profileName = guessProfileForTech(stackSpec);
+  const modelName = guessModelForTech(stackSpec, profileName);
+  const ctx = sourceResolvedContext?.context || {};
+  const workspacePath = sourceWorkspaceAbsolutePath();
+  const existing = findCodingSessionForSource(workspacePath, endpointId);
+  return {
+    stack: stackSpec.stack,
+    containerImage: ctx.container_image || stackSpec.container,
+    endpointId,
+    profileName,
+    modelName,
+    workspacePath,
+    contextName: sourceResolvedContext?.name || '',
+    existingSession: existing,
+  };
+}
+function sourceOpenFilesSummaryHtml() {
+  const files = sourceOpenTabs.slice();
+  if (!files.length) return 'No open files yet.';
+  return files.map(path => `<div class="inline-browser-row"><div><b>${escapeHtml(sourceFileLabel(path))}</b><div class="muted small-text">${escapeHtml(path)}</div></div></div>`).join('');
+}
+function sourceOpenFilePayload(limit = 3, maxChars = 4000) {
+  const files = [];
+  for (const path of sourceOpenTabs.slice(0, limit)) {
+    const state = sourceFileState.get(path) || {};
+    let content = String(state.content || '');
+    if (!content && path === selectedSourcePath) {
+      const editor = document.getElementById('sourceEditor');
+      content = String(editor?.value || '');
+    }
+    if (content.length > maxChars) content = `${content.slice(0, maxChars)}\n...[truncated]`;
+    files.push({
+      path,
+      label: sourceFileLabel(path),
+      content,
+      dirty: !!state.dirty,
+      active: path === selectedSourcePath,
+    });
+  }
+  return files;
+}
+function updateSourceCodingPanel() {
+  const defaults = sourceCodingDefaults();
+  const endpointName = (window.__pacEndpoints || []).find(r => r.id === defaults.endpointId)?.name || defaults.endpointId || '-';
+  const setText = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value || '-'; };
+  const contextSummary = document.getElementById('sourceCodingContextSummary');
+  if (contextSummary) {
+    contextSummary.textContent = sourceResolvedContext?.name
+      ? `Resolved ${sourceResolvedContext.name} for ${selectedSourceEntry || selectedSourceFolder || 'current source path'}. User memory and personal preferences are managed from Personal settings.`
+      : 'Select a source file or source context to resolve endpoint, profile, and workspace defaults.';
+  }
+  setText('sourceCodingStack', defaults.stack);
+  setText('sourceCodingContainer', defaults.containerImage || '-');
+  setText('sourceCodingEndpoint', endpointName);
+  setText('sourceCodingProfile', defaults.profileName || '-');
+  setText('sourceCodingWorkspace', defaults.workspacePath || '-');
+  setText('sourceCodingContextName', defaults.contextName || 'none');
+  setText('sourceCodingModel', defaults.modelName || '-');
+  setText('sourceCodingSession', defaults.existingSession?.name || (sourceCodingSessionId ? 'attached' : 'not started'));
+  const openFiles = document.getElementById('sourceCodingOpenFiles');
+  if (openFiles) openFiles.innerHTML = sourceOpenFilesSummaryHtml();
+  sourceCodingSessionId = defaults.existingSession?.id || sourceCodingSessionId || '';
+}
+async function ensureSourceCodingSession() {
+  const defaults = sourceCodingDefaults();
+  if (!defaults.workspacePath) throw new Error('Open a source file or select a source context first.');
+  if (!defaults.endpointId) throw new Error('No online endpoint is available for the coding session.');
+  if (defaults.existingSession?.id) {
+    sourceCodingSessionId = defaults.existingSession.id;
+    return defaults.existingSession;
+  }
+  const sessionNameBase = sourceResolvedContext?.name || sourceFileLabel(selectedSourceFolder || selectedSourcePath || 'ide');
+  const payload = {
+    name: `code-${String(sessionNameBase).replace(/[^A-Za-z0-9._-]+/g, '-').toLowerCase()}`,
+    agent_profile: defaults.profileName || null,
+    model: defaults.modelName || null,
+    workspace: {type: 'local', path: defaults.workspacePath},
+    metadata: {
+      preferred_endpoint: defaults.endpointId,
+      endpoint_locked: true,
+      agent_enabled: true,
+      execution_mode: 'pi.dev',
+      preferred_execution_mode: 'container',
+      container_image: defaults.containerImage,
+      ide_mode: true,
+      ide_stack: defaults.stack,
+      ide_source_path: selectedSourceFolder || selectedSourcePath || '',
+      ide_open_files: sourceOpenTabs.slice(),
+      source_context_name: defaults.contextName || null,
+      workspace_trusted: true,
+    },
+  };
+  const session = await api('/v1/sessions', {method:'POST', body: JSON.stringify(payload)});
+  sourceCodingSessionId = session.id;
+  await loadSessions();
+  updateSourceCodingPanel();
+  return session;
+}
+function buildSourceCodingPrompt(userPrompt='') {
+  const prompt = String(userPrompt || '').trim();
+  const currentFile = selectedSourcePath || '';
+  const openFiles = sourceOpenTabs.slice();
+  const filePayload = sourceOpenFilePayload();
+  const parts = [
+    'You are working from the PAC IDE workbench.',
+    `Current source path: ${selectedSourceEntry || selectedSourceFolder || currentFile || '-'}.`,
+    `Open files: ${openFiles.length ? openFiles.join(', ') : 'none'}.`,
+  ];
+  if (currentFile) parts.push(`Current file: ${currentFile}.`);
+  if (sourceResolvedContext?.name) parts.push(`Resolved source context: ${sourceResolvedContext.name}.`);
+  if (filePayload.length) {
+    parts.push('', 'Open file context:');
+    filePayload.forEach((item) => {
+      parts.push(`File: ${item.path}${item.active ? ' [active]' : ''}${item.dirty ? ' [dirty]' : ''}`);
+      parts.push(item.content || '[file is open but its contents are not loaded]');
+      parts.push('');
+    });
+  }
+  if (prompt) parts.push('', prompt);
+  else parts.push('', 'Inspect the current workspace and help with the open files.');
+  return parts.join('\n');
+}
+async function sendPromptToSourceCodingSession(promptText) {
+  const session = await ensureSourceCodingSession();
+  const defaults = sourceCodingDefaults();
+  const openFilePayload = sourceOpenFilePayload();
+  await selectSession(session.id);
+  document.getElementById('taskExecution').value = 'container';
+  document.getElementById('taskImage').value = defaults.containerImage || '';
+  const payload = {
+    prompt: buildSourceCodingPrompt(promptText),
+    metadata: {
+      execution_mode: 'container',
+      container_image: defaults.containerImage,
+      open_files: sourceOpenTabs.slice(),
+      open_file_payload: openFilePayload,
+      current_file: selectedSourcePath || '',
+      source_context_name: sourceResolvedContext?.name || null,
+    },
+  };
+  await api(`/v1/sessions/${encodeURIComponent(session.id)}/tasks`, {method:'POST', body: JSON.stringify(payload)});
+  switchToTab('sessions-tab');
+  await selectSession(session.id);
 }
 function fillSecretForm(secretId='') {
   const select = document.getElementById('sourceSecretSelect');
@@ -4324,6 +4604,7 @@ async function loadSessions() {
     renderProfileUsagePanel();
     renderWorkspaceActivityPanel();
     renderSessionSidebar([]);
+    updateSourceCodingPanel();
     return;
   }
   sessions.slice().reverse().forEach(s => {
@@ -4343,6 +4624,7 @@ async function loadSessions() {
   renderModelActiveSessionsPanel();
   renderProfileUsagePanel();
   renderWorkspaceActivityPanel();
+  updateSourceCodingPanel();
 }
 async function selectSession(id) {
   ensureSessionWorkspaceChrome();
@@ -4360,6 +4642,7 @@ async function selectSession(id) {
   renderComposerThinkingStatus(null);
   resetSessionTimelineState();
   renderSessionSidebar(window.__pacSessions || []);
+  updateSourceCodingPanel();
   try {
     const snapshot = await api(`/v1/sessions/${id}/events/snapshot?latest=true&limit=220`);
     renderSessionSnapshotFast(snapshot, id);
@@ -4397,10 +4680,8 @@ function appendEvent(type, payload) {
   renderSessionTimelineEvent(event);
   renderGlobalEvent(event);
   if (selectedSession?.id && selectedSession.id === event.session_id) {
-    const thinking = deriveComposerThinkingState([event]);
-    if (thinking?.active) renderComposerThinkingStatus(thinking);
     const eventType = String(event?.type || '').toLowerCase();
-    if (eventType.includes('result') || eventType.includes('task_completed') || eventType.includes('task_failed')) renderComposerThinkingStatus(null);
+    if (eventType.includes('result') || eventType.includes('task_completed') || eventType.includes('task_failed')) refreshComposerThinkingStatusForTask(event.task_id);
   }
   const eventType = String(event?.type || type || '').toLowerCase();
   if (
@@ -5125,6 +5406,12 @@ const deleteSourceBtn = document.getElementById('deleteSourceEntry');
 if (deleteSourceBtn) deleteSourceBtn.onclick = () => deleteSelectedSourceEntry().catch(e=>paneError('Source entry could not be deleted', e.message));
 const sourceContextSelect = document.getElementById('sourceContextSelect');
 if (sourceContextSelect) sourceContextSelect.onchange = () => { fillSourceContextForm(sourceContextSelect.value || ''); resolveCurrentSourceContext().catch(()=>{}); };
+const openSourceSetupModalBtn = document.getElementById('openSourceSetupModal');
+const closeSourceSetupModalBtn = document.getElementById('closeSourceSetupModal');
+if (openSourceSetupModalBtn) openSourceSetupModalBtn.onclick = () => { const modal = document.getElementById('sourceSetupModal'); if (modal) modal.hidden = false; };
+if (closeSourceSetupModalBtn) closeSourceSetupModalBtn.onclick = () => { const modal = document.getElementById('sourceSetupModal'); if (modal) modal.hidden = true; };
+const sourceSetupModal = document.getElementById('sourceSetupModal');
+if (sourceSetupModal) sourceSetupModal.onclick = (ev) => { if (ev.target === sourceSetupModal) sourceSetupModal.hidden = true; };
 const saveSourceContextBtn = document.getElementById('saveSourceContext');
 if (saveSourceContextBtn) saveSourceContextBtn.onclick = () => saveSourceContextFromForm();
 const resolveSourceContextBtn = document.getElementById('resolveSourceContext');
@@ -5143,6 +5430,42 @@ const saveSourceVariableBtn = document.getElementById('saveSourceVariable');
 if (saveSourceVariableBtn) saveSourceVariableBtn.onclick = () => saveSourceVariableFromForm();
 const deleteSourceVariableBtn = document.getElementById('deleteSourceVariable');
 if (deleteSourceVariableBtn) deleteSourceVariableBtn.onclick = () => deleteSourceVariableFromForm().catch(e=>paneError('Source variable could not be deleted', e.message));
+const bootstrapSourceCodingSessionBtn = document.getElementById('bootstrapSourceCodingSession');
+if (bootstrapSourceCodingSessionBtn) bootstrapSourceCodingSessionBtn.onclick = async () => {
+  const status = document.getElementById('sourceCodingStatus');
+  try {
+    if (status) { status.hidden = false; status.textContent = 'Starting coding session…'; }
+    const session = await ensureSourceCodingSession();
+    if (status) status.textContent = `Coding session ready: ${session.name || session.id}`;
+    updateSourceCodingPanel();
+  } catch (e) {
+    if (status) status.textContent = `Failed: ${e.message || String(e)}`;
+    paneError('Coding session could not start', e.message || String(e));
+  }
+};
+const openSourceCodingSessionBtn = document.getElementById('openSourceCodingSession');
+if (openSourceCodingSessionBtn) openSourceCodingSessionBtn.onclick = async () => {
+  try {
+    const session = sourceCodingSessionId ? ((window.__pacSessions || []).find(s => s.id === sourceCodingSessionId) || await ensureSourceCodingSession()) : await ensureSourceCodingSession();
+    switchToTab('sessions-tab');
+    await selectSession(session.id);
+  } catch (e) {
+    paneError('Coding session could not be opened', e.message || String(e));
+  }
+};
+const askSourceCodingSessionBtn = document.getElementById('askSourceCodingSession');
+if (askSourceCodingSessionBtn) askSourceCodingSessionBtn.onclick = async () => {
+  const status = document.getElementById('sourceCodingStatus');
+  const prompt = document.getElementById('sourceCodingPrompt')?.value || '';
+  try {
+    if (status) { status.hidden = false; status.textContent = 'Sending to coding session…'; }
+    await sendPromptToSourceCodingSession(prompt);
+    if (status) status.textContent = 'Sent to coding session.';
+  } catch (e) {
+    if (status) status.textContent = `Failed: ${e.message || String(e)}`;
+    paneError('Coding session prompt failed', e.message || String(e));
+  }
+};
 const loadPacRamBtn = document.getElementById('loadPacRam');
 if (loadPacRamBtn) loadPacRamBtn.onclick = () => loadPacRam().catch(e=>paneError('PAC RAM could not be loaded', e.message));
 const savePacRamBtn = document.getElementById('savePacRam');

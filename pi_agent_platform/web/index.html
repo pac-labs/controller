@@ -69,7 +69,7 @@
     <button class="tab" data-tab="profiles-tab">Profiles</button>
     <button class="tab" data-tab="workspaces-tab">Workspaces</button>
     <button class="tab" data-tab="tools-tab">Tools</button>
-    <button class="tab" data-tab="sources-tab">Source library</button>
+    <button class="tab" data-tab="sources-tab">IDE</button>
     <button class="tab" data-tab="approvals-tab">Approvals</button>
     <button class="tab" data-tab="settings-tab">Settings</button>
   </nav>
@@ -411,78 +411,104 @@
         </section>
         <aside class="source-workbench-sidecar">
           <section class="source-sidecard">
-            <div class="section-heading compact-heading"><div><h3>IDE Context</h3><p class="muted">Customer, profile, endpoint, config, and secret references for the selected source area.</p></div></div>
-            <label>Context <select id="sourceContextSelect"><option value="">Select context</option></select></label>
-            <div class="form-grid compact-form source-side-form">
-              <label>Name <input id="sourceContextName" placeholder="docs-customer-a" /></label>
-              <label>Path prefix <input id="sourceContextPathPrefix" placeholder="docs/customer-a" /></label>
-              <label>Customer <input id="sourceContextCustomerId" placeholder="customer-a" /></label>
-              <label>User scope <input id="sourceContextUserScope" placeholder="dorbi" /></label>
-              <label>Profile <input id="sourceContextProfile" placeholder="doc-reader" /></label>
-              <label>Workspace profile <input id="sourceContextWorkspaceProfile" placeholder="docs-workspace" /></label>
-              <label>Preferred endpoint <input id="sourceContextEndpoint" placeholder="endpoint-01" /></label>
-              <label>Container image <input id="sourceContextContainerImage" placeholder="pac/docs-search:latest" /></label>
+            <div class="section-heading compact-heading">
+              <div><h3>Coding Session</h3><p class="muted">Use the selected source area and open files to bootstrap a workspace-backed coding session on an endpoint.</p></div>
+              <button id="openSourceSetupModal" class="ghost-button">Workspace setup</button>
             </div>
-            <label>Description <input id="sourceContextDescription" placeholder="Customer documentation workspace" /></label>
-            <label>Config vars (JSON) <textarea id="sourceContextConfigVars" class="source-side-textarea" spellcheck="false" placeholder="{&#10;  &quot;GIT_AUTHOR_NAME&quot;: &quot;PAC&quot;&#10;}"></textarea></label>
-            <label>Secret refs (JSON) <textarea id="sourceContextSecretRefs" class="source-side-textarea" spellcheck="false" placeholder="{&#10;  &quot;GIT_TOKEN&quot;: &quot;github/pat&quot;&#10;}"></textarea></label>
-            <label>Notes <textarea id="sourceContextNotes" class="source-side-textarea compact" spellcheck="false" placeholder="Loaded into IDE-backed sessions for this customer."></textarea></label>
+            <div id="sourceCodingContextSummary" class="source-secret-audit muted">Select a source path to resolve workspace context.</div>
+            <div class="health-grid source-coding-health">
+              <section class="health-section">
+                <h3>Detected stack</h3>
+                <div class="health-row"><span>Stack</span><b id="sourceCodingStack">-</b></div>
+                <div class="health-row"><span>Container</span><b id="sourceCodingContainer">-</b></div>
+                <div class="health-row"><span>Endpoint</span><b id="sourceCodingEndpoint">-</b></div>
+                <div class="health-row"><span>Profile</span><b id="sourceCodingProfile">-</b></div>
+              </section>
+              <section class="health-section">
+                <h3>Workspace</h3>
+                <div class="health-row"><span>Source path</span><b id="sourceCodingWorkspace">-</b></div>
+                <div class="health-row"><span>Context</span><b id="sourceCodingContextName">-</b></div>
+                <div class="health-row"><span>Model</span><b id="sourceCodingModel">-</b></div>
+                <div class="health-row"><span>Session</span><b id="sourceCodingSession">not started</b></div>
+              </section>
+            </div>
+            <div class="section-heading compact-heading"><div><h3>Open files</h3><p class="muted small-text">These are sent as workspace context to the coding session.</p></div></div>
+            <div id="sourceCodingOpenFiles" class="source-secret-audit muted">No open files yet.</div>
+            <label>Ask the coding session <textarea id="sourceCodingPrompt" class="source-side-textarea compact" spellcheck="false" placeholder="Ask the coding session about the selected files or workspace."></textarea></label>
             <div class="button-row">
-              <button id="saveSourceContext">Save context</button>
-              <button id="resolveSourceContext" class="ghost-button">Resolve current path</button>
-              <button id="deleteSourceContext" class="ghost-button">Delete</button>
+              <button id="bootstrapSourceCodingSession">Start coding session</button>
+              <button id="askSourceCodingSession" class="ghost-button">Send to coding session</button>
+              <button id="openSourceCodingSession" class="ghost-button">Open session</button>
             </div>
+            <div id="sourceCodingStatus" class="inline-result compact-result" hidden></div>
+          </section>
+          <section class="source-sidecard">
+            <div class="section-heading compact-heading"><div><h3>Resolved Workspace Bundle</h3><p class="muted">Workspace variables and secret refs are resolved here. Personal memory, tokens, and preferences live in your profile settings.</p></div></div>
             <pre id="sourceContextResolved" class="inline-result compact-result source-side-result">Select a source context to inspect the resolved environment bundle.</pre>
-          </section>
-          <section class="source-sidecard">
-            <div class="section-heading compact-heading"><div><h3>Secrets</h3><p class="muted">Reusable endpoint and IDE secrets for Git, package registries, and client operations.</p></div></div>
-            <label>Secret <select id="sourceSecretSelect"><option value="">Select secret</option></select></label>
-            <label>ID <input id="sourceSecretId" placeholder="github/pat" /></label>
-            <label>Value <input id="sourceSecretValue" type="password" placeholder="Paste a secret value" /></label>
-            <label>Meta (JSON) <textarea id="sourceSecretMeta" class="source-side-textarea compact" spellcheck="false" placeholder="{&#10;  &quot;scope&quot;: &quot;git&quot;&#10;}"></textarea></label>
-            <div class="button-row">
-              <button id="saveSourceSecret">Save secret</button>
-              <button id="deleteSourceSecret" class="ghost-button">Delete</button>
-            </div>
-            <div id="sourceSecretAudit" class="source-secret-audit muted">No secret audit events loaded yet.</div>
-          </section>
-          <section class="source-sidecard">
-            <div class="section-heading compact-heading"><div><h3>Source Variables</h3><p class="muted">Reusable config fragments that contexts and IDE clients can resolve without exposing secrets.</p></div></div>
-            <label>Variable <select id="sourceVariableSelect"><option value="">Select variable</option></select></label>
-            <label>ID <input id="sourceVariableId" placeholder="GIT_AUTHOR_EMAIL" /></label>
-            <label>Description <input id="sourceVariableDescription" placeholder="Default Git identity for customer work" /></label>
-            <label>Tags (comma separated) <input id="sourceVariableTags" placeholder="git,customer-a,ide" /></label>
-            <label>Value <textarea id="sourceVariableValue" class="source-side-textarea compact" spellcheck="false" placeholder="pac@example.com"></textarea></label>
-            <div class="button-row">
-              <button id="saveSourceVariable">Save variable</button>
-              <button id="deleteSourceVariable" class="ghost-button">Delete</button>
-            </div>
-            <div id="sourceVariableList" class="source-secret-audit muted">No source variables loaded yet.</div>
-          </section>
-          <section class="source-sidecard">
-            <div class="section-heading compact-heading"><div><h3>PAC RAM</h3><p class="muted">Durable profile, user, and workspace memory for context bootstrapping and personal growth.</p></div></div>
-            <div class="form-grid compact-form source-side-form">
-              <label>Kind <select id="pacRamKind"><option value="profile">Profile</option><option value="user">User</option><option value="workspace">Workspace</option></select></label>
-              <label>Key <input id="pacRamKey" placeholder="doc-reader" /></label>
-            </div>
-            <label>Content <textarea id="pacRamContent" class="source-side-textarea source-pac-ram" spellcheck="false" placeholder="PAC RAM content is loaded and saved as Markdown."></textarea></label>
-            <div class="button-row">
-              <button id="loadPacRam">Load memory</button>
-              <button id="savePacRam" class="ghost-button">Save memory</button>
-            </div>
-            <div id="pacRamSummary" class="source-secret-audit muted">No PAC RAM metadata loaded yet.</div>
-          </section>
-          <section class="source-sidecard">
-            <div class="section-heading compact-heading"><div><h3>Marketplace</h3><p class="muted">Search GGUF-capable models and compare them with configured provider hardware.</p></div></div>
-            <div class="button-row">
-              <input id="marketplaceQuery" class="source-marketplace-query" placeholder="qwen coder" />
-              <button id="searchMarketplace" class="ghost-button">Search</button>
-            </div>
-            <div id="marketplaceResults" class="source-marketplace-results muted">Search the marketplace to inspect model fit against PAC providers.</div>
           </section>
         </aside>
       </div>
     </section>
+
+    <div id="sourceSetupModal" class="modal-backdrop" hidden>
+      <section class="modal-card wide-modal" role="dialog" aria-modal="true" aria-labelledby="sourceSetupModalTitle">
+        <div class="section-heading"><div><h2 id="sourceSetupModalTitle">Workspace setup</h2><p class="muted">Source contexts and workspace variables are configured here. User memory, tokens, and preferences are managed from Personal settings.</p></div><button id="closeSourceSetupModal" class="ghost-button">Close</button></div>
+        <div class="updates-layout">
+          <div class="updates-main">
+            <section class="source-sidecard">
+              <div class="section-heading compact-heading"><div><h3>IDE Context</h3><p class="muted">Customer, profile, endpoint, container image, and variable references for the selected source area.</p></div></div>
+              <label>Context <select id="sourceContextSelect"><option value="">Select context</option></select></label>
+              <div class="form-grid compact-form source-side-form">
+                <label>Name <input id="sourceContextName" placeholder="docs-customer-a" /></label>
+                <label>Path prefix <input id="sourceContextPathPrefix" placeholder="docs/customer-a" /></label>
+                <label>Customer <input id="sourceContextCustomerId" placeholder="customer-a" /></label>
+                <label>User scope <input id="sourceContextUserScope" placeholder="dorbi" /></label>
+                <label>Profile <input id="sourceContextProfile" placeholder="doc-reader" /></label>
+                <label>Workspace profile <input id="sourceContextWorkspaceProfile" placeholder="docs-workspace" /></label>
+                <label>Preferred endpoint <input id="sourceContextEndpoint" placeholder="endpoint-01" /></label>
+                <label>Container image <input id="sourceContextContainerImage" placeholder="pac/docs-search:latest" /></label>
+              </div>
+              <label>Description <input id="sourceContextDescription" placeholder="Customer documentation workspace" /></label>
+              <label>Config vars (JSON) <textarea id="sourceContextConfigVars" class="source-side-textarea" spellcheck="false" placeholder="{&#10;  &quot;GIT_AUTHOR_NAME&quot;: &quot;PAC&quot;&#10;  &quot;PAC_RAM_USER&quot;: &quot;{{PAC_RAM_USER}}&quot;&#10;}"></textarea></label>
+              <label>Secret refs (JSON) <textarea id="sourceContextSecretRefs" class="source-side-textarea" spellcheck="false" placeholder="{&#10;  &quot;GIT_TOKEN&quot;: &quot;github/pat&quot;&#10;}"></textarea></label>
+              <label>Notes <textarea id="sourceContextNotes" class="source-side-textarea compact" spellcheck="false" placeholder="Loaded into IDE-backed sessions for this customer."></textarea></label>
+              <div class="button-row">
+                <button id="saveSourceContext">Save context</button>
+                <button id="resolveSourceContext" class="ghost-button">Resolve current path</button>
+                <button id="deleteSourceContext" class="ghost-button">Delete</button>
+              </div>
+            </section>
+          </div>
+          <aside class="updates-detail-panel">
+            <section class="source-sidecard">
+              <div class="section-heading compact-heading"><div><h3>Workspace variables</h3><p class="muted">Reusable config fragments that resolve into trusted workspaces without exposing secret values directly.</p></div></div>
+              <label>Variable <select id="sourceVariableSelect"><option value="">Select variable</option></select></label>
+              <label>ID <input id="sourceVariableId" placeholder="GIT_AUTHOR_EMAIL" /></label>
+              <label>Description <input id="sourceVariableDescription" placeholder="Default Git identity for customer work" /></label>
+              <label>Tags (comma separated) <input id="sourceVariableTags" placeholder="git,customer-a,ide" /></label>
+              <label>Value <textarea id="sourceVariableValue" class="source-side-textarea compact" spellcheck="false" placeholder="pac@example.com"></textarea></label>
+              <div class="button-row">
+                <button id="saveSourceVariable">Save variable</button>
+                <button id="deleteSourceVariable" class="ghost-button">Delete</button>
+              </div>
+              <div id="sourceVariableList" class="source-secret-audit muted">No source variables loaded yet.</div>
+            </section>
+            <section class="source-sidecard">
+              <div class="section-heading compact-heading"><div><h3>Workspace secrets</h3><p class="muted">Secrets are resolved into trusted workspaces and endpoint jobs. Use Personal settings for your own identity and long-lived memory.</p></div></div>
+              <label>Secret <select id="sourceSecretSelect"><option value="">Select secret</option></select></label>
+              <label>ID <input id="sourceSecretId" placeholder="github/pat" /></label>
+              <label>Value <input id="sourceSecretValue" type="password" placeholder="Paste a secret value" /></label>
+              <label>Meta (JSON) <textarea id="sourceSecretMeta" class="source-side-textarea compact" spellcheck="false" placeholder="{&#10;  &quot;scope&quot;: &quot;git&quot;&#10;}"></textarea></label>
+              <div class="button-row">
+                <button id="saveSourceSecret">Save secret</button>
+                <button id="deleteSourceSecret" class="ghost-button">Delete</button>
+              </div>
+              <div id="sourceSecretAudit" class="source-secret-audit muted">No secret audit events loaded yet.</div>
+            </section>
+          </aside>
+        </div>
+      </section>
+    </div>
 
 
     <div id="downloadsModal" class="modal-backdrop" hidden>
