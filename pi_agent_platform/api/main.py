@@ -625,7 +625,7 @@ def _ensure_controller_harness_session() -> dict[str, Any]:
     if not pac_wrapper.get('available'):
         return {'ok': False, 'enabled': True, 'runner': runner.model_dump(), 'workspace': workspace.model_dump(), 'session': existing.model_dump() if existing else None, 'message': pac_wrapper.get('reason') or 'The main server requires the local PAC wrapper before the controller session can run.'}
     pi_container = (runner.capabilities or {}).get('pi_container') or {}
-    if not pi_container.get('available'):
+    if not (pi_container.get('image_available') or pi_container.get('available')):
         return {'ok': False, 'enabled': True, 'runner': runner.model_dump(), 'workspace': workspace.model_dump(), 'session': existing.model_dump() if existing else None, 'message': pi_container.get('reason') or 'The main server requires the local pi.dev runtime image before the controller session can run.'}
     wrapper_process = (runner.metadata or {}).get('pac_wrapper_process') or {}
     if not wrapper_process.get('running'):
@@ -941,11 +941,12 @@ def _bootstrap_local_controller_pi_dev() -> dict[str, Any]:
     install_result = None
     refreshed = _refresh_local_runner_metadata(emit_event=False)
     pi_container = (refreshed.capabilities or {}).get('pi_container') or {}
-    if settings.auto_install_pi_dev and not pi_container.get('available'):
+    if settings.auto_install_pi_dev and not (pi_container.get('image_available') or pi_container.get('available')):
         install_result = _run_local_pi_harness_install(runtime='auto')
         steps.append({'step': 'pi_dev_image', **install_result})
     else:
-        steps.append({'step': 'pi_dev_image', 'ok': bool(pi_container.get('available')), 'status': 'ready' if pi_container.get('available') else 'missing', 'pi_container': pi_container})
+        image_present = bool(pi_container.get('image_available') or pi_container.get('available'))
+        steps.append({'step': 'pi_dev_image', 'ok': image_present, 'status': 'ready' if image_present else 'missing', 'pi_container': pi_container})
     daemon_result = _start_pi_dev_daemon() if settings.auto_install_pi_dev else {'ok': False, 'status': 'disabled', 'message': 'pi.dev daemon auto-start is disabled.'}
     steps.append({'step': 'pi_dev_daemon', **daemon_result})
     wrapper_process = _start_controller_wrapper_once()
@@ -5003,7 +5004,7 @@ def _agent_enablement_state(runner: Runner, requested: bool | None = None) -> di
     wrapper = caps.get('pac_wrapper') or {}
     node_ok = bool(req.get('node') or (caps.get('tools') or {}).get('node', {}).get('available'))
     wrapper_ok = bool(req.get('pac_wrapper') or wrapper.get('available'))
-    pi_ok = bool(pi_container.get('available'))
+    pi_ok = bool(pi_container.get('image_available') or pi_container.get('available'))
     wrapper_process = runner.metadata.get('pac_wrapper_process') or {}
     pi_daemon = runner.metadata.get('pi_dev_daemon') or {}
     wants_agent = bool(requested if requested is not None else runner.metadata.get('agent_enabled'))
@@ -5135,8 +5136,9 @@ def _refresh_local_runner_metadata(emit_event: bool = False) -> Runner:
     runner.allow_container_execution = bool(capabilities.get('container_runtimes'))
     default_workspace = _endpoint_default_workspace('local-PAC', runner.name)
     pi_container = capabilities.get('pi_container') or {}
-    agent_status = 'ready' if pi_container.get('available') else 'attention'
-    agent_detail = 'pi.dev runtime is available.' if pi_container.get('available') else (pi_container.get('reason') or 'pi.dev runtime image is not available on this endpoint.')
+    image_present = bool(pi_container.get('image_available') or pi_container.get('available'))
+    agent_status = 'attention'
+    agent_detail = 'pi.dev image is installed, but the runtime is not running yet.' if image_present else (pi_container.get('reason') or 'pi.dev runtime image is not available on this endpoint.')
     previous_pi_state = runner.metadata.get('pi_container_available')
     runner.metadata.update({
         'local_control_plane': True,
@@ -5144,7 +5146,7 @@ def _refresh_local_runner_metadata(emit_event: bool = False) -> Runner:
         'endpoint_version': PAC_VERSION,
         'runner_version': PAC_VERSION,
         'agent_runtime': _runtime_agent_state('pac-local', agent_status, agent_detail, pi_container=pi_container),
-        'pi_container_available': bool(pi_container.get('available')),
+        'pi_container_available': image_present,
         'agent_tools': runner.metadata.get('agent_tools') or [name for name, tool in config.tools.items() if tool.enabled],
         'tool_packages': runner.metadata.get('tool_packages') or list(config.tool_packages.keys()),
         'default_workspace': default_workspace,
@@ -5153,12 +5155,14 @@ def _refresh_local_runner_metadata(emit_event: bool = False) -> Runner:
     runner.metadata['pac_wrapper_process'] = _wrapper_process_state() if '_wrapper_process_state' in globals() else {'running': False}
     runner.metadata['pi_dev_daemon'] = _pi_dev_daemon_state() if '_pi_dev_daemon_state' in globals() else {'running': False}
     if runner.metadata.get('pac_wrapper_process', {}).get('running'):
-        runner.metadata['agent_runtime'] = _runtime_agent_state('pac-wrapper', 'ready', 'Local PAC wrapper process is running and connected.', wrapper=runner.metadata.get('pac_wrapper_process'), pi_daemon=runner.metadata.get('pi_dev_daemon'))
+        runtime_pi = dict(pi_container)
+        runtime_pi['available'] = bool(runner.metadata.get('pi_dev_daemon', {}).get('running'))
+        runner.metadata['agent_runtime'] = _runtime_agent_state('pac-wrapper', 'ready', 'Local PAC wrapper process is running and connected.', wrapper=runner.metadata.get('pac_wrapper_process'), pi_daemon=runner.metadata.get('pi_dev_daemon'), pi_container=runtime_pi)
     runner = _normalise_endpoint_metadata(runner, True)
     runner.last_seen_at = Event(session_id='system', type='noop', message='noop').created_at
     store.add_runner(runner)
-    if previous_pi_state is None or bool(previous_pi_state) != bool(pi_container.get('available')):
-        event_type = 'endpoint_pi_container_ready' if pi_container.get('available') else 'endpoint_pi_container_unavailable'
+    if previous_pi_state is None or bool(previous_pi_state) != image_present:
+        event_type = 'endpoint_pi_container_ready' if image_present else 'endpoint_pi_container_unavailable'
         store.add_event(Event(session_id='system', type=event_type, message=agent_detail, data={'runner_id': runner.id, 'pi_container': pi_container}))
     if emit_event:
         store.add_event(Event(session_id='system', type='local_runner_added', message='Local PAC endpoint refreshed', data={'runner_id': runner.id, 'containers': len(containers), 'pi_container': pi_container}))
@@ -5298,11 +5302,13 @@ def runner_heartbeat(payload: RunnerHeartbeat, _auth: None = Depends(require_aut
     runner.metadata['runner_version'] = payload.version or runner.metadata.get('runner_version')
     runner.metadata['endpoint_version'] = payload.version or runner.metadata.get('endpoint_version')
     pi_container = runner.capabilities.get('pi_container') if isinstance(runner.capabilities, dict) else None
-    pi_available = bool((pi_container or {}).get('available'))
+    advertised_runtime = ((payload.metadata or {}).get('agent_runtime') or {})
+    pi_available = str(advertised_runtime.get('status') or '').lower() == 'ready'
+    pi_image_present = bool((pi_container or {}).get('image_available') or (pi_container or {}).get('available'))
     runner.metadata['agent_runtime'] = _runtime_agent_state(
         'remote-runner',
         'ready' if pi_available else 'attention',
-        'Endpoint runner heartbeat received.' if pi_available else ((pi_container or {}).get('reason') or 'pi.dev runtime image is not available on this endpoint.'),
+        'Endpoint runner heartbeat received.' if pi_available else (str(advertised_runtime.get('detail') or '').strip() or ((pi_container or {}).get('reason') or ('pi.dev image is installed, but the runtime is not ready on this endpoint.' if pi_image_present else 'pi.dev runtime image is not available on this endpoint.'))),
         pi_container_image=runner.metadata.get('pi_container_image'),
         pi_container=pi_container,
     )

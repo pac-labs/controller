@@ -156,6 +156,7 @@ def discover_host() -> dict[str, Any]:
     caps['pi_container'] = {
         'image': image,
         'available': False,
+        'image_available': False,
         'runtime': None,
         'reason': 'No container runtime found. Install podman or docker on the endpoint.',
         'hint': 'The Pi agent harness image is built locally on each endpoint so it matches that machine and runtime.',
@@ -171,10 +172,11 @@ def discover_host() -> dict[str, Any]:
         if code == 0:
             caps['pi_container'] = {
                 'image': image,
-                'available': True,
+                'available': False,
+                'image_available': True,
                 'runtime': runtime,
-                'reason': 'Pi agent harness image is available on this endpoint.',
-                'hint': 'Prompt-only coding tasks can run through this local image.',
+                'reason': 'Pi agent harness image is installed on this endpoint, but the pi.dev runtime is not verified as running yet.',
+                'hint': 'Start or bootstrap pi.dev before treating this endpoint as ready for harness-backed workloads.',
             }
             break
         caps['pi_container']['last_check'] = {'runtime': runtime, 'exit_code': code, 'stderr': err.strip()[-1000:], 'stdout': out.strip()[-1000:]}

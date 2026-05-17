@@ -2093,6 +2093,7 @@ function endpointFeatureChips(r, effectiveTools = []) {
   add('commands', (r.status === 'online' || r.metadata?.local_control_plane) ? 'available' : 'missing', true, 'Endpoint must be reachable for queued commands.');
   add('workspace', r.metadata?.default_workspace ? 'available' : 'missing', true, 'Every endpoint should have a default workspace.');
   add('pi.dev', pi.available ? 'available' : 'missing', true, pi.reason || 'Required for pi.dev container sessions on this endpoint.');
+  if ((pi.image_available || pi.available) && !pi.available) add('pi.dev image', 'available', false, 'The harness image is installed, but the runtime is not healthy yet.');
   add('PAC wrapper', (enablement.node_available && enablement.pi_available) ? 'available' : 'missing', !!(enablement.requested || enablement.required), enablement.detail || 'Required when this endpoint runs pi.dev workloads.');
   add('container runtime', (caps.container_runtimes || []).length ? 'available' : 'missing', true, 'Required to build/run the pi.dev and containerized tooling.');
   if (caps.gpu?.available || (caps.gpu?.devices || []).length) add('GPU', 'available', false, 'Detected endpoint hardware.');
@@ -2114,7 +2115,8 @@ function endpointRuntimeLines(r) {
   const pi = endpointPiContainer(r);
   if (pi) {
     lines.push(`pi image: ${pi.image || '-'}`);
-    lines.push(`pi image available: ${pi.available ? 'yes' : 'no'}`);
+    lines.push(`pi image present: ${(pi.image_available || pi.available) ? 'yes' : 'no'}`);
+    lines.push(`pi runtime ready: ${pi.available ? 'yes' : 'no'}`);
     if (pi.runtime) lines.push(`container runtime: ${pi.runtime}`);
     if (pi.reason) lines.push(`reason: ${pi.reason}`);
     if (pi.hint) lines.push(`hint: ${pi.hint}`);
@@ -3530,7 +3532,7 @@ async function loadRunners() {
     const wrapperText = enablement.pac_wrapper_available ? 'installed' : 'missing';
     const agentClass = enablement.status === 'ready' ? 'ok-pill' : (enablement.status === 'blocked' ? 'warn-pill' : '');
     const piContainer = endpointPiContainer(r);
-    const piMissing = piContainer && piContainer.available === false;
+    const piMissing = piContainer && !(piContainer.image_available || piContainer.available);
     const featureChips = endpointFeatureChips(r, effectiveTools);
     card.innerHTML = `<div class="endpoint-head"><div><h3>${escapeHtml(r.name)}</h3><div class="muted small-text">${escapeHtml(r.id)}</div></div><div><span class="pill ${r.status === 'online' ? 'ok-pill' : ''}">${escapeHtml(r.status)}</span>${localBadge}</div></div>
       <div class="endpoint-features">${featureChips}</div>
