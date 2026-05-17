@@ -389,7 +389,7 @@ def _config_payload() -> dict[str, Any]:
     return {
         'server': config.server.model_dump(),
         'runtime': config.runtime.model_dump(),
-        'controller_harness': config.controller_harness.model_dump(),
+        'controller_harness': config.controller_harness.model_dump(exclude={'service_token'}),
         'source_updates': config.source_updates.model_dump(),
         'auth': config.auth.model_dump(exclude={'dev_token'}),
         'tls': config.tls.model_dump() if hasattr(config, 'tls') else {},
@@ -778,7 +778,21 @@ def _local_controller_url() -> str:
 def _controller_auth_token() -> str:
     if config.auth.enabled and config.auth.mode == 'dev-token' and config.auth.dev_token:
         return str(config.auth.dev_token)
+    if config.auth.enabled:
+        token = str(getattr(config.controller_harness, 'service_token', '') or '').strip()
+        if token:
+            return token
     return ''
+
+
+def _ensure_controller_service_token() -> str:
+    token = str(getattr(config.controller_harness, 'service_token', '') or '').strip()
+    if token:
+        return token
+    token = uuid.uuid4().hex + uuid.uuid4().hex
+    config.controller_harness.service_token = token
+    save_config(config)
+    return token
 
 
 def _wrapper_process_state() -> dict[str, Any]:
@@ -817,6 +831,8 @@ def _start_controller_wrapper_once() -> dict[str, Any]:
         'PAC_UPDATE_CHANNEL': 'controller',
     })
     token = _controller_auth_token()
+    if config.auth.enabled and not token:
+        token = _ensure_controller_service_token()
     if token:
         env['PAC_TOKEN'] = token
     ca_file = str(Path(config.tls.ca_cert_file).expanduser()) if config.tls.enabled else ''
@@ -1198,6 +1214,9 @@ def _admin_auth_valid(authorization: str | None) -> bool:
     token = _bearer_token(authorization)
     if not token:
         return False
+    service_token = str(getattr(config.controller_harness, 'service_token', '') or '').strip()
+    if service_token and token == service_token:
+        return True
     if config.auth.mode == 'dev-token':
         return token == config.auth.dev_token
     if config.auth.mode == 'user-password':
@@ -1212,6 +1231,9 @@ def _get_user_from_auth(authorization: str | None = Header(default=None)) -> Cur
     token = _bearer_token(authorization)
     if not token:
         raise HTTPException(status_code=401, detail='Missing authorization header')
+    service_token = str(getattr(config.controller_harness, 'service_token', '') or '').strip()
+    if service_token and token == service_token:
+        return CurrentUser(None, True)
     if config.auth.mode == 'dev-token':
         if token == config.auth.dev_token:
             return CurrentUser(None, True)

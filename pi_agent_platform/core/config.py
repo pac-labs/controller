@@ -256,6 +256,7 @@ class ControllerHarnessConfig(BaseModel):
     wrapper_binary_project: str = "pac-endpoint"
     wrapper_binary_name: str = "pac-endpoint"
     wrapper_install_dir: str = "~/.pacp/bin"
+    service_token: str | None = None
     required_tools: list[str] = Field(default_factory=lambda: ["git", "python3", "podman"] )
 
 
