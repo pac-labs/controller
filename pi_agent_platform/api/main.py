@@ -5069,6 +5069,12 @@ def _apply_version_package_from_path(package_path: Path, filename: str, restart_
     copied = _copy_package_tree(package_root, app_dir)
     pip_result = _pip_install_editable(app_dir)
     run_script_result = _write_runtime_run_script(app_dir)
+    wrapper_result = _ensure_controller_wrapper(allow_build=True)
+    wrapper_restart_result = _restart_controller_wrapper() if wrapper_result.get('ok') else {'ok': False, 'status': 'skipped', 'message': 'Wrapper restart skipped because wrapper update did not succeed.'}
+    try:
+        _refresh_local_runner_metadata()
+    except Exception:
+        pass
     marker = pacp_path('run', 'restart-required')
     marker.write_text(f'PAC update applied at {stamp}\nsource={package_path}\nbackup={backup_dir}\n', encoding='utf-8')
     status = 'installed_restarting' if restart_after_update else 'installed_restart_required'
@@ -5083,6 +5089,8 @@ def _apply_version_package_from_path(package_path: Path, filename: str, restart_
         'members': len(members),
         'pip': pip_result,
         'run_script': run_script_result,
+        'wrapper_update': wrapper_result,
+        'wrapper_restart': wrapper_restart_result,
         'preservation_archive': archive_meta,
         'preservation_diff': diff_meta,
         'restart_required': True,

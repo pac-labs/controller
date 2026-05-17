@@ -680,7 +680,7 @@ function openUpdateConfirmOverlay(meta) {
   const currentVersion = String(meta?.current_version || config?.version || config?.setup_status?.version || '-');
   const nextVersion = String(meta?.latest_version || '').trim();
   if (title) title.textContent = 'Apply PAC release';
-  if (message) message.textContent = `PAC will install ${nextVersion ? `v${nextVersion}` : 'the latest release'} and restart the controller.`;
+  if (message) message.textContent = `Install ${nextVersion ? `v${nextVersion}` : 'the latest release'} and restart PAC?`;
   if (body) {
     const bullets = Array.isArray(meta?.compare_changes) ? meta.compare_changes.slice(0, 8) : [];
     body.innerHTML = `
@@ -688,7 +688,6 @@ function openUpdateConfirmOverlay(meta) {
         <div>Current version: <b>v${escapeHtml(currentVersion)}</b></div>
         <div>Target version: <b>${escapeHtml(nextVersion ? `v${nextVersion}` : 'latest')}</b></div>
         ${bullets.length ? `<div style="margin-top:.65rem"><b>Included changes</b></div><ul>${bullets.map((change) => `<li>${escapeHtml(String(change))}</li>`).join('')}</ul>` : ''}
-        <div style="margin-top:.65rem">The screen will remain in this state until PAC restarts and the web UI refreshes.</div>
       </div>`;
   }
   if (proceed) {
@@ -718,9 +717,9 @@ function setUpdateConfirmOverlayRestarting(version, seconds = 18) {
   overlay.hidden = false;
   overlay.dataset.locked = 'true';
   if (title) title.textContent = 'Restarting PAC';
-  if (message) message.textContent = `PAC is applying ${version ? `v${version}` : 'the release'} and restarting now.`;
+  if (message) message.textContent = `${version ? `v${version}` : 'The release'} is being applied.`;
   if (body) {
-    body.innerHTML = `<div class="updates-detail-copy"><div>The controller is restarting.</div><div>This screen will remain visible until the web UI refreshes automatically.</div><div>Refresh window: about ${escapeHtml(String(seconds))} seconds.</div></div>`;
+    body.innerHTML = `<div class="updates-detail-copy"><div>PAC is restarting.</div><div>Refresh when the UI returns.</div></div>`;
   }
   if (proceed) {
     proceed.disabled = true;
