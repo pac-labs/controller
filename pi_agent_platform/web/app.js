@@ -3906,6 +3906,16 @@ function renderControllerHarnessSettings(status=null) {
   if (box) {
     const session = status?.session;
     const runner = status?.runner;
+    const diag = status?.diagnostics || {};
+    const wrapperCap = runner?.capabilities?.pac_wrapper || {};
+    const wrapperProc = diag.wrapper_process || {};
+    const pi = runner?.capabilities?.pi_container || {};
+    const wrapperText = wrapperCap.available
+      ? (wrapperCap.path || wrapperProc.path || 'available')
+      : (wrapperProc.available ? (wrapperProc.path || 'installed') : (wrapperCap.reason || 'missing'));
+    const piText = (pi.image_available || pi.available)
+      ? `${pi.image || 'available'}${pi.available ? '' : ' (image present, runtime not ready)'}`
+      : (pi.reason || 'missing');
     const rows = {
       'State': status ? (status.ok ? 'ready' : 'needs setup') : 'not checked',
       'Message': status?.message || 'Saved settings are shown below.',
@@ -3913,8 +3923,8 @@ function renderControllerHarnessSettings(status=null) {
       'Session': session?.name || '-',
       'Model': session?.model || h.model || 'profile default',
       'Workspace': session?.workspace_path || '-',
-      'PAC wrapper': runner?.capabilities?.pac_wrapper?.available ? (runner.capabilities.pac_wrapper.path || 'available') : (runner?.capabilities?.pac_wrapper?.reason || 'missing'),
-      'pi.dev image': runner?.capabilities?.pi_container?.available ? (runner.capabilities.pi_container.image || 'available') : (runner?.capabilities?.pi_container?.reason || 'missing'),
+      'PAC wrapper': wrapperText,
+      'pi.dev image': piText,
     };
     box.innerHTML = Object.entries(rows).map(([k,v]) => `<div><span>${k}</span><code>${escapeHtml(String(v))}</code></div>`).join('');
   }
