@@ -669,6 +669,8 @@ def _ensure_controller_harness_session() -> dict[str, Any]:
     runner = _ensure_controller_harness_runner()
     workspace = _ensure_controller_harness_workspace()
     model_name, profile_name, permission = _harness_model_and_profile()
+    profile = config.agent_profiles.get(profile_name) if profile_name else None
+    desired_context_mode = (profile.context_mode if profile and getattr(profile, 'context_mode', None) else settings.context_mode) or 'medium'
     existing = _find_controller_harness_session()
     pac_wrapper = (runner.capabilities or {}).get('pac_wrapper') or {}
     if not pac_wrapper.get('available'):
@@ -698,18 +700,24 @@ def _ensure_controller_harness_session() -> dict[str, Any]:
             existing.agent_profile = profile_name; changed = True
         if existing.permission_profile != permission:
             existing.permission_profile = permission; changed = True
+        if existing.context_mode != desired_context_mode:
+            existing.context_mode = desired_context_mode; changed = True
         if existing.workspace_path != (workspace.path or _platform_workspace_path()):
             existing.workspace_path = workspace.path or _platform_workspace_path(); changed = True
+        desired_tools = list(config.tools.keys()) if settings.expose_platform_tools else []
+        if existing.tools != desired_tools:
+            existing.tools = desired_tools; changed = True
         existing.workspace = existing.workspace.model_copy(update={'type': 'profile', 'profile': settings.workspace_profile, 'path': workspace.path})
         existing.metadata.update({'controller_harness': True, 'preferred_endpoint': settings.runner_id, 'endpoint_locked': True, 'agent_enabled': True, 'execution_mode': 'pi.dev'})
         if changed:
+            existing.touch()
             store.add_session(existing)
         return {'ok': True, 'enabled': True, 'runner': runner.model_dump(), 'workspace': workspace.model_dump(), 'session': existing.model_dump(), 'message': 'Controller pi.dev session is active'}
     session = Session(
         name=settings.session_name,
         agent_profile=profile_name,
         permission_profile=permission,
-        context_mode=settings.context_mode,
+        context_mode=desired_context_mode,
         workspace={'type': 'profile', 'profile': settings.workspace_profile, 'path': workspace.path},
         workspace_path=workspace.path or _platform_workspace_path(),
         model=model_name,

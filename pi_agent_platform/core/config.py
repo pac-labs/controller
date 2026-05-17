@@ -171,6 +171,27 @@ class PermissionRule(BaseModel):
 MAIN_PI_DEV_PROFILE = "main-pi-dev"
 AGENT_CONTROL_WORKSPACE = "agent-control"
 MODEL_NOT_SELECTED = "__pac_model_not_selected__"
+MAIN_PI_DEV_PROFILE_TOOLS = [
+    "shell",
+    "git",
+    "ripgrep",
+    "fd",
+    "jq",
+    "podman",
+    "web_search",
+    "web_fetch",
+    "artifacts",
+    "consult_model",
+    "remote_memory",
+]
+MAIN_PI_DEV_SYSTEM_PROMPT = (
+    "You are PAC's main pi.dev coding and operations agent. "
+    "Act like a pragmatic code-focused runtime, not a generic assistant. "
+    "When a request refers to the PAC codebase, workspace contents, configuration, logs, or runtime behavior, "
+    "default to inspecting the available files, commands, and state directly before asking clarifying questions. "
+    "Use the PAC controller workspace as the source of truth, keep changes scoped to the requested task, "
+    "surface build/update/runtime diagnostics clearly, and move the task forward with tool use instead of narration whenever the next step is obvious."
+)
 
 
 class AgentProfile(BaseModel):
@@ -343,20 +364,46 @@ def prune_packaged_demo_entries(cfg: AppConfig) -> bool:
         cfg.agent_profiles[MAIN_PI_DEV_PROFILE] = AgentProfile(
             description="Main pi.dev profile for the PAC controller runtime. Select its model in Settings when no model is configured yet.",
             model=preferred_model,
+            planner_model=preferred_model if preferred_model != MODEL_NOT_SELECTED else None,
             context_mode="high",
             context_profile="high" if "high" in cfg.context_profiles else None,
             permission_profile=harness_cfg.permission_profile or "ask-first",
-            tools=[name for name in ["shell", "git", "ripgrep", "fd", "jq", "podman", "artifacts", "consult_model", "remote_memory"] if name in cfg.tools],
-            system_prompt=(
-                "You are the main pi.dev runtime for PAC. Use the PAC controller workspace as the source of truth, "
-                "keep changes scoped to the requested task, and surface build/update diagnostics clearly."
-            ),
+            tools=[name for name in MAIN_PI_DEV_PROFILE_TOOLS if name in cfg.tools],
+            system_prompt=MAIN_PI_DEV_SYSTEM_PROMPT,
             max_runtime_minutes=120,
         )
         changed = True
-    elif profile.model == MODEL_NOT_SELECTED and harness_cfg.model:
-        profile.model = harness_cfg.model
-        changed = True
+    else:
+        if profile.model == MODEL_NOT_SELECTED and harness_cfg.model:
+            profile.model = harness_cfg.model
+            changed = True
+        desired_tools = [name for name in MAIN_PI_DEV_PROFILE_TOOLS if name in cfg.tools]
+        merged_tools = list(dict.fromkeys([*(profile.tools or []), *desired_tools]))
+        if merged_tools != (profile.tools or []):
+            profile.tools = merged_tools
+            changed = True
+        if not profile.planner_model and profile.model and profile.model != MODEL_NOT_SELECTED:
+            profile.planner_model = profile.model
+            changed = True
+        if profile.context_mode != "high":
+            profile.context_mode = "high"
+            changed = True
+        desired_context_profile = "high" if "high" in cfg.context_profiles else profile.context_profile
+        if desired_context_profile and profile.context_profile != desired_context_profile:
+            profile.context_profile = desired_context_profile
+            changed = True
+        if not profile.planner_context_profile and desired_context_profile:
+            profile.planner_context_profile = desired_context_profile
+            changed = True
+        if (profile.permission_profile or "") != (harness_cfg.permission_profile or profile.permission_profile or "ask-first"):
+            profile.permission_profile = harness_cfg.permission_profile or profile.permission_profile or "ask-first"
+            changed = True
+        if (profile.max_runtime_minutes or 0) < 120:
+            profile.max_runtime_minutes = 120
+            changed = True
+        if (profile.system_prompt or "").strip() != MAIN_PI_DEV_SYSTEM_PROMPT.strip():
+            profile.system_prompt = MAIN_PI_DEV_SYSTEM_PROMPT
+            changed = True
 
     harness_ws = harness_cfg.workspace_profile or AGENT_CONTROL_WORKSPACE
     platform_root = str(Path(__file__).resolve().parents[2])
