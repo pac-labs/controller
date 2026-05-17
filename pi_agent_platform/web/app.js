@@ -39,6 +39,7 @@ let sourceTreeCache = new Map();
 let sourceLibraryRoot = '';
 let sourceResolvedContext = null;
 let sourceCodingSessionId = '';
+let sourceSelectedToolId = '';
 let source = null;
 let globalEventSeen = new Set();
 let globalEventFilter = 'all';
@@ -3474,6 +3475,75 @@ function sourceOpenFilesSummaryHtml() {
   if (!files.length) return 'No open files yet.';
   return files.map(path => `<div class="inline-browser-row"><div><b>${escapeHtml(sourceFileLabel(path))}</b><div class="muted small-text">${escapeHtml(path)}</div></div></div>`).join('');
 }
+function inferredToolFromSourcePath() {
+  const path = String(selectedSourcePath || selectedSourceFolder || selectedSourceEntry || '').replace(/\\/g, '/');
+  const match = /^plugins\/([^/]+)/.exec(path);
+  return match?.[1] || '';
+}
+function sourceToolEntries() {
+  return Object.entries(config.plugins || {}).map(([name, plugin]) => ({
+    id: name,
+    kind: plugin.kind || 'plugin',
+    description: plugin.description || '',
+    requiresTools: Array.isArray(plugin.requires_tools) ? plugin.requires_tools : [],
+    documentation: plugin.documentation || '',
+    sourcePath: `plugins/${name}`,
+    enabled: plugin.enabled !== false,
+  }));
+}
+function selectedSourceToolIds() {
+  const inferred = inferredToolFromSourcePath();
+  const chosen = sourceSelectedToolId || inferred;
+  return chosen ? [chosen] : [];
+}
+function sourceToolPayload(limit = 2) {
+  return selectedSourceToolIds().slice(0, limit).map((toolId) => {
+    const entry = sourceToolEntries().find(item => item.id === toolId);
+    return entry ? {
+      id: entry.id,
+      kind: entry.kind,
+      description: entry.description,
+      requires_tools: entry.requiresTools,
+      source_path: entry.sourcePath,
+      documentation: entry.documentation,
+    } : null;
+  }).filter(Boolean);
+}
+function renderSourceToolCatalog() {
+  const toolsEl = document.getElementById('sourceCodingTools');
+  const statusEl = document.getElementById('sourceCodingToolStatus');
+  if (!toolsEl || !statusEl) return;
+  const entries = sourceToolEntries();
+  const inferred = inferredToolFromSourcePath();
+  const current = sourceSelectedToolId || inferred;
+  if (!current && inferred) sourceSelectedToolId = inferred;
+  statusEl.textContent = current
+    ? `Selected tool source: plugins/${current}. Coding sessions use live workspace/JIT access, so edits under this folder are available without a separate publish step.`
+    : 'Select a tool source or open a file under plugins/<tool> to attach that tool context to the coding session.';
+  if (!entries.length) {
+    toolsEl.textContent = 'No agent tools configured.';
+    return;
+  }
+  toolsEl.innerHTML = entries.map((item) => {
+    const selected = item.id === (sourceSelectedToolId || inferred);
+    const requires = item.requiresTools.length ? item.requiresTools.join(', ') : 'none';
+    return `
+      <div class="inline-browser-row ${selected ? 'selected' : ''}">
+        <div>
+          <b>${escapeHtml(item.id)}</b> <span class="pill">${escapeHtml(item.kind)}</span>
+          ${!item.enabled ? '<span class="pill warning">disabled</span>' : ''}
+          <div class="muted small-text">${escapeHtml(item.description || 'Agent tool source')}</div>
+          <div class="muted small-text">source: ${escapeHtml(item.sourcePath)}</div>
+          <div class="muted small-text">requires: ${escapeHtml(requires)}</div>
+        </div>
+        <div class="button-row compact-actions">
+          <button class="ghost-button source-tool-open" data-tool-open="${escapeHtml(item.id)}">Open source</button>
+          <button class="ghost-button source-tool-select" data-tool-select="${escapeHtml(item.id)}">${selected ? 'Attached' : 'Use in session'}</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
 function sourceOpenFilePayload(limit = 3, maxChars = 4000) {
   const files = [];
   for (const path of sourceOpenTabs.slice(0, limit)) {
@@ -3514,10 +3584,13 @@ function updateSourceCodingPanel() {
   setText('sourceCodingSession', defaults.existingSession?.name || (sourceCodingSessionId ? 'attached' : 'not started'));
   const openFiles = document.getElementById('sourceCodingOpenFiles');
   if (openFiles) openFiles.innerHTML = sourceOpenFilesSummaryHtml();
+  renderSourceToolCatalog();
   sourceCodingSessionId = defaults.existingSession?.id || sourceCodingSessionId || '';
 }
 async function ensureSourceCodingSession() {
   const defaults = sourceCodingDefaults();
+  const toolIds = selectedSourceToolIds();
+  const toolPaths = toolIds.map((id) => `plugins/${id}`);
   if (!defaults.workspacePath) throw new Error('Open a source file or select a source context first.');
   if (!defaults.endpointId) throw new Error('No online endpoint is available for the coding session.');
   if (defaults.existingSession?.id) {
@@ -3542,6 +3615,9 @@ async function ensureSourceCodingSession() {
       ide_source_path: selectedSourceFolder || selectedSourcePath || '',
       ide_open_files: sourceOpenTabs.slice(),
       source_context_name: defaults.contextName || null,
+      agent_tool_ids: toolIds,
+      agent_tool_paths: toolPaths,
+      tool_source_mode: 'jit-workspace',
       workspace_trusted: true,
     },
   };
@@ -3556,6 +3632,7 @@ function buildSourceCodingPrompt(userPrompt='') {
   const currentFile = selectedSourcePath || '';
   const openFiles = sourceOpenTabs.slice();
   const filePayload = sourceOpenFilePayload();
+  const toolPayload = sourceToolPayload();
   const parts = [
     'You are working from the PAC IDE workbench.',
     `Current source path: ${selectedSourceEntry || selectedSourceFolder || currentFile || '-'}.`,
@@ -3563,6 +3640,16 @@ function buildSourceCodingPrompt(userPrompt='') {
   ];
   if (currentFile) parts.push(`Current file: ${currentFile}.`);
   if (sourceResolvedContext?.name) parts.push(`Resolved source context: ${sourceResolvedContext.name}.`);
+  if (toolPayload.length) {
+    parts.push('', 'Selected agent tools live in the same trusted workspace and should be used as live source context:');
+    toolPayload.forEach((tool) => {
+      parts.push(`Tool: ${tool.id} (${tool.kind}) at ${tool.source_path}`);
+      if (tool.description) parts.push(tool.description);
+      if (tool.requires_tools?.length) parts.push(`Requires runtime tools: ${tool.requires_tools.join(', ')}`);
+      if (tool.documentation) parts.push(`Notes: ${tool.documentation}`);
+      parts.push('');
+    });
+  }
   if (filePayload.length) {
     parts.push('', 'Open file context:');
     filePayload.forEach((item) => {
@@ -3579,6 +3666,8 @@ async function sendPromptToSourceCodingSession(promptText) {
   const session = await ensureSourceCodingSession();
   const defaults = sourceCodingDefaults();
   const openFilePayload = sourceOpenFilePayload();
+  const toolIds = selectedSourceToolIds();
+  const toolPayload = sourceToolPayload();
   await selectSession(session.id);
   document.getElementById('taskExecution').value = 'container';
   document.getElementById('taskImage').value = defaults.containerImage || '';
@@ -3589,6 +3678,8 @@ async function sendPromptToSourceCodingSession(promptText) {
       container_image: defaults.containerImage,
       open_files: sourceOpenTabs.slice(),
       open_file_payload: openFilePayload,
+      agent_tool_ids: toolIds,
+      agent_tool_payload: toolPayload,
       current_file: selectedSourcePath || '',
       source_context_name: sourceResolvedContext?.name || null,
     },
@@ -5466,6 +5557,23 @@ if (askSourceCodingSessionBtn) askSourceCodingSessionBtn.onclick = async () => {
     paneError('Coding session prompt failed', e.message || String(e));
   }
 };
+document.addEventListener('click', async (ev) => {
+  const openBtn = ev.target.closest?.('[data-tool-open]');
+  if (openBtn) {
+    const toolId = openBtn.getAttribute('data-tool-open') || '';
+    sourceSelectedToolId = toolId;
+    selectedSourceFolder = `plugins/${toolId}`;
+    selectedSourceEntry = `plugins/${toolId}`;
+    await renderSources(`plugins/${toolId}`);
+    updateSourceCodingPanel();
+    return;
+  }
+  const selectBtn = ev.target.closest?.('[data-tool-select]');
+  if (selectBtn) {
+    sourceSelectedToolId = selectBtn.getAttribute('data-tool-select') || '';
+    updateSourceCodingPanel();
+  }
+});
 const loadPacRamBtn = document.getElementById('loadPacRam');
 if (loadPacRamBtn) loadPacRamBtn.onclick = () => loadPacRam().catch(e=>paneError('PAC RAM could not be loaded', e.message));
 const savePacRamBtn = document.getElementById('savePacRam');
