@@ -244,6 +244,20 @@ def _looks_like_action_narration(text: str) -> bool:
     return any(signal in raw for signal in signals)
 
 
+def _controller_session_guidance(session: Session) -> str | None:
+    if not session.metadata.get("controller_harness"):
+        return None
+    workspace = str(session.workspace_path or "").strip() or "the PAC controller workspace"
+    return (
+        "You are operating as PAC's built-in controller session.\n"
+        f"Primary local source of truth: {workspace}\n"
+        "For PAC-domain questions about code, sessions, wrappers, providers, profiles, endpoints, settings, updates, logs, or configuration, inspect the local PAC workspace/configuration first.\n"
+        "Prefer local tools like workspace_manifest, list_files, read_file, read_file_chunk, rg/shell, git_status, and git_diff before web_search or web_fetch.\n"
+        "Only use the web when the user explicitly asks for external information or the local PAC workspace clearly cannot answer the question.\n"
+        "If the user asks to update PAC behavior or configuration, you are allowed to rewrite PAC application files and PAC configuration directly. Do the work instead of only describing it."
+    )
+
+
 def _safe_path(session: Session, rel_path: str) -> Path:
     root = Path(session.workspace_path).resolve()
     target = (root / rel_path).resolve()
@@ -644,9 +658,11 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     if full_control:
         store.add_event(Event(session_id=session.id, task_id=task.id, type="full_control_enabled", message="FULL CONTROL MODE ENABLED: approvals are bypassed, but every tool action is logged."))
 
-    messages: list[dict[str, str]] = [
-        {"role": "system", "content": (agent.system_prompt if agent else "You are a remote coding agent.") + "\n\n" + TOOL_HELP},
-    ]
+    system_prompt = (agent.system_prompt if agent else "You are a remote coding agent.") + "\n\n" + TOOL_HELP
+    messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+    controller_guidance = _controller_session_guidance(session)
+    if controller_guidance:
+        messages.append({"role": "system", "content": controller_guidance})
     messages.extend(_session_history_messages(session, current_task_id=task.id, max_messages=12))
     messages.append({"role": "user", "content": "Current user request (answer this now; earlier conversation is context only):\n" + task.prompt})
 
