@@ -124,7 +124,7 @@ def _summarize_model_action(action: dict[str, Any]) -> tuple[str, dict[str, Any]
 
 def _extract_wrapped_tool_call(text: str) -> dict[str, Any] | None:
     raw = str(text or "").strip()
-    match = re.search(r"<\|tool_call\>\s*call:((?:tool_call:)?[A-Za-z0-9_:-]+)\s*(\{.*?\})\s*<tool_call\|>", raw, re.DOTALL)
+    match = re.search(r"<\|tool_call\>\s*call:((?:tool_call:)?[A-Za-z0-9_:-]+)\s*([\[{].*?[\]}])\s*<tool_call\|>", raw, re.DOTALL)
     if not match:
         return None
     tool = str(match.group(1) or "").strip()
@@ -139,7 +139,12 @@ def _extract_wrapped_tool_call(text: str) -> dict[str, Any] | None:
             return parsed if isinstance(parsed, dict) else None
         except json.JSONDecodeError:
             pass
+        normalized_source = source.strip()
+        if normalized_source.startswith("[") and normalized_source.endswith("]"):
+            normalized_source = "{" + normalized_source[1:-1].strip() + "}"
         normalized = re.sub(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_-]*)(\s*:)', r'\1"\2"\3', source)
+        if normalized_source is not source:
+            normalized = re.sub(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_-]*)(\s*:)', r'\1"\2"\3', normalized_source)
         normalized = normalized.replace("'", '"')
         normalized = re.sub(r':\s*True\b', ': true', normalized)
         normalized = re.sub(r':\s*False\b', ': false', normalized)
@@ -201,6 +206,20 @@ def _extract_json(text: str) -> dict[str, Any]:
         if start >= 0 and end > start:
             return json.loads(text[start : end + 1])
         raise
+
+
+def _looks_like_wrapped_tool_markup(text: str) -> bool:
+    raw = str(text or "").strip().lower()
+    if not raw:
+        return False
+    return (
+        "<|tool_call>" in raw
+        or "<tool_call|>" in raw
+        or '"type":"tool_call"' in raw
+        or '"type": "tool_call"' in raw
+        or "call:tool_call:" in raw
+        or re.search(r"\bcall:[a-z0-9_:-]+\s*[\[{]", raw) is not None
+    )
 
 
 def _safe_path(session: Session, rel_path: str) -> Path:
@@ -625,6 +644,11 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
         try:
             action = _extract_json(raw)
         except Exception:
+            if _looks_like_wrapped_tool_markup(raw):
+                store.add_event(Event(session_id=session.id, task_id=task.id, type="tool_call_parse_failed", message="Model returned malformed tool-call markup; requesting a corrected tool call.", data={"role": "assistant", "model": decision_model, "raw": raw[-4000:]}))
+                messages.append({"role": "assistant", "content": raw})
+                messages.append({"role": "user", "content": 'Your previous reply contained malformed tool-call markup. Return ONE valid JSON object only. If you intend to act, return {"type":"tool_call","tool":"...","input":{...}}. Do not include wrapper markers, pseudo-code, or explanatory narration.'})
+                continue
             task.status = TaskStatus.completed
             task.output = raw
             task.metadata["agent_transcript"] = transcript[-20:]

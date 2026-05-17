@@ -274,6 +274,8 @@ function normalizeAssistantText(text) {
     .replace(/\{\\rightarrow\}/g, '→')
     .replace(/\{\\leftarrow\}/g, '←')
     .replace(/<\|tool_call\>[\s\S]*?<tool_call\|>/g, '')
+    .replace(/<\|tool_call[\s\S]*$/g, '')
+    .replace(/^\s*call:(?:tool_call:)?[A-Za-z0-9_:-]+\s*[\[{][\s\S]*$/gm, '')
     .replace(/\r\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
