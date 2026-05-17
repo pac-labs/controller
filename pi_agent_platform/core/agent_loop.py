@@ -273,6 +273,42 @@ def _session_history_messages(session: Session, current_task_id: str | None = No
     return messages
 
 
+def _prompt_requests_codebase_inspection(prompt: str) -> bool:
+    text = str(prompt or "").lower()
+    if not text:
+        return False
+    keywords = [
+        "codebase",
+        "repo",
+        "repository",
+        "workspace",
+        "source",
+        "entrypoint",
+        "entry point",
+        "look at the code",
+        "find the code",
+        "inspect the code",
+        "main app",
+        "where is",
+        "how does",
+        "what file",
+        "which file",
+    ]
+    return any(k in text for k in keywords)
+
+
+def _has_meaningful_codebase_inspection(transcript: list[dict[str, Any]]) -> bool:
+    deep_tools = {"workspace_manifest", "read_file", "read_file_chunk", "batch_analyze_file", "git_diff", "git_status", "shell"}
+    shallow_tools = {"list_files"}
+    used = [str(item.get("tool") or "") for item in transcript if item.get("tool")]
+    if any(tool in deep_tools for tool in used):
+        return True
+    # A bare top-level listing is not enough for architecture / entrypoint answers.
+    if used.count("list_files") >= 2:
+        return True
+    return False
+
+
 async def _run_shell(session: Session, task: Task, command: str, config: AppConfig) -> tuple[str, bool]:
     decision, reason = command_policy(command, session, config)
     if decision == "deny":
@@ -660,6 +696,16 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
         store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_intent", message=thought_summary, data={"role": "assistant", "model": decision_model, "session_model": session.model, "endpoint_id": task.metadata.get("runner_id"), "step": step, **thought_meta}))
 
         if action.get("type") == "final":
+            if _prompt_requests_codebase_inspection(task.prompt) and not _has_meaningful_codebase_inspection(transcript):
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "Before answering this codebase/workspace question, inspect the workspace more deeply. "
+                        "A shallow response is not acceptable. Use one or more of workspace_manifest, read_file, "
+                        "read_file_chunk, batch_analyze_file, git_diff, git_status, or shell/rg to gather concrete evidence first."
+                    ),
+                })
+                continue
             task.status = TaskStatus.completed
             task.output = str(action.get("message") or "")
             task.metadata["agent_transcript"] = transcript[-20:]
