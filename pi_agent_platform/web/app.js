@@ -1034,6 +1034,56 @@ function bindSessionTimelineScroll() {
   el.dataset.autoscrollBound = '1';
   updateSessionAutoScrollState();
 }
+function renderComposerThinkingStatus(state) {
+  const el = document.getElementById('composerThinkingStatus');
+  if (!el) return;
+  if (!state || !state.active) {
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
+  const duration = formatDurationMs(Math.max(0, (Date.now() - new Date(state.startedAt || new Date().toISOString()).getTime())));
+  const toolCount = Number(state.toolCount || 0);
+  el.hidden = false;
+  el.innerHTML = `<span class="tiny-spinner square" aria-hidden="true"></span><span class="composer-thinking-copy"><span class="composer-thinking-text">${escapeHtml(state.summary || 'Thinking about your latest request')}</span><span class="composer-thinking-meta">Thinking for ${escapeHtml(duration)}${toolCount ? ` • ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}` : ''}${state.approvalPending ? ' • awaiting approval' : ''}</span></span>`;
+}
+function deriveComposerThinkingState(events) {
+  const rows = Array.isArray(events) ? events : [];
+  const byTask = new Map();
+  rows.forEach((event) => {
+    const taskId = String(event?.task_id || '').trim();
+    if (!taskId) return;
+    if (!byTask.has(taskId)) byTask.set(taskId, []);
+    byTask.get(taskId).push(event);
+  });
+  const preferredTaskId = activeSessionTaskId && byTask.has(activeSessionTaskId) ? activeSessionTaskId : Array.from(byTask.keys()).at(-1);
+  if (!preferredTaskId) return null;
+  const taskEvents = byTask.get(preferredTaskId) || [];
+  const closed = taskEvents.some((event) => {
+    const type = String(event?.type || '').toLowerCase();
+    return type.includes('result') || type.includes('task_completed') || type.includes('task_failed');
+  });
+  if (closed) return null;
+  const internal = taskEvents.filter((event) => isInternalSessionEvent(event));
+  if (!internal.length) return {active: true, summary: 'Thinking about your latest request', startedAt: taskEvents[0]?.created_at, toolCount: 0, approvalPending: false};
+  let summary = '';
+  let approvalPending = false;
+  let toolCount = 0;
+  for (const event of internal) {
+    const type = String(event?.type || '').toLowerCase();
+    if (type.includes('tool_call')) toolCount += 1;
+    if (type.includes('approval_required')) approvalPending = true;
+    const next = sessionThinkingSummary(event, normalizeTimelineBlock(event));
+    if (next) summary = next;
+  }
+  return {
+    active: true,
+    summary: summary || 'Thinking about your latest request',
+    startedAt: internal[0]?.created_at || taskEvents[0]?.created_at,
+    toolCount,
+    approvalPending,
+  };
+}
 function resetSessionTimelineState() {
   sessionThinkingGroups = new Map();
   sessionEventSeen = new Set();
@@ -1053,6 +1103,7 @@ function renderSessionSnapshotFast(snapshot, sessionId) {
   if (!timeline) return;
   bindSessionTimelineScroll();
   const events = Array.isArray(snapshot) ? snapshot : [];
+  renderComposerThinkingStatus(deriveComposerThinkingState(events));
   const recentChunkSize = 220;
   const tail = events.slice(-recentChunkSize);
   const token = ++sessionHydrationToken;
@@ -4286,6 +4337,7 @@ async function selectSession(id) {
   syncSessionPermissionQuick();
   const timeline = document.getElementById('events');
   if (timeline) timeline.innerHTML = '<div class="empty-timeline">Waiting for session events.</div>';
+  renderComposerThinkingStatus(null);
   resetSessionTimelineState();
   renderSessionSidebar(window.__pacSessions || []);
   try {
@@ -4324,6 +4376,12 @@ function appendEvent(type, payload) {
   }
   renderSessionTimelineEvent(event);
   renderGlobalEvent(event);
+  if (selectedSession?.id && selectedSession.id === event.session_id) {
+    const thinking = deriveComposerThinkingState([event]);
+    if (thinking?.active) renderComposerThinkingStatus(thinking);
+    const eventType = String(event?.type || '').toLowerCase();
+    if (eventType.includes('result') || eventType.includes('task_completed') || eventType.includes('task_failed')) renderComposerThinkingStatus(null);
+  }
   const eventType = String(event?.type || type || '').toLowerCase();
   if (
     eventType.includes('approval') ||
@@ -4788,6 +4846,7 @@ async function sendSessionComposer(){
       data: {role:'user', model: metadata.model || selectedSession.model, endpoint_id: metadata.runner_id || selectedSession.metadata?.preferred_endpoint, command:'', execution_mode: metadata.execution_mode, stored:true, pi_dev_enabled:selectedSession.metadata?.agent_enabled !== false, routing:'pi.dev'}
     };
     renderSessionTimelineEvent(localEvent);
+    renderComposerThinkingStatus({active:true, summary:'Thinking about your latest request', startedAt: localEvent.created_at, toolCount:0, approvalPending:false});
     renderSessionTimelineEvent({
       id: `local_thinking_${created.id}`,
       session_id: selectedSession.id,
