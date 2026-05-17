@@ -273,6 +273,7 @@ function normalizeAssistantText(text) {
     .replace(/\$\\leftarrow\$/g, '←')
     .replace(/\{\\rightarrow\}/g, '→')
     .replace(/\{\\leftarrow\}/g, '←')
+    .replace(/<\|tool_call\>[\s\S]*?<tool_call\|>/g, '')
     .replace(/\r\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
@@ -1046,8 +1047,11 @@ function renderComposerThinkingStatus(state) {
   }
   const duration = formatDurationMs(Math.max(0, (Date.now() - new Date(state.startedAt || new Date().toISOString()).getTime())));
   const toolCount = Number(state.toolCount || 0);
+  const stepBits = [];
+  if (state.step) stepBits.push(`step ${state.step}`);
+  if (state.tokensUsed != null && state.tokensBudget != null) stepBits.push(`~${state.tokensUsed}/${state.tokensBudget} tokens`);
   el.hidden = false;
-  el.innerHTML = `<span class="tiny-spinner square" aria-hidden="true"></span><span class="composer-thinking-copy"><span class="composer-thinking-text">${escapeHtml(state.summary || 'Thinking about your latest request')}</span><span class="composer-thinking-meta">Thinking for ${escapeHtml(duration)}${toolCount ? ` • ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}` : ''}${state.approvalPending ? ' • awaiting approval' : ''}</span></span>`;
+  el.innerHTML = `<span class="tiny-spinner square" aria-hidden="true"></span><span class="composer-thinking-copy"><span class="composer-thinking-text">${escapeHtml(state.summary || 'Thinking about your latest request')}</span><span class="composer-thinking-meta">Thinking for ${escapeHtml(duration)}${stepBits.length ? ` • ${escapeHtml(stepBits.join(' • '))}` : ''}${toolCount ? ` • ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}` : ''}${state.approvalPending ? ' • awaiting approval' : ''}</span></span>`;
 }
 function deriveComposerThinkingState(events) {
   const rows = Array.isArray(events) ? events : [];
@@ -1071,10 +1075,23 @@ function deriveComposerThinkingState(events) {
   let summary = '';
   let approvalPending = false;
   let toolCount = 0;
+  let step = null;
+  let tokensUsed = null;
+  let tokensBudget = null;
   for (const event of internal) {
     const type = String(event?.type || '').toLowerCase();
     if (type.includes('tool_call')) toolCount += 1;
     if (type.includes('approval_required')) approvalPending = true;
+    if (type.includes('agent_thinking')) {
+      const msg = String(event?.message || '');
+      const stepMatch = msg.match(/Agent step\s+(\d+)/i);
+      const tokensMatch = msg.match(/\(~(\d+)\/(\d+)\s+input tokens/i);
+      if (stepMatch) step = Number(stepMatch[1]);
+      if (tokensMatch) {
+        tokensUsed = Number(tokensMatch[1]);
+        tokensBudget = Number(tokensMatch[2]);
+      }
+    }
     const next = sessionThinkingSummary(event, normalizeTimelineBlock(event));
     if (next) summary = next;
   }
@@ -1084,6 +1101,9 @@ function deriveComposerThinkingState(events) {
     startedAt: internal[0]?.created_at || taskEvents[0]?.created_at,
     toolCount,
     approvalPending,
+    step,
+    tokensUsed,
+    tokensBudget,
   };
 }
 function resetSessionTimelineState() {
@@ -1243,18 +1263,14 @@ function renderSessionTimelineEvent(event, options = {}) {
   if (!text && role === 'assistant' && !block) return;
   if (text) appendChatText(bubble, role, text);
   if (role === 'assistant') {
-    bubble.tabIndex = 0;
-    bubble.classList.add('selectable-reply');
-    bubble.title = 'Click to see model, endpoint and event details';
-    bubble.onclick = () => openSessionEventModal(event, block);
-    bubble.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') openSessionEventModal(event, block); };
+    bubble.classList.add('copyable-reply');
   }
   if (role === 'user' && event.task_id) addPendingRow(event.task_id);
-  if (block && (block.fields || block.meta || block.links)) {
+  if (role === 'assistant' || (block && (block.fields || block.meta || block.links))) {
     const more = document.createElement('button');
     more.type = 'button';
     more.className = 'inline-link-button';
-    more.textContent = 'Open details';
+    more.textContent = role === 'assistant' ? 'Details' : 'Open details';
     more.onclick = () => openSessionEventModal(event, block);
     bubble.appendChild(more);
   }

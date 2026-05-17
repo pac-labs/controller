@@ -680,9 +680,11 @@ pre#events, pre#diff { min-width: 0; width: 100%; overflow: auto; white-space: p
   border-left-color:rgba(36,195,107,.22);
 }
 @keyframes pac-spin { to { transform:rotate(360deg); } }
-.chat-bubble.selectable-reply { cursor:pointer; }
-.chat-bubble.selectable-reply:hover { border-color:rgba(148,163,184,.55); background:rgba(255,255,255,.095); }
-.chat-bubble.selectable-reply:focus { outline:2px solid rgba(118,181,255,.55); outline-offset:2px; }
+.chat-bubble.copyable-reply {
+  user-select:text;
+  -webkit-user-select:text;
+}
+.chat-bubble.copyable-reply:hover { border-color:rgba(148,163,184,.55); background:rgba(255,255,255,.095); }
 
 
 /* v1.0.70: ChatGPT-like integrated session composer and editor-ready surface. */
