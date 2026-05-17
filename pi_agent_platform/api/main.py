@@ -548,7 +548,7 @@ def _ensure_controller_harness_runner() -> Runner:
     if legacy and legacy.id != settings.runner_id:
         store.delete_runner(legacy.id)
         store.add_event(Event(session_id='system', type='controller_pi_dev_endpoint_merged', message='Merged duplicate controller pi.dev endpoint into the local PAC endpoint', data={'from': legacy.id, 'to': settings.runner_id}))
-    runner = store.get_runner(settings.runner_id) or _refresh_local_runner_metadata(emit_event=False)
+    runner = _refresh_local_runner_metadata(emit_event=False) if settings.runner_id == 'local-PAC' else (store.get_runner(settings.runner_id) or _refresh_local_runner_metadata(emit_event=False))
     labels = ['controller', 'local', 'pac-controller', 'pi.dev']
     metadata = {
         'kind': 'pi_dev_controller',
