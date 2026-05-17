@@ -209,7 +209,12 @@ function renderSetupWizard() {
   body.querySelectorAll('.setup-nav-button').forEach(btn => {
     btn.onclick = () => {
       const tab = btn.dataset.tab || 'settings-tab';
-      switchToTab(tab);
+      if (tab.startsWith('settings:')) {
+        switchToTab('settings-tab');
+        switchSettingsPanel(tab.split(':')[1] || 'updates');
+      } else {
+        switchToTab(tab);
+      }
       if (tab === 'providers-tab') openProviderModal();
       if (tab === 'models-tab') openModelModal();
       hideSetupWizard();
@@ -724,6 +729,14 @@ function timelineText(event, block) {
   if (typeof data.message === 'string' && data.message.trim()) lines.push(data.message);
   if (typeof data.text === 'string' && data.text.trim()) lines.push(data.text);
   if (typeof data.content === 'string' && data.content.trim()) lines.push(data.content);
+  if (typeof data.response === 'string' && data.response.trim()) lines.push(data.response);
+  if (typeof data.answer === 'string' && data.answer.trim()) lines.push(data.answer);
+  if (typeof data.output_text === 'string' && data.output_text.trim()) lines.push(data.output_text);
+  if (data.result && typeof data.result === 'object') {
+    if (typeof data.result.message === 'string' && data.result.message.trim()) lines.push(data.result.message);
+    if (typeof data.result.output === 'string' && data.result.output.trim()) lines.push(data.result.output);
+    if (typeof data.result.response === 'string' && data.result.response.trim()) lines.push(data.result.response);
+  }
   if (Array.isArray(data.content)) {
     const contentText = data.content.map((item) => {
       if (typeof item === 'string') return item;
@@ -1040,13 +1053,7 @@ async function pollSessionEvents(sessionId) {
   sessionPollRequest = (async () => {
     try {
       const snapshot = await api(`/v1/sessions/${sessionId}/events/snapshot?latest=true&limit=180`);
-      const events = (snapshot || []).filter((ev) => !ev?.id || !sessionEventSeen.has(ev.id));
-      const deferScroll = events.length > 1;
-      if (deferScroll) suppressSessionAutoScroll = true;
-      events.forEach(ev => appendEvent(ev.type || 'message', ev));
-      suppressSessionAutoScroll = false;
-      const el = document.getElementById('events');
-      if (deferScroll && el) el.scrollTop = el.scrollHeight;
+      renderSessionSnapshotFast(snapshot || [], sessionId);
     } catch (_) {
     } finally {
       suppressSessionAutoScroll = false;
@@ -2395,10 +2402,12 @@ function setUpdatesDetail(meta=null) {
   version.textContent = meta.version ? `v${meta.version}` : '';
   const entries = meta.entries || [];
   const bodyHtml = meta.html_body || null;
+  const formattedBody = meta.body ? formatDetailBody(meta.body) : '';
+  const linkBlock = bodyHtml ? `<div class="muted small-text updates-detail-links">${bodyHtml}</div>` : '';
   if (entries.length) {
-    body.innerHTML = `<div class="update-delta-list">${entries.map(entry => `<div class="update-delta-version"><div class="update-delta-title">${escapeHtml(entry.title || ('PAC v' + (entry.version || '')))}</div><ul>${(entry.changes || []).map(change => `<li>${escapeHtml(change)}</li>`).join('')}</ul></div>`).join('')}</div>${bodyHtml ? `<div class="muted small-text" style="margin-top:.6rem">${bodyHtml}</div>` : formatDetailBody(meta.body)}`;
+    body.innerHTML = `${formattedBody}${formattedBody ? '<div class="updates-detail-divider"></div>' : ''}<div class="update-delta-list">${entries.map(entry => `<div class="update-delta-version"><div class="update-delta-title">${escapeHtml(entry.title || ('PAC v' + (entry.version || '')))}</div><ul>${(entry.changes || []).map(change => `<li>${escapeHtml(change)}</li>`).join('')}</ul></div>`).join('')}</div>${linkBlock ? `<div style="margin-top:.6rem">${linkBlock}</div>` : ''}`;
   } else {
-    body.innerHTML = bodyHtml ? `<div class="muted small-text">${bodyHtml}</div>` : (meta.body ? formatDetailBody(meta.body) : '<div class="muted small-text">No additional details available.</div>');
+    body.innerHTML = `${formattedBody || '<div class="muted small-text">No additional details available.</div>'}${linkBlock ? `<div style="margin-top:.6rem">${linkBlock}</div>` : ''}`;
   }
 }
 function setBackupDetail(meta=null) {
@@ -4003,6 +4012,7 @@ function renderControllerHarnessSettings(status=null) {
   const box = document.getElementById('controllerHarnessStatus');
   const runtimeBox = document.getElementById('controllerHarnessRuntime');
   const logsBox = document.getElementById('controllerHarnessLogs');
+  const actionsBox = document.getElementById('controllerHarnessActions');
   if (box) {
     const session = effectiveStatus?.session;
     const runner = effectiveStatus?.runner;
@@ -4010,23 +4020,38 @@ function renderControllerHarnessSettings(status=null) {
     const wrapperCap = runner?.capabilities?.pac_wrapper || {};
     const wrapperProc = diag.wrapper_process || {};
     const pi = runner?.capabilities?.pi_container || {};
+    const runnerMeta = runner?.metadata || {};
+    const wrapperVersion = runnerMeta.runner_version || runnerMeta.endpoint_version || '';
+    const serverVersion = currentVersionInfo?.version || config?.version || config?.setup_status?.version || '';
+    const versionMismatch = !!(wrapperVersion && serverVersion && wrapperVersion !== serverVersion);
     const wrapperText = wrapperCap.available
       ? (wrapperCap.path || wrapperProc.path || 'available')
       : (wrapperProc.available ? (wrapperProc.path || 'installed') : (wrapperCap.reason || 'missing'));
     const piText = (pi.image_available || pi.available)
       ? `${pi.image || 'available'}${pi.available ? '' : ' (image present, runtime not ready)'}`
       : (pi.reason || 'missing');
-    const rows = {
-      'State': effectiveStatus ? (effectiveStatus.ok ? 'ready' : 'needs setup') : 'not checked',
-      'Message': effectiveStatus?.message || 'Saved settings are shown below.',
-      'Runner': runner?.name || h.runner_id || '-',
-      'Session': session?.name || '-',
-      'Model': session?.model || h.model || 'profile default',
-      'Workspace': session?.workspace_path || '-',
-      'PAC wrapper': wrapperText,
-      'pi.dev image': piText,
-    };
-    box.innerHTML = Object.entries(rows).map(([k,v]) => `<div><span>${k}</span><code>${escapeHtml(String(v))}</code></div>`).join('');
+    const state = effectiveStatus ? (effectiveStatus.ok ? 'ready' : 'needs setup') : 'not checked';
+    box.innerHTML = `
+      <div class="pi-dev-status-banner ${escapeHtml(effectiveStatus?.ok ? 'ok' : 'warn')}">
+        <div>
+          <div class="pi-dev-status-kicker">Status</div>
+          <div class="pi-dev-status-title">${escapeHtml(state)}</div>
+          <div class="pi-dev-status-copy">${escapeHtml(effectiveStatus?.message || 'Saved settings are shown below.')}</div>
+        </div>
+      </div>
+      ${versionMismatch ? `<div class="pi-dev-notice critical"><b>Wrapper version mismatch</b><span>PAC server is v${escapeHtml(serverVersion)}, but the local wrapper reports v${escapeHtml(wrapperVersion)}. Rebuild/install the local wrapper before trusting controller pi.dev readiness.</span></div>` : ''}
+      <div class="pi-dev-kv-grid">
+        <div><span>Runner</span><code>${escapeHtml(String(runner?.name || h.runner_id || '-'))}</code></div>
+        <div><span>Session</span><code>${escapeHtml(String(session?.name || '-'))}</code></div>
+        <div><span>Model</span><code>${escapeHtml(String(session?.model || h.model || 'profile default'))}</code></div>
+        <div><span>Workspace</span><code>${escapeHtml(String(session?.workspace_path || '-'))}</code></div>
+        <div><span>PAC wrapper</span><code>${escapeHtml(String(wrapperText))}</code></div>
+        <div><span>Wrapper version</span><code>${escapeHtml(String(wrapperVersion || '-'))}</code></div>
+        <div><span>pi.dev image</span><code>${escapeHtml(String(piText))}</code></div>
+      </div>`;
+    if (actionsBox) {
+      actionsBox.dataset.needsAttention = effectiveStatus?.ok ? 'false' : 'true';
+    }
   }
   if (runtimeBox) {
     const diag = effectiveStatus?.diagnostics || {};
@@ -4045,7 +4070,7 @@ function renderControllerHarnessSettings(status=null) {
       'Agent detail': agentRuntime.detail || '-',
       'Wrapper log': diag.wrapper_log || '-',
     };
-    runtimeBox.innerHTML = Object.entries(rows).map(([k,v]) => `<div><span>${k}</span><code>${escapeHtml(String(v))}</code></div>`).join('');
+    runtimeBox.innerHTML = `<div class="pi-dev-kv-grid">${Object.entries(rows).map(([k,v]) => `<div><span>${k}</span><code>${escapeHtml(String(v))}</code></div>`).join('')}</div>`;
   }
   if (logsBox) logsBox.textContent = effectiveStatus?.diagnostics?.wrapper_log_tail || '';
 }

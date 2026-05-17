@@ -637,29 +637,57 @@
       <div id="settings-pi-dev" class="settings-panel" style="display:none">
         <div class="settings-panel-inner settings-panel-single">
           <div class="settings-main">
-            <section class="card wide setting-cube">
-              <h2>Controller pi.dev</h2>
-              <p class="muted">Keep one built-in PAC session connected to pi.dev using the PAC platform workspace.</p>
-              <div id="controllerHarnessStatus" class="kv compact-kv"></div>
-              <div class="form-grid compact-form">
-                <label class="checkbox-line"><input id="harnessEnabled" type="checkbox" /> Enable controller pi.dev</label>
-                <label class="checkbox-line"><input id="harnessAutoBootstrap" type="checkbox" /> Build/install local PAC wrapper and pi.dev on startup</label>
-                <label class="checkbox-line"><input id="harnessAutoBuildWrapper" type="checkbox" /> Auto-build missing PAC wrapper binary</label>
-                <label class="checkbox-line"><input id="harnessAutoInstallPiDev" type="checkbox" /> Auto-install missing pi.dev container</label>
-                <label class="checkbox-line"><input id="harnessAutoSession" type="checkbox" /> Always create/keep one session</label>
-                <label>Session name <input id="harnessSessionName" placeholder="PAC controller pi.dev" /></label>
-                <label>Workspace profile <input id="harnessWorkspaceProfile" placeholder="pac-controller" /></label>
-                <label>Profile <select id="harnessAgentProfile"><option value="">none</option></select></label>
-                <label>Model override <select id="harnessModel"><option value="">profile default</option></select></label>
-                <label>Permission profile <select id="harnessPermission"><option value="ask-first">ask-first</option></select></label>
-                <label>Context mode <select id="harnessContextMode"><option>low</option><option>medium</option><option>high</option><option>max</option></select></label>
-                <label>Runner id <input id="harnessRunnerId" placeholder="controller-harness" /></label>
-                <label class="checkbox-line"><input id="harnessExposeTools" type="checkbox" /> Expose platform tools to pi.dev</label>
+            <section class="card wide setting-cube setting-cube-flat pi-dev-settings">
+              <div class="pi-dev-grid">
+                <section class="pi-dev-card">
+                  <div class="pi-dev-card-head">
+                    <div>
+                      <h2>Controller pi.dev</h2>
+                      <p class="muted">Keep one built-in PAC session connected to pi.dev using the PAC platform workspace.</p>
+                    </div>
+                  </div>
+                  <div id="controllerHarnessStatus" class="kv compact-kv"></div>
+                  <div id="controllerHarnessActions" class="button-row pi-dev-action-row">
+                    <button id="bootstrapControllerHarness">Build/install controller pi.dev</button>
+                    <button id="openControllerHarnessSession" class="ghost-button">Open pi.dev session</button>
+                  </div>
+                  <pre id="controllerHarnessResult" class="inline-result compact-result"></pre>
+                </section>
+                <section class="pi-dev-card">
+                  <div class="pi-dev-card-head">
+                    <div>
+                      <h3>Runtime diagnostics</h3>
+                      <p class="muted">Use this to confirm wrapper, daemon, and local runtime health before treating controller pi.dev as ready.</p>
+                    </div>
+                  </div>
+                  <div id="controllerHarnessRuntime" class="kv compact-kv"></div>
+                  <pre id="controllerHarnessLogs" class="inline-result compact-result pi-dev-log-box"></pre>
+                </section>
+                <section class="pi-dev-card pi-dev-card-wide">
+                  <div class="pi-dev-card-head">
+                    <div>
+                      <h3>Configuration</h3>
+                      <p class="muted">These settings control automatic bootstrap, the dedicated controller session, and which PAC model/profile pi.dev should use.</p>
+                    </div>
+                  </div>
+                  <div class="form-grid compact-form">
+                    <label class="checkbox-line"><input id="harnessEnabled" type="checkbox" /> Enable controller pi.dev</label>
+                    <label class="checkbox-line"><input id="harnessAutoBootstrap" type="checkbox" /> Build/install local PAC wrapper and pi.dev on startup</label>
+                    <label class="checkbox-line"><input id="harnessAutoBuildWrapper" type="checkbox" /> Auto-build missing PAC wrapper binary</label>
+                    <label class="checkbox-line"><input id="harnessAutoInstallPiDev" type="checkbox" /> Auto-install missing pi.dev container</label>
+                    <label class="checkbox-line"><input id="harnessAutoSession" type="checkbox" /> Always create/keep one session</label>
+                    <label>Session name <input id="harnessSessionName" placeholder="PAC controller pi.dev" /></label>
+                    <label>Workspace profile <input id="harnessWorkspaceProfile" placeholder="pac-controller" /></label>
+                    <label>Profile <select id="harnessAgentProfile"><option value="">none</option></select></label>
+                    <label>Model override <select id="harnessModel"><option value="">profile default</option></select></label>
+                    <label>Permission profile <select id="harnessPermission"><option value="ask-first">ask-first</option></select></label>
+                    <label>Context mode <select id="harnessContextMode"><option>low</option><option>medium</option><option>high</option><option>max</option></select></label>
+                    <label>Runner id <input id="harnessRunnerId" placeholder="controller-harness" /></label>
+                    <label class="checkbox-line"><input id="harnessExposeTools" type="checkbox" /> Expose platform tools to pi.dev</label>
+                  </div>
+                  <div class="button-row"><button id="saveControllerHarness">Save pi.dev settings</button></div>
+                </section>
               </div>
-              <div class="button-row"><button id="saveControllerHarness">Save pi.dev settings</button><button id="bootstrapControllerHarness" class="ghost-button">Build/install controller pi.dev</button><button id="openControllerHarnessSession" class="ghost-button">Open pi.dev session</button></div>
-              <div id="controllerHarnessRuntime" class="kv compact-kv" style="margin-top:.75rem"></div>
-              <pre id="controllerHarnessLogs" class="inline-result compact-result"></pre>
-              <pre id="controllerHarnessResult" class="inline-result compact-result"></pre>
             </section>
           </div>
         </div>

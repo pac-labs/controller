@@ -390,12 +390,12 @@ def _setup_status() -> dict[str, Any]:
     if config.controller_harness.enabled:
         model_name, profile_name, _permission = _harness_model_and_profile()
         if not model_name or model_name not in config.models:
-            issues.append(_setup_issue('controller_model_missing', 'Select the controller pi.dev model', f'The controller pi.dev runtime is enabled, but profile {profile_name or MAIN_PI_DEV_PROFILE} does not resolve to a configured model.', 'settings-tab', 'Open Settings'))
+            issues.append(_setup_issue('controller_model_missing', 'Select the controller pi.dev model', f'The controller pi.dev runtime is enabled, but profile {profile_name or MAIN_PI_DEV_PROFILE} does not resolve to a configured model.', 'settings:pi-dev', 'Open pi.dev Settings'))
         controller = next((runner for runner in store.list_runners() if _runner_bool(runner.metadata or {}, 'local_control_plane', 'controller_pi_dev')), None)
         controller_meta = (controller.metadata or {}) if controller else {}
         wrapper_version = str(controller_meta.get('runner_version') or controller_meta.get('endpoint_version') or '').strip()
         if wrapper_version and wrapper_version != PAC_VERSION:
-            issues.append(_setup_issue('controller_wrapper_version_mismatch', 'Update the local PAC wrapper binary', f'The controller wrapper reports version {wrapper_version}, but the PAC server is running {PAC_VERSION}. Update the local wrapper before trusting controller pi.dev readiness.', 'settings-tab', 'Open Settings'))
+            issues.append(_setup_issue('controller_wrapper_version_mismatch', 'Update the local PAC wrapper binary', f'The controller wrapper reports version {wrapper_version}, but the PAC server is running {PAC_VERSION}. Update the local wrapper before trusting controller pi.dev readiness.', 'settings:pi-dev', 'Open pi.dev Settings'))
     if config.auth.enabled and config.auth.mode == 'dev-token' and str(config.auth.dev_token or '').strip() in {'', 'change-me'}:
         issues.append(_setup_issue('dev_token_default', 'Replace the default bearer token', 'Authentication is enabled, but the bearer token is still the default placeholder.', 'settings-tab', 'Open Settings'))
     if unsupported_models:
