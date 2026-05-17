@@ -69,6 +69,7 @@ let sessionHydrationToken = 0;
 let sessionHydrationActiveFor = null;
 let sessionHydrationBufferedEvents = [];
 let providerHealthCache = new Map();
+let controllerHarnessStatusCache = null;
 
 const AUTH_TOKEN_KEY = 'pac_auth_token';
 
@@ -3883,6 +3884,7 @@ function fillHarnessSelects() {
 }
 
 function renderControllerHarnessSettings(status=null) {
+  const effectiveStatus = status || controllerHarnessStatusCache;
   fillHarnessSelects();
   const h = config.controller_harness || {};
   const setVal = (id, value) => { const el = document.getElementById(id); if (el) el.value = value ?? ''; };
@@ -3904,9 +3906,9 @@ function renderControllerHarnessSettings(status=null) {
   const runtimeBox = document.getElementById('controllerHarnessRuntime');
   const logsBox = document.getElementById('controllerHarnessLogs');
   if (box) {
-    const session = status?.session;
-    const runner = status?.runner;
-    const diag = status?.diagnostics || {};
+    const session = effectiveStatus?.session;
+    const runner = effectiveStatus?.runner;
+    const diag = effectiveStatus?.diagnostics || {};
     const wrapperCap = runner?.capabilities?.pac_wrapper || {};
     const wrapperProc = diag.wrapper_process || {};
     const pi = runner?.capabilities?.pi_container || {};
@@ -3917,8 +3919,8 @@ function renderControllerHarnessSettings(status=null) {
       ? `${pi.image || 'available'}${pi.available ? '' : ' (image present, runtime not ready)'}`
       : (pi.reason || 'missing');
     const rows = {
-      'State': status ? (status.ok ? 'ready' : 'needs setup') : 'not checked',
-      'Message': status?.message || 'Saved settings are shown below.',
+      'State': effectiveStatus ? (effectiveStatus.ok ? 'ready' : 'needs setup') : 'not checked',
+      'Message': effectiveStatus?.message || 'Saved settings are shown below.',
       'Runner': runner?.name || h.runner_id || '-',
       'Session': session?.name || '-',
       'Model': session?.model || h.model || 'profile default',
@@ -3929,10 +3931,10 @@ function renderControllerHarnessSettings(status=null) {
     box.innerHTML = Object.entries(rows).map(([k,v]) => `<div><span>${k}</span><code>${escapeHtml(String(v))}</code></div>`).join('');
   }
   if (runtimeBox) {
-    const diag = status?.diagnostics || {};
+    const diag = effectiveStatus?.diagnostics || {};
     const wrapper = diag.wrapper_process || {};
     const daemon = diag.pi_daemon || {};
-    const runnerMeta = status?.runner?.metadata || {};
+    const runnerMeta = effectiveStatus?.runner?.metadata || {};
     const agentRuntime = runnerMeta.agent_runtime || {};
     const rows = {
       'Wrapper state': wrapper.running ? 'running' : 'stopped',
@@ -3947,7 +3949,7 @@ function renderControllerHarnessSettings(status=null) {
     };
     runtimeBox.innerHTML = Object.entries(rows).map(([k,v]) => `<div><span>${k}</span><code>${escapeHtml(String(v))}</code></div>`).join('');
   }
-  if (logsBox) logsBox.textContent = status?.diagnostics?.wrapper_log_tail || '';
+  if (logsBox) logsBox.textContent = effectiveStatus?.diagnostics?.wrapper_log_tail || '';
 }
 
 async function loadControllerHarnessStatus() {
@@ -3957,10 +3959,13 @@ async function loadControllerHarnessStatus() {
       api('/v1/controller-harness/diagnostics').catch(()=>null),
     ]);
     if (diagnostics) status.diagnostics = diagnostics;
+    controllerHarnessStatusCache = status;
     renderControllerHarnessSettings(status);
     return status;
   } catch (e) {
-    renderControllerHarnessSettings({ok:false, message:e.message});
+    const fallback = controllerHarnessStatusCache ? {...controllerHarnessStatusCache, ok:false, message:e.message || controllerHarnessStatusCache.message} : {ok:false, message:e.message};
+    controllerHarnessStatusCache = fallback;
+    renderControllerHarnessSettings(fallback);
     return null;
   }
 }
