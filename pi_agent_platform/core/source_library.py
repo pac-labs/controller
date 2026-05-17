@@ -135,6 +135,19 @@ def _read_version_file(folder: Path) -> str | None:
     return None
 
 
+def _binary_build_version(folder: Path) -> str | None:
+    """Pick the version to stamp into built PAC binaries.
+
+    For controller-shipped binaries, prefer the packaged/root PAC version over any
+    stale nested VERSION file inside the binary source folder.
+    """
+    local_version = _read_version_file(folder)
+    packaged_version = _packaged_version()
+    if folder.name in {"pac-endpoint", "pac-endpoint-runner", "pac-agent", "pacctl", "zed-binary"}:
+        return packaged_version or local_version
+    return local_version or packaged_version
+
+
 def _pack_members(zip_path: Path) -> list[zipfile.ZipInfo]:
     with zipfile.ZipFile(zip_path) as zf:
         return [info for info in zf.infolist() if not info.is_dir()]
@@ -619,7 +632,7 @@ def build_binary(folder_path: str, targets: list[str] | None = None, runtime: st
         # Continue and let the container export step surface the exact mount/write
         # error in the UI event output.
         pass
-    version = _read_version_file(folder) or _packaged_version()
+    version = _binary_build_version(folder)
     project_name = 'pac-zed' if folder.name == 'zed-binary' else folder.name
     compiled_server_url = os.environ.get("PAC_BUILD_SERVER_URL", os.environ.get("PAC_PUBLIC_URL", "")).strip().rstrip('/')
     target_csv = ','.join(target_list)
@@ -692,7 +705,7 @@ def list_binary_artifacts(project: str | None = None) -> dict[str, Any]:
     for name in _project_names():
         root = base / name
         source_dir = source_base / name
-        source_version = _read_version_file(source_dir)
+        source_version = _binary_build_version(source_dir)
         artifacts = []
         versions: dict[str, dict[str, Any]] = {}
         if root.exists():
