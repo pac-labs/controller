@@ -222,6 +222,28 @@ def _looks_like_wrapped_tool_markup(text: str) -> bool:
     )
 
 
+def _looks_like_action_narration(text: str) -> bool:
+    raw = str(text or "").strip().lower()
+    if not raw:
+        return False
+    signals = (
+        "i will ",
+        "i'll ",
+        "i am going to ",
+        "i'm going to ",
+        "i am running ",
+        "i'm running ",
+        "i will use ",
+        "i will perform ",
+        "i will search ",
+        "i will inspect ",
+        "i will scan ",
+        "i will list ",
+        "i will read ",
+    )
+    return any(signal in raw for signal in signals)
+
+
 def _safe_path(session: Session, rel_path: str) -> Path:
     root = Path(session.workspace_path).resolve()
     target = (root / rel_path).resolve()
@@ -707,6 +729,18 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                 store.add_event(Event(session_id=session.id, task_id=task.id, type="tool_call_parse_failed", message="Model returned malformed tool-call markup; requesting a corrected tool call.", data={"role": "assistant", "model": decision_model, "raw": raw[-4000:]}))
                 messages.append({"role": "assistant", "content": raw})
                 messages.append({"role": "user", "content": 'Your previous reply contained malformed tool-call markup. Return ONE valid JSON object only. If you intend to act, return {"type":"tool_call","tool":"...","input":{...}}. Do not include wrapper markers, pseudo-code, or explanatory narration.'})
+                continue
+            if _prompt_requests_codebase_inspection(task.prompt) and _looks_like_action_narration(raw):
+                store.add_event(Event(session_id=session.id, task_id=task.id, type="action_narration_rejected", message="Model narrated an action instead of taking one; requesting a real tool call.", data={"role": "assistant", "model": decision_model, "raw": raw[-4000:]}))
+                messages.append({"role": "assistant", "content": raw})
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "Do not narrate future actions for this code/workspace task. "
+                        "If inspection is needed, return exactly ONE valid tool_call JSON object now. "
+                        "Only return a final answer after you have actually inspected the workspace."
+                    ),
+                })
                 continue
             task.status = TaskStatus.completed
             task.output = raw

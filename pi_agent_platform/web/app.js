@@ -1134,6 +1134,7 @@ function deriveComposerThinkingState(events) {
     }
     const next = sessionThinkingSummary(event, normalizeTimelineBlock(event));
     if (next) summary = next;
+    else if (!summary && type.includes('tool_result')) summary = String(event?.message || '').trim();
   }
   return {
     active: true,
@@ -1145,6 +1146,20 @@ function deriveComposerThinkingState(events) {
     tokensUsed,
     tokensBudget,
   };
+}
+function renderComposerThinkingStatus(state) {
+  const el = document.getElementById('composerThinkingStatus');
+  if (!el) return;
+  if (!state || !state.active) {
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
+  const duration = formatDurationMs(Math.max(0, (Date.now() - new Date(state.startedAt || new Date().toISOString()).getTime())));
+  const toolCount = Number(state.toolCount || 0);
+  const stepText = state.step ? ` · step ${escapeHtml(String(state.step))}` : '';
+  el.hidden = false;
+  el.innerHTML = `<span class="tiny-spinner square" aria-hidden="true"></span><span class="composer-thinking-copy"><span class="composer-thinking-text">${escapeHtml(state.summary || 'Thinking')}</span><span class="composer-thinking-meta">Thinking for ${escapeHtml(duration)}${stepText}${toolCount ? ` · ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}` : ''}${state.approvalPending ? ' · awaiting approval' : ''}</span></span>`;
 }
 function resetSessionTimelineState() {
   sessionThinkingGroups = new Map();
