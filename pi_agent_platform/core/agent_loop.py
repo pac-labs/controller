@@ -118,11 +118,31 @@ def _summarize_model_action(action: dict[str, Any]) -> tuple[str, dict[str, Any]
         return concise or "Preparing final response", {"action_type": kind}
     return "Re-evaluating next step", {"action_type": kind or "unknown"}
 
+
+def _extract_wrapped_tool_call(text: str) -> dict[str, Any] | None:
+    raw = str(text or "").strip()
+    match = re.search(r"<\|tool_call\>\s*call:([A-Za-z0-9_:-]+)\s*(\{.*?\})\s*<tool_call\|>", raw, re.DOTALL)
+    if not match:
+        return None
+    tool = str(match.group(1) or "").strip()
+    if not tool:
+        return None
+    try:
+        inp = json.loads(match.group(2))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(inp, dict):
+        return None
+    return {"type": "tool_call", "tool": tool, "input": inp}
+
 def _extract_json(text: str) -> dict[str, Any]:
     text = text.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?", "", text).strip()
         text = re.sub(r"```$", "", text).strip()
+    wrapped = _extract_wrapped_tool_call(text)
+    if wrapped:
+        return wrapped
     decoder = json.JSONDecoder()
     actions: list[dict[str, Any]] = []
     idx = 0

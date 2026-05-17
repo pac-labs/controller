@@ -68,6 +68,7 @@ let suppressSessionAutoScroll = false;
 let sessionHydrationToken = 0;
 let sessionHydrationActiveFor = null;
 let sessionHydrationBufferedEvents = [];
+let sessionAutoScrollPinned = true;
 let providerHealthCache = new Map();
 let controllerHarnessStatusCache = null;
 
@@ -266,16 +267,27 @@ function appendText(parent, tag, className, text) {
   parent.appendChild(el);
   return el;
 }
+function normalizeAssistantText(text) {
+  return String(text || '')
+    .replace(/\$\\rightarrow\$/g, '→')
+    .replace(/\$\\leftarrow\$/g, '←')
+    .replace(/\{\\rightarrow\}/g, '→')
+    .replace(/\{\\leftarrow\}/g, '←')
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 function appendChatText(parent, role, text) {
   if (text == null || text === '') return null;
+  const normalized = (role === 'assistant' || role === 'system' || role === 'error') ? normalizeAssistantText(text) : String(text);
   if (typeof marked !== 'undefined' && (role === 'assistant' || role === 'system' || role === 'error')) {
     const el = document.createElement('div');
     el.className = 'chat-bubble-text markdown-body';
-    el.innerHTML = marked.parse(String(text));
+    el.innerHTML = marked.parse(normalized);
     parent.appendChild(el);
     return el;
   }
-  return appendText(parent, 'div', 'chat-bubble-text', text);
+  return appendText(parent, 'div', 'chat-bubble-text', normalized);
 }
 function normalizeTimelineBlock(event) {
   const data = event?.data && typeof event.data === 'object' ? event.data : {};
@@ -888,7 +900,7 @@ function renderSessionApprovalRow(event) {
   row.appendChild(bubble);
   sessionApprovalRows.set(taskId, row);
   el.appendChild(row);
-  el.scrollTop = el.scrollHeight;
+  scrollSessionToBottom();
 }
 function syncSessionPermissionQuick() {
   const select = document.getElementById('sessionPermissionQuick');
@@ -999,6 +1011,28 @@ function renderSessionSidebar(sessions = window.__pacSessions || []) {
     list.appendChild(item);
   });
 }
+function sessionTimelineNearBottom(el, threshold = 88) {
+  if (!el) return true;
+  return (el.scrollHeight - el.scrollTop - el.clientHeight) <= threshold;
+}
+function updateSessionAutoScrollState() {
+  const el = document.getElementById('events');
+  if (!el) return;
+  sessionAutoScrollPinned = sessionTimelineNearBottom(el);
+}
+function scrollSessionToBottom(force = false) {
+  const el = document.getElementById('events');
+  if (!el) return;
+  if (force || suppressSessionAutoScroll || sessionAutoScrollPinned) el.scrollTop = el.scrollHeight;
+  updateSessionAutoScrollState();
+}
+function bindSessionTimelineScroll() {
+  const el = document.getElementById('events');
+  if (!el || el.dataset.autoscrollBound) return;
+  el.addEventListener('scroll', () => updateSessionAutoScrollState());
+  el.dataset.autoscrollBound = '1';
+  updateSessionAutoScrollState();
+}
 function resetSessionTimelineState() {
   sessionThinkingGroups = new Map();
   sessionEventSeen = new Set();
@@ -1016,17 +1050,22 @@ function getThinkingGroup(taskId) {
 function renderSessionSnapshotFast(snapshot, sessionId) {
   const timeline = document.getElementById('events');
   if (!timeline) return;
+  bindSessionTimelineScroll();
   const events = Array.isArray(snapshot) ? snapshot : [];
   const recentChunkSize = 220;
   const tail = events.slice(-recentChunkSize);
   const token = ++sessionHydrationToken;
   sessionHydrationActiveFor = sessionId;
+  const wasPinned = sessionAutoScrollPinned || sessionTimelineNearBottom(timeline, 8);
+  const previousBottomOffset = Math.max(0, timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight);
   timeline.innerHTML = tail.length ? '' : '<div class="empty-timeline">No session events yet.</div>';
   resetSessionTimelineState();
   suppressSessionAutoScroll = true;
   tail.forEach((ev) => renderSessionTimelineEvent(ev));
   suppressSessionAutoScroll = false;
-  timeline.scrollTop = timeline.scrollHeight;
+  if (wasPinned) timeline.scrollTop = timeline.scrollHeight;
+  else timeline.scrollTop = Math.max(0, timeline.scrollHeight - timeline.clientHeight - previousBottomOffset);
+  updateSessionAutoScrollState();
   if (selectedSession && selectedSession.id === sessionId && sessionHydrationToken === token) {
     sessionHydrationActiveFor = null;
     sessionHydrationBufferedEvents = [];
@@ -1093,7 +1132,7 @@ function addPendingRow(taskId) {
   }
   sessionPendingRows.set(taskId, group.row);
   updateSessionThinkingRow(group);
-  el.scrollTop = el.scrollHeight;
+  scrollSessionToBottom();
 }
 function renderSessionTimelineEvent(event, options = {}) {
   const el = document.getElementById('events');
@@ -1127,7 +1166,7 @@ function renderSessionTimelineEvent(event, options = {}) {
       flushSessionThinkingGroup(event);
     }
     while (el.children.length > 250) el.removeChild(el.firstChild);
-    el.scrollTop = el.scrollHeight;
+    scrollSessionToBottom();
     return;
   }
   if (sessionLifecycleEventIsNoise(event)) return;
@@ -1164,7 +1203,7 @@ function renderSessionTimelineEvent(event, options = {}) {
   if (prepend && el.firstChild) el.insertBefore(row, el.firstChild);
   else el.appendChild(row);
   while (el.children.length > 250) el.removeChild(el.firstChild);
-  if (!suppressSessionAutoScroll) el.scrollTop = el.scrollHeight;
+  if (!prepend) scrollSessionToBottom();
 }
 
 function renderGlobalEvent(event, prepend=false) {
