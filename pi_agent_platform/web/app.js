@@ -3454,6 +3454,11 @@ function guessProfileForTech(stackSpec) {
     const lower = String(name || '').toLowerCase();
     if (hints.some(h => lower.includes(h))) return name;
   }
+  for (const [name] of entries) {
+    const lower = String(name || '').toLowerCase();
+    if (lower.includes('coder') || lower.includes('coding') || lower.includes('code') || lower.includes('dev')) return name;
+  }
+  if (config.agent_profiles?.['main-pi-dev']) return 'main-pi-dev';
   return entries[0]?.[0] || '';
 }
 function guessModelForTech(stackSpec, profileName='') {
@@ -3520,16 +3525,46 @@ function inferredToolFromSourcePath() {
   const match = /^plugins\/([^/]+)/.exec(path);
   return match?.[1] || '';
 }
+function sourcePathExistsInTree(path='') {
+  const normalized = String(path || '').replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+  if (!normalized) return false;
+  if (sourceTreeCache.has(normalized)) return true;
+  const rootData = sourceTreeCache.get('') || {items: []};
+  let items = rootData.items || [];
+  if (!items.length && Array.isArray(rootData.top_level) && rootData.top_level.length) {
+    items = rootData.top_level.map((name) => ({name, path: name, type: 'dir'}));
+  }
+  let current = '';
+  for (const part of normalized.split('/').filter(Boolean)) {
+    const nextPath = current ? `${current}/${part}` : part;
+    const match = (items || []).find((item) => String(item.path || item.name || '').replace(/\\/g, '/') === nextPath || String(item.name || '') === part);
+    if (!match || match.type !== 'dir') return false;
+    if (nextPath === normalized) return true;
+    current = nextPath;
+    items = (sourceTreeCache.get(current) || {}).items || [];
+  }
+  return false;
+}
 function sourceToolEntries() {
-  return Object.entries(config.plugins || {}).map(([name, plugin]) => ({
-    id: name,
-    kind: plugin.kind || 'plugin',
-    description: plugin.description || '',
-    requiresTools: Array.isArray(plugin.requires_tools) ? plugin.requires_tools : [],
-    documentation: plugin.documentation || '',
-    sourcePath: `plugins/${name}`,
-    enabled: plugin.enabled !== false,
-  }));
+  const pluginMap = config.plugins || {};
+  const toolMap = config.tools || {};
+  const ids = Array.from(new Set([...Object.keys(toolMap), ...Object.keys(pluginMap)])).sort((a, b) => a.localeCompare(b));
+  return ids.map((name) => {
+    const plugin = pluginMap[name] || {};
+    const tool = toolMap[name] || {};
+    const sourcePath = `plugins/${name}`;
+    return {
+      id: name,
+      kind: plugin.kind || 'tool',
+      description: plugin.description || tool.description || '',
+      requiresTools: Array.isArray(plugin.requires_tools) ? plugin.requires_tools : [],
+      binaries: Array.isArray(tool.binaries) ? tool.binaries : [],
+      documentation: plugin.documentation || '',
+      sourcePath,
+      sourceAvailable: sourcePathExistsInTree(sourcePath),
+      enabled: plugin.enabled !== false && tool.enabled !== false,
+    };
+  });
 }
 function selectedSourceToolIds() {
   const inferred = inferredToolFromSourcePath();
@@ -3558,26 +3593,29 @@ function renderSourceToolCatalog() {
   const current = sourceSelectedToolId || inferred;
   if (!current && inferred) sourceSelectedToolId = inferred;
   statusEl.textContent = current
-    ? `Selected tool source: plugins/${current}. Coding sessions use live workspace/JIT access, so edits under this folder are available without a separate publish step.`
-    : 'Select a tool source or open a file under plugins/<tool> to attach that tool context to the coding session.';
+    ? `Selected tool: ${current}. If plugins/${current} exists, its source is attached live from the trusted workspace.`
+    : 'Select a tool or open a file under plugins/<tool> to attach that tool context to the coding session.';
   if (!entries.length) {
-    toolsEl.textContent = 'No agent tools configured.';
+    toolsEl.textContent = 'No agent tools are configured yet.';
     return;
   }
   toolsEl.innerHTML = entries.map((item) => {
     const selected = item.id === (sourceSelectedToolId || inferred);
     const requires = item.requiresTools.length ? item.requiresTools.join(', ') : 'none';
+    const runtimeBinaries = item.binaries.length ? item.binaries.join(', ') : 'none';
     return `
       <div class="inline-browser-row ${selected ? 'selected' : ''}">
         <div>
           <b>${escapeHtml(item.id)}</b> <span class="pill">${escapeHtml(item.kind)}</span>
           ${!item.enabled ? '<span class="pill warning">disabled</span>' : ''}
+          ${item.sourceAvailable ? '<span class="pill ok">source attached</span>' : '<span class="pill">no source tree</span>'}
           <div class="muted small-text">${escapeHtml(item.description || 'Agent tool source')}</div>
           <div class="muted small-text">source: ${escapeHtml(item.sourcePath)}</div>
+          <div class="muted small-text">runtime binaries: ${escapeHtml(runtimeBinaries)}</div>
           <div class="muted small-text">requires: ${escapeHtml(requires)}</div>
         </div>
         <div class="button-row compact-actions">
-          <button class="ghost-button source-tool-open" data-tool-open="${escapeHtml(item.id)}">Open source</button>
+          <button class="ghost-button source-tool-open" data-tool-open="${escapeHtml(item.id)}"${item.sourceAvailable ? '' : ' disabled'}>Open source</button>
           <button class="ghost-button source-tool-select" data-tool-select="${escapeHtml(item.id)}">${selected ? 'Attached' : 'Use in session'}</button>
         </div>
       </div>
@@ -3610,20 +3648,28 @@ function updateSourceCodingPanel() {
   const setText = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value || '-'; };
   const contextSummary = document.getElementById('sourceCodingContextSummary');
   if (contextSummary) {
-    contextSummary.textContent = sourceResolvedContext?.name
-      ? `Resolved ${sourceResolvedContext.name} for ${selectedSourceEntry || selectedSourceFolder || 'current source path'}. User memory and personal preferences are managed from Personal settings.`
-      : 'Select a source file or source context to resolve endpoint, profile, and workspace defaults.';
+    contextSummary.textContent = defaults.existingSession?.id
+      ? `Coding session ${defaults.existingSession.name || defaults.existingSession.id} is attached to ${endpointName}. Open files and the current workspace are sent as code context.`
+      : (sourceResolvedContext?.name
+        ? `No coding session yet. Resolved ${sourceResolvedContext.name} for ${selectedSourceEntry || selectedSourceFolder || 'current source path'}. Start a coding session to work on this codebase.`
+        : 'No coding session yet. Select a source file or context, then start a coding session for code work on this workspace.');
   }
   setText('sourceCodingStack', defaults.stack);
   setText('sourceCodingContainer', defaults.containerImage || '-');
   setText('sourceCodingEndpoint', endpointName);
-  setText('sourceCodingProfile', defaults.profileName || '-');
+  setText('sourceCodingProfile', defaults.profileName || 'main-pi-dev');
   setText('sourceCodingWorkspace', defaults.workspacePath || '-');
   setText('sourceCodingContextName', defaults.contextName || 'none');
   setText('sourceCodingModel', defaults.modelName || '-');
   setText('sourceCodingSession', defaults.existingSession?.name || (sourceCodingSessionId ? 'attached' : 'not started'));
   const openFiles = document.getElementById('sourceCodingOpenFiles');
   if (openFiles) openFiles.innerHTML = sourceOpenFilesSummaryHtml();
+  const startBtn = document.getElementById('bootstrapSourceCodingSession');
+  if (startBtn) startBtn.textContent = defaults.existingSession?.id ? 'Reopen coding session' : 'Start coding session';
+  const sendBtn = document.getElementById('askSourceCodingSession');
+  if (sendBtn) sendBtn.textContent = defaults.existingSession?.id ? 'Send to coding session' : 'Start and send';
+  const openBtn = document.getElementById('openSourceCodingSession');
+  if (openBtn) openBtn.disabled = !defaults.existingSession?.id && !sourceCodingSessionId;
   renderSourceToolCatalog();
   sourceCodingSessionId = defaults.existingSession?.id || sourceCodingSessionId || '';
 }
@@ -3674,7 +3720,8 @@ function buildSourceCodingPrompt(userPrompt='') {
   const filePayload = sourceOpenFilePayload();
   const toolPayload = sourceToolPayload();
   const parts = [
-    'You are working from the PAC IDE workbench.',
+    'You are working from the PAC IDE coding workbench.',
+    'Focus on code, build failures, runtime errors, tests, and direct fixes in the selected workspace.',
     `Current source path: ${selectedSourceEntry || selectedSourceFolder || currentFile || '-'}.`,
     `Open files: ${openFiles.length ? openFiles.join(', ') : 'none'}.`,
   ];
@@ -5538,8 +5585,15 @@ if (deleteSourceBtn) deleteSourceBtn.onclick = () => deleteSelectedSourceEntry()
 const sourceContextSelect = document.getElementById('sourceContextSelect');
 if (sourceContextSelect) sourceContextSelect.onchange = () => { fillSourceContextForm(sourceContextSelect.value || ''); resolveCurrentSourceContext().catch(()=>{}); };
 const openSourceSetupModalBtn = document.getElementById('openSourceSetupModal');
+const openSourceToolsModalBtn = document.getElementById('openSourceToolsModal');
 const closeSourceSetupModalBtn = document.getElementById('closeSourceSetupModal');
 if (openSourceSetupModalBtn) openSourceSetupModalBtn.onclick = () => { const modal = document.getElementById('sourceSetupModal'); if (modal) modal.hidden = false; };
+if (openSourceToolsModalBtn) openSourceToolsModalBtn.onclick = () => {
+  const modal = document.getElementById('sourceSetupModal');
+  if (modal) modal.hidden = false;
+  const section = document.getElementById('sourceToolsModalSection');
+  if (section) setTimeout(() => section.scrollIntoView({block:'start', behavior:'smooth'}), 10);
+};
 if (closeSourceSetupModalBtn) closeSourceSetupModalBtn.onclick = () => { const modal = document.getElementById('sourceSetupModal'); if (modal) modal.hidden = true; };
 const sourceSetupModal = document.getElementById('sourceSetupModal');
 if (sourceSetupModal) sourceSetupModal.onclick = (ev) => { if (ev.target === sourceSetupModal) sourceSetupModal.hidden = true; };

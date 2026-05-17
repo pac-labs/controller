@@ -458,7 +458,10 @@
           <section class="source-sidecard">
             <div class="section-heading compact-heading">
               <div><h3>Coding Session</h3><p class="muted">Use the selected source area and open files to bootstrap a workspace-backed coding session on an endpoint.</p></div>
-              <button id="openSourceSetupModal" class="ghost-button">Workspace setup</button>
+              <div class="button-row compact-actions">
+                <button id="openSourceSetupModal" class="ghost-button">Workspace setup</button>
+                <button id="openSourceToolsModal" class="ghost-button">Agent tools</button>
+              </div>
             </div>
             <div id="sourceCodingContextSummary" class="source-secret-audit muted">Select a source path to resolve workspace context.</div>
             <div class="health-grid source-coding-health">
@@ -486,15 +489,6 @@
               <button id="openSourceCodingSession" class="ghost-button">Open session</button>
             </div>
             <div id="sourceCodingStatus" class="inline-result compact-result" hidden></div>
-          </section>
-          <section class="source-sidecard">
-            <div class="section-heading compact-heading"><div><h3>Agent tools</h3><p class="muted">Tools under <code>plugins/</code> are available live from the trusted workspace. Changes can be used by coding sessions without a separate export step.</p></div></div>
-            <div id="sourceCodingToolStatus" class="source-secret-audit muted">No tool selected yet.</div>
-            <div id="sourceCodingTools" class="source-secret-audit muted">No agent tools configured.</div>
-          </section>
-          <section class="source-sidecard">
-            <div class="section-heading compact-heading"><div><h3>Resolved Workspace Bundle</h3><p class="muted">Workspace variables and secret refs are resolved here. Personal memory, tokens, and preferences live in your profile settings.</p></div></div>
-            <pre id="sourceContextResolved" class="inline-result compact-result source-side-result">Select a source context to inspect the resolved environment bundle.</pre>
           </section>
         </aside>
       </div>
@@ -528,8 +522,17 @@
                 <button id="deleteSourceContext" class="ghost-button">Delete</button>
               </div>
             </section>
+            <section id="sourceToolsModalSection" class="source-sidecard">
+              <div class="section-heading compact-heading"><div><h3>Agent Tools</h3><p class="muted">Coding sessions can use any configured PAC tool. If a matching <code>plugins/&lt;tool&gt;</code> source folder exists, that live source is attached from the trusted workspace.</p></div></div>
+              <div id="sourceCodingToolStatus" class="source-secret-audit muted">No tool selected yet.</div>
+              <div id="sourceCodingTools" class="source-secret-audit muted">No agent tools configured.</div>
+            </section>
           </div>
           <aside class="updates-detail-panel">
+            <section class="source-sidecard">
+              <div class="section-heading compact-heading"><div><h3>Resolved Workspace Bundle</h3><p class="muted">Workspace variables and secret refs are resolved here. Personal memory, tokens, and preferences live in your profile settings.</p></div></div>
+              <pre id="sourceContextResolved" class="inline-result compact-result source-side-result">Select a source context to inspect the resolved environment bundle.</pre>
+            </section>
             <section class="source-sidecard">
               <div class="section-heading compact-heading"><div><h3>Workspace variables</h3><p class="muted">Reusable config fragments that resolve into trusted workspaces without exposing secret values directly.</p></div></div>
               <label>Variable <select id="sourceVariableSelect"><option value="">Select variable</option></select></label>
