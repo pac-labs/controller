@@ -35,7 +35,7 @@ from pi_agent_platform.core.config import AppConfig, ProviderConfig, AgentProfil
 from pi_agent_platform.core.platform_home import ensure_pacp_layout, pacp_path
 from pi_agent_platform.core.models import AccessRequest, AccessRequestStatus, Event, Group, ResourceGrant, Session, SessionCreate, Task, TaskCreate, TaskStatus, SessionStatus, Runner, RunnerCreateRequest, RunnerRegisterRequest, RunnerHeartbeat, RunnerStatus, RunnerJobCreate, RunnerJob, RunnerJobStatus, RunnerJobUpdate, RunnerJobLog, RunnerExecutionMode, User
 from pi_agent_platform.core.runtime import git_diff, git_status, run_shell_task
-from pi_agent_platform.core.agent_loop import run_agent_loop
+from pi_agent_platform.core.agent_loop import run_agent_loop, execute_tool
 from pi_agent_platform.core.session_commands import list_session_slash_commands, parse_session_slash_command, slash_help_text
 from pi_agent_platform.core.subagents import spawn_pi_dev_subagent
 from pi_agent_platform.core.runner_discovery import discover_host, discover_containers
@@ -929,6 +929,23 @@ def _start_controller_wrapper_supervisor() -> bool:
         return False
     threading.Thread(target=_controller_wrapper_supervisor, daemon=True).start()
     return True
+
+
+def _restart_controller_wrapper() -> dict[str, Any]:
+    global _CONTROLLER_WRAPPER_PROC
+    proc = _CONTROLLER_WRAPPER_PROC
+    if proc is not None and proc.poll() is None:
+        try:
+            proc.terminate()
+            proc.wait(timeout=10)
+        except Exception:
+            try:
+                proc.kill()
+                proc.wait(timeout=5)
+            except Exception:
+                pass
+    _CONTROLLER_WRAPPER_PROC = None
+    return _start_controller_wrapper_once()
 
 
 def _container_runtime_for_pi_dev() -> str | None:
@@ -3561,6 +3578,26 @@ def bootstrap_controller_harness(_auth: None = Depends(require_auth)) -> dict[st
     return {'status': 'running' if started else 'disabled', 'message': 'Controller pi.dev bootstrap started. Progress is shown in Events.' if started else 'Controller pi.dev is disabled in Settings.'}
 
 
+@app.post('/v1/controller-harness/update-wrapper')
+def update_controller_wrapper(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    wrapper_result = _ensure_controller_wrapper(allow_build=True)
+    restart_result = _restart_controller_wrapper() if wrapper_result.get('ok') else {'ok': False, 'status': 'skipped', 'message': 'Wrapper restart skipped because build/install did not succeed.'}
+    refreshed = _refresh_local_runner_metadata(emit_event=False)
+    payload = {
+        'ok': bool(wrapper_result.get('ok')) and bool(restart_result.get('ok')),
+        'wrapper': wrapper_result,
+        'restart': restart_result,
+        'runner': refreshed.model_dump(),
+        'diagnostics': {
+            'wrapper_process': _wrapper_process_state(),
+            'pi_daemon': _pi_dev_daemon_state(),
+        },
+        'message': 'Controller wrapper updated and restarted.' if wrapper_result.get('ok') and restart_result.get('ok') else (wrapper_result.get('message') or restart_result.get('message') or 'Controller wrapper update needs attention.'),
+    }
+    store.add_event(Event(session_id='system', type='controller_wrapper_updated' if payload['ok'] else 'controller_wrapper_update_failed', message=payload['message'], data=payload))
+    return payload
+
+
 @app.post('/v1/controller-harness/settings')
 def save_controller_harness_settings(payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict[str, Any]:
     global config
@@ -3885,7 +3922,10 @@ async def create_task(session_id: str, payload: TaskCreate, background_tasks: Ba
     _require_resource_access(_auth, resource_type, resource_id, 'write', reason='Send prompts or commands to this session', session_id=session.id)
 
     metadata = dict(payload.metadata or {})
+    literal_tool_call = _parse_literal_tool_call(payload.prompt)
     parsed_slash = parse_session_slash_command(payload.prompt)
+    if literal_tool_call and not parsed_slash:
+        metadata['direct_tool_call'] = literal_tool_call
     if parsed_slash:
         if parsed_slash.get('error'):
             raise HTTPException(status_code=400, detail=parsed_slash['error'])
@@ -3935,6 +3975,23 @@ async def create_task(session_id: str, payload: TaskCreate, background_tasks: Ba
         'stored': True,
     }
     store.add_event(Event(session_id=session_id, task_id=task.id, type='user_message', message=payload.prompt, data=message_meta))
+    if metadata.get('direct_tool_call'):
+        direct = metadata['direct_tool_call'] if isinstance(metadata.get('direct_tool_call'), dict) else {}
+        tool = str(direct.get('tool') or '').strip()
+        inp = direct.get('input') if isinstance(direct.get('input'), dict) else {}
+        if not tool:
+            raise HTTPException(status_code=400, detail='Tool call is missing tool name')
+        task.status = TaskStatus.running
+        store.add_task(task)
+        store.add_event(Event(session_id=session_id, task_id=task.id, type='tool_call', message=tool, data={'tool': tool, 'input': inp, 'direct': True, 'endpoint_id': endpoint_id, 'endpoint_name': endpoint_name}))
+        output, paused = await execute_tool(session, task, tool, inp, config)
+        if paused:
+            return store.get_task(task.id) or task
+        task.status = TaskStatus.completed
+        task.output = output[-4000:] if isinstance(output, str) else str(output)
+        store.add_task(task)
+        store.add_event(Event(session_id=session_id, task_id=task.id, type='result', message=task.output, data={'role': 'assistant', 'model': metadata.get('model') or session.model, 'agent_profile': session.agent_profile, 'endpoint_id': endpoint_id, 'endpoint_name': endpoint_name, 'direct_tool_call': tool, 'timeline': {'title': f'Direct tool call: {tool}', 'summary': task.output[:400] if isinstance(task.output, str) else str(task.output)[:400], 'fields': {'Endpoint': endpoint_name or endpoint_id or '-', 'Tool': tool}}}))
+        return task
     if metadata.get('context_action') == 'compact':
         task.status = TaskStatus.completed
         task.output = 'Context compaction requested for this session.'
@@ -4115,6 +4172,47 @@ def add_session_event(session_id: str, payload: TimelineEventCreate, _auth: None
     event = Event(session_id=session_id, task_id=payload.task_id, type=event_type, message=payload.message or event_type, data=payload.data or {})
     store.add_event(event)
     return event
+
+
+def _load_loose_json_object(text: str) -> dict[str, Any] | None:
+    raw = str(text or '').strip()
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else None
+    except Exception:
+        pass
+    normalized = re.sub(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_-]*)(\s*:)', r'\1"\2"\3', raw)
+    normalized = normalized.replace("'", '"')
+    try:
+        parsed = json.loads(normalized)
+        return parsed if isinstance(parsed, dict) else None
+    except Exception:
+        return None
+
+
+def _parse_literal_tool_call(prompt: str) -> dict[str, Any] | None:
+    raw = str(prompt or '').strip()
+    if not raw:
+        return None
+    wrapped = re.fullmatch(r'<\|tool_call\>\s*call:([A-Za-z0-9_:-]+)\s*(\{.*\})\s*<tool_call\|>', raw, re.DOTALL)
+    if wrapped:
+        tool = wrapped.group(1).strip()
+        payload = _load_loose_json_object(wrapped.group(2)) or {}
+        return {'tool': tool, 'input': payload}
+    parsed = _load_loose_json_object(raw)
+    if not parsed:
+        return None
+    if str(parsed.get('type') or '').strip().lower() != 'tool_call':
+        return None
+    tool = str(parsed.get('tool') or '').strip()
+    if not tool:
+        return None
+    payload = parsed.get('input')
+    if not isinstance(payload, dict):
+        payload = {}
+    return {'tool': tool, 'input': payload}
 
 
 @app.get('/v1/sessions/{session_id}/events')

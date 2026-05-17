@@ -4129,6 +4129,16 @@ async function bootstrapControllerHarness() {
   await loadRunners().catch(()=>{});
 }
 
+async function updateControllerHarnessWrapper() {
+  const result = document.getElementById('controllerHarnessResult');
+  if (result) result.textContent = 'Updating local PAC wrapper…';
+  const status = await api('/v1/controller-harness/update-wrapper', {method:'POST'});
+  if (result) result.textContent = status.message || 'Controller wrapper update completed.';
+  await loadControllerHarnessStatus().catch(()=>{});
+  await loadRunners().catch(()=>{});
+  await loadGlobalEvents(true).catch(()=>{});
+}
+
 async function openControllerHarnessSession() {
   const status = await loadControllerHarnessStatus();
   if (status?.session?.id) { switchToTab('sessions-tab'); await selectSession(status.session.id); }
@@ -4924,6 +4934,7 @@ if (loadDiffBtn) loadDiffBtn.onclick=()=>openGitDiffModal();
 document.getElementById('saveConfig').onclick=async()=>{ const body={config:JSON.parse(configEditor.value)}; await api('/v1/config',{method:'PUT',body:JSON.stringify(body)}); await init(); };
 if (document.getElementById('saveEndpointConnection')) document.getElementById('saveEndpointConnection').onclick=()=>saveEndpointConnectionSettings().catch(e=>paneError('Saving endpoint URL failed', e.message));
 if (document.getElementById('saveControllerHarness')) document.getElementById('saveControllerHarness').onclick=()=>saveControllerHarnessSettings().catch(e=>paneError('Saving controller pi.dev failed', e.message));
+if (document.getElementById('updateControllerHarnessWrapper')) document.getElementById('updateControllerHarnessWrapper').onclick=()=>updateControllerHarnessWrapper().catch(e=>paneError('Updating controller wrapper failed', e.message));
 if (document.getElementById('bootstrapControllerHarness')) document.getElementById('bootstrapControllerHarness').onclick=()=>bootstrapControllerHarness().catch(e=>paneError('Starting controller pi.dev bootstrap failed', e.message));
 if (document.getElementById('openControllerHarnessSession')) document.getElementById('openControllerHarnessSession').onclick=()=>openControllerHarnessSession().catch(e=>paneError('Opening controller pi.dev failed', e.message));
 if (document.getElementById('providerPreset')) providerPreset.onchange=()=>applyProviderPreset(providerPreset.value);
