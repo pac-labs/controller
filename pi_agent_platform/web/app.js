@@ -4116,19 +4116,27 @@ async function selectSession(id) {
   } catch (_) {
     suppressSessionAutoScroll = false;
   }
-  if (source) source.close();
-  // EventSource cannot set auth headers, so auth-enabled deployments should use the snapshot refresh path or put UI/API behind same auth proxy.
-  source = new EventSource(`/v1/sessions/${id}/events`);
-  source.onerror = () => {
-    if (source) {
-      source.close();
-      source = null;
-    }
+  if (source) {
+    source.close();
+    source = null;
+  }
+  if (authStatus?.enabled) {
     startSessionPolling(id);
-  };
-  source.onmessage = e => { try { appendEvent('message', JSON.parse(e.data)); } catch { appendEvent('message', e.data); } };
-  ['user_message','agent_routing','agent_intent','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','final','full_control_enabled','subagent_started'].forEach(t => source.addEventListener(t, e => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
-  stopSessionPolling();
+    pollSessionEvents(id).catch(()=>{});
+  } else {
+    // EventSource cannot set auth headers, so auth-enabled deployments should use polling.
+    source = new EventSource(`/v1/sessions/${id}/events`);
+    source.onerror = () => {
+      if (source) {
+        source.close();
+        source = null;
+      }
+      startSessionPolling(id);
+    };
+    source.onmessage = e => { try { appendEvent('message', JSON.parse(e.data)); } catch { appendEvent('message', e.data); } };
+    ['user_message','agent_routing','agent_intent','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','final','full_control_enabled','subagent_started'].forEach(t => source.addEventListener(t, e => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
+    stopSessionPolling();
+  }
   await refreshSessionRunButton().catch(()=>{});
 }
 function appendEvent(type, payload) {
@@ -4602,6 +4610,7 @@ async function sendSessionComposer(){
       data: {role:'user', model: metadata.model || selectedSession.model, endpoint_id: metadata.runner_id || selectedSession.metadata?.preferred_endpoint, command:'', execution_mode: metadata.execution_mode, stored:true, pi_dev_enabled:selectedSession.metadata?.agent_enabled !== false, routing:'pi.dev'}
     };
     renderSessionTimelineEvent(localEvent);
+    pollSessionEvents(selectedSession.id).catch(()=>{});
   }
 }
 
