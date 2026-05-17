@@ -745,6 +745,21 @@
     </div>
     <div id="globalEvents" class="events-list"><div class="empty-events">No events yet.</div></div>
   </aside>
+  <div id="updateConfirmOverlay" class="modal-backdrop blackout-overlay" hidden>
+    <section class="modal-card blackout-card" role="dialog" aria-modal="true" aria-labelledby="updateConfirmTitle">
+      <div class="section-heading">
+        <div>
+          <h2 id="updateConfirmTitle">Apply PAC release</h2>
+          <p id="updateConfirmMessage" class="muted">PAC will install the selected release and restart the controller.</p>
+        </div>
+      </div>
+      <div id="updateConfirmBody" class="small-text"></div>
+      <div class="button-row">
+        <button id="updateConfirmProceed">Apply and restart</button>
+        <button id="updateConfirmCancel" class="ghost-button">Cancel</button>
+      </div>
+    </section>
+  </div>
   </div>
   <footer class="app-footer"><img src="/ui/assets/pac-icon-green-32.png" alt="" /> <span>PAC Control • Orchestrate • Execute</span><span id="buildStamp" class="app-version" title="Backend and UI build information">backend v... • ui ...</span></footer>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>

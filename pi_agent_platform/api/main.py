@@ -247,6 +247,28 @@ def _changelog_delta(from_version: str | None, to_version: str | None) -> list[d
     return sorted(entries, key=lambda item: _version_key(item.get('version')), reverse=True)
 
 
+def _compose_release_notes_body(entries: list[dict[str, Any]], compare_changes: list[str], body: str | None) -> str:
+    sections: list[str] = []
+    for entry in entries:
+        version = str(entry.get('version') or '').strip()
+        title = str(entry.get('title') or '').strip() or (f'PAC v{version}' if version else 'PAC release')
+        changes = [str(item).strip() for item in (entry.get('changes') or []) if str(item).strip()]
+        if not changes:
+            continue
+        sections.append(title)
+        sections.extend([f'- {item}' for item in changes])
+        sections.append('')
+    if compare_changes:
+        sections.append('Git compare summary')
+        sections.extend([f'- {item}' for item in compare_changes if str(item).strip()])
+        sections.append('')
+    raw = str(body or '').strip()
+    if raw:
+        sections.append('Release notes')
+        sections.append(raw)
+    return '\n'.join(line for line in sections).strip()
+
+
 def _update_backups_root() -> Path:
     root = pacp_path('backups')
     root.mkdir(parents=True, exist_ok=True)
@@ -2199,12 +2221,13 @@ def get_update_release_notes(from_version: str | None = None, to_version: str | 
             'version': target_to,
             'changes': compare_changes,
         }]
+    composed_body = _compose_release_notes_body(entries, compare_changes, body)
     return {
         'from_version': target_from,
         'to_version': target_to,
         'entries': entries,
         'compare_changes': compare_changes,
-        'body': body,
+        'body': composed_body or body,
         'release_url': release_url,
     }
 

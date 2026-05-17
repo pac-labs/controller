@@ -625,7 +625,13 @@ function ensureSessionThinkingGroup(event) {
 }
 function flushSessionThinkingGroup(endEvent) {
   const group = getThinkingGroup(endEvent?.task_id || '');
-  if (!group || group.closed || !group.events.length) return;
+  if (!group || group.closed) return;
+  if (!group.events.length && endEvent) {
+    group.events.push({event: endEvent, block: normalizeTimelineBlock(endEvent)});
+    group.lastEvent = endEvent;
+    group.summary = sessionThinkingSummary(endEvent, null);
+  }
+  if (!group.events.length) return;
   group.closed = true;
   group.endedAt = endEvent ? sessionEventDate(endEvent) : new Date();
   updateSessionThinkingRow(group);
@@ -645,6 +651,65 @@ function openSessionEventModal(event, block) {
 function closeSessionEventModal() {
   const modal = document.getElementById('sessionEventModal');
   if (modal) modal.hidden = true;
+}
+function openUpdateConfirmOverlay(meta) {
+  const overlay = document.getElementById('updateConfirmOverlay');
+  if (!overlay) return;
+  const title = document.getElementById('updateConfirmTitle');
+  const message = document.getElementById('updateConfirmMessage');
+  const body = document.getElementById('updateConfirmBody');
+  const proceed = document.getElementById('updateConfirmProceed');
+  const cancel = document.getElementById('updateConfirmCancel');
+  const currentVersion = String(meta?.current_version || config?.version || config?.setup_status?.version || '-');
+  const nextVersion = String(meta?.latest_version || '').trim();
+  if (title) title.textContent = 'Apply PAC release';
+  if (message) message.textContent = `PAC will install ${nextVersion ? `v${nextVersion}` : 'the latest release'} and restart the controller.`;
+  if (body) {
+    const bullets = Array.isArray(meta?.compare_changes) ? meta.compare_changes.slice(0, 8) : [];
+    body.innerHTML = `
+      <div class="updates-detail-copy">
+        <div>Current version: <b>v${escapeHtml(currentVersion)}</b></div>
+        <div>Target version: <b>${escapeHtml(nextVersion ? `v${nextVersion}` : 'latest')}</b></div>
+        ${bullets.length ? `<div style="margin-top:.65rem"><b>Included changes</b></div><ul>${bullets.map((change) => `<li>${escapeHtml(String(change))}</li>`).join('')}</ul>` : ''}
+        <div style="margin-top:.65rem">The screen will remain in this state until PAC restarts and the web UI refreshes.</div>
+      </div>`;
+  }
+  if (proceed) {
+    proceed.disabled = false;
+    proceed.textContent = 'Apply and restart';
+  }
+  if (cancel) cancel.hidden = false;
+  overlay.hidden = false;
+  delete overlay.dataset.locked;
+}
+function closeUpdateConfirmOverlay(force = false) {
+  const overlay = document.getElementById('updateConfirmOverlay');
+  if (!overlay) return;
+  if (force || !overlay.dataset.locked) {
+    overlay.hidden = true;
+    delete overlay.dataset.locked;
+  }
+}
+function setUpdateConfirmOverlayRestarting(version, seconds = 18) {
+  const overlay = document.getElementById('updateConfirmOverlay');
+  if (!overlay) return;
+  const title = document.getElementById('updateConfirmTitle');
+  const message = document.getElementById('updateConfirmMessage');
+  const body = document.getElementById('updateConfirmBody');
+  const proceed = document.getElementById('updateConfirmProceed');
+  const cancel = document.getElementById('updateConfirmCancel');
+  overlay.hidden = false;
+  overlay.dataset.locked = 'true';
+  if (title) title.textContent = 'Restarting PAC';
+  if (message) message.textContent = `PAC is applying ${version ? `v${version}` : 'the release'} and restarting now.`;
+  if (body) {
+    body.innerHTML = `<div class="updates-detail-copy"><div>The controller is restarting.</div><div>This screen will remain visible until the web UI refreshes automatically.</div><div>Refresh window: about ${escapeHtml(String(seconds))} seconds.</div></div>`;
+  }
+  if (proceed) {
+    proceed.disabled = true;
+    proceed.textContent = 'Restarting…';
+  }
+  if (cancel) cancel.hidden = true;
 }
 function timelineText(event, block) {
   if (block) {
@@ -2551,9 +2616,12 @@ async function checkPacRelease() {
 async function applyPacRelease() {
   const meta = window.__pacReleaseMeta || {};
   if (!meta.has_update) return paneError('No PAC release update is currently available');
-  if (!confirm(`Apply PAC release v${meta.latest_version}? PAC will restart after the package is installed.`)) return;
   const btn = document.getElementById('applyPacRelease');
+  const proceed = document.getElementById('updateConfirmProceed');
+  const cancel = document.getElementById('updateConfirmCancel');
   if (btn) { btn.disabled = true; btn.textContent = 'Applying…'; }
+  if (proceed) { proceed.disabled = true; proceed.textContent = 'Applying…'; }
+  if (cancel) cancel.hidden = true;
   try {
     const result = await api('/v1/updates/apply?restart_after_update=true', {method:'POST'});
     renderPacReleaseStatus({ok:true, has_update:false, latest_version:result.latest_version, body:'The selected PAC release has been applied and a restart was scheduled.'});
@@ -2565,9 +2633,24 @@ async function applyPacRelease() {
       });
       await loadUpdateArchives().catch(()=>{});
     }
-    if (result.restart_scheduled) scheduleHiddenReloadAfterRestart();
+    if (result.restart_scheduled) {
+      setUpdateConfirmOverlayRestarting(result.latest_version || meta.latest_version || '', 18);
+      scheduleHiddenReloadAfterRestart(18);
+    } else {
+      closeUpdateConfirmOverlay(true);
+    }
   } finally {
-    if (btn) btn.textContent = 'Apply latest release';
+    if (btn) {
+      btn.textContent = 'Apply latest release';
+      btn.disabled = false;
+    }
+    if (!window.__pacRestartReloadTimer) {
+      if (proceed) {
+        proceed.disabled = false;
+        proceed.textContent = 'Apply and restart';
+      }
+      if (cancel) cancel.hidden = false;
+    }
   }
 }
 async function inspectFeaturePack() {
@@ -4891,7 +4974,11 @@ if (generateLocalDiffBtn) generateLocalDiffBtn.onclick = () => generateLocalDiff
 const checkPacReleaseBtn = document.getElementById('checkPacRelease');
 if (checkPacReleaseBtn) checkPacReleaseBtn.onclick = () => checkPacRelease().catch(e=>paneError('PAC release check failed', e.message));
 const applyPacReleaseBtn = document.getElementById('applyPacRelease');
-if (applyPacReleaseBtn) applyPacReleaseBtn.onclick = () => applyPacRelease().catch(e=>paneError('PAC release apply failed', e.message));
+if (applyPacReleaseBtn) applyPacReleaseBtn.onclick = () => openUpdateConfirmOverlay(window.__pacReleaseMeta || {});
+const updateConfirmProceedBtn = document.getElementById('updateConfirmProceed');
+if (updateConfirmProceedBtn) updateConfirmProceedBtn.onclick = () => applyPacRelease().catch(e=>paneError('PAC release apply failed', e.message));
+const updateConfirmCancelBtn = document.getElementById('updateConfirmCancel');
+if (updateConfirmCancelBtn) updateConfirmCancelBtn.onclick = () => closeUpdateConfirmOverlay(true);
 const openBackupsModalBtn = document.getElementById('openBackupsModal');
 if (openBackupsModalBtn) openBackupsModalBtn.onclick = () => { openBackupsModal(); loadUpdateArchives().catch(e=>paneError('Update archives unavailable', e.message)); };
 const closeBackupsModalBtn = document.getElementById('closeBackupsModal');
@@ -5080,6 +5167,8 @@ function scheduleHiddenReloadAfterRestart(seconds = 18) {
   if (result) result.textContent += `
 
 PAC is restarting. This page will refresh automatically in ${seconds} seconds.`;
+  const meta = window.__pacReleaseMeta || {};
+  setUpdateConfirmOverlayRestarting(meta.latest_version || config?.version || config?.setup_status?.version || '', seconds);
   window.__pacRestartReloadTimer = setTimeout(() => window.location.reload(), seconds * 1000);
 }
 
