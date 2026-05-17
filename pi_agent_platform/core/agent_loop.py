@@ -355,13 +355,17 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
         if not target.exists():
             return f"Path not found: {path}", False
         if target.is_file():
-            return json.dumps({"path": path, "type": "file", "size": target.stat().st_size}), False
+            result = json.dumps({"path": path, "type": "file", "size": target.stat().st_size})
+            store.add_event(Event(session_id=session.id, task_id=task.id, type="tool_result", message=f"listed file {path}", data={"tool": "list_files", "path": path, "result_preview": result[:1200]}))
+            return result, False
         items = []
         for item in sorted(target.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))[:200]:
             if item.name in {".git", "node_modules", "__pycache__", ".venv"}:
                 continue
             items.append({"name": item.name, "type": "dir" if item.is_dir() else "file"})
-        return json.dumps({"path": path, "items": items}, indent=2), False
+        result = json.dumps({"path": path, "items": items}, indent=2)
+        store.add_event(Event(session_id=session.id, task_id=task.id, type="tool_result", message=f"listed {path}", data={"tool": "list_files", "path": path, "count": len(items), "result_preview": result[:1200]}))
+        return result, False
 
     if tool == "read_file":
         if perm.file_read == "deny":
@@ -370,7 +374,9 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
         target = _safe_path(session, path)
         if not target.is_file():
             return f"File not found: {path}", False
-        return target.read_text(errors="replace")[:20000], False
+        result = target.read_text(errors="replace")[:20000]
+        store.add_event(Event(session_id=session.id, task_id=task.id, type="tool_result", message=f"read {path}", data={"tool": "read_file", "path": path, "chars": len(result)}))
+        return result, False
 
 
     if tool == "read_file_chunk":
@@ -387,13 +393,17 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
         if chunk_index < 0 or chunk_index >= len(chunks):
             return json.dumps({"path": path, "chunk_count": len(chunks), "error": "chunk_index out of range"}), False
         c = chunks[chunk_index]
-        return json.dumps({"path": path, "chunk_index": chunk_index, "chunk_count": len(chunks), "start": c["start"], "end": c["end"], "content": c["content"]}, indent=2), False
+        result = json.dumps({"path": path, "chunk_index": chunk_index, "chunk_count": len(chunks), "start": c["start"], "end": c["end"], "content": c["content"]}, indent=2)
+        store.add_event(Event(session_id=session.id, task_id=task.id, type="tool_result", message=f"read chunk {chunk_index} from {path}", data={"tool": "read_file_chunk", "path": path, "chunk_index": chunk_index, "chunk_count": len(chunks)}))
+        return result, False
 
     if tool == "workspace_manifest":
         if perm.file_read == "deny":
             return "DENIED: file reads are denied", False
         max_files = int(inp.get("max_files") or 200)
-        return file_manifest(Path(session.workspace_path), max_files=max_files) or "No files found", False
+        result = file_manifest(Path(session.workspace_path), max_files=max_files) or "No files found"
+        store.add_event(Event(session_id=session.id, task_id=task.id, type="tool_result", message="scanned workspace manifest", data={"tool": "workspace_manifest", "max_files": max_files}))
+        return result, False
 
     if tool == "batch_analyze_text":
         instruction = str(inp.get("instruction") or "Summarize this text")
@@ -630,6 +640,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     deadline = time.monotonic() + (max_runtime_minutes * 60)
     transcript: list[dict[str, Any]] = task.metadata.get("agent_transcript") or []
     rolling_summary = task.metadata.get("rolling_context_summary")
+    empty_model_retries = 0
     step = 0
     while True:
         step += 1
@@ -676,6 +687,18 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             return task
 
         transcript.append({"step": step, "model": raw})
+        if not str(raw or "").strip():
+            empty_model_retries += 1
+            store.add_event(Event(session_id=session.id, task_id=task.id, type="model_response_empty", message="Model returned an empty response", data={"role": "assistant", "model": decision_model, "session_model": session.model, "endpoint_id": task.metadata.get("runner_id"), "step": step, "retry": empty_model_retries}))
+            if empty_model_retries <= 2:
+                messages.append({"role": "user", "content": "Your previous response was empty. Based on the latest tool result or context, return either ONE final answer or ONE valid tool_call JSON object now."})
+                continue
+            task.status = TaskStatus.failed
+            task.error = "Model returned an empty response repeatedly."
+            store.add_task(task)
+            store.add_event(Event(session_id=session.id, task_id=task.id, type="task_failed", message=task.error))
+            return task
+        empty_model_retries = 0
         store.add_event(Event(session_id=session.id, task_id=task.id, type="model_response", message=raw[-4000:], data={"role": "assistant", "model": decision_model, "session_model": session.model, "endpoint_id": task.metadata.get("runner_id"), "step": step}))
         try:
             action = _extract_json(raw)

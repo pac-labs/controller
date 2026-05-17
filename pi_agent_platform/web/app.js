@@ -423,7 +423,7 @@ function sessionThinkingSummary(event, block) {
   if (type.includes('task_rejected')) return 'Approval rejected';
   if (type.includes('task_failed')) return event?.message || 'Task failed';
   if (type.includes('task_completed')) return 'Finished thinking';
-  if (type.includes('agent_thinking')) return event?.message || 'Thinking';
+  if (type.includes('agent_thinking')) return '';
   if (type.includes('model_response')) return '';
   if (type.includes('agent_intent')) {
     if (data.tool) return `Preparing ${data.tool}`;
