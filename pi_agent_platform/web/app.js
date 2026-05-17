@@ -1039,9 +1039,8 @@ async function pollSessionEvents(sessionId) {
   if (sessionPollRequest) return sessionPollRequest;
   sessionPollRequest = (async () => {
     try {
-      const qs = sessionLatestEventId ? `?after_id=${encodeURIComponent(sessionLatestEventId)}&limit=120` : '?limit=120';
-      const snapshot = await api(`/v1/sessions/${sessionId}/events/snapshot${qs}`);
-      const events = snapshot || [];
+      const snapshot = await api(`/v1/sessions/${sessionId}/events/snapshot?latest=true&limit=180`);
+      const events = (snapshot || []).filter((ev) => !ev?.id || !sessionEventSeen.has(ev.id));
       const deferScroll = events.length > 1;
       if (deferScroll) suppressSessionAutoScroll = true;
       events.forEach(ev => appendEvent(ev.type || 'message', ev));
