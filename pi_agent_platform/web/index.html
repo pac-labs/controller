@@ -61,17 +61,23 @@
     </section>
   </div>
   <nav class="tabs" aria-label="Main navigation">
-    <button class="tab active" data-tab="dashboard">Dashboard</button>
-    <button class="tab" data-tab="sessions-tab">Sessions</button>
-    <button class="tab" data-tab="runners-tab">Endpoints</button>
-    <button class="tab" data-tab="models-tab">Models</button>
-    <button class="tab" data-tab="providers-tab">Providers</button>
-    <button class="tab" data-tab="profiles-tab">Profiles</button>
-    <button class="tab" data-tab="workspaces-tab">Workspaces</button>
-    <button class="tab" data-tab="tools-tab">Tools</button>
-    <button class="tab" data-tab="sources-tab">IDE</button>
-    <button class="tab" data-tab="approvals-tab">Approvals</button>
-    <button class="tab" data-tab="settings-tab">Settings</button>
+    <div id="tabsPrimary" class="tabs-primary">
+      <button class="tab active" data-tab="dashboard">Dashboard</button>
+      <button class="tab" data-tab="sessions-tab">Sessions</button>
+      <button class="tab" data-tab="runners-tab">Endpoints</button>
+      <button class="tab" data-tab="models-tab">Models</button>
+      <button class="tab" data-tab="providers-tab">Providers</button>
+      <button class="tab" data-tab="profiles-tab">Profiles</button>
+      <button class="tab" data-tab="workspaces-tab">Workspaces</button>
+      <button class="tab" data-tab="tools-tab">Tools</button>
+      <button class="tab" data-tab="sources-tab">IDE</button>
+      <button class="tab" data-tab="approvals-tab">Approvals</button>
+      <button class="tab" data-tab="settings-tab">Settings</button>
+    </div>
+    <div id="tabsOverflowWrap" class="tabs-overflow-wrap" hidden>
+      <button id="tabsOverflowButton" class="tab tabs-overflow-button" type="button" aria-haspopup="menu" aria-expanded="false">More</button>
+      <div id="tabsOverflowMenu" class="tabs-overflow-menu" hidden></div>
+    </div>
   </nav>
 
   <div class="app-shell">
