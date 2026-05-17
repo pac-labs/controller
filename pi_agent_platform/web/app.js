@@ -3966,7 +3966,11 @@ function fillHarnessSelects() {
 }
 
 function renderControllerHarnessSettings(status=null) {
-  const effectiveStatus = status || controllerHarnessStatusCache;
+  const baseStatus = status || controllerHarnessStatusCache;
+  const liveStatus = baseStatus?.diagnostics?.status && typeof baseStatus.diagnostics.status === 'object'
+    ? {...baseStatus, ...baseStatus.diagnostics.status, diagnostics: baseStatus.diagnostics}
+    : baseStatus;
+  const effectiveStatus = liveStatus;
   fillHarnessSelects();
   const h = config.controller_harness || {};
   const setVal = (id, value) => { const el = document.getElementById(id); if (el) el.value = value ?? ''; };
