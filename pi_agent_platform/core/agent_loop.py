@@ -121,18 +121,38 @@ def _summarize_model_action(action: dict[str, Any]) -> tuple[str, dict[str, Any]
 
 def _extract_wrapped_tool_call(text: str) -> dict[str, Any] | None:
     raw = str(text or "").strip()
-    match = re.search(r"<\|tool_call\>\s*call:([A-Za-z0-9_:-]+)\s*(\{.*?\})\s*<tool_call\|>", raw, re.DOTALL)
+    match = re.search(r"<\|tool_call\>\s*call:((?:tool_call:)?[A-Za-z0-9_:-]+)\s*(\{.*?\})\s*<tool_call\|>", raw, re.DOTALL)
     if not match:
         return None
     tool = str(match.group(1) or "").strip()
+    if tool.startswith("tool_call:"):
+        tool = tool.split("tool_call:", 1)[1].strip()
     if not tool:
         return None
+    raw_input = str(match.group(2) or "").strip()
+    def _load_objectish_dict(source: str) -> dict[str, Any] | None:
+        try:
+            parsed = json.loads(source)
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            pass
+        normalized = re.sub(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_-]*)(\s*:)', r'\1"\2"\3', source)
+        normalized = normalized.replace("'", '"')
+        normalized = re.sub(r':\s*True\b', ': true', normalized)
+        normalized = re.sub(r':\s*False\b', ': false', normalized)
+        normalized = re.sub(r':\s*None\b', ': null', normalized)
+        try:
+            parsed = json.loads(normalized)
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            return None
     try:
-        inp = json.loads(match.group(2))
-    except json.JSONDecodeError:
+        parsed_input = _load_objectish_dict(raw_input)
+    except Exception:
+        parsed_input = None
+    if not isinstance(parsed_input, dict):
         return None
-    if not isinstance(inp, dict):
-        return None
+    inp = parsed_input.get("input") if isinstance(parsed_input.get("input"), dict) else parsed_input
     return {"type": "tool_call", "tool": tool, "input": inp}
 
 def _extract_json(text: str) -> dict[str, Any]:

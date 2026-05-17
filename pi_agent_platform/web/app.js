@@ -1137,13 +1137,17 @@ function renderSessionTimelineEvent(event, options = {}) {
   const el = document.getElementById('events');
   if (!el || !event) return;
   const prepend = !!options.prepend;
+  const typeLower = String(event.type || '').toLowerCase();
+  if (event.task_id && activeSessionTaskId && event.task_id === activeSessionTaskId && (typeLower.includes('result') || typeLower.includes('task_completed') || typeLower.includes('task_failed'))) {
+    activeSessionTaskId = null;
+    refreshSessionRunButton().catch(()=>{});
+  }
   if (event.id && sessionEventSeen.has(event.id)) return;
   if (event.id) sessionEventSeen.add(event.id);
   if (isServerBackedEventId(event.id)) sessionLatestEventId = event.id;
   const messageKey = `${event.type || ''}:${event.task_id || ''}:${event.message || ''}`;
   if ((event.type === 'user_message' || event.type === 'result' || event.type === 'assistant_message' || event.type === 'final') && sessionMessageSeen.has(messageKey)) return;
   if (event.type === 'user_message' || event.type === 'result' || event.type === 'assistant_message' || event.type === 'final') sessionMessageSeen.add(messageKey);
-  const typeLower = String(event.type || '').toLowerCase();
   if (typeLower.includes('task_completed') || typeLower.includes('task_failed') || typeLower.includes('result')) removePendingRow(event.task_id);
   if (typeLower.includes('task_approved') || typeLower.includes('task_rejected') || typeLower.includes('task_completed') || typeLower.includes('task_failed') || typeLower.includes('result')) removeSessionApprovalRow(event.task_id);
   const empty = el.querySelector('.empty-timeline');
@@ -4942,12 +4946,13 @@ if (taskPromptInput) {
   taskPromptInput.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter' && !ev.shiftKey && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
       ev.preventDefault();
-      (runTaskBtn?.dataset.mode === 'stop' ? stopActiveSessionTask() : sendSessionComposer()).catch(e=>alert(e.message));
+      const hasPrompt = !!String(taskPromptInput.value || '').trim();
+      ((hasPrompt || runTaskBtn?.dataset.mode !== 'stop') ? sendSessionComposer() : stopActiveSessionTask()).catch(e=>alert(e.message));
       return;
     }
     if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
       ev.preventDefault();
-      (runTaskBtn?.dataset.mode === 'stop' ? stopActiveSessionTask() : sendSessionComposer()).catch(e=>alert(e.message));
+      sendSessionComposer().catch(e=>alert(e.message));
     }
   });
   autosizeSessionPrompt();
