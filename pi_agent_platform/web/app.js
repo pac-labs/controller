@@ -40,6 +40,7 @@ let sourceLibraryRoot = '';
 let sourceResolvedContext = null;
 let sourceCodingSessionId = '';
 let sourceSelectedToolId = '';
+let sourceCodingPoll = null;
 let source = null;
 let globalEventSeen = new Set();
 let globalEventFilter = 'all';
@@ -3753,6 +3754,92 @@ function updateSourceCodingPanel() {
   if (openBtn) openBtn.disabled = !defaults.existingSession?.id && !sourceCodingSessionId;
   renderSourceToolCatalog();
   sourceCodingSessionId = defaults.existingSession?.id || sourceCodingSessionId || '';
+  if (sourceCodingSessionId) startSourceCodingPoll();
+  else stopSourceCodingPoll();
+  refreshSourceCodingActivity().catch(()=>{});
+}
+function sourceCodingLatestAssistantText(snapshot = {}) {
+  const events = Array.isArray(snapshot.items) ? snapshot.items.slice() : [];
+  const candidates = events.filter((event) => {
+    const t = String(event?.type || '').toLowerCase();
+    return t === 'result' || t === 'final' || t.includes('assistant_message');
+  });
+  for (let i = candidates.length - 1; i >= 0; i -= 1) {
+    const text = resultEventText(candidates[i]);
+    if (text) return normalizeAssistantText(text);
+  }
+  return '';
+}
+function sourceCodingLatestTask(snapshot = {}) {
+  const events = Array.isArray(snapshot.items) ? snapshot.items.slice() : [];
+  const tasks = new Map();
+  for (const event of events) {
+    const taskId = String(event?.task_id || '').trim();
+    if (!taskId) continue;
+    let item = tasks.get(taskId);
+    if (!item) {
+      item = {taskId, events: [], latestAt: 0};
+      tasks.set(taskId, item);
+    }
+    item.events.push(event);
+    const ts = sessionEventDate(event).getTime();
+    if (ts > item.latestAt) item.latestAt = ts;
+  }
+  return Array.from(tasks.values()).sort((a, b) => b.latestAt - a.latestAt)[0] || null;
+}
+function renderSourceCodingActivityFromSnapshot(snapshot = {}) {
+  const liveEl = document.getElementById('sourceCodingLiveStatus');
+  const summaryEl = document.getElementById('sourceCodingLiveSummary');
+  const metaEl = document.getElementById('sourceCodingLiveMeta');
+  const replyEl = document.getElementById('sourceCodingLatestReply');
+  if (!liveEl || !summaryEl || !metaEl || !replyEl) return;
+  const latestTask = sourceCodingLatestTask(snapshot);
+  if (!latestTask) {
+    liveEl.className = 'source-coding-live idle';
+    summaryEl.textContent = sourceCodingSessionId ? 'No active coding task.' : 'No coding task running.';
+    metaEl.textContent = sourceCodingSessionId ? 'Send a prompt from the IDE composer or open the session for full history.' : 'Start a coding session or send a prompt from the IDE.';
+    replyEl.textContent = 'No coding reply yet.';
+    return;
+  }
+  const internalItems = latestTask.events
+    .filter((event) => isInternalSessionEvent(event))
+    .map((event) => ({event, block: normalizeTimelineBlock(event)}));
+  const lastInternal = internalItems[internalItems.length - 1]?.event || latestTask.events[latestTask.events.length - 1];
+  const lastType = String(lastInternal?.type || '').toLowerCase();
+  const summary = sessionThinkingSummary(lastInternal, normalizeTimelineBlock(lastInternal)) || 'Working';
+  const stepInfo = lastInternal?.data?.step != null ? `step ${lastInternal.data.step}` : '';
+  const approval = lastType.includes('approval_required') ? 'needs approval' : '';
+  const toolCount = internalItems.filter((item) => String(item.event?.type || '').toLowerCase().includes('tool')).length;
+  const toolInfo = toolCount ? `${toolCount} ${toolCount === 1 ? 'tool step' : 'tool steps'}` : '';
+  const metaBits = [stepInfo, toolInfo, approval].filter(Boolean);
+  const latestReply = sourceCodingLatestAssistantText(snapshot);
+  const completed = latestTask.events.some((event) => {
+    const t = String(event?.type || '').toLowerCase();
+    return t.includes('task_completed') || t === 'result' || t === 'final';
+  });
+  liveEl.className = `source-coding-live ${approval ? 'attention' : completed ? 'done' : 'active'}`;
+  summaryEl.textContent = summary;
+  metaEl.textContent = metaBits.length ? metaBits.join(' • ') : (completed ? 'Last coding task completed.' : 'Coding session is working.');
+  replyEl.textContent = latestReply || (completed ? 'The last coding task completed without a readable reply body.' : 'No coding reply yet.');
+}
+async function refreshSourceCodingActivity() {
+  if (!sourceCodingSessionId) {
+    renderSourceCodingActivityFromSnapshot({items: []});
+    return;
+  }
+  const snapshot = await api(`/v1/sessions/${encodeURIComponent(sourceCodingSessionId)}/events/snapshot?latest=true&limit=80`);
+  renderSourceCodingActivityFromSnapshot(snapshot || {});
+}
+function startSourceCodingPoll() {
+  stopSourceCodingPoll();
+  sourceCodingPoll = setInterval(() => {
+    if (!sourceCodingSessionId) return;
+    refreshSourceCodingActivity().catch(()=>{});
+  }, 2000);
+}
+function stopSourceCodingPoll() {
+  if (sourceCodingPoll) clearInterval(sourceCodingPoll);
+  sourceCodingPoll = null;
 }
 async function ensureSourceCodingSession() {
   const defaults = sourceCodingDefaults();
@@ -3790,6 +3877,7 @@ async function ensureSourceCodingSession() {
   };
   const session = await api('/v1/sessions', {method:'POST', body: JSON.stringify(payload)});
   sourceCodingSessionId = session.id;
+  startSourceCodingPoll();
   await loadSessions();
   updateSourceCodingPanel();
   return session;
@@ -3836,9 +3924,16 @@ async function sendPromptToSourceCodingSession(promptText) {
   const openFilePayload = sourceOpenFilePayload();
   const toolIds = selectedSourceToolIds();
   const toolPayload = sourceToolPayload();
-  await selectSession(session.id);
-  document.getElementById('taskExecution').value = 'container';
-  document.getElementById('taskImage').value = defaults.containerImage || '';
+  const status = document.getElementById('sourceCodingStatus');
+  const liveEl = document.getElementById('sourceCodingLiveStatus');
+  const summaryEl = document.getElementById('sourceCodingLiveSummary');
+  const metaEl = document.getElementById('sourceCodingLiveMeta');
+  if (status) { status.hidden = false; status.textContent = 'Submitting coding task…'; }
+  if (liveEl && summaryEl && metaEl) {
+    liveEl.className = 'source-coding-live active';
+    summaryEl.textContent = 'Submitting coding task';
+    metaEl.textContent = 'Waiting for the coding session to accept the new request.';
+  }
   const payload = {
     prompt: buildSourceCodingPrompt(promptText),
     metadata: {
@@ -3853,8 +3948,8 @@ async function sendPromptToSourceCodingSession(promptText) {
     },
   };
   await api(`/v1/sessions/${encodeURIComponent(session.id)}/tasks`, {method:'POST', body: JSON.stringify(payload)});
-  switchToTab('sessions-tab');
-  await selectSession(session.id);
+  if (status) status.textContent = 'Coding task submitted.';
+  await refreshSourceCodingActivity().catch(()=>{});
 }
 function fillSecretForm(secretId='') {
   const select = document.getElementById('sourceSecretSelect');
@@ -5666,6 +5761,7 @@ const sourceContextSelect = document.getElementById('sourceContextSelect');
 if (sourceContextSelect) sourceContextSelect.onchange = () => { fillSourceContextForm(sourceContextSelect.value || ''); resolveCurrentSourceContext().catch(()=>{}); };
 const openSourceSetupModalBtn = document.getElementById('openSourceSetupModal');
 const openSourceToolsModalBtn = document.getElementById('openSourceToolsModal');
+const openSourcePersonalDataBtn = document.getElementById('openSourcePersonalData');
 const closeSourceSetupModalBtn = document.getElementById('closeSourceSetupModal');
 if (openSourceSetupModalBtn) openSourceSetupModalBtn.onclick = () => { const modal = document.getElementById('sourceSetupModal'); if (modal) modal.hidden = false; };
 if (openSourceToolsModalBtn) openSourceToolsModalBtn.onclick = () => {
@@ -5673,6 +5769,9 @@ if (openSourceToolsModalBtn) openSourceToolsModalBtn.onclick = () => {
   if (modal) modal.hidden = false;
   const section = document.getElementById('sourceToolsModalSection');
   if (section) setTimeout(() => section.scrollIntoView({block:'start', behavior:'smooth'}), 10);
+};
+if (openSourcePersonalDataBtn) openSourcePersonalDataBtn.onclick = () => {
+  openPersonalSettingsModal().catch((e)=>paneError('Personal settings could not be opened', e.message || String(e)));
 };
 if (closeSourceSetupModalBtn) closeSourceSetupModalBtn.onclick = () => { const modal = document.getElementById('sourceSetupModal'); if (modal) modal.hidden = true; };
 const sourceSetupModal = document.getElementById('sourceSetupModal');

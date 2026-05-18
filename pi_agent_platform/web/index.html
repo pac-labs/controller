@@ -483,6 +483,12 @@
             <div class="button-row compact-actions source-side-actions">
               <button id="openSourceSetupModal" class="ghost-button">Workspace setup</button>
               <button id="openSourceToolsModal" class="ghost-button">Agent tools</button>
+              <button id="openSourcePersonalData" class="ghost-button">Personal data</button>
+            </div>
+            <div id="sourceCodingLiveStatus" class="source-coding-live idle">
+              <div class="source-coding-live-kicker">Coding activity</div>
+              <div id="sourceCodingLiveSummary" class="source-coding-live-summary">No coding task running.</div>
+              <div id="sourceCodingLiveMeta" class="source-coding-live-meta muted">Start a coding session or send a prompt from the IDE.</div>
             </div>
             <div class="section-heading compact-heading"><div><h3>Open files</h3><p class="muted small-text">These files are attached as coding context.</p></div></div>
             <div id="sourceCodingOpenFiles" class="source-secret-audit muted">No open files yet.</div>
@@ -491,6 +497,7 @@
               <button id="askSourceCodingSession" class="ghost-button">Send to coding session</button>
             </div>
             <div id="sourceCodingStatus" class="inline-result compact-result" hidden></div>
+            <div id="sourceCodingLatestReply" class="source-secret-audit muted">No coding reply yet.</div>
           </section>
         </aside>
       </div>

@@ -2246,6 +2246,37 @@ body {
 #sources-tab .source-coding-prompt {
   min-height: 102px;
 }
+#sources-tab .source-coding-live {
+  display: flex;
+  flex-direction: column;
+  gap: .24rem;
+  padding: .7rem .8rem;
+  border: 1px solid rgba(125, 168, 213, 0.16);
+  background: rgba(8, 17, 31, 0.68);
+}
+#sources-tab .source-coding-live.active {
+  border-color: rgba(66, 190, 101, 0.26);
+  box-shadow: inset 0 0 0 1px rgba(66, 190, 101, 0.12);
+}
+#sources-tab .source-coding-live.attention {
+  border-color: rgba(241, 194, 27, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(241, 194, 27, 0.1);
+}
+#sources-tab .source-coding-live.done {
+  border-color: rgba(69, 137, 255, 0.24);
+}
+#sources-tab .source-coding-live-kicker {
+  font-size: .71rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: rgba(211, 226, 244, 0.72);
+}
+#sources-tab .source-coding-live-summary {
+  font-weight: 600;
+}
+#sources-tab .source-coding-live-meta {
+  font-size: .8rem;
+}
 #sources-tab .source-sidecard h3 {
   letter-spacing: .04em;
   text-transform: uppercase;
@@ -4320,6 +4351,15 @@ body[data-theme="light"] #sources-tab .source-meta-pill{
 }
 html[data-theme="light"] #sources-tab .source-meta-pill b,
 body[data-theme="light"] #sources-tab .source-meta-pill b{
+  color:#5f6f86 !important;
+}
+html[data-theme="light"] #sources-tab .source-coding-live,
+body[data-theme="light"] #sources-tab .source-coding-live{
+  background:#f8fbff !important;
+  border-color:var(--light-border) !important;
+}
+html[data-theme="light"] #sources-tab .source-coding-live-kicker,
+body[data-theme="light"] #sources-tab .source-coding-live-kicker{
   color:#5f6f86 !important;
 }
 html[data-theme="light"] #sources-tab #sourceCodingOpenFiles .inline-browser-row,
