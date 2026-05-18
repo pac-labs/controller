@@ -4540,22 +4540,22 @@ def rename_session_file_entry(session_id: str, payload: SessionFileRenameRequest
 
 
 @app.delete('/v1/sessions/{session_id}/files/entry')
-def delete_session_file_entry(session_id: str, payload: SourceDeleteRequest = Body(...), _auth: None = Depends(require_auth)) -> dict[str, str]:
+def delete_session_file_entry(session_id: str, path: str | None = Query(default=None), payload: SourceDeleteRequest | None = Body(default=None), _auth: None = Depends(require_auth)) -> dict[str, str]:
     session = store.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')
-    path = str(payload.path or '').replace('\\', '/').strip('/')
-    if not path:
+    rel_path = str((payload.path if payload else None) or path or '').replace('\\', '/').strip('/')
+    if not rel_path:
         raise HTTPException(status_code=400, detail='Path is required')
-    target = safe_workspace_path(session, path)
+    target = safe_workspace_path(session, rel_path)
     if not target.exists():
         raise HTTPException(status_code=404, detail='Path not found')
     if target.is_dir():
         shutil.rmtree(target)
     else:
         target.unlink()
-    store.add_event(Event(session_id=session.id, type='file_deleted', message=path, data={'path': path}))
-    return {'status': 'deleted', 'path': path}
+    store.add_event(Event(session_id=session.id, type='file_deleted', message=rel_path, data={'path': rel_path}))
+    return {'status': 'deleted', 'path': rel_path}
 
 
 @app.get('/v1/sessions/{session_id}/diff')
@@ -5242,9 +5242,9 @@ def rename_source_entry(payload: SourceRenameRequest, _auth: None = Depends(requ
 
 
 @app.delete('/v1/sources/entry')
-def delete_source_entry(payload: SourceDeleteRequest = Body(...), _auth: None = Depends(require_auth)) -> dict[str, Any]:
+def delete_source_entry(path: str | None = Query(default=None), payload: SourceDeleteRequest | None = Body(default=None), _auth: None = Depends(require_auth)) -> dict[str, Any]:
     try:
-        result = source_delete_entry(payload.path)
+        result = source_delete_entry((payload.path if payload else None) or path or '')
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail='Source path not found')
     except ValueError as exc:

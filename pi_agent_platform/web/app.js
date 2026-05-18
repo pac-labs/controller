@@ -3300,8 +3300,8 @@ async function deleteSelectedSourceEntry(path=selectedSourceEntry) {
   if (!confirm(`Delete ${path}?`)) return;
   const parent = path.split('/').slice(0,-1).join('/');
   const request = () => ideUsesSessionWorkspace()
-    ? api(`/v1/sessions/${encodeURIComponent(currentIdeSession()?.id || '')}/files/entry`, {method:'DELETE', body:JSON.stringify({path})})
-    : api('/v1/sources/entry', {method:'DELETE', body:JSON.stringify({path})});
+    ? api(`/v1/sessions/${encodeURIComponent(currentIdeSession()?.id || '')}/files/entry?path=${encodeURIComponent(path)}`, {method:'DELETE'})
+    : api(`/v1/sources/entry?path=${encodeURIComponent(path)}`, {method:'DELETE'});
   const result = await runWithPaneError(request, 'Source entry could not be deleted');
   if (result) {
     if (sourceFileState.has(path)) closeSourceTab(path);
