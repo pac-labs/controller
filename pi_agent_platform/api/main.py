@@ -2557,13 +2557,17 @@ def _pip_install_editable(app_dir: Path) -> dict[str, Any]:
 def _write_runtime_run_script(app_dir: Path) -> dict[str, Any]:
     """Keep webUI updates from leaving an old 8443 run.sh behind."""
     pacp_home = str(ensure_pacp_layout())
+    default_port = int(getattr(config.server, 'port', 443) or 443)
+    fallback_port = int(getattr(config.service, 'fallback_port', 8443) or 8443)
+    if fallback_port < 1024:
+        fallback_port = 8443
     run_sh = app_dir / 'run.sh'
     content = f"""#!/usr/bin/env bash
 set -euo pipefail
 cd "{app_dir}"
 . .venv/bin/activate
 export PACP_HOME="${{PACP_HOME:-{pacp_home}}}"
-PORT="${{PAC_PORT:-443}}"
+PORT="${{PAC_PORT:-{default_port}}}"
 if [ "$PORT" -lt 1024 ] 2>/dev/null; then
   if ! python - "$PORT" <<'PYBIND' >/dev/null 2>&1
 import socket, sys
@@ -2574,8 +2578,8 @@ finally:
     s.close()
 PYBIND
   then
-    echo "PAC cannot bind privileged port $PORT as this user; falling back to 8443. Run sudo ./install.sh or install the systemd service with CAP_NET_BIND_SERVICE for port 443." >&2
-    PORT=8443
+    echo "PAC cannot bind privileged port $PORT as this user; falling back to {fallback_port}. Run sudo ./install.sh or install the systemd service with CAP_NET_BIND_SERVICE for port 443." >&2
+    PORT={fallback_port}
   fi
 fi
 export PAC_PORT="$PORT"
@@ -2594,7 +2598,7 @@ exec uvicorn pi_agent_platform.api.main:app --host 0.0.0.0 --port "$PORT" --prox
         run_sh.chmod(0o755)
     except Exception:
         pass
-    return {'ok': True, 'run_script': str(run_sh), 'default_port': 443, 'fallback_port': 8443}
+    return {'ok': True, 'run_script': str(run_sh), 'default_port': default_port, 'fallback_port': fallback_port}
 
 
 @app.post('/v1/admin/stage-package')
@@ -2972,13 +2976,24 @@ def _service_status_payload() -> dict[str, Any]:
     else:
         status['user_active'] = 'systemctl unavailable'
         status['system_active'] = 'systemctl unavailable'
+    user_port = _user_service_port()
     status['manual_host_command'] = f'cd {paths["app_dir"]} && sudo PAC_SERVICE={service_name} PAC_PORT=443 PACP_HOME={paths["pacp_home"]} ./install.sh'
-    status['manual_user_command'] = f'cd {paths["app_dir"]} && PAC_SERVICE={service_name} PAC_PORT=8443 PACP_HOME={paths["pacp_home"]} ./install.sh'
+    status['manual_user_command'] = f'cd {paths["app_dir"]} && PAC_SERVICE={service_name} PAC_PORT={user_port} PACP_HOME={paths["pacp_home"]} ./install.sh'
     return status
 
 
 def _default_public_url_for_port(port: int) -> str:
     return 'https://admin.pac.local' if int(port) == 443 else f'https://admin.pac.local:{int(port)}'
+
+
+def _user_service_port() -> int:
+    port = int(getattr(config.server, 'port', 8443) or 8443)
+    fallback = int(getattr(config.service, 'fallback_port', 8443) or 8443)
+    if port < 1024:
+        port = fallback
+    if port < 1024:
+        port = 8443
+    return port
 
 
 def _preserve_or_default_public_url(current_url: str | None, port: int) -> str:
@@ -3105,7 +3120,8 @@ def set_service_mode(payload: ServiceModeRequest, background_tasks: BackgroundTa
         config.server.port = 443
         config.server.public_url = _preserve_or_default_public_url(config.server.public_url, 443)
     else:
-        _write_user_service_unit(service_name, 8443)
+        user_port = _user_service_port()
+        _write_user_service_unit(service_name, user_port)
         results.append(_run_quiet(['systemctl', '--user', 'daemon-reload'], timeout=8))
         results.append(_run_quiet(['systemctl', '--user', 'enable', '--now', service_name], timeout=8))
         if os.getuid() == 0:
@@ -3113,8 +3129,8 @@ def set_service_mode(payload: ServiceModeRequest, background_tasks: BackgroundTa
         elif _can_sudo_noninteractive():
             results.append(_run_quiet(['sudo', '-n', 'systemctl', 'disable', '--now', service_name], timeout=8))
         config.service.mode = 'user'
-        config.server.port = 8443
-        config.server.public_url = _preserve_or_default_public_url(config.server.public_url, 8443)
+        config.server.port = user_port
+        config.server.public_url = _preserve_or_default_public_url(config.server.public_url, user_port)
     save_config(config)
     store.add_event(Event(session_id='system', type='service_mode_changed', message=f'PAC service mode set to {requested}', data={'mode': requested, 'results': results}))
     _schedule_local_restart(background_tasks, f'PAC restart scheduled after switching service mode to {requested}')
