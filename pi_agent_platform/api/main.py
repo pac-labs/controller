@@ -26,7 +26,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request, UploadFile, File
+from fastapi import BackgroundTasks, Body, Depends, FastAPI, Header, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse, Response, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -4540,7 +4540,7 @@ def rename_session_file_entry(session_id: str, payload: SessionFileRenameRequest
 
 
 @app.delete('/v1/sessions/{session_id}/files/entry')
-def delete_session_file_entry(session_id: str, payload: SourceDeleteRequest, _auth: None = Depends(require_auth)) -> dict[str, str]:
+def delete_session_file_entry(session_id: str, payload: SourceDeleteRequest = Body(...), _auth: None = Depends(require_auth)) -> dict[str, str]:
     session = store.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')
@@ -5242,7 +5242,7 @@ def rename_source_entry(payload: SourceRenameRequest, _auth: None = Depends(requ
 
 
 @app.delete('/v1/sources/entry')
-def delete_source_entry(payload: SourceDeleteRequest, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+def delete_source_entry(payload: SourceDeleteRequest = Body(...), _auth: None = Depends(require_auth)) -> dict[str, Any]:
     try:
         result = source_delete_entry(payload.path)
     except FileNotFoundError:
