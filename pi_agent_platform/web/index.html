@@ -61,22 +61,19 @@
     </section>
   </div>
   <nav class="tabs" aria-label="Main navigation">
-    <div id="tabsPrimary" class="tabs-primary">
-      <button class="tab active" data-tab="dashboard">Dashboard</button>
-      <button class="tab" data-tab="sessions-tab">Sessions</button>
-      <button class="tab" data-tab="runners-tab">Endpoints</button>
-      <button class="tab" data-tab="models-tab">Models</button>
-      <button class="tab" data-tab="providers-tab">Providers</button>
-      <button class="tab" data-tab="profiles-tab">Profiles</button>
-      <button class="tab" data-tab="workspaces-tab">Workspaces</button>
-      <button class="tab" data-tab="tools-tab">Tools</button>
-      <button class="tab" data-tab="sources-tab">IDE</button>
-      <button class="tab" data-tab="approvals-tab">Approvals</button>
-      <button class="tab" data-tab="settings-tab">Settings</button>
+    <div id="tabsGroups" class="tabs-groups">
+      <button class="tab nav-group-btn active" data-nav-group="operate" type="button">Operate</button>
+      <button class="tab nav-group-btn" data-nav-group="build" type="button">Build</button>
+      <button class="tab nav-group-btn" data-nav-group="agents" type="button">Agents</button>
+      <button class="tab nav-group-btn" data-nav-group="admin" type="button">Admin</button>
+      <button class="tab nav-group-btn" data-nav-group="observe" type="button">Observe</button>
     </div>
-    <div id="tabsOverflowWrap" class="tabs-overflow-wrap" hidden>
-      <button id="tabsOverflowButton" class="tab tabs-overflow-button" type="button" aria-haspopup="menu" aria-expanded="false">More</button>
-      <div id="tabsOverflowMenu" class="tabs-overflow-menu" hidden></div>
+    <div class="tabs-subnav">
+      <div id="tabsPrimary" class="tabs-primary"></div>
+      <div id="tabsOverflowWrap" class="tabs-overflow-wrap" hidden>
+        <button id="tabsOverflowButton" class="tab tabs-overflow-button" type="button" aria-haspopup="menu" aria-expanded="false">More</button>
+        <div id="tabsOverflowMenu" class="tabs-overflow-menu" hidden></div>
+      </div>
     </div>
   </nav>
 

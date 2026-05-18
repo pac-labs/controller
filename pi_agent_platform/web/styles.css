@@ -3800,6 +3800,25 @@ body[data-theme="light"] .session-sidebar-meta{
   flex:1 1 auto;
   overflow:hidden;
 }
+.tabs-groups{
+  display:flex;
+  align-items:center;
+  gap:.45rem;
+  flex:0 0 auto;
+  padding-right:.9rem;
+  border-right:1px solid rgba(125,168,213,0.16);
+}
+.tabs-subnav{
+  display:flex;
+  align-items:center;
+  gap:.35rem;
+  min-width:0;
+  flex:1 1 auto;
+}
+.nav-group-btn{
+  min-width:88px;
+  font-weight:700;
+}
 .tabs-overflow-wrap{
   position:relative;
   flex:0 0 auto;
