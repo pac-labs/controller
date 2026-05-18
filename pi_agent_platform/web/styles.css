@@ -2173,6 +2173,16 @@ body {
   display: flex !important;
   flex-direction: column !important;
 }
+#sources-tab .source-tree-footer {
+  display: flex;
+  gap: .55rem;
+  padding: .75rem;
+  border-top: 1px solid rgba(125, 168, 213, 0.14);
+  background: rgba(8, 17, 31, 0.74);
+}
+#sources-tab .source-tree-footer .ghost-button {
+  flex: 1 1 0;
+}
 #sources-tab #sourceTree.source-file-tree {
   display: flex !important;
   flex: 1 1 auto !important;
@@ -2190,18 +2200,16 @@ body {
   min-width: 0 !important;
   min-height: 0 !important;
   overflow: auto !important;
-  background:
-    linear-gradient(180deg, rgba(6, 18, 34, 0.98), rgba(7, 16, 30, 0.94)),
-    linear-gradient(135deg, rgba(0, 120, 212, 0.08), rgba(217, 124, 15, 0.08)) !important;
+  background: rgba(7, 16, 30, 0.96) !important;
   border-left: 1px solid rgba(125, 168, 213, 0.18) !important;
-  padding: 1rem !important;
+  padding: .9rem !important;
   display: flex !important;
   flex-direction: column !important;
-  gap: 1rem !important;
+  gap: .75rem !important;
 }
 #sources-tab .source-sidecard {
   border: 1px solid rgba(125, 168, 213, 0.18);
-  background: linear-gradient(180deg, rgba(11, 22, 40, 0.96), rgba(8, 15, 28, 0.96));
+  background: rgba(11, 22, 40, 0.96);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
   padding: .95rem;
   display: flex;
@@ -2212,39 +2220,14 @@ body {
   margin: 0;
   line-height: 1.45;
 }
-#sources-tab .source-coding-meta-row {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: .55rem;
-}
-#sources-tab .source-coding-meta-row.secondary {
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
-}
-#sources-tab .source-meta-pill {
-  display: flex;
-  flex-direction: column;
-  gap: .18rem;
-  min-width: 0;
-  padding: .6rem .7rem;
+#sources-tab .source-coding-focus {
   border: 1px solid rgba(125, 168, 213, 0.16);
-  background: rgba(8, 17, 31, 0.72);
-}
-#sources-tab .source-meta-pill b {
-  font-size: .71rem;
-  letter-spacing: .05em;
-  text-transform: uppercase;
-  color: rgba(211, 226, 244, 0.72);
-}
-#sources-tab .source-meta-pill span:last-child {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-#sources-tab .source-side-actions {
-  justify-content: flex-start;
-  margin-top: -.2rem;
+  background: rgba(8, 17, 31, 0.68);
+  padding: .7rem .8rem;
+  line-height: 1.45;
 }
 #sources-tab .source-coding-prompt {
-  min-height: 102px;
+  min-height: 180px;
 }
 #sources-tab .source-coding-live {
   display: flex;
@@ -2334,17 +2317,14 @@ body {
 #sources-tab .source-coding-health {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-#sources-tab #sourceCodingOpenFiles {
-  max-height: 220px;
-}
-#sources-tab #sourceCodingOpenFiles .inline-browser-row {
-  border-radius: 0;
-  border-color: rgba(125, 168, 213, 0.14);
-  background: rgba(8, 17, 31, 0.74);
-  margin-bottom: .5rem;
-}
-#sources-tab #sourceCodingOpenFiles .inline-browser-row:last-child {
-  margin-bottom: 0;
+#sources-tab .source-coding-reply-preview {
+  min-height: 72px;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  border: 1px solid rgba(125, 168, 213, 0.16);
+  background: rgba(4, 10, 22, 0.86);
+  padding: .75rem;
 }
 #sources-tab #sourceCodingTools .inline-browser-row {
   display: grid;

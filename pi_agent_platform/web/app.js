@@ -34,7 +34,7 @@ let selectedBinaryArtifactFilter = '';
 let sourceOpenTabs = [];
 let sourceFileState = new Map();
 let selectedSourceEntry = '';
-let sourceExpandedDirs = new Set(['']);
+let sourceExpandedDirs = new Set(['', 'plugins']);
 let sourceTreeCache = new Map();
 let sourceLibraryRoot = '';
 let sourceResolvedContext = null;
@@ -3118,6 +3118,7 @@ async function renderSources(path='', options={}) {
   try {
     const targetPath = options.focusPath !== undefined ? options.focusPath : path;
     if (!options.preserveCache || !sourceTreeCache.has('')) await ensureSourceDirLoaded('');
+    sourceExpandedDirs.add('plugins');
     if (path && !sourceTreeCache.has(path)) await ensureSourceDirLoaded(path);
     const expanded = Array.from(sourceExpandedDirs).filter(Boolean);
     for (const dir of expanded) {
@@ -3738,7 +3739,6 @@ function sourceOpenFilePayload(limit = 3, maxChars = 4000) {
 function updateSourceCodingPanel() {
   const defaults = sourceCodingDefaults();
   const endpointName = (window.__pacEndpoints || []).find(r => r.id === defaults.endpointId)?.name || defaults.endpointId || '-';
-  const setText = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value || '-'; };
   const contextSummary = document.getElementById('sourceCodingContextSummary');
   if (contextSummary) {
     contextSummary.textContent = defaults.existingSession?.id
@@ -3747,16 +3747,12 @@ function updateSourceCodingPanel() {
         ? `No coding session yet. Resolved ${sourceResolvedContext.name} for ${selectedSourceEntry || selectedSourceFolder || 'current source path'}. Start a coding session to work on this codebase.`
         : 'No coding session yet. Select a source file or context, then start a coding session for code work on this workspace.');
   }
-  setText('sourceCodingStack', defaults.stack);
-  setText('sourceCodingContainer', defaults.containerImage || '-');
-  setText('sourceCodingEndpoint', endpointName);
-  setText('sourceCodingProfile', defaults.profileName || 'main-pi-dev');
-  setText('sourceCodingWorkspace', defaults.workspacePath || '-');
-  setText('sourceCodingContextName', defaults.contextName || 'none');
-  setText('sourceCodingModel', defaults.modelName || '-');
-  setText('sourceCodingSession', defaults.existingSession?.name || (sourceCodingSessionId ? 'attached' : 'not started'));
-  const openFiles = document.getElementById('sourceCodingOpenFiles');
-  if (openFiles) openFiles.innerHTML = sourceOpenFilesSummaryHtml();
+  const focusEl = document.getElementById('sourceCodingFocus');
+  if (focusEl) {
+    const openFiles = sourceOpenTabs.length ? sourceOpenTabs.map(sourceFileLabel).join(', ') : 'none';
+    const sessionName = defaults.existingSession?.name || (sourceCodingSessionId ? 'attached session' : 'not started');
+    focusEl.textContent = `Stack ${defaults.stack} • endpoint ${endpointName} • profile ${defaults.profileName || 'main-pi-dev'} • model ${defaults.modelName || '-'} • session ${sessionName} • open files ${openFiles}`;
+  }
   const startBtn = document.getElementById('bootstrapSourceCodingSession');
   if (startBtn) startBtn.textContent = defaults.existingSession?.id ? 'Reopen coding session' : 'Start coding session';
   const sendBtn = document.getElementById('askSourceCodingSession');
@@ -5771,17 +5767,10 @@ if (deleteSourceBtn) deleteSourceBtn.onclick = () => deleteSelectedSourceEntry()
 const sourceContextSelect = document.getElementById('sourceContextSelect');
 if (sourceContextSelect) sourceContextSelect.onchange = () => { fillSourceContextForm(sourceContextSelect.value || ''); resolveCurrentSourceContext().catch(()=>{}); };
 const openSourceSetupModalBtn = document.getElementById('openSourceSetupModal');
-const openSourceToolsModalBtn = document.getElementById('openSourceToolsModal');
-const openSourcePersonalDataBtn = document.getElementById('openSourcePersonalData');
+const openSourceProfileConfigBtn = document.getElementById('openSourceProfileConfig');
 const closeSourceSetupModalBtn = document.getElementById('closeSourceSetupModal');
 if (openSourceSetupModalBtn) openSourceSetupModalBtn.onclick = () => { const modal = document.getElementById('sourceSetupModal'); if (modal) modal.hidden = false; };
-if (openSourceToolsModalBtn) openSourceToolsModalBtn.onclick = () => {
-  const modal = document.getElementById('sourceSetupModal');
-  if (modal) modal.hidden = false;
-  const section = document.getElementById('sourceToolsModalSection');
-  if (section) setTimeout(() => section.scrollIntoView({block:'start', behavior:'smooth'}), 10);
-};
-if (openSourcePersonalDataBtn) openSourcePersonalDataBtn.onclick = () => {
+if (openSourceProfileConfigBtn) openSourceProfileConfigBtn.onclick = () => {
   openPersonalSettingsModal().catch((e)=>paneError('Personal settings could not be opened', e.message || String(e)));
 };
 if (closeSourceSetupModalBtn) closeSourceSetupModalBtn.onclick = () => { const modal = document.getElementById('sourceSetupModal'); if (modal) modal.hidden = true; };
