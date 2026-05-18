@@ -615,12 +615,20 @@
     <section id="settings-tab" class="tab-panel">
       <div class="settings-subnav">
         <button class="settings-sub-btn active" data-settings-panel="updates">Updates</button>
+        <button class="settings-sub-btn" data-settings-panel="approvals">Approvals</button>
         <button class="settings-sub-btn" data-settings-panel="users">Users</button>
         <button class="settings-sub-btn" data-settings-panel="pi-dev">pi.dev</button>
         <button class="settings-sub-btn" data-settings-panel="endpoint">Endpoint</button>
         <button class="settings-sub-btn" data-settings-panel="service">Service</button>
         <button class="settings-sub-btn" data-settings-panel="tls">TLS / CA</button>
         <button class="settings-sub-btn" data-settings-panel="config">Config</button>
+      </div>
+
+      <div id="settings-approvals" class="settings-panel" hidden>
+        <section class="card wide">
+          <div class="section-heading compact-heading"><div><h2>Approvals</h2><p class="muted">Pending task approvals and access requests for governed sessions and resources.</p></div></div>
+          <div id="approvalsSettings"></div>
+        </section>
       </div>
 
       <div id="settings-updates" class="settings-panel">

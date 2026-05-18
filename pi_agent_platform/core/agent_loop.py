@@ -329,7 +329,37 @@ def _controller_session_guidance(session: Session) -> str | None:
         "For PAC-domain questions about code, sessions, wrappers, providers, profiles, endpoints, settings, updates, logs, or configuration, inspect the local PAC workspace/configuration first.\n"
         "Prefer local tools like workspace_manifest, list_files, read_file, read_file_chunk, rg/shell, git_status, and git_diff before web_search or web_fetch.\n"
         "Only use the web when the user explicitly asks for external information or the local PAC workspace clearly cannot answer the question.\n"
-        "If the user asks to update PAC behavior or configuration, you are allowed to rewrite PAC application files and PAC configuration directly. Do the work instead of only describing it."
+        "If the user asks to update PAC behavior or configuration, you are allowed to rewrite PAC application files and PAC configuration directly. Do the work instead of only describing it.\n"
+        "Assume PAC-specific terms like PAC RAM, plugins, sessions, wrappers, endpoints, and profiles refer to this PAC installation unless the user explicitly broadens the scope.\n"
+        "For broad PAC requests, inspect first and answer from local evidence instead of asking generic clarifying questions."
+    )
+
+
+def _controller_session_runtime_context(session: Session, config: AppConfig) -> str | None:
+    if not session.metadata.get("controller_harness"):
+        return None
+    workspace = str(session.workspace_path or "").strip() or "-"
+    data_dir = str(config.server.data_dir or "").strip() or "-"
+    config_path = f"{data_dir.rstrip('/')}/config/config.yaml" if data_dir not in {"-", ""} else "-"
+    public_url = str(config.server.public_url or "").strip() or "-"
+    endpoint_id = str(session.metadata.get("preferred_endpoint") or "local-PAC")
+    tool_names = []
+    agent = config.agent_profiles.get(session.agent_profile or "")
+    if agent:
+        tool_names = list(agent.tools or [])
+    if not tool_names:
+        tool_names = list(config.tools.keys())
+    top_level_hints = ["pi_agent_platform/", "binaries/", "containers/", "plugins/", "docs/", "config/"]
+    return (
+        "PAC controller runtime snapshot:\n"
+        f"- controller workspace: {workspace}\n"
+        f"- PAC data dir: {data_dir}\n"
+        f"- PAC config path: {config_path}\n"
+        f"- public URL: {public_url}\n"
+        f"- preferred local endpoint: {endpoint_id}\n"
+        f"- common top-level source paths: {', '.join(top_level_hints)}\n"
+        f"- available tools in this session: {', '.join(tool_names[:20]) or '-'}\n"
+        "Use this snapshot as background context; verify details in files or runtime state before making precise claims."
     )
 
 
@@ -350,6 +380,7 @@ def _session_history_messages(session: Session, current_task_id: str | None = No
     events = store.get_events(session.id, limit=800, latest=True)
     messages: list[dict[str, str]] = []
     seen_pairs: set[tuple[str, str, str]] = set()
+    controller_session = bool(session.metadata.get("controller_harness"))
     def _looks_like_raw_tool_call(content: str) -> bool:
         text = str(content or "").strip()
         if not text:
@@ -359,6 +390,19 @@ def _session_history_messages(session: Session, current_task_id: str | None = No
         if text.startswith('{"type":"tool_call"') or text.startswith("{'type':'tool_call'"):
             return True
         return False
+    def _looks_like_low_value_controller_history(content: str) -> bool:
+        text = str(content or "").strip().lower()
+        if not text:
+            return True
+        markers = (
+            "understood. i will",
+            "understood. all future responses",
+            "the provided context details",
+            "i am ready to operate",
+            "please provide the specific task",
+            "i maintain full context",
+        )
+        return any(marker in text for marker in markers)
     for event in events:
         if current_task_id and event.task_id == current_task_id:
             continue
@@ -374,13 +418,16 @@ def _session_history_messages(session: Session, current_task_id: str | None = No
             continue
         if role == "assistant" and _looks_like_raw_tool_call(content):
             continue
+        if controller_session and role == "assistant" and _looks_like_low_value_controller_history(content):
+            continue
         signature = (role, event.task_id or "", content)
         if signature in seen_pairs:
             continue
         seen_pairs.add(signature)
         messages.append({"role": role, "content": content})
-    if max_messages > 0 and len(messages) > max_messages:
-        messages = messages[-max_messages:]
+    effective_max = 6 if controller_session else max_messages
+    if effective_max > 0 and len(messages) > effective_max:
+        messages = messages[-effective_max:]
     return messages
 
 
@@ -418,6 +465,22 @@ def _has_meaningful_codebase_inspection(transcript: list[dict[str, Any]]) -> boo
     if used.count("list_files") >= 2:
         return True
     return False
+
+
+def _looks_like_generic_ready_response(text: str) -> bool:
+    raw = str(text or "").strip().lower()
+    if not raw:
+        return False
+    markers = (
+        "i am ready to proceed",
+        "please provide the specific task",
+        "please provide the next task",
+        "ready to operate",
+        "the provided context details",
+        "the platform capabilities",
+        "i maintain full context",
+    )
+    return any(marker in raw for marker in markers)
 
 
 def _is_broad_codebase_request(prompt: str) -> bool:
@@ -907,6 +970,9 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     controller_guidance = _controller_session_guidance(session)
     if controller_guidance:
         messages.append({"role": "system", "content": controller_guidance})
+    controller_context = _controller_session_runtime_context(session, config)
+    if controller_context:
+        messages.append({"role": "system", "content": controller_context})
     messages.extend(_session_history_messages(session, current_task_id=task.id, max_messages=12))
     messages.append({"role": "user", "content": "Current user request (answer this now; earlier conversation is context only):\n" + task.prompt})
 
@@ -1015,6 +1081,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
         if action.get("type") == "final":
             depth_score = _inspection_depth_score(transcript)
             broad_request = _is_broad_codebase_request(task.prompt)
+            final_message = str(action.get("message") or "")
             if _prompt_requests_codebase_inspection(task.prompt) and not _has_meaningful_codebase_inspection(transcript):
                 messages.append({
                     "role": "user",
@@ -1036,8 +1103,18 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                     ),
                 })
                 continue
+            if session.metadata.get("controller_harness") and _looks_like_generic_ready_response(final_message):
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "Do not give a generic readiness or acknowledgement reply. "
+                        "Answer the current PAC question directly from the local evidence you already gathered, "
+                        "or keep inspecting with a concrete tool call if the answer is still incomplete."
+                    ),
+                })
+                continue
             task.status = TaskStatus.completed
-            task.output = str(action.get("message") or "")
+            task.output = final_message
             task.metadata["agent_transcript"] = transcript[-20:]
             store.add_task(task)
             store.add_event(Event(session_id=session.id, task_id=task.id, type="result", message=task.output[-4000:], data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "agent_profile": session.agent_profile, "permission_profile": session.permission_profile}))
