@@ -95,6 +95,7 @@ _SINGLE_INSTANCE_LOCK = _acquire_single_instance_lock()
 _CONTROLLER_WRAPPER_PROC: subprocess.Popen[str] | None = None
 _CONTROLLER_WRAPPER_SUPERVISOR_ACTIVE = False
 _LAST_CONTROLLER_WRAPPER_EVENT_SIGNATURE: str | None = None
+_LAST_CONTROLLER_WRAPPER_RUNNING_STATE: bool | None = None
 _CONTROLLER_PI_CONTAINER_NAME = "pac-pi-dev-controller"
 
 def _read_pac_version() -> str:
@@ -908,7 +909,7 @@ def _start_controller_wrapper_once() -> dict[str, Any]:
 
 
 def _controller_wrapper_supervisor() -> None:
-    global _CONTROLLER_WRAPPER_SUPERVISOR_ACTIVE, _LAST_CONTROLLER_WRAPPER_EVENT_SIGNATURE
+    global _CONTROLLER_WRAPPER_SUPERVISOR_ACTIVE, _LAST_CONTROLLER_WRAPPER_EVENT_SIGNATURE, _LAST_CONTROLLER_WRAPPER_RUNNING_STATE
     if _CONTROLLER_WRAPPER_SUPERVISOR_ACTIVE:
         return
     _CONTROLLER_WRAPPER_SUPERVISOR_ACTIVE = True
@@ -920,11 +921,22 @@ def _controller_wrapper_supervisor() -> None:
             if not state.get('available'):
                 time.sleep(10)
                 continue
-            if not state.get('running'):
+            running = bool(state.get('running'))
+            if running:
+                _LAST_CONTROLLER_WRAPPER_RUNNING_STATE = True
+            if not running:
                 result = _start_controller_wrapper_once()
                 event_type = 'controller_wrapper_started' if result.get('ok') else 'controller_wrapper_start_failed'
-                signature = f"{event_type}:{result.get('status')}:{result.get('message')}:{(result.get('process') or {}).get('pid') or 'none'}"
-                if signature != _LAST_CONTROLLER_WRAPPER_EVENT_SIGNATURE:
+                running_now = bool(result.get('ok'))
+                status = str(result.get('status') or '')
+                message = str(result.get('message') or '')
+                signature = f"{event_type}:{status}:{message}"
+                should_emit = (
+                    _LAST_CONTROLLER_WRAPPER_RUNNING_STATE is not running_now
+                    or signature != _LAST_CONTROLLER_WRAPPER_EVENT_SIGNATURE
+                )
+                _LAST_CONTROLLER_WRAPPER_RUNNING_STATE = running_now
+                if should_emit:
                     _LAST_CONTROLLER_WRAPPER_EVENT_SIGNATURE = signature
                     store.add_event(Event(session_id='system', type=event_type, message=result.get('message', 'PAC wrapper start checked'), data=result))
             time.sleep(10)
@@ -5617,6 +5629,10 @@ def runner_heartbeat(payload: RunnerHeartbeat, _auth: None = Depends(require_aut
     runner = store.get_runner(payload.runner_id)
     if not runner:
         raise HTTPException(status_code=404, detail='Endpoint not found')
+    previous_status = runner.status
+    previous_labels = list(runner.labels or [])
+    previous_version = str(runner.metadata.get('runner_version') or runner.metadata.get('endpoint_version') or '')
+    previous_capability_signature = json.dumps(runner.capabilities or {}, sort_keys=True, default=str)
     runner.status = payload.status
     runner.labels = payload.labels or runner.labels
     runner.capabilities = payload.capabilities
@@ -5638,7 +5654,30 @@ def runner_heartbeat(payload: RunnerHeartbeat, _auth: None = Depends(require_aut
     runner = _normalise_endpoint_metadata(runner, runner.metadata.get('agent_requested') or runner.metadata.get('agent_enabled', False))
     runner.last_seen_at = Event(session_id='system', type='noop', message='noop').created_at
     store.add_runner(runner)
-    store.add_event(Event(session_id='system', type='runner_heartbeat', message=f'Heartbeat from endpoint {runner.name}', data={'runner_id': runner.id, 'containers': len(runner.containers), 'capabilities': runner.capabilities}))
+    current_version = str(runner.metadata.get('runner_version') or runner.metadata.get('endpoint_version') or '')
+    current_capability_signature = json.dumps(runner.capabilities or {}, sort_keys=True, default=str)
+    heartbeat_changed = (
+        previous_status != runner.status
+        or previous_labels != list(runner.labels or [])
+        or previous_version != current_version
+        or previous_capability_signature != current_capability_signature
+    )
+    if heartbeat_changed:
+        store.add_event(
+            Event(
+                session_id='system',
+                type='runner_status_changed',
+                message=f'Endpoint {runner.name} changed to {runner.status}',
+                data={
+                    'runner_id': runner.id,
+                    'status': runner.status,
+                    'labels': runner.labels,
+                    'version': current_version,
+                    'containers': len(runner.containers),
+                    'capabilities': runner.capabilities,
+                },
+            )
+        )
     return runner
 
 
