@@ -1503,20 +1503,20 @@ function setupTabs() {
       {tab: 'workspaces-tab', label: 'Workspaces'},
       {tab: 'tools-tab', label: 'Tools'},
     ],
-    admin: [
-      {tab: 'settings-tab', label: 'Settings'},
-    ],
+    admin: [],
     observe: [
       {tab: 'events-panel-proxy', label: 'Events'},
     ],
   };
   const TAB_TO_GROUP = {};
   Object.entries(NAV_GROUPS).forEach(([group, items]) => items.forEach((item) => { TAB_TO_GROUP[item.tab] = group; }));
+  TAB_TO_GROUP['settings-tab'] = 'admin';
   const primary = document.getElementById('tabsPrimary');
   const groupsEl = document.getElementById('tabsGroups');
   function renderGroup(groupName, activeTab = '') {
     if (!primary) return;
     const items = NAV_GROUPS[groupName] || [];
+    primary.hidden = items.length === 0;
     primary.innerHTML = items.map((item) => `<button class="tab${item.tab === activeTab ? ' active' : ''}" data-tab="${escapeHtml(item.tab)}" type="button">${escapeHtml(item.label)}</button>`).join('');
     primary.querySelectorAll('.tab[data-tab]').forEach((btn) => {
       btn.onclick = () => {
@@ -1537,7 +1537,8 @@ function setupTabs() {
       const items = NAV_GROUPS[groupName] || [];
       const firstReal = items.find((item) => item.tab !== 'events-panel-proxy');
       renderGroup(groupName, firstReal?.tab || '');
-      if (firstReal?.tab) activateMainTab(firstReal.tab);
+      if (groupName === 'admin') activateMainTab('settings-tab');
+      else if (firstReal?.tab) activateMainTab(firstReal.tab);
       else if (groupName === 'observe') showRail();
     };
   });
