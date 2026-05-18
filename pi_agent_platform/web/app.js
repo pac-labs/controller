@@ -4655,9 +4655,9 @@ function renderProfiles() {
   const el = document.getElementById('profiles'); el.innerHTML = '';
   for (const [name,p] of Object.entries(config.agent_profiles || {})) {
     const av = p.model ? modelAvailability(p.model) : {ok:false, reason:'no model'};
-    const valid = av.ok;
+    const configured = !!(p.model && config.models?.[p.model]);
     const row = document.createElement('div'); row.className = 'model-card clickable-row';
-    row.innerHTML = `<code>${name} ${valid ? '' : '[not selectable]'}\nmodel: ${p.model}${p.planner_model ? `\nplanner: ${p.planner_model}` : ''}\ncontext: ${p.context_profile || p.context_mode}${p.planner_context_profile ? `\nplanner context: ${p.planner_context_profile}` : ''}\npermissions: ${p.permission_profile}\ntools: ${(p.tools||[]).join(', ')}${valid ? '' : `\nreason: ${av.reason}`}</code>`;
+    row.innerHTML = `<code>${name}${configured ? '' : ' [model missing]'}${av.ok ? '' : ' [runtime unavailable]'}\nmodel: ${p.model}${p.planner_model ? `\nplanner: ${p.planner_model}` : ''}\ncontext: ${p.context_profile || p.context_mode}${p.planner_context_profile ? `\nplanner context: ${p.planner_context_profile}` : ''}\npermissions: ${p.permission_profile}\ntools: ${(p.tools||[]).join(', ')}${!configured ? '\nreason: configured model no longer exists' : (av.ok ? '' : `\nruntime: ${av.reason}`)}</code>`;
     row.onclick = () => fillProfileForm(name);
     el.appendChild(row);
   }

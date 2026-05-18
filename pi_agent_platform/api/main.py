@@ -4118,16 +4118,10 @@ def list_agent_profiles(_auth: None = Depends(require_auth)) -> dict[str, Any]:
 def upsert_agent_profile(profile_name: str, payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict[str, Any]:
     if not payload.get('model') or payload['model'] not in config.models:
         raise HTTPException(status_code=400, detail='Profile requires an existing configured model')
-    available, reason = _model_available(payload['model'])
-    if not available:
-        raise HTTPException(status_code=400, detail=f'Profile model is not available: {reason}')
     planner_model = payload.get('planner_model')
     if planner_model:
         if planner_model not in config.models:
             raise HTTPException(status_code=400, detail='Planner model must be an existing configured model')
-        planner_available, planner_reason = _model_available(planner_model)
-        if not planner_available:
-            raise HTTPException(status_code=400, detail=f'Planner model is not available: {planner_reason}')
     permission_profile = payload.get('permission_profile') or 'ask-first'
     if permission_profile not in config.permission_profiles:
         raise HTTPException(status_code=400, detail='Unknown permission profile')
