@@ -564,6 +564,26 @@ def _platform_workspace_path() -> str:
     return str(Path(__file__).resolve().parents[2])
 
 
+def _ensure_platform_plugin_sources() -> dict[str, Any]:
+    root = Path(_platform_workspace_path())
+    plugins_root = root / 'plugins'
+    plugins_root.mkdir(parents=True, exist_ok=True)
+    ids = sorted(set([*(config.tools or {}).keys(), *(config.plugins or {}).keys()]))
+    created: list[str] = []
+    for tool_id in ids:
+        tool_dir = plugins_root / str(tool_id)
+        tool_dir.mkdir(parents=True, exist_ok=True)
+        readme = tool_dir / 'README.md'
+        if not readme.exists():
+            readme.write_text(
+                f"# {tool_id}\n\n"
+                f"Agent tool source for `{tool_id}` inside the PAC platform workspace.\n\n"
+                "Use this folder for prompts, helper code, docs, or endpoint-side source related to this tool.\n"
+            )
+            created.append(f'plugins/{tool_id}/README.md')
+    return {'root': str(plugins_root), 'created': created}
+
+
 def _ensure_controller_harness_runner() -> Runner:
     settings = config.controller_harness
     # The PAC controller is already represented by the local endpoint. Do not
@@ -1244,6 +1264,9 @@ def _startup_services() -> None:
     info = ensure_source_library()
     if info.get('changed'):
         store.add_event(Event(session_id='system', type='source_library_initialized', message='Source library prepared', data=info))
+    plugin_info = _ensure_platform_plugin_sources()
+    if plugin_info.get('created'):
+        store.add_event(Event(session_id='system', type='platform_plugin_sources_initialized', message='Platform plugin sources prepared', data=plugin_info))
     _start_mdns_advertiser()
 
 
