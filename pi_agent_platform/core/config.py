@@ -455,11 +455,22 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     cfg = AppConfig.model_validate(raw)
     changed = prune_packaged_demo_entries(cfg)
+    current_public_url = str(cfg.server.public_url or '').rstrip('/')
+    packaged_default_urls = {
+        'https://admin.pac.local',
+        'https://admin.pac.local:443',
+        'https://admin.pac.local:8443',
+        'https://localhost:443',
+        'https://localhost:8443',
+        'https://127.0.0.1:443',
+        'https://127.0.0.1:8443',
+    }
     env_port = os.environ.get('PAC_PORT')
     if env_port:
         try:
             cfg.server.port = int(env_port)
-            cfg.server.public_url = 'https://admin.pac.local' if int(env_port) == 443 else f'https://admin.pac.local:{int(env_port)}'
+            if current_public_url in packaged_default_urls or not current_public_url:
+                cfg.server.public_url = 'https://admin.pac.local' if int(env_port) == 443 else f'https://admin.pac.local:{int(env_port)}'
         except ValueError:
             pass
     # Migrate packaged defaults only; explicit custom ports are preserved unless PAC_PORT is set.

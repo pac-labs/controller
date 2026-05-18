@@ -2472,13 +2472,21 @@ def update_server_connection(payload: ServerConnectionRequest, _auth: None = Dep
     """
     global config
     public_url = str(payload.public_url or '').strip().rstrip('/')
-    if not (public_url.startswith('https://') or public_url.startswith('http://')):
-        raise HTTPException(status_code=400, detail='Controller URL must start with http:// or https://')
+    if public_url and not (public_url.startswith('https://') or public_url.startswith('http://')):
+        public_url = f'https://{public_url}'
+    parsed = urllib.parse.urlparse(public_url)
+    if not parsed.scheme or not parsed.netloc:
+        raise HTTPException(status_code=400, detail='Controller URL must be a valid host or host:port value')
     config.server.public_url = public_url
     if payload.mdns_enabled is not None:
         config.mdns.enabled = bool(payload.mdns_enabled)
     save_config(config)
     config = load_config()
+    try:
+        _stop_mdns_advertiser()
+        _start_mdns_advertiser()
+    except Exception:
+        pass
     store.add_event(Event(session_id='system', type='server_connection_updated', message=f'Endpoint controller URL set to {config.server.public_url}', data={'public_url': config.server.public_url, 'mdns_enabled': config.mdns.enabled}))
     return {'ok': True, 'public_url': config.server.public_url, 'mdns_enabled': config.mdns.enabled, 'message': 'Endpoint connection settings saved. Rebuild endpoint/agent binaries to compile this URL in.'}
 
@@ -2969,6 +2977,33 @@ def _service_status_payload() -> dict[str, Any]:
     return status
 
 
+def _default_public_url_for_port(port: int) -> str:
+    return 'https://admin.pac.local' if int(port) == 443 else f'https://admin.pac.local:{int(port)}'
+
+
+def _preserve_or_default_public_url(current_url: str | None, port: int) -> str:
+    value = str(current_url or '').rstrip('/')
+    packaged_defaults = {
+        'https://admin.pac.local',
+        'https://admin.pac.local:443',
+        'https://admin.pac.local:8443',
+        'https://localhost:443',
+        'https://localhost:8443',
+        'https://127.0.0.1:443',
+        'https://127.0.0.1:8443',
+    }
+    if not value or value in packaged_defaults:
+        return _default_public_url_for_port(port)
+    parsed = urllib.parse.urlparse(value if '://' in value else f'https://{value}')
+    host = parsed.hostname or ''
+    if not host:
+        return _default_public_url_for_port(port)
+    scheme = parsed.scheme or 'https'
+    if int(port) == 443:
+        return f'{scheme}://{host}'
+    return f'{scheme}://{host}:{int(port)}'
+
+
 def _write_user_service_unit(service_name: str, port: int) -> Path:
     unit = Path.home() / '.config' / 'systemd' / 'user' / f'{service_name}.service'
     unit.parent.mkdir(parents=True, exist_ok=True)
@@ -3068,7 +3103,7 @@ def set_service_mode(payload: ServiceModeRequest, background_tasks: BackgroundTa
             return {'ok': False, 'needs_sudo': True, 'message': 'Host service requires sudo/root. Run the manual command shown, or start PAC with sudo once to switch modes.', 'status': _service_status_payload(), 'prepared_unit': str(tmp)}
         config.service.mode = 'host'
         config.server.port = 443
-        config.server.public_url = 'https://admin.pac.local'
+        config.server.public_url = _preserve_or_default_public_url(config.server.public_url, 443)
     else:
         _write_user_service_unit(service_name, 8443)
         results.append(_run_quiet(['systemctl', '--user', 'daemon-reload'], timeout=8))
@@ -3079,7 +3114,7 @@ def set_service_mode(payload: ServiceModeRequest, background_tasks: BackgroundTa
             results.append(_run_quiet(['sudo', '-n', 'systemctl', 'disable', '--now', service_name], timeout=8))
         config.service.mode = 'user'
         config.server.port = 8443
-        config.server.public_url = 'https://admin.pac.local:8443'
+        config.server.public_url = _preserve_or_default_public_url(config.server.public_url, 8443)
     save_config(config)
     store.add_event(Event(session_id='system', type='service_mode_changed', message=f'PAC service mode set to {requested}', data={'mode': requested, 'results': results}))
     _schedule_local_restart(background_tasks, f'PAC restart scheduled after switching service mode to {requested}')

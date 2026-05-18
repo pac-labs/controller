@@ -2199,6 +2199,8 @@ body {
 #sources-tab .source-workbench-sidecar {
   min-width: 0 !important;
   min-height: 0 !important;
+  width: 320px !important;
+  max-width: 320px !important;
   overflow: auto !important;
   background: rgba(7, 16, 30, 0.96) !important;
   border-left: 1px solid rgba(125, 168, 213, 0.18) !important;
@@ -2218,16 +2220,14 @@ body {
 }
 #sources-tab .source-coding-summary {
   margin: 0;
-  line-height: 1.45;
+  line-height: 1.4;
+  font-size: .86rem;
 }
 #sources-tab .source-coding-focus {
-  border: 1px solid rgba(125, 168, 213, 0.16);
-  background: rgba(8, 17, 31, 0.68);
-  padding: .7rem .8rem;
-  line-height: 1.45;
+  display: none;
 }
 #sources-tab .source-coding-prompt {
-  min-height: 180px;
+  min-height: 140px;
 }
 #sources-tab .source-coding-live {
   display: flex;

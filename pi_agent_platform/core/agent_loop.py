@@ -5,12 +5,14 @@ import json
 import re
 import subprocess
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from shlex import join as shlex_join
+from uuid import uuid4
 from typing import Any
 
 from .config import AppConfig
-from .models import Event, Session, SessionStatus, Task, TaskStatus
+from .models import Event, Session, SessionStatus, Task, TaskStatus, RunnerJob, RunnerJobStatus, RunnerExecutionMode
 from .providers import chat_complete, effective_context
 from .session_commands import parse_session_slash_command, slash_help_text
 from .subagents import spawn_pi_dev_subagent
@@ -345,6 +347,171 @@ def _has_meaningful_codebase_inspection(transcript: list[dict[str, Any]]) -> boo
     return False
 
 
+def _is_broad_codebase_request(prompt: str) -> bool:
+    text = str(prompt or "").lower()
+    if not text:
+        return False
+    broad_signals = [
+        "look at the code",
+        "look at the codebase",
+        "look at pac",
+        "scan the workspace",
+        "inspect the workspace",
+        "what is in",
+        "what does this repo",
+        "understand the codebase",
+        "find the source",
+        "where stuff is",
+    ]
+    return any(signal in text for signal in broad_signals)
+
+
+def _inspection_depth_score(transcript: list[dict[str, Any]]) -> float:
+    score = 0.0
+    for item in transcript:
+        tool = str(item.get("tool") or "")
+        if tool == "workspace_manifest":
+            score += 2.0
+        elif tool in {"git_status", "git_diff", "batch_analyze_file", "batch_analyze_text"}:
+            score += 1.5
+        elif tool == "shell":
+            command = str((item.get("input") or {}).get("command") or "")
+            if any(term in command for term in ("rg ", "grep ", "find ", "fd ")):
+                score += 2.0
+            else:
+                score += 1.0
+        elif tool == "read_file":
+            path = str((item.get("input") or {}).get("path") or "").lower()
+            if path.endswith(("readme.md", "readme", ".md", ".adoc")):
+                score += 0.5
+            else:
+                score += 1.25
+        elif tool == "read_file_chunk":
+            score += 1.0
+        elif tool == "list_files":
+            score += 0.5
+    return score
+
+
+def _shell_single_quote(value: str) -> str:
+    return "'" + str(value).replace("'", "'\\''") + "'"
+
+
+def _runner_tool_command(tool: str, inp: dict[str, Any]) -> str | None:
+    inp = inp or {}
+    if tool == "shell":
+        return str(inp.get("command") or "").strip() or None
+    if tool == "git_status":
+        return "git status --short"
+    if tool == "git_diff":
+        return "git diff --"
+    if tool == "workspace_manifest":
+        max_files = max(1, min(int(inp.get("max_files") or 200), 400))
+        return (
+            "find . "
+            "\\( -path './.git' -o -path './node_modules' -o -path './__pycache__' -o -path './.venv' \\) -prune "
+            f"-o -type f -printf '%P\\n' | sort | head -n {max_files}"
+        )
+    if tool == "list_files":
+        path = str(inp.get("path") or ".").strip() or "."
+        quoted = _shell_single_quote(path)
+        return (
+            f"if [ -f {quoted} ]; then "
+            f"printf 'file %s\\n' {quoted}; "
+            f"wc -c < {quoted}; "
+            "else "
+            f"cd {quoted} 2>/dev/null || exit 2; "
+            "find . -maxdepth 3 "
+            "\\( -path './.git' -o -path './node_modules' -o -path './__pycache__' -o -path './.venv' \\) -prune "
+            "-o -printf '%y %P\\n' | sed '/^d $/d' | sort | head -n 200; "
+            "fi"
+        )
+    if tool == "read_file":
+        path = str(inp.get("path") or "").strip()
+        if not path:
+            return None
+        quoted = _shell_single_quote(path)
+        return f"sed -n '1,260p' -- {quoted}"
+    if tool == "read_file_chunk":
+        path = str(inp.get("path") or "").strip()
+        if not path:
+            return None
+        chunk_index = max(0, int(inp.get("chunk_index") or 0))
+        chunk_lines = max(80, min(int(inp.get("chunk_lines") or 220), 600))
+        start = (chunk_index * chunk_lines) + 1
+        end = start + chunk_lines - 1
+        quoted = _shell_single_quote(path)
+        return f"sed -n '{start},{end}p' -- {quoted}"
+    if tool == "write_file":
+        path = str(inp.get("path") or "").strip()
+        if not path:
+            return None
+        content = str(inp.get("content") or "")
+        marker = f"__PAC_EOF_{uuid4().hex}__"
+        quoted = _shell_single_quote(path)
+        return (
+            f"mkdir -p -- $(dirname {quoted}) && "
+            f"cat > {quoted} <<'{marker}'\n{content}\n{marker}\n"
+        )
+    return None
+
+
+async def _run_tool_via_runner(session: Session, task: Task, tool: str, inp: dict[str, Any], config: AppConfig) -> tuple[str, bool] | None:
+    meta = session.metadata or {}
+    if not (
+        meta.get("coding_session")
+        and str(meta.get("preferred_execution_mode") or meta.get("execution_mode") or "").strip().lower() == "container"
+    ):
+        return None
+    runner_id = str(task.metadata.get("runner_id") or meta.get("preferred_endpoint") or "").strip()
+    if not runner_id:
+        return None
+    runner = store.get_runner(runner_id)
+    if not runner or runner.metadata.get("local_control_plane"):
+        return None
+    command = _runner_tool_command(tool, inp)
+    if not command:
+        return None
+    execution_mode = RunnerExecutionMode.container
+    container_image = str(task.metadata.get("container_image") or meta.get("container_image") or "").strip()
+    if not container_image:
+        return ("DENIED: coding session has no container image configured", False)
+    job = RunnerJob(
+        runner_id=runner.id,
+        prompt=f"Tool execution: {tool}",
+        command=command,
+        execution_mode=execution_mode,
+        container_image=container_image,
+        workspace_path=session.workspace_path,
+        session_id=session.id,
+        task_id=task.id,
+        metadata={
+            "tool_name": tool,
+            "tool_input": inp,
+            "coding_session": True,
+            "source": "agent_loop_tool_bridge",
+            "permission_profile": session.permission_profile,
+            "model": session.model,
+        },
+    )
+    store.add_runner_job(job)
+    store.add_event(Event(session_id=session.id, task_id=task.id, type="runner_job_queued", message=f"Queued {tool} on runner {runner.name}", data={"runner_id": runner.id, "runner_job_id": job.id, "execution_mode": job.execution_mode, "command": command, "container_image": container_image}))
+    deadline = time.monotonic() + max(30, int(config.runtime.command_timeout_seconds))
+    while time.monotonic() < deadline:
+        current = store.get_runner_job(job.id)
+        if not current:
+            await asyncio.sleep(0.25)
+            continue
+        if current.status == RunnerJobStatus.completed:
+            output = str(current.output or "").strip()
+            return (output or f"{tool} completed with no output", False)
+        if current.status in {RunnerJobStatus.failed, RunnerJobStatus.cancelled}:
+            detail = str(current.error or current.output or f"{tool} failed").strip()
+            return (detail or f"{tool} failed", False)
+        await asyncio.sleep(0.4)
+    return (f"{tool} timed out waiting for endpoint runner completion", False)
+
+
 async def _run_shell(session: Session, task: Task, command: str, config: AppConfig) -> tuple[str, bool]:
     decision, reason = command_policy(command, session, config)
     if decision == "deny":
@@ -382,6 +549,10 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
     perm = _permission(session, config)
     if not perm:
         return f"DENIED: unknown permission profile {session.permission_profile}", False
+    runner_result = await _run_tool_via_runner(session, task, tool, inp, config)
+    if runner_result is not None:
+        store.add_event(Event(session_id=session.id, task_id=task.id, type="tool_result", message=f"{tool} executed in workspace container", data={"tool": tool, "endpoint_id": task.metadata.get("runner_id") or session.metadata.get("preferred_endpoint"), "execution_mode": "container"}))
+        return runner_result
 
     if tool == "list_files":
         if perm.file_read == "deny":
@@ -769,6 +940,8 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
         store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_intent", message=thought_summary, data={"role": "assistant", "model": decision_model, "session_model": session.model, "endpoint_id": task.metadata.get("runner_id"), "step": step, **thought_meta}))
 
         if action.get("type") == "final":
+            depth_score = _inspection_depth_score(transcript)
+            broad_request = _is_broad_codebase_request(task.prompt)
             if _prompt_requests_codebase_inspection(task.prompt) and not _has_meaningful_codebase_inspection(transcript):
                 messages.append({
                     "role": "user",
@@ -776,6 +949,17 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                         "Before answering this codebase/workspace question, inspect the workspace more deeply. "
                         "A shallow response is not acceptable. Use one or more of workspace_manifest, read_file, "
                         "read_file_chunk, batch_analyze_file, git_diff, git_status, or shell/rg to gather concrete evidence first."
+                    ),
+                })
+                continue
+            if broad_request and depth_score < 2.5:
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "This request is still too broad to answer from a shallow scan. "
+                        "Inspect more deeply before answering: use workspace_manifest or a focused shell search (rg/find), "
+                        "then read concrete source files that are likely to implement the relevant behavior. "
+                        "Do not stop after a README or top-level listing."
                     ),
                 })
                 continue

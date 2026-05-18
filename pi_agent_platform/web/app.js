@@ -3798,10 +3798,10 @@ function updateSourceCodingPanel() {
   const contextSummary = document.getElementById('sourceCodingContextSummary');
   if (contextSummary) {
     contextSummary.textContent = defaults.existingSession?.id
-      ? `Coding session ${defaults.existingSession.name || defaults.existingSession.id} is attached to ${endpointName}. Open files and the current workspace are sent as code context.`
+      ? `Attached to ${defaults.existingSession.name || defaults.existingSession.id} on ${endpointName}.`
       : (sourceResolvedContext?.name
-        ? `No coding session yet. Resolved ${sourceResolvedContext.name} for ${selectedSourceEntry || selectedSourceFolder || 'current source path'}. Start a coding session to work on this codebase.`
-        : 'No coding session yet. Select a source file or context, then start a coding session for code work on this workspace.');
+        ? `Ready to start a coding session for ${sourceResolvedContext.name} on ${endpointName}.`
+        : `Ready to start a coding session on ${endpointName}.`);
   }
   const focusEl = document.getElementById('sourceCodingFocus');
   if (focusEl) {
@@ -4966,11 +4966,12 @@ function renderEndpointConnectionSettings() {
 
 async function saveEndpointConnectionSettings() {
   const result = document.getElementById('endpointConnectionResult');
-  const publicUrl = (document.getElementById('endpointPublicUrl')?.value || '').trim();
+  let publicUrl = (document.getElementById('endpointPublicUrl')?.value || '').trim();
   const mdnsEnabled = !!document.getElementById('endpointMdnsEnabled')?.checked;
   if (!publicUrl) return paneError('Enter the controller URL endpoints should use');
+  if (!/^https?:\/\//i.test(publicUrl)) publicUrl = `https://${publicUrl}`;
   const payload = await api('/v1/server/connection', {method:'POST', body:JSON.stringify({public_url: publicUrl, mdns_enabled: mdnsEnabled})});
-  if (result) result.textContent = payload.message || 'Endpoint connection settings saved.';
+  if (result) result.textContent = `${payload.message || 'Endpoint connection settings saved.'}\nSaved URL: ${payload.public_url || publicUrl}`;
   await loadConfig();
   await loadGlobalEvents(true).catch(()=>{});
 }

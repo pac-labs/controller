@@ -84,6 +84,25 @@ def ensure_source_library() -> dict[str, Any]:
     for binary_dir in ('pac-endpoint', 'pac-endpoint-runner', 'pac-agent', 'zed-binary'):
         changed = _copy_default_tree(pkg / 'binaries' / binary_dir, root / 'binaries' / binary_dir) or changed
     changed = _copy_default_tree(pkg / 'docs', root / 'docs') or changed
+    try:
+        from .config import load_config
+        cfg = load_config()
+        tool_names = {name for name, tool in (cfg.tools or {}).items() if getattr(tool, 'enabled', True)}
+        tool_names.update(name for name, plugin in (cfg.plugins or {}).items() if getattr(plugin, 'enabled', True))
+    except Exception:
+        tool_names = set()
+    for tool_id in sorted(tool_names):
+        tool_root = root / 'plugins' / tool_id
+        tool_root.mkdir(parents=True, exist_ok=True)
+        tool_readme = tool_root / 'README.md'
+        if not tool_readme.exists():
+            tool_readme.write_text(
+                f'# {tool_id}\n\n'
+                f'Agent tool source for `{tool_id}`.\n\n'
+                'Use this folder for prompts, helper code, documentation, or endpoint-side source related to this tool.\n',
+                encoding='utf-8',
+            )
+            changed = True
     readme = root / 'README.md'
     if not readme.exists():
         readme.write_text(
