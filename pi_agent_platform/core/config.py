@@ -171,6 +171,7 @@ class PermissionRule(BaseModel):
 MAIN_PI_DEV_PROFILE = "main-pi-dev"
 AGENT_CONTROL_WORKSPACE = "agent-control"
 MODEL_NOT_SELECTED = "__pac_model_not_selected__"
+CODING_SESSION_PERMISSION_PROFILE = "coding-session"
 MAIN_PI_DEV_PROFILE_TOOLS = [
     "shell",
     "git",
@@ -481,6 +482,18 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     ask_first = cfg.permission_profiles.get("ask-first")
     if ask_first and ask_first.network == "ask":
         ask_first.network = "allow"
+        changed = True
+    if CODING_SESSION_PERMISSION_PROFILE not in cfg.permission_profiles:
+        cfg.permission_profiles[CODING_SESSION_PERMISSION_PROFILE] = PermissionRule(
+            shell="allow",
+            file_read="allow",
+            file_write="allow",
+            git_push="ask",
+            network="ask",
+            cluster_write="deny",
+            secrets="ask",
+            dangerous="deny",
+        )
         changed = True
     if "consult_model" not in cfg.tools:
         cfg.tools["consult_model"] = ToolConfig(

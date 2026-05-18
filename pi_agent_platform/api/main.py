@@ -31,9 +31,9 @@ from fastapi.responses import FileResponse, StreamingResponse, Response, HTMLRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from pi_agent_platform.core.config import AppConfig, ProviderConfig, AgentProfile, WorkspaceProfile, SourceContextConfig, save_config, load_config, default_config_path, MAIN_PI_DEV_PROFILE, AGENT_CONTROL_WORKSPACE, MODEL_NOT_SELECTED
+from pi_agent_platform.core.config import AppConfig, ProviderConfig, AgentProfile, WorkspaceProfile, SourceContextConfig, save_config, load_config, default_config_path, MAIN_PI_DEV_PROFILE, AGENT_CONTROL_WORKSPACE, MODEL_NOT_SELECTED, CODING_SESSION_PERMISSION_PROFILE
 from pi_agent_platform.core.platform_home import ensure_pacp_layout, pacp_path
-from pi_agent_platform.core.models import AccessRequest, AccessRequestStatus, Event, Group, ResourceGrant, Session, SessionCreate, Task, TaskCreate, TaskStatus, SessionStatus, Runner, RunnerCreateRequest, RunnerRegisterRequest, RunnerHeartbeat, RunnerStatus, RunnerJobCreate, RunnerJob, RunnerJobStatus, RunnerJobUpdate, RunnerJobLog, RunnerExecutionMode, User
+from pi_agent_platform.core.models import AccessRequest, AccessRequestStatus, Event, Group, ResourceGrant, Session, SessionCreate, Task, TaskCreate, TaskStatus, SessionStatus, Runner, RunnerCreateRequest, RunnerRegisterRequest, RunnerHeartbeat, RunnerStatus, RunnerJobCreate, RunnerJob, RunnerJobStatus, RunnerJobUpdate, RunnerJobLog, RunnerExecutionMode, User, WorkspaceSpec
 from pi_agent_platform.core.runtime import git_diff, git_status, run_shell_task
 from pi_agent_platform.core.agent_loop import run_agent_loop, execute_tool
 from pi_agent_platform.core.session_commands import list_session_slash_commands, parse_session_slash_command, slash_help_text
@@ -1751,6 +1751,39 @@ def _session_resource_ref(session: Session) -> tuple[str, str]:
     if profile:
         return 'workspace', f'profile:{profile}'
     return 'workspace', f'path:{session.workspace_path}'
+
+
+def _session_origin(metadata: dict[str, Any] | None) -> str:
+    return str((metadata or {}).get('session_origin') or '').strip().lower()
+
+
+def _is_coding_session_metadata(metadata: dict[str, Any] | None) -> bool:
+    meta = metadata or {}
+    origin = _session_origin(meta)
+    return bool(
+        meta.get('coding_session')
+        or meta.get('ide_mode')
+        or origin in {'vscode-extension', 'zed-extension', 'zed', 'ide'}
+    )
+
+
+def _default_coding_endpoint_id() -> str | None:
+    for runner in store.list_runners():
+        if runner.status == RunnerStatus.online and runner.allow_container_execution:
+            return runner.id
+    return None
+
+
+def _default_coding_container_image(workspace: WorkspaceSpec, metadata: dict[str, Any] | None) -> str:
+    meta = metadata or {}
+    explicit = str(meta.get('container_image') or '').strip()
+    if explicit:
+        return explicit
+    if workspace.type == 'profile' and workspace.profile and workspace.profile in config.workspaces:
+        candidate = str(config.workspaces[workspace.profile].container_image or '').strip()
+        if candidate:
+            return candidate
+    return 'localhost/python-dev:latest'
 
 
 @app.get('/v1/auth/status')
@@ -3851,6 +3884,17 @@ def create_session(payload: SessionCreate, _auth: CurrentUser = Depends(require_
         if not payload.agent_profile and w.default_agent_profile and w.default_agent_profile in config.agent_profiles:
             payload.agent_profile = w.default_agent_profile
 
+    coding_session = _is_coding_session_metadata(payload.metadata)
+    if coding_session:
+        payload.metadata['coding_session'] = True
+        payload.metadata['agent_enabled'] = True
+        payload.metadata['execution_mode'] = 'container'
+        payload.metadata['preferred_execution_mode'] = 'container'
+        if not payload.metadata.get('preferred_endpoint'):
+            payload.metadata['preferred_endpoint'] = _default_coding_endpoint_id()
+        if not payload.metadata.get('container_image'):
+            payload.metadata['container_image'] = _default_coding_container_image(workspace, payload.metadata)
+
     agent_profile = config.agent_profiles.get(payload.agent_profile) if payload.agent_profile else None
 
     selected_model = payload.model or (agent_profile.model if agent_profile else None)
@@ -3884,9 +3928,22 @@ def create_session(payload: SessionCreate, _auth: CurrentUser = Depends(require_
             if missing_on_endpoint:
                 raise HTTPException(status_code=400, detail=f'Endpoint does not provide selected tools: {missing_on_endpoint}')
 
-    selected_permission = payload.permission_profile or (agent_profile.permission_profile if agent_profile else 'ask-first')
+    selected_permission = CODING_SESSION_PERMISSION_PROFILE if coding_session else (payload.permission_profile or (agent_profile.permission_profile if agent_profile else 'ask-first'))
     if selected_permission not in config.permission_profiles:
         raise HTTPException(status_code=400, detail=f'Unknown permission profile: {selected_permission}')
+
+    if coding_session:
+        endpoint_id = str(payload.metadata.get('preferred_endpoint') or '').strip()
+        if not endpoint_id:
+            raise HTTPException(status_code=400, detail='Coding sessions require an online endpoint with container execution enabled')
+        endpoint = store.get_runner(endpoint_id)
+        if not endpoint:
+            raise HTTPException(status_code=400, detail=f'Unknown endpoint: {endpoint_id}')
+        if not endpoint.allow_container_execution:
+            raise HTTPException(status_code=400, detail='Coding sessions require an endpoint that allows container execution')
+        container_image = str(payload.metadata.get('container_image') or '').strip()
+        if not container_image:
+            raise HTTPException(status_code=400, detail='Coding sessions require a container image')
 
     root = Path(config.server.default_workspace_root)
     root.mkdir(parents=True, exist_ok=True)
@@ -3896,7 +3953,7 @@ def create_session(payload: SessionCreate, _auth: CurrentUser = Depends(require_
         _require_resource_access(_auth, 'workspace', f'path:{workspace_path}', 'write', reason='Start a session in this workspace path')
 
     payload.metadata.setdefault('agent_enabled', True)
-    payload.metadata.setdefault('execution_mode', 'pi.dev')
+    payload.metadata.setdefault('execution_mode', 'container' if coding_session else 'pi.dev')
 
     session = Session(
         name=payload.name,
@@ -4003,6 +4060,19 @@ async def create_task(session_id: str, payload: TaskCreate, background_tasks: Ba
             metadata['execution_mode'] = 'host'
         elif parsed_slash['kind'] == 'subagent':
             metadata['execution_mode'] = metadata.get('execution_mode') or 'pi_container'
+
+    if _is_coding_session_metadata(session.metadata):
+        metadata['coding_session'] = True
+        metadata['execution_mode'] = 'container'
+        metadata['preferred_execution_mode'] = 'container'
+        metadata['runner_id'] = metadata.get('runner_id') or session.metadata.get('preferred_endpoint')
+        metadata['container_image'] = metadata.get('container_image') or session.metadata.get('container_image')
+        if not metadata.get('runner_id'):
+            raise HTTPException(status_code=400, detail='Coding session has no endpoint configured for container execution')
+        if not metadata.get('container_image'):
+            raise HTTPException(status_code=400, detail='Coding session has no container image configured')
+        if parsed_slash and parsed_slash.get('kind') == 'tool' and metadata.get('slash_command'):
+            metadata['slash_command_execution_mode'] = 'container'
 
     locked_endpoint = session.metadata.get('preferred_endpoint') if session.metadata.get('endpoint_locked') else None
     if locked_endpoint:
