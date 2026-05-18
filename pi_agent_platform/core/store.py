@@ -6,7 +6,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Iterable
 
-from .models import AccessRequest, Event, Group, Session, Task, Runner, RunnerJob, RunnerJobStatus, User, now_utc
+from .models import AccessRequest, Event, Group, Session, Task, Runner, RunnerJob, RunnerJobStatus, User, UserWorkspace, now_utc
 from .platform_home import pacp_path
 
 
@@ -39,6 +39,9 @@ class SQLiteStore:
             conn.execute('create table if not exists groups (id text primary key, payload text not null, updated_at text not null)')
             conn.execute('create table if not exists access_requests (id text primary key, user_id text not null, status text not null, payload text not null, updated_at text not null)')
             conn.execute('create index if not exists idx_access_requests_status on access_requests(status, updated_at)')
+            conn.execute('create table if not exists user_workspaces (id text primary key, owner_id text not null, owner_username text not null, name text not null, payload text not null, updated_at text not null)')
+            conn.execute('create index if not exists idx_user_workspaces_owner on user_workspaces(owner_id, updated_at)')
+            conn.execute('create index if not exists idx_user_workspaces_owner_name on user_workspaces(owner_id, name)')
 
     def add_session(self, session: Session) -> Session:
         session.touch()
@@ -112,27 +115,19 @@ class SQLiteStore:
 
     def list_recent_events(self, limit: int = 200, exclude_types: set[str] | None = None) -> list[Event]:
         excluded = {str(item) for item in (exclude_types or set())}
-        batch_size = max(limit * 4, 200)
-        offset = 0
+        with self._connect() as conn:
+            rows = conn.execute(
+                'select payload from events order by created_at desc limit ?',
+                (max(limit * 8, 2000),),
+            ).fetchall()
         items: list[Event] = []
-        while len(items) < limit:
-            with self._connect() as conn:
-                rows = conn.execute(
-                    'select payload from events order by created_at desc limit ? offset ?',
-                    (batch_size, offset),
-                ).fetchall()
-            if not rows:
+        for row in rows:
+            event = Event.model_validate_json(row['payload'])
+            if event.type in excluded:
+                continue
+            items.append(event)
+            if len(items) >= limit:
                 break
-            for row in rows:
-                event = Event.model_validate_json(row['payload'])
-                if event.type in excluded:
-                    continue
-                items.append(event)
-                if len(items) >= limit:
-                    break
-            if len(rows) < batch_size:
-                break
-            offset += batch_size
         return items
 
     def add_runner(self, runner: Runner) -> Runner:
@@ -313,6 +308,38 @@ class SQLiteStore:
             if item.user_id == user_id and item.resource_type == resource_type and item.resource_id == resource_id and item.access == access:
                 return item
         return None
+
+    def add_user_workspace(self, workspace: UserWorkspace) -> UserWorkspace:
+        workspace.touch()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'insert or replace into user_workspaces(id, owner_id, owner_username, name, payload, updated_at) values (?, ?, ?, ?, ?, ?)',
+                (workspace.id, workspace.owner_id, workspace.owner_username, workspace.name, workspace.model_dump_json(), workspace.updated_at.isoformat()),
+            )
+        return workspace
+
+    def get_user_workspace(self, workspace_id: str) -> UserWorkspace | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from user_workspaces where id = ?', (workspace_id,)).fetchone()
+        return UserWorkspace.model_validate_json(row['payload']) if row else None
+
+    def list_user_workspaces(self, owner_id: str | None = None) -> list[UserWorkspace]:
+        with self._connect() as conn:
+            if owner_id:
+                rows = conn.execute('select payload from user_workspaces where owner_id = ? order by updated_at desc', (owner_id,)).fetchall()
+            else:
+                rows = conn.execute('select payload from user_workspaces order by updated_at desc').fetchall()
+        return [UserWorkspace.model_validate_json(r['payload']) for r in rows]
+
+    def find_user_workspace_by_name(self, owner_id: str, name: str) -> UserWorkspace | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from user_workspaces where owner_id = ? and name = ? order by updated_at desc limit 1', (owner_id, name)).fetchone()
+        return UserWorkspace.model_validate_json(row['payload']) if row else None
+
+    def delete_user_workspace(self, workspace_id: str) -> bool:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute('delete from user_workspaces where id = ?', (workspace_id,))
+        return cur.rowcount > 0
 
 
 store = SQLiteStore()

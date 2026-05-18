@@ -308,3 +308,33 @@ class AccessRequest(BaseModel):
 
     def touch(self) -> None:
         self.updated_at = now_utc()
+
+
+class UserWorkspace(BaseModel):
+    id: str = Field(default_factory=lambda: f"uws_{uuid4().hex[:12]}")
+    owner_id: str
+    owner_username: str
+    name: str
+    description: str | None = None
+    template_id: str | None = None
+    workspace_type: Literal["local", "git", "profile"] = "local"
+    workspace_profile: str | None = None
+    path: str | None = None
+    url: str | None = None
+    branch: str | None = None
+    endpoint_id: str | None = None
+    endpoint_selector: str | None = None
+    container_image: str | None = None
+    agent_profile: str | None = None
+    permission_profile: str | None = None
+    model: str | None = None
+    context_mode: str | None = None
+    open_files: list[str] = Field(default_factory=list)
+    last_session_id: str | None = None
+    pinned: bool = False
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def touch(self) -> None:
+        self.updated_at = now_utc()

@@ -300,7 +300,40 @@
 
     <section id="workspaces-tab" class="tab-panel">
       <div class="split-admin-layout">
-        <section class="card split-main workspace-manager"><h2>Workspaces</h2><p class="muted">Create portable workspaces that can be placed on endpoints, populated from zip data, and cleaned up when they expire.</p><div class="form-grid compact-form workspace-form"><label>Workspace name <input id="workspaceName" placeholder="internal-docs-reader" /></label><label>Description <input id="workspaceDescription" placeholder="what this workspace is for" /></label><label>Type <select id="workspaceType"><option value="local">local path</option><option value="git">git checkout</option><option value="container">container workspace</option></select></label><label>Runtime <select id="workspaceRuntime"><option value="any">any endpoint</option><option value="local">host/local</option><option value="container">containerized</option></select></label><label>Path <input id="workspacePath" placeholder="optional local or endpoint path" /></label><label>Git URL <input id="workspaceUrl" placeholder="optional git repository" /></label><label>Branch <input id="workspaceBranch" placeholder="optional" /></label><label>Container image <input id="workspaceContainerImage" placeholder="optional compiler/runtime image" /></label><label>Endpoint <select id="workspaceEndpoint"><option value="">select at runtime</option></select></label><label>Endpoint selector <input id="workspaceEndpointSelector" placeholder="linux,gpu,docs-anywhere" /></label><label>Default profile <select id="workspaceDefaultProfile"><option value="">none</option></select></label><label>Data zip URL <input id="workspaceDataUrl" placeholder="https://.../docs.zip" /></label><label>Data zip path <input id="workspaceDataPath" placeholder="optional path already on endpoint/controller" /></label><label>Data mount/path <input id="workspaceDataMount" placeholder="docs or /workspace/docs" /></label><label>TTL hours <input id="workspaceTtlHours" type="number" min="1" placeholder="empty = no expiry" /></label><label class="checkbox-line"><input id="workspaceEphemeral" type="checkbox" /> Ephemeral workspace</label><label class="checkbox-line"><input id="workspaceDeleteOnExpire" type="checkbox" checked /> Delete data when expired</label><label class="checkbox-line"><input id="workspaceIsDefault" type="checkbox" /> Endpoint default</label></div><div class="button-row"><button id="saveWorkspace">Save workspace</button><button id="deleteWorkspace" class="ghost-button">Delete workspace</button></div><div id="workspaceFormResult" class="inline-result"></div><div id="workspaces" class="workspace-list"></div></section>
+        <section class="card split-main workspace-manager">
+          <h2>Workspaces</h2>
+          <p class="muted">Personal workspaces are where users actually code. Templates define reusable endpoint, container, and agent defaults that personal workspaces can inherit.</p>
+          <section class="source-sidecard">
+            <div class="section-heading compact-heading"><div><h3>My workspaces</h3><p class="muted">Pick a template, point it at a repo or local checkout, and PAC will reopen or create a coding session for it from the IDE.</p></div></div>
+            <div class="form-grid compact-form workspace-form">
+              <label>Workspace <select id="userWorkspaceSelect"><option value="">New workspace</option></select></label>
+              <label>Name <input id="userWorkspaceName" placeholder="docs-improvements" /></label>
+              <label>Description <input id="userWorkspaceDescription" placeholder="what you are working on" /></label>
+              <label>Template <select id="userWorkspaceTemplate"><option value="">None</option></select></label>
+              <label>Type <select id="userWorkspaceType"><option value="local">local path</option><option value="git">git checkout</option><option value="profile">workspace template/profile</option></select></label>
+              <label>Workspace profile <input id="userWorkspaceProfile" placeholder="optional config workspace template" /></label>
+              <label>Local path <input id="userWorkspacePath" placeholder="/home/dorbian/pac/sources/my-repo" /></label>
+              <label>Git URL <input id="userWorkspaceUrl" placeholder="https://github.com/example/repo.git" /></label>
+              <label>Branch <input id="userWorkspaceBranch" placeholder="main" /></label>
+              <label>Endpoint <select id="userWorkspaceEndpoint"><option value="">auto</option></select></label>
+              <label>Container image <input id="userWorkspaceContainerImage" placeholder="localhost/python-dev:latest" /></label>
+              <label>Agent profile <select id="userWorkspaceAgentProfile"><option value="">default</option></select></label>
+              <label>Model <select id="userWorkspaceModel"><option value="">default</option></select></label>
+              <label class="checkbox-line"><input id="userWorkspacePinned" type="checkbox" /> Pin in IDE</label>
+            </div>
+            <div class="button-row">
+              <button id="saveUserWorkspace">Save workspace</button>
+              <button id="deleteUserWorkspace" class="ghost-button">Delete</button>
+              <button id="openUserWorkspaceIde" class="ghost-button">Open in IDE</button>
+            </div>
+            <div id="userWorkspaceFormResult" class="inline-result"></div>
+            <div id="personalWorkspaces" class="workspace-list"></div>
+          </section>
+          <section class="source-sidecard">
+            <div class="section-heading compact-heading"><div><h3>Workspace templates</h3><p class="muted">Admin/runtime templates for endpoints, containers, and seeded environments.</p></div></div>
+            <div class="form-grid compact-form workspace-form"><label>Workspace name <input id="workspaceName" placeholder="internal-docs-reader" /></label><label>Description <input id="workspaceDescription" placeholder="what this workspace is for" /></label><label>Type <select id="workspaceType"><option value="local">local path</option><option value="git">git checkout</option><option value="container">container workspace</option></select></label><label>Runtime <select id="workspaceRuntime"><option value="any">any endpoint</option><option value="local">host/local</option><option value="container">containerized</option></select></label><label>Path <input id="workspacePath" placeholder="optional local or endpoint path" /></label><label>Git URL <input id="workspaceUrl" placeholder="optional git repository" /></label><label>Branch <input id="workspaceBranch" placeholder="optional" /></label><label>Container image <input id="workspaceContainerImage" placeholder="optional compiler/runtime image" /></label><label>Endpoint <select id="workspaceEndpoint"><option value="">select at runtime</option></select></label><label>Endpoint selector <input id="workspaceEndpointSelector" placeholder="linux,gpu,docs-anywhere" /></label><label>Default profile <select id="workspaceDefaultProfile"><option value="">none</option></select></label><label>Data zip URL <input id="workspaceDataUrl" placeholder="https://.../docs.zip" /></label><label>Data zip path <input id="workspaceDataPath" placeholder="optional path already on endpoint/controller" /></label><label>Data mount/path <input id="workspaceDataMount" placeholder="docs or /workspace/docs" /></label><label>TTL hours <input id="workspaceTtlHours" type="number" min="1" placeholder="empty = no expiry" /></label><label class="checkbox-line"><input id="workspaceEphemeral" type="checkbox" /> Ephemeral workspace</label><label class="checkbox-line"><input id="workspaceDeleteOnExpire" type="checkbox" checked /> Delete data when expired</label><label class="checkbox-line"><input id="workspaceIsDefault" type="checkbox" /> Endpoint default</label></div><div class="button-row"><button id="saveWorkspace">Save template</button><button id="deleteWorkspace" class="ghost-button">Delete template</button></div><div id="workspaceFormResult" class="inline-result"></div><div id="workspaces" class="workspace-list"></div>
+          </section>
+        </section>
         <aside class="split-side">
           <section class="card side-panel">
             <h2>Active workspaces</h2>
@@ -435,8 +468,8 @@
     <section id="sources-tab" class="tab-panel source-workbench-panel">
       <div class="source-workbench-toolbar">
         <div class="source-workbench-scope">
-          <label>Workspace <select id="ideWorkspaceSelect"><option value="">Select workspace</option></select></label>
-          <label>Session <select id="ideSessionSelect"><option value="">Select coding session</option></select></label>
+          <label>My workspace <select id="ideWorkspaceSelect"><option value="">Select workspace</option></select></label>
+          <label hidden>Session <select id="ideSessionSelect"><option value="">Select coding session</option></select></label>
         </div>
         <div class="source-menu-wrap">
           <button id="sourceFileMenuButton" class="ghost-button source-menu-button">File</button>

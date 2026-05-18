@@ -33,7 +33,7 @@ from pydantic import BaseModel, Field
 
 from pi_agent_platform.core.config import AppConfig, ProviderConfig, AgentProfile, WorkspaceProfile, SourceContextConfig, save_config, load_config, default_config_path, MAIN_PI_DEV_PROFILE, AGENT_CONTROL_WORKSPACE, MODEL_NOT_SELECTED, CODING_SESSION_PERMISSION_PROFILE
 from pi_agent_platform.core.platform_home import ensure_pacp_layout, pacp_path
-from pi_agent_platform.core.models import AccessRequest, AccessRequestStatus, Event, Group, ResourceGrant, Session, SessionCreate, Task, TaskCreate, TaskStatus, SessionStatus, Runner, RunnerCreateRequest, RunnerRegisterRequest, RunnerHeartbeat, RunnerStatus, RunnerJobCreate, RunnerJob, RunnerJobStatus, RunnerJobUpdate, RunnerJobLog, RunnerExecutionMode, User, WorkspaceSpec
+from pi_agent_platform.core.models import AccessRequest, AccessRequestStatus, Event, Group, ResourceGrant, Session, SessionCreate, Task, TaskCreate, TaskStatus, SessionStatus, Runner, RunnerCreateRequest, RunnerRegisterRequest, RunnerHeartbeat, RunnerStatus, RunnerJobCreate, RunnerJob, RunnerJobStatus, RunnerJobUpdate, RunnerJobLog, RunnerExecutionMode, User, UserWorkspace, WorkspaceSpec
 from pi_agent_platform.core.runtime import git_diff, git_status, run_shell_task
 from pi_agent_platform.core.agent_loop import run_agent_loop, execute_tool
 from pi_agent_platform.core.session_commands import list_session_slash_commands, parse_session_slash_command, slash_help_text
@@ -1704,6 +1704,219 @@ def _public_group(group: Group) -> dict[str, Any]:
     }
 
 
+class UserWorkspacePayload(BaseModel):
+    name: str
+    description: str | None = None
+    template_id: str | None = None
+    workspace_type: str | None = None
+    workspace_profile: str | None = None
+    path: str | None = None
+    url: str | None = None
+    branch: str | None = None
+    endpoint_id: str | None = None
+    endpoint_selector: str | None = None
+    container_image: str | None = None
+    agent_profile: str | None = None
+    permission_profile: str | None = None
+    model: str | None = None
+    context_mode: str | None = None
+    open_files: list[str] = Field(default_factory=list)
+    pinned: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+def _best_default_agent_profile() -> str | None:
+    for candidate in ('code_planner', MAIN_PI_DEV_PROFILE, 'main-pi-dev'):
+        if candidate in (config.agent_profiles or {}):
+            return candidate
+    return next(iter(config.agent_profiles.keys()), None) if config.agent_profiles else None
+
+
+def _workspace_template_catalog() -> dict[str, dict[str, Any]]:
+    templates: dict[str, dict[str, Any]] = {}
+    profile_name = _best_default_agent_profile()
+    builtins = [
+        {
+            'id': 'builtin:general-coding',
+            'name': 'General coding',
+            'description': 'Container-backed coding workspace for a local or mounted project tree.',
+            'workspace_type': 'local',
+            'workspace_profile': None,
+            'runtime': 'container',
+            'endpoint_id': _default_coding_endpoint_id(),
+            'container_image': 'localhost/python-dev:latest',
+            'agent_profile': profile_name,
+            'permission_profile': CODING_SESSION_PERMISSION_PROFILE,
+        },
+        {
+            'id': 'builtin:documentation',
+            'name': 'Documentation',
+            'description': 'Documentation workspace with a docs/search-oriented container profile.',
+            'workspace_type': 'local',
+            'workspace_profile': None,
+            'runtime': 'container',
+            'endpoint_id': _default_coding_endpoint_id(),
+            'container_image': 'localhost/docs-search:latest',
+            'agent_profile': profile_name,
+            'permission_profile': CODING_SESSION_PERMISSION_PROFILE,
+        },
+        {
+            'id': 'builtin:repo-review',
+            'name': 'Repo review',
+            'description': 'Review and improve an existing checked-out repository in a container-backed coding session.',
+            'workspace_type': 'local',
+            'workspace_profile': None,
+            'runtime': 'container',
+            'endpoint_id': _default_coding_endpoint_id(),
+            'container_image': 'localhost/python-dev:latest',
+            'agent_profile': profile_name,
+            'permission_profile': CODING_SESSION_PERMISSION_PROFILE,
+        },
+    ]
+    for item in builtins:
+        templates[item['id']] = item
+    for name, workspace in (config.workspaces or {}).items():
+        templates[f'workspace:{name}'] = {
+            'id': f'workspace:{name}',
+            'name': name,
+            'description': workspace.description,
+            'workspace_type': workspace.type,
+            'workspace_profile': name,
+            'runtime': workspace.runtime,
+            'endpoint_id': workspace.endpoint_id,
+            'endpoint_selector': workspace.endpoint_selector,
+            'container_image': workspace.container_image,
+            'agent_profile': workspace.default_agent_profile,
+            'source': 'config',
+            'is_default': bool(workspace.is_default),
+        }
+    return templates
+
+
+def _public_workspace_template(template: dict[str, Any]) -> dict[str, Any]:
+    return {
+        'id': template.get('id'),
+        'name': template.get('name'),
+        'description': template.get('description'),
+        'workspace_type': template.get('workspace_type'),
+        'workspace_profile': template.get('workspace_profile'),
+        'runtime': template.get('runtime'),
+        'endpoint_id': template.get('endpoint_id'),
+        'endpoint_selector': template.get('endpoint_selector'),
+        'container_image': template.get('container_image'),
+        'agent_profile': template.get('agent_profile'),
+        'permission_profile': template.get('permission_profile'),
+        'source': template.get('source') or 'builtin',
+        'is_default': bool(template.get('is_default')),
+    }
+
+
+def _public_user_workspace(item: UserWorkspace) -> dict[str, Any]:
+    template = _workspace_template_catalog().get(str(item.template_id or '').strip())
+    return {
+        'id': item.id,
+        'owner_id': item.owner_id,
+        'owner_username': item.owner_username,
+        'name': item.name,
+        'description': item.description,
+        'template_id': item.template_id,
+        'template': _public_workspace_template(template) if template else None,
+        'workspace_type': item.workspace_type,
+        'workspace_profile': item.workspace_profile,
+        'path': item.path,
+        'url': item.url,
+        'branch': item.branch,
+        'endpoint_id': item.endpoint_id,
+        'endpoint_selector': item.endpoint_selector,
+        'container_image': item.container_image,
+        'agent_profile': item.agent_profile,
+        'permission_profile': item.permission_profile,
+        'model': item.model,
+        'context_mode': item.context_mode,
+        'open_files': list(item.open_files or []),
+        'last_session_id': item.last_session_id,
+        'pinned': item.pinned,
+        'created_at': item.created_at.isoformat(),
+        'updated_at': item.updated_at.isoformat(),
+        'metadata': item.metadata or {},
+    }
+
+
+def _workspace_owner(auth: CurrentUser) -> tuple[str, str]:
+    if auth.user:
+        return auth.user.id, auth.user.username
+    return 'controller', 'controller'
+
+
+def _workspace_payload_to_item(existing: UserWorkspace | None, payload: UserWorkspacePayload, auth: CurrentUser) -> UserWorkspace:
+    owner_id, owner_username = _workspace_owner(auth)
+    template = _workspace_template_catalog().get(str(payload.template_id or '').strip()) if payload.template_id else None
+    base = existing or UserWorkspace(owner_id=owner_id, owner_username=owner_username, name=payload.name.strip())
+    base.owner_id = owner_id
+    base.owner_username = owner_username
+    base.name = payload.name.strip()
+    base.description = payload.description if payload.description is not None else (template or {}).get('description')
+    base.template_id = payload.template_id or None
+    base.workspace_type = str(payload.workspace_type or (template or {}).get('workspace_type') or base.workspace_type or 'local')
+    base.workspace_profile = payload.workspace_profile if payload.workspace_profile is not None else (template or {}).get('workspace_profile')
+    base.path = payload.path if payload.path is not None else base.path
+    base.url = payload.url if payload.url is not None else base.url
+    base.branch = payload.branch if payload.branch is not None else base.branch
+    base.endpoint_id = payload.endpoint_id if payload.endpoint_id is not None else (template or {}).get('endpoint_id')
+    base.endpoint_selector = payload.endpoint_selector if payload.endpoint_selector is not None else (template or {}).get('endpoint_selector')
+    base.container_image = payload.container_image if payload.container_image is not None else (template or {}).get('container_image')
+    base.agent_profile = payload.agent_profile if payload.agent_profile is not None else (template or {}).get('agent_profile')
+    base.permission_profile = payload.permission_profile if payload.permission_profile is not None else (template or {}).get('permission_profile')
+    base.model = payload.model if payload.model is not None else base.model
+    base.context_mode = payload.context_mode if payload.context_mode is not None else base.context_mode
+    base.open_files = list(payload.open_files or [])
+    base.pinned = bool(payload.pinned)
+    base.metadata = dict(base.metadata or {})
+    if payload.metadata:
+        base.metadata.update(payload.metadata)
+    return base
+
+
+def _user_workspace_to_session_spec(item: UserWorkspace) -> tuple[WorkspaceSpec, dict[str, Any]]:
+    metadata = dict(item.metadata or {})
+    metadata['coding_session'] = True
+    metadata['ide_mode'] = True
+    metadata['user_workspace_id'] = item.id
+    metadata['workspace_trusted'] = True
+    if item.endpoint_id:
+        metadata['preferred_endpoint'] = item.endpoint_id
+    if item.container_image:
+        metadata['container_image'] = item.container_image
+    if item.workspace_profile and item.workspace_profile in (config.workspaces or {}):
+        return WorkspaceSpec(type='profile', profile=item.workspace_profile), metadata
+    if item.workspace_type == 'git':
+        return WorkspaceSpec(type='git', path=item.path, url=item.url, branch=item.branch), metadata
+    return WorkspaceSpec(type='local', path=item.path), metadata
+
+
+def _ensure_user_workspace_session(item: UserWorkspace, auth: CurrentUser) -> Session:
+    if item.last_session_id:
+        existing = store.get_session(item.last_session_id)
+        if existing:
+            return existing
+    workspace_spec, metadata = _user_workspace_to_session_spec(item)
+    session = create_session(
+        SessionCreate(
+            name=f'code-{re.sub(r"[^A-Za-z0-9._-]+", "-", item.name).lower()}',
+            agent_profile=item.agent_profile,
+            permission_profile=item.permission_profile or CODING_SESSION_PERMISSION_PROFILE,
+            workspace=workspace_spec,
+            model=item.model,
+            context_mode=item.context_mode,
+            metadata=metadata,
+        ),
+        _auth=auth,
+    )
+    item.last_session_id = session.id
+    store.add_user_workspace(item)
+    return session
+
+
 def _resource_grants_from_user(user: User | None) -> list[ResourceGrant]:
     if not user or not isinstance(user.metadata, dict):
         return []
@@ -2097,6 +2310,85 @@ def revoke_current_user_token(token: str, _auth: CurrentUser = Depends(require_a
     store.delete_user_token(token)
     store.add_event(Event(session_id='system', type='token_revoked', message=f'Token revoked for: {_auth.user.username}', data={'username': _auth.user.username}))
     return {'ok': True, 'revoked': token}
+
+
+@app.get('/v1/workspace-templates')
+def list_workspace_templates(_auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    templates = [_public_workspace_template(item) for item in _workspace_template_catalog().values()]
+    templates.sort(key=lambda item: (0 if item.get('is_default') else 1, str(item.get('name') or '').lower()))
+    return {'templates': templates}
+
+
+@app.get('/v1/my-workspaces')
+def list_my_workspaces(_auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    owner_id, _ = _workspace_owner(_auth)
+    items = [_public_user_workspace(item) for item in store.list_user_workspaces(owner_id=owner_id)]
+    return {'items': items}
+
+
+@app.post('/v1/my-workspaces')
+def create_my_workspace(payload: UserWorkspacePayload, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    owner_id, _ = _workspace_owner(_auth)
+    existing = store.find_user_workspace_by_name(owner_id, payload.name.strip())
+    if existing:
+        raise HTTPException(status_code=409, detail='A personal workspace with that name already exists')
+    item = _workspace_payload_to_item(None, payload, _auth)
+    store.add_user_workspace(item)
+    store.add_event(Event(session_id='system', type='user_workspace_created', message=f'Workspace created: {item.name}', data={'workspace_id': item.id, 'owner': item.owner_username}))
+    return {'ok': True, 'workspace': _public_user_workspace(item)}
+
+
+@app.get('/v1/my-workspaces/{workspace_id}')
+def get_my_workspace(workspace_id: str, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    item = store.get_user_workspace(workspace_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='Workspace not found')
+    owner_id, _ = _workspace_owner(_auth)
+    if item.owner_id != owner_id and not _auth.is_admin:
+        raise HTTPException(status_code=403, detail='Workspace not available')
+    return {'workspace': _public_user_workspace(item)}
+
+
+@app.put('/v1/my-workspaces/{workspace_id}')
+def update_my_workspace(workspace_id: str, payload: UserWorkspacePayload, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    item = store.get_user_workspace(workspace_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='Workspace not found')
+    owner_id, _ = _workspace_owner(_auth)
+    if item.owner_id != owner_id and not _auth.is_admin:
+        raise HTTPException(status_code=403, detail='Workspace not available')
+    conflict = store.find_user_workspace_by_name(item.owner_id, payload.name.strip())
+    if conflict and conflict.id != item.id:
+        raise HTTPException(status_code=409, detail='A personal workspace with that name already exists')
+    updated = _workspace_payload_to_item(item, payload, _auth)
+    store.add_user_workspace(updated)
+    store.add_event(Event(session_id='system', type='user_workspace_updated', message=f'Workspace updated: {updated.name}', data={'workspace_id': updated.id, 'owner': updated.owner_username}))
+    return {'ok': True, 'workspace': _public_user_workspace(updated)}
+
+
+@app.delete('/v1/my-workspaces/{workspace_id}')
+def delete_my_workspace(workspace_id: str, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    item = store.get_user_workspace(workspace_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='Workspace not found')
+    owner_id, _ = _workspace_owner(_auth)
+    if item.owner_id != owner_id and not _auth.is_admin:
+        raise HTTPException(status_code=403, detail='Workspace not available')
+    store.delete_user_workspace(workspace_id)
+    store.add_event(Event(session_id='system', type='user_workspace_deleted', message=f'Workspace deleted: {item.name}', data={'workspace_id': item.id, 'owner': item.owner_username}))
+    return {'ok': True, 'deleted': workspace_id}
+
+
+@app.post('/v1/my-workspaces/{workspace_id}/session')
+def ensure_my_workspace_session(workspace_id: str, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    item = store.get_user_workspace(workspace_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='Workspace not found')
+    owner_id, _ = _workspace_owner(_auth)
+    if item.owner_id != owner_id and not _auth.is_admin:
+        raise HTTPException(status_code=403, detail='Workspace not available')
+    session = _ensure_user_workspace_session(item, _auth)
+    return {'ok': True, 'workspace': _public_user_workspace(item), 'session': session.model_dump(mode='json')}
 
 
 @app.post('/v1/auth/tokens')

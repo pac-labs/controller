@@ -27,9 +27,12 @@ function applyProviderPreset(key) {
 }
 
 let config = null;
+let workspaceTemplates = [];
+let personalWorkspaces = [];
 let selectedSession = null;
 let selectedSourcePath = null;
 let selectedSourceFolder = '';
+let selectedIdeWorkspaceId = '';
 let selectedIdeWorkspaceProfile = '';
 let selectedIdeSessionId = '';
 let selectedBinaryArtifactFilter = '';
@@ -2368,6 +2371,52 @@ async function renderLiveModels() {
 }
 function renderWorkspaces() {
   const el = document.getElementById('workspaces');
+  const personalEl = document.getElementById('personalWorkspaces');
+  const templateSelect = document.getElementById('userWorkspaceTemplate');
+  const workspaceSelect = document.getElementById('userWorkspaceSelect');
+  const endpointSelect = document.getElementById('userWorkspaceEndpoint');
+  const profileSelect = document.getElementById('userWorkspaceAgentProfile');
+  const modelSelect = document.getElementById('userWorkspaceModel');
+  if (templateSelect) {
+    templateSelect.innerHTML = '<option value="">None</option>' + workspaceTemplates.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
+  }
+  if (workspaceSelect) {
+    workspaceSelect.innerHTML = '<option value="">New workspace</option>' + ideWorkspaces().map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
+    if (selectedIdeWorkspaceId && ideWorkspaces().some((item) => item.id === selectedIdeWorkspaceId)) workspaceSelect.value = selectedIdeWorkspaceId;
+  }
+  if (endpointSelect) {
+    endpointSelect.innerHTML = '<option value="">auto</option>';
+    (window.__pacEndpoints || []).forEach((runner) => opt(endpointSelect, runner.id, `${runner.name || runner.id} (${runner.status || 'unknown'})`));
+  }
+  if (profileSelect) {
+    profileSelect.innerHTML = '<option value="">default</option>';
+    Object.entries(config.agent_profiles || {}).forEach(([name, profile]) => {
+      if (profile?.model && modelAvailability(profile.model).ok) opt(profileSelect, name);
+    });
+  }
+  if (modelSelect) {
+    modelSelect.innerHTML = '<option value="">default</option>';
+    Object.keys(config.models || {}).forEach((name) => { if (modelAvailability(name).ok) opt(modelSelect, name); });
+  }
+  if (personalEl) {
+    personalEl.innerHTML = ideWorkspaces().map((item) => {
+      const target = item.path || item.url || item.workspace_profile || '-';
+      const templateName = item.template?.name || item.template_id || 'custom';
+      return `<div class="workspace-card clickable-row ${item.id === selectedIdeWorkspaceId ? 'selected' : ''}" data-user-workspace="${escapeHtml(item.id)}">
+        <div class="workspace-card-title"><b>${escapeHtml(item.name)}</b><span>${item.pinned ? 'pinned' : templateName}</span></div>
+        <div class="workspace-card-grid">
+          <div><small>type</small><b>${escapeHtml(item.workspace_type || 'local')}</b></div>
+          <div><small>endpoint</small><b>${escapeHtml(item.endpoint_id || 'auto')}</b></div>
+          <div><small>profile</small><b>${escapeHtml(item.agent_profile || 'default')}</b></div>
+          <div><small>session</small><b>${escapeHtml(item.last_session_id ? 'attached' : 'none')}</b></div>
+        </div>
+        <code>${escapeHtml(item.description || '')}${item.description ? '\n' : ''}target: ${escapeHtml(target)}</code>
+      </div>`;
+    }).join('') || '<div class="muted">No personal workspaces yet. Create one from a template above.</div>';
+    personalEl.querySelectorAll('[data-user-workspace]').forEach((row) => {
+      row.onclick = () => fillUserWorkspaceForm(row.getAttribute('data-user-workspace') || '');
+    });
+  }
   if (!el) return;
   el.innerHTML = '';
   for (const [name,w] of Object.entries(config.workspaces || {})) {
@@ -2388,6 +2437,89 @@ function renderWorkspaces() {
     el.appendChild(row);
   }
   renderWorkspaceActivityPanel();
+  if (selectedIdeWorkspaceId && !document.getElementById('userWorkspaceSelect')?.value) {
+    fillUserWorkspaceForm(selectedIdeWorkspaceId);
+  }
+}
+
+function fillUserWorkspaceForm(id='') {
+  const item = ideWorkspaces().find((workspace) => workspace.id === id);
+  selectedIdeWorkspaceId = item?.id || '';
+  const set = (fieldId, value='') => { const el = document.getElementById(fieldId); if (el) el.value = value ?? ''; };
+  set('userWorkspaceSelect', item?.id || '');
+  set('userWorkspaceName', item?.name || '');
+  set('userWorkspaceDescription', item?.description || '');
+  set('userWorkspaceTemplate', item?.template_id || '');
+  set('userWorkspaceType', item?.workspace_type || 'local');
+  set('userWorkspaceProfile', item?.workspace_profile || '');
+  set('userWorkspacePath', item?.path || '');
+  set('userWorkspaceUrl', item?.url || '');
+  set('userWorkspaceBranch', item?.branch || '');
+  set('userWorkspaceEndpoint', item?.endpoint_id || '');
+  set('userWorkspaceContainerImage', item?.container_image || '');
+  set('userWorkspaceAgentProfile', item?.agent_profile || '');
+  set('userWorkspaceModel', item?.model || '');
+  const pinned = document.getElementById('userWorkspacePinned'); if (pinned) pinned.checked = !!item?.pinned;
+  renderIdeWorkspaceSelectors();
+  updateSourceCodingPanel();
+}
+
+function userWorkspaceFormPayload() {
+  return {
+    name: (document.getElementById('userWorkspaceName')?.value || '').trim(),
+    description: (document.getElementById('userWorkspaceDescription')?.value || '').trim() || null,
+    template_id: document.getElementById('userWorkspaceTemplate')?.value || null,
+    workspace_type: document.getElementById('userWorkspaceType')?.value || 'local',
+    workspace_profile: (document.getElementById('userWorkspaceProfile')?.value || '').trim() || null,
+    path: (document.getElementById('userWorkspacePath')?.value || '').trim() || null,
+    url: (document.getElementById('userWorkspaceUrl')?.value || '').trim() || null,
+    branch: (document.getElementById('userWorkspaceBranch')?.value || '').trim() || null,
+    endpoint_id: document.getElementById('userWorkspaceEndpoint')?.value || null,
+    container_image: (document.getElementById('userWorkspaceContainerImage')?.value || '').trim() || null,
+    agent_profile: document.getElementById('userWorkspaceAgentProfile')?.value || null,
+    model: document.getElementById('userWorkspaceModel')?.value || null,
+    pinned: !!document.getElementById('userWorkspacePinned')?.checked,
+  };
+}
+
+async function saveUserWorkspaceFromForm() {
+  const payload = userWorkspaceFormPayload();
+  if (!payload.name) return alert('Workspace name is required');
+  const existingId = document.getElementById('userWorkspaceSelect')?.value || '';
+  const path = existingId ? `/v1/my-workspaces/${encodeURIComponent(existingId)}` : '/v1/my-workspaces';
+  const method = existingId ? 'PUT' : 'POST';
+  const result = await api(path, {method, body: JSON.stringify(payload)});
+  await loadWorkspaceCatalogs();
+  const workspace = result.workspace || null;
+  selectedIdeWorkspaceId = workspace?.id || selectedIdeWorkspaceId;
+  fillUserWorkspaceForm(selectedIdeWorkspaceId || '');
+  renderWorkspaces();
+  showInline('userWorkspaceFormResult', `Saved workspace ${payload.name}`);
+}
+
+async function deleteUserWorkspaceFromForm() {
+  const id = document.getElementById('userWorkspaceSelect')?.value || '';
+  if (!id) return alert('Select an existing personal workspace first');
+  if (!confirm('Delete this personal workspace?')) return;
+  await api(`/v1/my-workspaces/${encodeURIComponent(id)}`, {method:'DELETE'});
+  await loadWorkspaceCatalogs();
+  selectedIdeWorkspaceId = '';
+  fillUserWorkspaceForm('');
+  renderWorkspaces();
+  showInline('userWorkspaceFormResult', 'Workspace deleted');
+}
+
+async function openUserWorkspaceInIde() {
+  const id = document.getElementById('userWorkspaceSelect')?.value || selectedIdeWorkspaceId || '';
+  if (!id) return alert('Select a personal workspace first');
+  selectedIdeWorkspaceId = id;
+  selectedIdeSessionId = '';
+  sourceCodingSessionId = '';
+  sourceTreeCache.clear();
+  renderIdeWorkspaceSelectors();
+  updateSourceCodingPanel();
+  switchToTab('sources-tab');
+  await renderSources('');
 }
 function renderProfiles() {
   const el = document.getElementById('profiles');
@@ -3357,8 +3489,9 @@ function updateSourceActions() {
   const hint = document.getElementById('sourceActionHint');
   const cf = selectedBuildFolder('container');
   const bf = selectedBuildFolder('binary');
+  const ideWorkspace = currentIdeWorkspace();
   if (hint) hint.textContent = ideUsesSessionWorkspace()
-    ? `Browsing ${currentIdeSession()?.name || 'coding session'} in ${selectedIdeWorkspaceProfile || 'workspace'}`
+    ? `Browsing ${currentIdeSession()?.name || 'coding session'} in ${ideWorkspace?.name || ideWorkspace?.workspace_profile || 'workspace'}`
     : (bf ? `Viewing source: ${bf}. Build it from the IDE row.` : (cf ? `Container source: ${cf}. Build it from the IDE row.` : 'Filter by binary source folder.'));
   const title = document.getElementById('sourceBuildPanelTitle');
   if (title) title.textContent = 'Downloads';
@@ -3659,8 +3792,17 @@ function codingSessions() {
     return !!(meta.ide_mode || meta.coding_session);
   });
 }
+function ideWorkspaces() {
+  return Array.isArray(personalWorkspaces) ? personalWorkspaces.slice() : [];
+}
+function currentIdeWorkspace() {
+  const id = selectedIdeWorkspaceId || '';
+  if (!id) return null;
+  return ideWorkspaces().find((item) => item.id === id) || null;
+}
 function currentIdeSession() {
-  const id = selectedIdeSessionId || sourceCodingSessionId || '';
+  const workspace = currentIdeWorkspace();
+  const id = selectedIdeSessionId || sourceCodingSessionId || workspace?.last_session_id || '';
   if (!id) return null;
   return codingSessions().find((session) => session.id === id) || null;
 }
@@ -3668,33 +3810,43 @@ function workspaceProfileForIdeSession(session) {
   const meta = session?.metadata || {};
   return String(meta.workspace_profile || '').trim();
 }
+function userWorkspaceForIdeSession(session) {
+  const meta = session?.metadata || {};
+  const workspaceId = String(meta.user_workspace_id || '').trim();
+  if (workspaceId) return ideWorkspaces().find((item) => item.id === workspaceId) || null;
+  return null;
+}
 function renderIdeWorkspaceSelectors() {
   const workspaceSelect = document.getElementById('ideWorkspaceSelect');
   const sessionSelect = document.getElementById('ideSessionSelect');
   if (!workspaceSelect || !sessionSelect) return;
-  const workspaceEntries = Object.entries(config.workspaces || {});
-  if (!selectedIdeWorkspaceProfile && selectedIdeSessionId) {
+  const workspaces = ideWorkspaces();
+  if (!selectedIdeWorkspaceId && selectedIdeSessionId) {
     const activeSession = codingSessions().find((session) => session.id === selectedIdeSessionId);
-    const activeWorkspace = workspaceProfileForIdeSession(activeSession);
-    if (activeWorkspace) selectedIdeWorkspaceProfile = activeWorkspace;
+    const activeWorkspace = userWorkspaceForIdeSession(activeSession);
+    if (activeWorkspace?.id) selectedIdeWorkspaceId = activeWorkspace.id;
   }
-  if (!selectedIdeWorkspaceProfile && workspaceEntries.length) {
-    selectedIdeWorkspaceProfile = workspaceEntries.find(([_, w]) => w.is_default)?.[0] || workspaceEntries[0][0];
+  if (!selectedIdeWorkspaceId && workspaces.length) {
+    selectedIdeWorkspaceId = workspaces.find((item) => item.pinned)?.id || workspaces[0].id;
   }
-  workspaceSelect.innerHTML = '<option value="">Select workspace</option>' + workspaceEntries.map(([name, w]) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}${w.path ? ` - ${escapeHtml(w.path)}` : ''}</option>`).join('');
-  if (selectedIdeWorkspaceProfile && workspaceEntries.some(([name]) => name === selectedIdeWorkspaceProfile)) workspaceSelect.value = selectedIdeWorkspaceProfile;
+  workspaceSelect.innerHTML = '<option value="">Select workspace</option>' + workspaces.map((item) => {
+    const location = item.path || item.url || item.workspace_profile || '';
+    return `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}${location ? ` - ${escapeHtml(location)}` : ''}</option>`;
+  }).join('');
+  if (selectedIdeWorkspaceId && workspaces.some((item) => item.id === selectedIdeWorkspaceId)) workspaceSelect.value = selectedIdeWorkspaceId;
   const sessionEntries = codingSessions().filter((session) => {
-    if (!selectedIdeWorkspaceProfile) return true;
-    return workspaceProfileForIdeSession(session) === selectedIdeWorkspaceProfile;
+    if (!selectedIdeWorkspaceId) return true;
+    return String(session?.metadata?.user_workspace_id || '') === selectedIdeWorkspaceId;
   });
   sessionSelect.innerHTML = '<option value="">Select coding session</option>' + sessionEntries.map((session) => `<option value="${escapeHtml(session.id)}">${escapeHtml(session.name || session.id)}</option>`).join('');
   const activeSessionId = selectedIdeSessionId || sourceCodingSessionId || '';
   if (activeSessionId && sessionEntries.some((session) => session.id === activeSessionId)) sessionSelect.value = activeSessionId;
 }
 function sourceWorkspaceAbsolutePath() {
-  if (selectedIdeWorkspaceProfile && config.workspaces?.[selectedIdeWorkspaceProfile]) {
+  const workspace = currentIdeWorkspace();
+  if (workspace) {
     const ideSession = currentIdeSession();
-    return String(ideSession?.workspace_path || config.workspaces[selectedIdeWorkspaceProfile]?.path || '').replace(/\\/g, '/');
+    return String(ideSession?.workspace_path || workspace.path || workspace.workspace_profile || '').replace(/\\/g, '/');
   }
   const ctx = sourceResolvedContext?.context || {};
   const rel = ctx.path_prefix || selectedSourceFolder || selectedSourcePath || '';
@@ -3706,6 +3858,10 @@ function sourceWorkspaceAbsolutePath() {
 function findCodingSessionForSource(workspacePath, endpointId, workspaceProfile='') {
   return codingSessions().find((session) => {
     const meta = session.metadata || {};
+    const sessionWorkspaceId = String(meta.user_workspace_id || '').trim();
+    if (selectedIdeWorkspaceId) {
+      return sessionWorkspaceId === selectedIdeWorkspaceId;
+    }
     const sessionWorkspaceProfile = String(meta.workspace_profile || '').trim();
     if (workspaceProfile) return sessionWorkspaceProfile === workspaceProfile && String(meta.preferred_endpoint || '') === String(endpointId || '');
     return !!meta.ide_mode && String(session.workspace_path || '') === String(workspacePath || '') && String(meta.preferred_endpoint || '') === String(endpointId || '');
@@ -3713,31 +3869,35 @@ function findCodingSessionForSource(workspacePath, endpointId, workspaceProfile=
 }
 function sourceCodingDefaults() {
   const stackSpec = detectSourceTech();
-  const workspaceProfile = selectedIdeWorkspaceProfile && config.workspaces?.[selectedIdeWorkspaceProfile]
-    ? config.workspaces[selectedIdeWorkspaceProfile]
+  const workspaceEntry = currentIdeWorkspace();
+  const workspaceTemplate = workspaceEntry?.template || null;
+  const workspaceProfile = workspaceEntry?.workspace_profile && config.workspaces?.[workspaceEntry.workspace_profile]
+    ? config.workspaces[workspaceEntry.workspace_profile]
     : null;
-  const endpointId = workspaceProfile?.endpoint_id || defaultEndpointForSource();
-  const profileName = workspaceProfile?.default_agent_profile || guessProfileForTech(stackSpec);
-  const modelName = guessModelForTech(stackSpec, profileName);
+  const endpointId = workspaceEntry?.endpoint_id || workspaceTemplate?.endpoint_id || workspaceProfile?.endpoint_id || defaultEndpointForSource();
+  const profileName = workspaceEntry?.agent_profile || workspaceTemplate?.agent_profile || workspaceProfile?.default_agent_profile || guessProfileForTech(stackSpec);
+  const modelName = workspaceEntry?.model || guessModelForTech(stackSpec, profileName);
   const ctx = sourceResolvedContext?.context || {};
   const workspacePath = sourceWorkspaceAbsolutePath();
-  const existing = selectedIdeWorkspaceProfile
-    ? findCodingSessionForSource(workspacePath, endpointId, selectedIdeWorkspaceProfile)
-    : findCodingSessionForSource(workspacePath, endpointId);
+  const existing = workspaceEntry?.last_session_id
+    ? ((window.__pacSessions || []).find((session) => session.id === workspaceEntry.last_session_id) || null)
+    : findCodingSessionForSource(workspacePath, endpointId, workspaceEntry?.workspace_profile || '');
   return {
     stack: stackSpec.stack,
-    containerImage: workspaceProfile?.container_image || ctx.container_image || stackSpec.container,
+    containerImage: workspaceEntry?.container_image || workspaceTemplate?.container_image || workspaceProfile?.container_image || ctx.container_image || stackSpec.container,
     endpointId,
     profileName,
     modelName,
     workspacePath,
-    workspaceProfile: selectedIdeWorkspaceProfile || '',
+    workspaceId: workspaceEntry?.id || '',
+    workspaceName: workspaceEntry?.name || '',
+    workspaceProfile: workspaceEntry?.workspace_profile || '',
     contextName: sourceResolvedContext?.name || '',
     existingSession: existing,
   };
 }
 function ideUsesSessionWorkspace() {
-  return !!(selectedIdeWorkspaceProfile || selectedIdeSessionId || sourceCodingSessionId);
+  return !!(selectedIdeWorkspaceId || selectedIdeSessionId || sourceCodingSessionId);
 }
 function ideFsBasePath(path='') {
   const value = String(path || '').trim().replace(/\\/g, '/');
@@ -3912,12 +4072,12 @@ function updateSourceCodingPanel() {
   const defaults = sourceCodingDefaults();
   const endpointName = (window.__pacEndpoints || []).find(r => r.id === defaults.endpointId)?.name || defaults.endpointId || '-';
   const contextSummary = document.getElementById('sourceCodingContextSummary');
-  const workspaceSummary = defaults.workspaceProfile || defaults.workspacePath || 'workspace';
+  const workspaceSummary = defaults.workspaceName || defaults.workspaceProfile || defaults.workspacePath || 'workspace';
   if (contextSummary) {
     contextSummary.textContent = defaults.existingSession?.id
       ? `Attached to ${defaults.existingSession.name || defaults.existingSession.id} for ${workspaceSummary} on ${endpointName}.`
-      : (selectedIdeWorkspaceProfile
-        ? `Ready to start a coding session for ${selectedIdeWorkspaceProfile} on ${endpointName}.`
+      : (selectedIdeWorkspaceId
+        ? `Ready to start a coding session for ${workspaceSummary} on ${endpointName}.`
         : (sourceResolvedContext?.name
           ? `Ready to start a coding session for ${sourceResolvedContext.name} on ${endpointName}.`
           : `Select a workspace, then start a coding session on ${endpointName}.`));
@@ -4027,12 +4187,24 @@ async function ensureSourceCodingSession() {
   const defaults = sourceCodingDefaults();
   const toolIds = selectedSourceToolIds();
   const toolPaths = toolIds.map((id) => `plugins/${id}`);
-  if (!defaults.workspaceProfile && !defaults.workspacePath) throw new Error('Select a workspace or source context first.');
+  if (!defaults.workspaceId && !defaults.workspaceProfile && !defaults.workspacePath) throw new Error('Select a workspace or source context first.');
   if (!defaults.endpointId) throw new Error('No online endpoint is available for the coding session.');
   if (defaults.existingSession?.id) {
     sourceCodingSessionId = defaults.existingSession.id;
     selectedIdeSessionId = defaults.existingSession.id;
     return defaults.existingSession;
+  }
+  if (defaults.workspaceId) {
+    const ensured = await api(`/v1/my-workspaces/${encodeURIComponent(defaults.workspaceId)}/session`, {method:'POST'});
+    const session = ensured.session;
+    sourceCodingSessionId = session.id;
+    selectedIdeSessionId = session.id;
+    await loadWorkspaceCatalogs().catch(()=>{});
+    await loadSessions();
+    updateSourceCodingPanel();
+    sourceTreeCache.clear();
+    await renderSources('');
+    return session;
   }
   const sessionNameBase = defaults.workspaceProfile || sourceResolvedContext?.name || sourceFileLabel(selectedSourceFolder || selectedSourcePath || 'ide');
   const payload = {
@@ -5100,10 +5272,24 @@ async function saveEndpointConnectionSettings() {
   await loadGlobalEvents(true).catch(()=>{});
 }
 
+async function loadWorkspaceCatalogs() {
+  const [templateData, workspaceData] = await Promise.all([
+    api('/v1/workspace-templates').catch(() => ({templates: []})),
+    api('/v1/my-workspaces').catch(() => ({items: []})),
+  ]);
+  workspaceTemplates = Array.isArray(templateData?.templates) ? templateData.templates : [];
+  personalWorkspaces = Array.isArray(workspaceData?.items) ? workspaceData.items : [];
+  if (selectedIdeWorkspaceId && !personalWorkspaces.some((item) => item.id === selectedIdeWorkspaceId)) selectedIdeWorkspaceId = '';
+  if (!selectedIdeWorkspaceId && personalWorkspaces.length) {
+    selectedIdeWorkspaceId = (personalWorkspaces.find((item) => item.pinned) || personalWorkspaces[0]).id;
+  }
+}
+
 async function loadConfig() {
   config = await api('/v1/config');
   authStatus = {...(authStatus || {}), ...(config?.auth || {})};
   sessionSlashCommands = Array.isArray(config?.session_slash_commands) ? config.session_slash_commands : [];
+  await loadWorkspaceCatalogs();
   fillSelects(); renderWorkspaces(); renderProfiles(); renderProviders(); renderModels(); renderTools();
   document.getElementById('configEditor').value = JSON.stringify(config, null, 2);
   renderSystemInfo();
@@ -5919,7 +6105,7 @@ const saveSourceBtn = document.getElementById('saveSourceFile');
 if (saveSourceBtn) saveSourceBtn.onclick = () => saveSourceFile();
 const ideWorkspaceSelect = document.getElementById('ideWorkspaceSelect');
 if (ideWorkspaceSelect) ideWorkspaceSelect.onchange = async () => {
-  selectedIdeWorkspaceProfile = ideWorkspaceSelect.value || '';
+  selectedIdeWorkspaceId = ideWorkspaceSelect.value || '';
   selectedIdeSessionId = '';
   sourceCodingSessionId = '';
   sourceTreeCache.clear();
@@ -5929,6 +6115,7 @@ if (ideWorkspaceSelect) ideWorkspaceSelect.onchange = async () => {
   selectedSourcePath = null;
   selectedSourceFolder = '';
   selectedSourceEntry = '';
+  if (selectedIdeWorkspaceId) fillUserWorkspaceForm(selectedIdeWorkspaceId);
   renderIdeWorkspaceSelectors();
   updateSourceCodingPanel();
   await renderSources('');
@@ -5938,8 +6125,8 @@ if (ideSessionSelect) ideSessionSelect.onchange = async () => {
   selectedIdeSessionId = ideSessionSelect.value || '';
   sourceCodingSessionId = selectedIdeSessionId || '';
   const session = currentIdeSession();
-  const workspaceProfile = workspaceProfileForIdeSession(session);
-  if (workspaceProfile) selectedIdeWorkspaceProfile = workspaceProfile;
+  const userWorkspace = userWorkspaceForIdeSession(session);
+  if (userWorkspace?.id) selectedIdeWorkspaceId = userWorkspace.id;
   sourceTreeCache.clear();
   sourceExpandedDirs = new Set(['']);
   sourceOpenTabs = [];
@@ -5951,6 +6138,20 @@ if (ideSessionSelect) ideSessionSelect.onchange = async () => {
   updateSourceCodingPanel();
   await renderSources('');
 };
+if (document.getElementById('userWorkspaceSelect')) userWorkspaceSelect.onchange = () => fillUserWorkspaceForm(userWorkspaceSelect.value || '');
+if (document.getElementById('userWorkspaceTemplate')) userWorkspaceTemplate.onchange = () => {
+  const template = workspaceTemplates.find((item) => item.id === userWorkspaceTemplate.value);
+  if (!template) return;
+  if (document.getElementById('userWorkspaceType') && !userWorkspaceType.value) userWorkspaceType.value = template.workspace_type || 'local';
+  if (document.getElementById('userWorkspaceProfile') && !userWorkspaceProfile.value) userWorkspaceProfile.value = template.workspace_profile || '';
+  if (document.getElementById('userWorkspaceEndpoint') && !userWorkspaceEndpoint.value) userWorkspaceEndpoint.value = template.endpoint_id || '';
+  if (document.getElementById('userWorkspaceContainerImage') && !userWorkspaceContainerImage.value) userWorkspaceContainerImage.value = template.container_image || '';
+  if (document.getElementById('userWorkspaceAgentProfile') && !userWorkspaceAgentProfile.value) userWorkspaceAgentProfile.value = template.agent_profile || '';
+  if (document.getElementById('userWorkspaceDescription') && !userWorkspaceDescription.value) userWorkspaceDescription.value = template.description || '';
+};
+if (document.getElementById('saveUserWorkspace')) saveUserWorkspace.onclick = () => saveUserWorkspaceFromForm().catch(e=>paneError('Saving personal workspace failed', e.message));
+if (document.getElementById('deleteUserWorkspace')) deleteUserWorkspace.onclick = () => deleteUserWorkspaceFromForm().catch(e=>paneError('Deleting personal workspace failed', e.message));
+if (document.getElementById('openUserWorkspaceIde')) openUserWorkspaceIde.onclick = () => openUserWorkspaceInIde().catch(e=>paneError('Opening workspace in IDE failed', e.message));
 const sourceEditorInput = document.getElementById('sourceEditor');
 if (sourceEditorInput) {
   sourceEditorInput.addEventListener('input', () => {
