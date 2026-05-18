@@ -463,36 +463,32 @@
         <aside class="source-workbench-sidecar">
           <section class="source-sidecard">
             <div class="section-heading compact-heading">
-              <div><h3>Coding Session</h3><p class="muted">Use the selected source area and open files to bootstrap a workspace-backed coding session on an endpoint.</p></div>
+              <div><h3>Coding Session</h3><p class="muted">Start a coding-focused session for this source area, then use it like the session composer for code changes, errors, and fixes.</p></div>
               <div class="button-row compact-actions">
-                <button id="openSourceSetupModal" class="ghost-button">Workspace setup</button>
-                <button id="openSourceToolsModal" class="ghost-button">Agent tools</button>
+                <button id="bootstrapSourceCodingSession" class="ghost-button">Start</button>
+                <button id="openSourceCodingSession" class="ghost-button">Open</button>
               </div>
             </div>
-            <div id="sourceCodingContextSummary" class="source-secret-audit muted">Select a source path to resolve workspace context.</div>
-            <div class="health-grid source-coding-health">
-              <section class="health-section">
-                <h3>Detected stack</h3>
-                <div class="health-row"><span>Stack</span><b id="sourceCodingStack">-</b></div>
-                <div class="health-row"><span>Container</span><b id="sourceCodingContainer">-</b></div>
-                <div class="health-row"><span>Endpoint</span><b id="sourceCodingEndpoint">-</b></div>
-                <div class="health-row"><span>Profile</span><b id="sourceCodingProfile">-</b></div>
-              </section>
-              <section class="health-section">
-                <h3>Workspace</h3>
-                <div class="health-row"><span>Source path</span><b id="sourceCodingWorkspace">-</b></div>
-                <div class="health-row"><span>Context</span><b id="sourceCodingContextName">-</b></div>
-                <div class="health-row"><span>Model</span><b id="sourceCodingModel">-</b></div>
-                <div class="health-row"><span>Session</span><b id="sourceCodingSession">not started</b></div>
-              </section>
+            <div id="sourceCodingContextSummary" class="source-coding-summary muted">No coding session yet. Select a source path to resolve workspace context.</div>
+            <div class="source-coding-meta-row">
+              <span class="source-meta-pill"><b>Stack</b><span id="sourceCodingStack">-</span></span>
+              <span class="source-meta-pill"><b>Endpoint</b><span id="sourceCodingEndpoint">-</span></span>
+              <span class="source-meta-pill"><b>Profile</b><span id="sourceCodingProfile">-</span></span>
+              <span class="source-meta-pill"><b>Model</b><span id="sourceCodingModel">-</span></span>
             </div>
-            <div class="section-heading compact-heading"><div><h3>Open files</h3><p class="muted small-text">These are sent as workspace context to the coding session.</p></div></div>
+            <div class="source-coding-meta-row secondary">
+              <span class="source-meta-pill wide"><b>Workspace</b><span id="sourceCodingWorkspace">-</span></span>
+              <span class="source-meta-pill"><b>Session</b><span id="sourceCodingSession">not started</span></span>
+            </div>
+            <div class="button-row compact-actions source-side-actions">
+              <button id="openSourceSetupModal" class="ghost-button">Workspace setup</button>
+              <button id="openSourceToolsModal" class="ghost-button">Agent tools</button>
+            </div>
+            <div class="section-heading compact-heading"><div><h3>Open files</h3><p class="muted small-text">These files are attached as coding context.</p></div></div>
             <div id="sourceCodingOpenFiles" class="source-secret-audit muted">No open files yet.</div>
-            <label>Ask the coding session <textarea id="sourceCodingPrompt" class="source-side-textarea compact" spellcheck="false" placeholder="Ask the coding session about the selected files or workspace."></textarea></label>
+            <label>Ask the coding session <textarea id="sourceCodingPrompt" class="source-side-textarea compact source-coding-prompt" spellcheck="false" placeholder="Describe the coding task, error, or fix you want in this workspace."></textarea></label>
             <div class="button-row">
-              <button id="bootstrapSourceCodingSession">Start coding session</button>
               <button id="askSourceCodingSession" class="ghost-button">Send to coding session</button>
-              <button id="openSourceCodingSession" class="ghost-button">Open session</button>
             </div>
             <div id="sourceCodingStatus" class="inline-result compact-result" hidden></div>
           </section>

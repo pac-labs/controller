@@ -3683,11 +3683,25 @@ function renderSourceToolCatalog() {
         </div>
         <div class="button-row compact-actions">
           <button class="ghost-button source-tool-open" data-tool-open="${escapeHtml(item.id)}"${item.sourceAvailable ? '' : ' disabled'}>Open source</button>
+          ${item.sourceAvailable ? '' : `<button class="ghost-button source-tool-create" data-tool-create="${escapeHtml(item.id)}">Create source</button>`}
           <button class="ghost-button source-tool-select" data-tool-select="${escapeHtml(item.id)}">${selected ? 'Attached' : 'Use in session'}</button>
         </div>
       </div>
     `;
   }).join('');
+}
+async function createSourceToolScaffold(toolId='') {
+  const id = String(toolId || '').trim();
+  if (!id) throw new Error('Tool id is required');
+  const base = `plugins/${id}`;
+  await api('/v1/sources/entry', {method:'POST', body: JSON.stringify({path: base, type: 'dir'})});
+  const readme = `# ${id}\n\nAgent tool source for \`${id}\`.\n\nUse this folder for prompts, helper code, docs, or endpoint-side source related to this tool.\n`;
+  await api('/v1/sources/content', {method:'PUT', body: JSON.stringify({path: `${base}/README.md`, content: readme})});
+  sourceExpandedDirs.add('plugins');
+  sourceExpandedDirs.add(base);
+  sourceTreeCache.clear();
+  await renderSources(selectedSourceFolder || '');
+  renderSourceToolCatalog();
 }
 function sourceOpenFilePayload(limit = 3, maxChars = 4000) {
   const files = [];
@@ -5663,6 +5677,38 @@ if (openSourceToolsModalBtn) openSourceToolsModalBtn.onclick = () => {
 if (closeSourceSetupModalBtn) closeSourceSetupModalBtn.onclick = () => { const modal = document.getElementById('sourceSetupModal'); if (modal) modal.hidden = true; };
 const sourceSetupModal = document.getElementById('sourceSetupModal');
 if (sourceSetupModal) sourceSetupModal.onclick = (ev) => { if (ev.target === sourceSetupModal) sourceSetupModal.hidden = true; };
+const sourceCodingToolsEl = document.getElementById('sourceCodingTools');
+if (sourceCodingToolsEl) sourceCodingToolsEl.onclick = async (ev) => {
+  const openBtn = ev.target.closest('[data-tool-open]');
+  if (openBtn) {
+    const toolId = openBtn.getAttribute('data-tool-open') || '';
+    const tool = sourceToolEntries().find(item => item.id === toolId);
+    if (tool?.sourceAvailable) {
+      try {
+        await openSourcePath(tool.sourcePath);
+      } catch (e) {
+        paneError('Tool source could not be opened', e.message || String(e));
+      }
+    }
+    return;
+  }
+  const createBtn = ev.target.closest('[data-tool-create]');
+  if (createBtn) {
+    const toolId = createBtn.getAttribute('data-tool-create') || '';
+    try {
+      await createSourceToolScaffold(toolId);
+    } catch (e) {
+      paneError('Tool source could not be created', e.message || String(e));
+    }
+    return;
+  }
+  const selectBtn = ev.target.closest('[data-tool-select]');
+  if (selectBtn) {
+    sourceSelectedToolId = selectBtn.getAttribute('data-tool-select') || '';
+    renderSourceToolCatalog();
+    updateSourceCodingPanel();
+  }
+};
 const saveSourceContextBtn = document.getElementById('saveSourceContext');
 if (saveSourceContextBtn) saveSourceContextBtn.onclick = () => saveSourceContextFromForm();
 const resolveSourceContextBtn = document.getElementById('resolveSourceContext');

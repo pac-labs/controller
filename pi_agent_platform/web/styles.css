@@ -2208,6 +2208,44 @@ body {
   flex-direction: column;
   gap: .7rem;
 }
+#sources-tab .source-coding-summary {
+  margin: 0;
+  line-height: 1.45;
+}
+#sources-tab .source-coding-meta-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .55rem;
+}
+#sources-tab .source-coding-meta-row.secondary {
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+}
+#sources-tab .source-meta-pill {
+  display: flex;
+  flex-direction: column;
+  gap: .18rem;
+  min-width: 0;
+  padding: .6rem .7rem;
+  border: 1px solid rgba(125, 168, 213, 0.16);
+  background: rgba(8, 17, 31, 0.72);
+}
+#sources-tab .source-meta-pill b {
+  font-size: .71rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: rgba(211, 226, 244, 0.72);
+}
+#sources-tab .source-meta-pill span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+#sources-tab .source-side-actions {
+  justify-content: flex-start;
+  margin-top: -.2rem;
+}
+#sources-tab .source-coding-prompt {
+  min-height: 102px;
+}
 #sources-tab .source-sidecard h3 {
   letter-spacing: .04em;
   text-transform: uppercase;
@@ -2265,7 +2303,13 @@ body {
 #sources-tab .source-coding-health {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+#sources-tab #sourceCodingOpenFiles {
+  max-height: 220px;
+}
 #sources-tab #sourceCodingOpenFiles .inline-browser-row {
+  border-radius: 0;
+  border-color: rgba(125, 168, 213, 0.14);
+  background: rgba(8, 17, 31, 0.74);
   margin-bottom: .5rem;
 }
 #sources-tab #sourceCodingOpenFiles .inline-browser-row:last-child {
@@ -4268,6 +4312,20 @@ html[data-theme="light"] .source-workbench-sidecar,
 body[data-theme="light"] .source-workbench-sidecar{
   background:linear-gradient(180deg,var(--light-panel-soft),var(--light-panel-muted)) !important;
   border-left-color:var(--light-border) !important;
+}
+html[data-theme="light"] #sources-tab .source-meta-pill,
+body[data-theme="light"] #sources-tab .source-meta-pill{
+  background:#f7fafd !important;
+  border-color:var(--light-border) !important;
+}
+html[data-theme="light"] #sources-tab .source-meta-pill b,
+body[data-theme="light"] #sources-tab .source-meta-pill b{
+  color:#5f6f86 !important;
+}
+html[data-theme="light"] #sources-tab #sourceCodingOpenFiles .inline-browser-row,
+body[data-theme="light"] #sources-tab #sourceCodingOpenFiles .inline-browser-row{
+  background:#f8fbff !important;
+  border-color:var(--light-border) !important;
 }
 html[data-theme="light"] .source-marketplace-results .marketplace-card,
 html[data-theme="light"] #sources-tab .source-marketplace-results .marketplace-card,
