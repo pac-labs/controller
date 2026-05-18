@@ -4686,6 +4686,23 @@ def _load_loose_json_object(text: str) -> dict[str, Any] | None:
         pass
     normalized = re.sub(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_-]*)(\s*:)', r'\1"\2"\3', raw)
     normalized = normalized.replace("'", '"')
+    normalized = re.sub(r':\s*True\b', ': true', normalized)
+    normalized = re.sub(r':\s*False\b', ': false', normalized)
+    normalized = re.sub(r':\s*None\b', ': null', normalized)
+    def _quote_bare_value(match: re.Match[str]) -> str:
+        prefix = match.group(1)
+        raw_value = str(match.group(2) or '')
+        stripped = raw_value.strip()
+        if not stripped:
+            return prefix + raw_value
+        if stripped[0] in '"{[':
+            return prefix + raw_value
+        if stripped in {'true', 'false', 'null'}:
+            return prefix + stripped
+        if re.fullmatch(r'-?\d+(?:\.\d+)?', stripped):
+            return prefix + stripped
+        return prefix + json.dumps(stripped)
+    normalized = re.sub(r'(:\s*)([^"\{\[\],][^,\}\]]*)', _quote_bare_value, normalized)
     try:
         parsed = json.loads(normalized)
         return parsed if isinstance(parsed, dict) else None
@@ -4700,7 +4717,11 @@ def _parse_literal_tool_call(prompt: str) -> dict[str, Any] | None:
     wrapped = re.fullmatch(r'<\|tool_call\>\s*call:([A-Za-z0-9_:-]+)\s*(\{.*\})\s*<tool_call\|>', raw, re.DOTALL)
     if wrapped:
         tool = wrapped.group(1).strip()
+        if tool.startswith('tool_call:'):
+            tool = tool.split('tool_call:', 1)[1].strip()
         payload = _load_loose_json_object(wrapped.group(2)) or {}
+        if isinstance(payload.get('input'), dict):
+            payload = payload.get('input') or {}
         return {'tool': tool, 'input': payload}
     parsed = _load_loose_json_object(raw)
     if not parsed:
@@ -4708,6 +4729,8 @@ def _parse_literal_tool_call(prompt: str) -> dict[str, Any] | None:
     if str(parsed.get('type') or '').strip().lower() != 'tool_call':
         return None
     tool = str(parsed.get('tool') or '').strip()
+    if tool.startswith('tool_call:'):
+        tool = tool.split('tool_call:', 1)[1].strip()
     if not tool:
         return None
     payload = parsed.get('input')
