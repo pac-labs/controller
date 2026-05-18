@@ -1257,6 +1257,16 @@ class FileWriteRequest(BaseModel):
     content: str
 
 
+class SessionFileCreateRequest(BaseModel):
+    path: str
+    type: str = 'file'
+
+
+class SessionFileRenameRequest(BaseModel):
+    path: str
+    new_name: str
+
+
 class ConfigUpdateRequest(BaseModel):
     config: dict[str, Any]
 
@@ -4427,8 +4437,10 @@ def list_files(session_id: str, path: str = '.', _auth: None = Depends(require_a
         return {'path': path, 'type': 'file', 'size': target.stat().st_size}
     items = []
     for item in sorted(target.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))[:500]:
-        items.append({'name': item.name, 'type': 'dir' if item.is_dir() else 'file', 'size': item.stat().st_size if item.is_file() else None})
-    return {'path': path, 'type': 'dir', 'items': items}
+        rel = '.' if item == target else str(item.relative_to(Path(session.workspace_path))).replace('\\', '/')
+        items.append({'name': item.name, 'path': rel, 'type': 'dir' if item.is_dir() else 'file', 'size': item.stat().st_size if item.is_file() else None})
+    normalized = '' if path in ('.', '', '/') else str(path).replace('\\', '/').strip('/')
+    return {'path': normalized, 'type': 'dir', 'items': items}
 
 
 @app.get('/v1/sessions/{session_id}/files/content')
@@ -4452,6 +4464,75 @@ def write_file(session_id: str, payload: FileWriteRequest, _auth: None = Depends
     target.write_text(payload.content)
     store.add_event(Event(session_id=session.id, type='file_written', message=payload.path))
     return {'status': 'written', 'path': payload.path}
+
+
+@app.post('/v1/sessions/{session_id}/files/entry')
+def create_session_file_entry(session_id: str, payload: SessionFileCreateRequest, _auth: None = Depends(require_auth)) -> dict[str, str]:
+    session = store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    path = str(payload.path or '').replace('\\', '/').strip('/')
+    if not path:
+        raise HTTPException(status_code=400, detail='Path is required')
+    entry_type = str(payload.type or 'file').strip().lower()
+    if entry_type not in {'file', 'dir'}:
+        raise HTTPException(status_code=400, detail='Type must be file or dir')
+    target = safe_workspace_path(session, path)
+    if target.exists():
+        raise HTTPException(status_code=409, detail='Path already exists')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if entry_type == 'dir':
+        target.mkdir(parents=True, exist_ok=True)
+    else:
+        target.write_text('')
+    store.add_event(Event(session_id=session.id, type='file_created', message=path, data={'path': path, 'type': entry_type}))
+    return {'status': 'created', 'path': path, 'type': entry_type}
+
+
+@app.post('/v1/sessions/{session_id}/files/entry/rename')
+def rename_session_file_entry(session_id: str, payload: SessionFileRenameRequest, _auth: None = Depends(require_auth)) -> dict[str, str]:
+    session = store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    path = str(payload.path or '').replace('\\', '/').strip('/')
+    new_name = str(payload.new_name or '').strip()
+    if not path or not new_name:
+        raise HTTPException(status_code=400, detail='Path and new_name are required')
+    source = safe_workspace_path(session, path)
+    if not source.exists():
+        raise HTTPException(status_code=404, detail='Path not found')
+    if '/' in new_name or '\\' in new_name:
+        raise HTTPException(status_code=400, detail='new_name must not contain path separators')
+    target = source.with_name(new_name)
+    root = Path(session.workspace_path).resolve()
+    target_resolved = target.resolve()
+    if root not in target_resolved.parents and target_resolved != root:
+        raise HTTPException(status_code=400, detail='Target would escape workspace root')
+    if target.exists():
+        raise HTTPException(status_code=409, detail='Target already exists')
+    source.rename(target)
+    new_path = str(target_resolved.relative_to(root)).replace('\\', '/')
+    store.add_event(Event(session_id=session.id, type='file_renamed', message=f'{path} -> {new_path}', data={'path': path, 'new_path': new_path}))
+    return {'status': 'renamed', 'path': path, 'new_path': new_path}
+
+
+@app.delete('/v1/sessions/{session_id}/files/entry')
+def delete_session_file_entry(session_id: str, payload: SourceDeleteRequest, _auth: None = Depends(require_auth)) -> dict[str, str]:
+    session = store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail='Session not found')
+    path = str(payload.path or '').replace('\\', '/').strip('/')
+    if not path:
+        raise HTTPException(status_code=400, detail='Path is required')
+    target = safe_workspace_path(session, path)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail='Path not found')
+    if target.is_dir():
+        shutil.rmtree(target)
+    else:
+        target.unlink()
+    store.add_event(Event(session_id=session.id, type='file_deleted', message=path, data={'path': path}))
+    return {'status': 'deleted', 'path': path}
 
 
 @app.get('/v1/sessions/{session_id}/diff')

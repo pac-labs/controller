@@ -30,6 +30,8 @@ let config = null;
 let selectedSession = null;
 let selectedSourcePath = null;
 let selectedSourceFolder = '';
+let selectedIdeWorkspaceProfile = '';
+let selectedIdeSessionId = '';
 let selectedBinaryArtifactFilter = '';
 let sourceOpenTabs = [];
 let sourceFileState = new Map();
@@ -3162,6 +3164,7 @@ function normalizeSourceCachePath(path='') {
   return (!value || value === '.') ? '' : value.replace(/^\/+/, '');
 }
 async function ensureSourceDirLoaded(path='') {
+  if (ideUsesSessionWorkspace()) return ensureIdeDirLoaded(path);
   const data = await api(`/v1/sources?path=${encodeURIComponent(path)}`);
   const cachePath = normalizeSourceCachePath(data.path ?? path);
   data.path = cachePath;
@@ -3172,9 +3175,23 @@ async function renderSources(path='', options={}) {
   const tree = document.getElementById('sourceTree');
   if (!tree) return;
   try {
+    renderIdeWorkspaceSelectors();
+    if (ideUsesSessionWorkspace() && !currentIdeSession()) {
+      tree.classList.add('muted');
+      tree.innerHTML = '<div class="muted source-empty-folder">Select a workspace and start or attach a coding session to browse files here.</div>';
+      sourceTreeCache.clear();
+      sourceOpenTabs = [];
+      sourceFileState.clear();
+      selectedSourcePath = null;
+      selectedSourceFolder = '';
+      selectedSourceEntry = '';
+      updateSourceActions();
+      updateSourceCodingPanel();
+      return;
+    }
     const targetPath = options.focusPath !== undefined ? options.focusPath : path;
     if (!options.preserveCache || !sourceTreeCache.has('')) await ensureSourceDirLoaded('');
-    sourceExpandedDirs.add('plugins');
+    if (!ideUsesSessionWorkspace()) sourceExpandedDirs.add('plugins');
     if (path && !sourceTreeCache.has(path)) await ensureSourceDirLoaded(path);
     const expanded = Array.from(sourceExpandedDirs).filter(Boolean);
     for (const dir of expanded) {
@@ -3188,11 +3205,13 @@ async function renderSources(path='', options={}) {
     const rows = sourceChildRows(rootItems, 0);
     sourceLibraryRoot = rootData.root || sourceLibraryRoot || '';
     tree.classList.remove('muted');
-    tree.innerHTML = rows.length ? rows.join('') : '<div class="muted source-empty-folder">No source folders found.</div>';
+    tree.innerHTML = rows.length ? rows.join('') : `<div class="muted source-empty-folder">${ideUsesSessionWorkspace() ? 'No files in this workspace yet.' : 'No source folders found.'}</div>`;
     selectedSourceFolder = selectedSourceFolder || targetPath || '';
     updateSourceActions();
-    renderSourceBuildPanel(sourceTreeCache.get(selectedSourceFolder) || rootData);
-    await syncDownloadsWithSourcePath(selectedSourceFolder || '');
+    if (!ideUsesSessionWorkspace()) {
+      renderSourceBuildPanel(sourceTreeCache.get(selectedSourceFolder) || rootData);
+      await syncDownloadsWithSourcePath(selectedSourceFolder || '');
+    }
     bindSourceTreeEvents(tree);
     resolveCurrentSourceContext().catch(()=>{});
     updateSourceCodingPanel();
@@ -3206,7 +3225,9 @@ async function openSourceFile(path) {
   const editor = document.getElementById('sourceEditor');
   if (!editor) return;
   try {
-    const data = await api(`/v1/sources/content?path=${encodeURIComponent(path)}`);
+    const data = ideUsesSessionWorkspace()
+      ? await api(`/v1/sessions/${encodeURIComponent(currentIdeSession()?.id || '')}/files/content?path=${encodeURIComponent(path)}`)
+      : await api(`/v1/sources/content?path=${encodeURIComponent(path)}`);
     selectedSourcePath = data.path;
     selectedSourceEntry = data.path;
     selectedSourceFolder = data.path.split('/').slice(0, -1).join('/');
@@ -3228,7 +3249,10 @@ async function saveSourceFile(path=selectedSourcePath) {
   }
   const state = sourceFileState.get(path);
   const content = state ? state.content : editor.value;
-  const result = await runWithPaneError(() => api('/v1/sources/content', {method:'PUT', body: JSON.stringify({path, content})}), 'Source file could not be saved');
+  const request = () => ideUsesSessionWorkspace()
+    ? api(`/v1/sessions/${encodeURIComponent(currentIdeSession()?.id || '')}/files/content`, {method:'PUT', body: JSON.stringify({path, content})})
+    : api('/v1/sources/content', {method:'PUT', body: JSON.stringify({path, content})});
+  const result = await runWithPaneError(request, 'Source file could not be saved');
   if (result) {
     const current = sourceFileState.get(path) || {};
     current.saved = content; current.content = content; current.dirty = false;
@@ -3246,14 +3270,20 @@ async function createSourceEntry(type) {
   const name = prompt(label, type === 'dir' ? 'new-folder' : 'new-file.txt');
   if (!name) return;
   const path = [base, name].filter(Boolean).join('/');
-  const result = await runWithPaneError(() => api('/v1/sources/entry', {method:'POST', body:JSON.stringify({path, type})}), `Source ${type} could not be created`);
+  const request = () => ideUsesSessionWorkspace()
+    ? api(`/v1/sessions/${encodeURIComponent(currentIdeSession()?.id || '')}/files/entry`, {method:'POST', body:JSON.stringify({path, type})})
+    : api('/v1/sources/entry', {method:'POST', body:JSON.stringify({path, type})});
+  const result = await runWithPaneError(request, `Source ${type} could not be created`);
   if (result) { sourceTreeCache.clear(); if (type === 'dir') sourceExpandedDirs.add(result.path); await renderSources(base); if (type !== 'dir') await openSourceFile(result.path); }
 }
 async function renameSelectedSourceEntry(path=selectedSourceEntry) {
   if (!path) return paneError('Select a source entry first');
   const newName = prompt('Rename to', sourceFileLabel(path));
   if (!newName || newName === sourceFileLabel(path)) return;
-  const result = await runWithPaneError(() => api('/v1/sources/entry/rename', {method:'POST', body:JSON.stringify({path, new_name:newName})}), 'Source entry could not be renamed');
+  const request = () => ideUsesSessionWorkspace()
+    ? api(`/v1/sessions/${encodeURIComponent(currentIdeSession()?.id || '')}/files/entry/rename`, {method:'POST', body:JSON.stringify({path, new_name:newName})})
+    : api('/v1/sources/entry/rename', {method:'POST', body:JSON.stringify({path, new_name:newName})});
+  const result = await runWithPaneError(request, 'Source entry could not be renamed');
   if (result) {
     if (sourceFileState.has(path)) {
       const state = sourceFileState.get(path); sourceFileState.delete(path); sourceFileState.set(result.new_path, state);
@@ -3269,7 +3299,10 @@ async function deleteSelectedSourceEntry(path=selectedSourceEntry) {
   if (!path) return paneError('Select a source entry first');
   if (!confirm(`Delete ${path}?`)) return;
   const parent = path.split('/').slice(0,-1).join('/');
-  const result = await runWithPaneError(() => api('/v1/sources/entry', {method:'DELETE', body:JSON.stringify({path})}), 'Source entry could not be deleted');
+  const request = () => ideUsesSessionWorkspace()
+    ? api(`/v1/sessions/${encodeURIComponent(currentIdeSession()?.id || '')}/files/entry`, {method:'DELETE', body:JSON.stringify({path})})
+    : api('/v1/sources/entry', {method:'DELETE', body:JSON.stringify({path})});
+  const result = await runWithPaneError(request, 'Source entry could not be deleted');
   if (result) {
     if (sourceFileState.has(path)) closeSourceTab(path);
     selectedSourceEntry = parent;
@@ -3324,7 +3357,9 @@ function updateSourceActions() {
   const hint = document.getElementById('sourceActionHint');
   const cf = selectedBuildFolder('container');
   const bf = selectedBuildFolder('binary');
-  if (hint) hint.textContent = bf ? `Viewing source: ${bf}. Build it from the IDE row.` : (cf ? `Container source: ${cf}. Build it from the IDE row.` : 'Filter by binary source folder.');
+  if (hint) hint.textContent = ideUsesSessionWorkspace()
+    ? `Browsing ${currentIdeSession()?.name || 'coding session'} in ${selectedIdeWorkspaceProfile || 'workspace'}`
+    : (bf ? `Viewing source: ${bf}. Build it from the IDE row.` : (cf ? `Container source: ${cf}. Build it from the IDE row.` : 'Filter by binary source folder.'));
   const title = document.getElementById('sourceBuildPanelTitle');
   if (title) title.textContent = 'Downloads';
 }
@@ -3618,7 +3653,49 @@ function defaultEndpointForSource() {
   if (sessionEndpoint) return sessionEndpoint;
   return (window.__pacEndpoints || []).find(r => r.status === 'online')?.id || '';
 }
+function codingSessions() {
+  return (window.__pacSessions || []).filter((session) => {
+    const meta = session.metadata || {};
+    return !!(meta.ide_mode || meta.coding_session);
+  });
+}
+function currentIdeSession() {
+  const id = selectedIdeSessionId || sourceCodingSessionId || '';
+  if (!id) return null;
+  return codingSessions().find((session) => session.id === id) || null;
+}
+function workspaceProfileForIdeSession(session) {
+  const meta = session?.metadata || {};
+  return String(meta.workspace_profile || '').trim();
+}
+function renderIdeWorkspaceSelectors() {
+  const workspaceSelect = document.getElementById('ideWorkspaceSelect');
+  const sessionSelect = document.getElementById('ideSessionSelect');
+  if (!workspaceSelect || !sessionSelect) return;
+  const workspaceEntries = Object.entries(config.workspaces || {});
+  if (!selectedIdeWorkspaceProfile && selectedIdeSessionId) {
+    const activeSession = codingSessions().find((session) => session.id === selectedIdeSessionId);
+    const activeWorkspace = workspaceProfileForIdeSession(activeSession);
+    if (activeWorkspace) selectedIdeWorkspaceProfile = activeWorkspace;
+  }
+  if (!selectedIdeWorkspaceProfile && workspaceEntries.length) {
+    selectedIdeWorkspaceProfile = workspaceEntries.find(([_, w]) => w.is_default)?.[0] || workspaceEntries[0][0];
+  }
+  workspaceSelect.innerHTML = '<option value="">Select workspace</option>' + workspaceEntries.map(([name, w]) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}${w.path ? ` - ${escapeHtml(w.path)}` : ''}</option>`).join('');
+  if (selectedIdeWorkspaceProfile && workspaceEntries.some(([name]) => name === selectedIdeWorkspaceProfile)) workspaceSelect.value = selectedIdeWorkspaceProfile;
+  const sessionEntries = codingSessions().filter((session) => {
+    if (!selectedIdeWorkspaceProfile) return true;
+    return workspaceProfileForIdeSession(session) === selectedIdeWorkspaceProfile;
+  });
+  sessionSelect.innerHTML = '<option value="">Select coding session</option>' + sessionEntries.map((session) => `<option value="${escapeHtml(session.id)}">${escapeHtml(session.name || session.id)}</option>`).join('');
+  const activeSessionId = selectedIdeSessionId || sourceCodingSessionId || '';
+  if (activeSessionId && sessionEntries.some((session) => session.id === activeSessionId)) sessionSelect.value = activeSessionId;
+}
 function sourceWorkspaceAbsolutePath() {
+  if (selectedIdeWorkspaceProfile && config.workspaces?.[selectedIdeWorkspaceProfile]) {
+    const ideSession = currentIdeSession();
+    return String(ideSession?.workspace_path || config.workspaces[selectedIdeWorkspaceProfile]?.path || '').replace(/\\/g, '/');
+  }
   const ctx = sourceResolvedContext?.context || {};
   const rel = ctx.path_prefix || selectedSourceFolder || selectedSourcePath || '';
   if (!rel) return sourceLibraryRoot || '';
@@ -3626,30 +3703,61 @@ function sourceWorkspaceAbsolutePath() {
   if (!sourceLibraryRoot) return rel;
   return `${String(sourceLibraryRoot).replace(/[\\/]+$/, '')}/${String(rel).replace(/^[\\/]+/, '')}`.replace(/\\/g, '/');
 }
-function findCodingSessionForSource(workspacePath, endpointId) {
-  return (window.__pacSessions || []).find((session) => {
+function findCodingSessionForSource(workspacePath, endpointId, workspaceProfile='') {
+  return codingSessions().find((session) => {
     const meta = session.metadata || {};
+    const sessionWorkspaceProfile = String(meta.workspace_profile || '').trim();
+    if (workspaceProfile) return sessionWorkspaceProfile === workspaceProfile && String(meta.preferred_endpoint || '') === String(endpointId || '');
     return !!meta.ide_mode && String(session.workspace_path || '') === String(workspacePath || '') && String(meta.preferred_endpoint || '') === String(endpointId || '');
   }) || null;
 }
 function sourceCodingDefaults() {
   const stackSpec = detectSourceTech();
-  const endpointId = defaultEndpointForSource();
-  const profileName = guessProfileForTech(stackSpec);
+  const workspaceProfile = selectedIdeWorkspaceProfile && config.workspaces?.[selectedIdeWorkspaceProfile]
+    ? config.workspaces[selectedIdeWorkspaceProfile]
+    : null;
+  const endpointId = workspaceProfile?.endpoint_id || defaultEndpointForSource();
+  const profileName = workspaceProfile?.default_agent_profile || guessProfileForTech(stackSpec);
   const modelName = guessModelForTech(stackSpec, profileName);
   const ctx = sourceResolvedContext?.context || {};
   const workspacePath = sourceWorkspaceAbsolutePath();
-  const existing = findCodingSessionForSource(workspacePath, endpointId);
+  const existing = selectedIdeWorkspaceProfile
+    ? findCodingSessionForSource(workspacePath, endpointId, selectedIdeWorkspaceProfile)
+    : findCodingSessionForSource(workspacePath, endpointId);
   return {
     stack: stackSpec.stack,
-    containerImage: ctx.container_image || stackSpec.container,
+    containerImage: workspaceProfile?.container_image || ctx.container_image || stackSpec.container,
     endpointId,
     profileName,
     modelName,
     workspacePath,
+    workspaceProfile: selectedIdeWorkspaceProfile || '',
     contextName: sourceResolvedContext?.name || '',
     existingSession: existing,
   };
+}
+function ideUsesSessionWorkspace() {
+  return !!(selectedIdeWorkspaceProfile || selectedIdeSessionId || sourceCodingSessionId);
+}
+function ideFsBasePath(path='') {
+  const value = String(path || '').trim().replace(/\\/g, '/');
+  if (!value || value === '.' || value === '/') return '';
+  return value.replace(/^\/+/, '').replace(/\/+$/, '');
+}
+async function ensureIdeDirLoaded(path='') {
+  const session = currentIdeSession();
+  if (!session) throw new Error('Select or start a coding session for a workspace first.');
+  const relPath = ideFsBasePath(path);
+  const qs = relPath ? `?path=${encodeURIComponent(relPath)}` : '';
+  const data = await api(`/v1/sessions/${encodeURIComponent(session.id)}/files${qs}`);
+  const cachePath = ideFsBasePath(data.path ?? relPath);
+  const normalizedItems = Array.isArray(data.items) ? data.items.map((item) => ({
+    ...item,
+    path: ideFsBasePath(item.path || (cachePath ? `${cachePath}/${item.name}` : item.name)),
+  })) : [];
+  const normalized = {path: cachePath, items: normalizedItems, type: data.type || 'dir'};
+  sourceTreeCache.set(cachePath, normalized);
+  return normalized;
 }
 function sourceOpenFilesSummaryHtml() {
   const files = sourceOpenTabs.slice();
@@ -3763,9 +3871,17 @@ async function createSourceToolScaffold(toolId='') {
   const id = String(toolId || '').trim();
   if (!id) throw new Error('Tool id is required');
   const base = `plugins/${id}`;
-  await api('/v1/sources/entry', {method:'POST', body: JSON.stringify({path: base, type: 'dir'})});
+  if (ideUsesSessionWorkspace()) {
+    await api(`/v1/sessions/${encodeURIComponent(currentIdeSession()?.id || '')}/files/entry`, {method:'POST', body: JSON.stringify({path: base, type: 'dir'})});
+  } else {
+    await api('/v1/sources/entry', {method:'POST', body: JSON.stringify({path: base, type: 'dir'})});
+  }
   const readme = `# ${id}\n\nAgent tool source for \`${id}\`.\n\nUse this folder for prompts, helper code, docs, or endpoint-side source related to this tool.\n`;
-  await api('/v1/sources/content', {method:'PUT', body: JSON.stringify({path: `${base}/README.md`, content: readme})});
+  if (ideUsesSessionWorkspace()) {
+    await api(`/v1/sessions/${encodeURIComponent(currentIdeSession()?.id || '')}/files/content`, {method:'PUT', body: JSON.stringify({path: `${base}/README.md`, content: readme})});
+  } else {
+    await api('/v1/sources/content', {method:'PUT', body: JSON.stringify({path: `${base}/README.md`, content: readme})});
+  }
   sourceExpandedDirs.add('plugins');
   sourceExpandedDirs.add(base);
   sourceTreeCache.clear();
@@ -3796,12 +3912,15 @@ function updateSourceCodingPanel() {
   const defaults = sourceCodingDefaults();
   const endpointName = (window.__pacEndpoints || []).find(r => r.id === defaults.endpointId)?.name || defaults.endpointId || '-';
   const contextSummary = document.getElementById('sourceCodingContextSummary');
+  const workspaceSummary = defaults.workspaceProfile || defaults.workspacePath || 'workspace';
   if (contextSummary) {
     contextSummary.textContent = defaults.existingSession?.id
-      ? `Attached to ${defaults.existingSession.name || defaults.existingSession.id} on ${endpointName}.`
-      : (sourceResolvedContext?.name
-        ? `Ready to start a coding session for ${sourceResolvedContext.name} on ${endpointName}.`
-        : `Ready to start a coding session on ${endpointName}.`);
+      ? `Attached to ${defaults.existingSession.name || defaults.existingSession.id} for ${workspaceSummary} on ${endpointName}.`
+      : (selectedIdeWorkspaceProfile
+        ? `Ready to start a coding session for ${selectedIdeWorkspaceProfile} on ${endpointName}.`
+        : (sourceResolvedContext?.name
+          ? `Ready to start a coding session for ${sourceResolvedContext.name} on ${endpointName}.`
+          : `Select a workspace, then start a coding session on ${endpointName}.`));
   }
   const focusEl = document.getElementById('sourceCodingFocus');
   if (focusEl) {
@@ -3816,7 +3935,7 @@ function updateSourceCodingPanel() {
   const openBtn = document.getElementById('openSourceCodingSession');
   if (openBtn) openBtn.disabled = !defaults.existingSession?.id && !sourceCodingSessionId;
   renderSourceToolCatalog();
-  sourceCodingSessionId = defaults.existingSession?.id || sourceCodingSessionId || '';
+  sourceCodingSessionId = defaults.existingSession?.id || selectedIdeSessionId || sourceCodingSessionId || '';
   if (sourceCodingSessionId) startSourceCodingPoll();
   else stopSourceCodingPoll();
   refreshSourceCodingActivity().catch(()=>{});
@@ -3908,18 +4027,19 @@ async function ensureSourceCodingSession() {
   const defaults = sourceCodingDefaults();
   const toolIds = selectedSourceToolIds();
   const toolPaths = toolIds.map((id) => `plugins/${id}`);
-  if (!defaults.workspacePath) throw new Error('Open a source file or select a source context first.');
+  if (!defaults.workspaceProfile && !defaults.workspacePath) throw new Error('Select a workspace or source context first.');
   if (!defaults.endpointId) throw new Error('No online endpoint is available for the coding session.');
   if (defaults.existingSession?.id) {
     sourceCodingSessionId = defaults.existingSession.id;
+    selectedIdeSessionId = defaults.existingSession.id;
     return defaults.existingSession;
   }
-  const sessionNameBase = sourceResolvedContext?.name || sourceFileLabel(selectedSourceFolder || selectedSourcePath || 'ide');
+  const sessionNameBase = defaults.workspaceProfile || sourceResolvedContext?.name || sourceFileLabel(selectedSourceFolder || selectedSourcePath || 'ide');
   const payload = {
     name: `code-${String(sessionNameBase).replace(/[^A-Za-z0-9._-]+/g, '-').toLowerCase()}`,
     agent_profile: defaults.profileName || null,
     model: defaults.modelName || null,
-    workspace: {type: 'local', path: defaults.workspacePath},
+    workspace: defaults.workspaceProfile ? {type: 'profile', profile: defaults.workspaceProfile} : {type: 'local', path: defaults.workspacePath},
     metadata: {
       preferred_endpoint: defaults.endpointId,
       endpoint_locked: true,
@@ -3932,6 +4052,7 @@ async function ensureSourceCodingSession() {
       ide_source_path: selectedSourceFolder || selectedSourcePath || '',
       ide_open_files: sourceOpenTabs.slice(),
       source_context_name: defaults.contextName || null,
+      workspace_profile: defaults.workspaceProfile || null,
       agent_tool_ids: toolIds,
       agent_tool_paths: toolPaths,
       tool_source_mode: 'jit-workspace',
@@ -3940,9 +4061,12 @@ async function ensureSourceCodingSession() {
   };
   const session = await api('/v1/sessions', {method:'POST', body: JSON.stringify(payload)});
   sourceCodingSessionId = session.id;
+  selectedIdeSessionId = session.id;
   startSourceCodingPoll();
   await loadSessions();
   updateSourceCodingPanel();
+  sourceTreeCache.clear();
+  await renderSources('');
   return session;
 }
 function buildSourceCodingPrompt(userPrompt='') {
@@ -4989,6 +5113,7 @@ async function loadConfig() {
   renderAuthInfo();
   renderZedConfigExamples();
   renderSourceContexts();
+  renderIdeWorkspaceSelectors();
   renderSources();
   await loadSourceSecrets().catch(()=>{});
   await loadSourceVariables().catch(()=>{});
@@ -5005,6 +5130,8 @@ async function loadConfig() {
 async function loadSessions() {
   const sessions = await api('/v1/sessions');
   window.__pacSessions = sessions;
+  if (selectedIdeSessionId && !sessions.some((session) => session.id === selectedIdeSessionId)) selectedIdeSessionId = '';
+  if (sourceCodingSessionId && !sessions.some((session) => session.id === sourceCodingSessionId)) sourceCodingSessionId = '';
   ensureSessionWorkspaceChrome();
   const dashboard = document.getElementById('sessions');
   const picker = document.getElementById('sessionTopSelect');
@@ -5021,6 +5148,7 @@ async function loadSessions() {
     renderProfileUsagePanel();
     renderWorkspaceActivityPanel();
     renderSessionSidebar([]);
+    renderIdeWorkspaceSelectors();
     updateSourceCodingPanel();
     return;
   }
@@ -5038,6 +5166,8 @@ async function loadSessions() {
   });
   if (picker && selectedSession?.id) picker.value = selectedSession.id;
   renderSessionSidebar(sessions);
+  renderIdeWorkspaceSelectors();
+  updateSourceCodingPanel();
   renderModelActiveSessionsPanel();
   renderProfileUsagePanel();
   renderWorkspaceActivityPanel();
@@ -5787,6 +5917,40 @@ const applyFeaturePackBtn = document.getElementById('applyFeaturePack'); if (app
 document.querySelectorAll('[data-source-open]').forEach(btn => btn.addEventListener('click', () => { switchToTab('sources-tab'); openSourceFile(btn.dataset.sourceOpen || ''); renderSources((btn.dataset.sourceOpen || '').split('/').slice(0,-1).join('/')); }));
 const saveSourceBtn = document.getElementById('saveSourceFile');
 if (saveSourceBtn) saveSourceBtn.onclick = () => saveSourceFile();
+const ideWorkspaceSelect = document.getElementById('ideWorkspaceSelect');
+if (ideWorkspaceSelect) ideWorkspaceSelect.onchange = async () => {
+  selectedIdeWorkspaceProfile = ideWorkspaceSelect.value || '';
+  selectedIdeSessionId = '';
+  sourceCodingSessionId = '';
+  sourceTreeCache.clear();
+  sourceExpandedDirs = new Set(['']);
+  sourceOpenTabs = [];
+  sourceFileState.clear();
+  selectedSourcePath = null;
+  selectedSourceFolder = '';
+  selectedSourceEntry = '';
+  renderIdeWorkspaceSelectors();
+  updateSourceCodingPanel();
+  await renderSources('');
+};
+const ideSessionSelect = document.getElementById('ideSessionSelect');
+if (ideSessionSelect) ideSessionSelect.onchange = async () => {
+  selectedIdeSessionId = ideSessionSelect.value || '';
+  sourceCodingSessionId = selectedIdeSessionId || '';
+  const session = currentIdeSession();
+  const workspaceProfile = workspaceProfileForIdeSession(session);
+  if (workspaceProfile) selectedIdeWorkspaceProfile = workspaceProfile;
+  sourceTreeCache.clear();
+  sourceExpandedDirs = new Set(['']);
+  sourceOpenTabs = [];
+  sourceFileState.clear();
+  selectedSourcePath = null;
+  selectedSourceFolder = '';
+  selectedSourceEntry = '';
+  renderIdeWorkspaceSelectors();
+  updateSourceCodingPanel();
+  await renderSources('');
+};
 const sourceEditorInput = document.getElementById('sourceEditor');
 if (sourceEditorInput) {
   sourceEditorInput.addEventListener('input', () => {

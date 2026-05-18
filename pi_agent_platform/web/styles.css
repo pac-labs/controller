@@ -1882,6 +1882,9 @@ button,
 .top-icon-button { width: 2.15rem; height: 2.15rem; display:inline-flex; align-items:center; justify-content:center; padding:0; border-radius:.55rem; }
 .source-workbench-panel { height: calc(100vh - 155px); min-height: 620px; overflow: hidden; }
 .source-workbench-toolbar { height: 42px; display:flex; align-items:center; gap:.35rem; padding:.35rem .5rem; border:1px solid rgba(148,163,184,.16); border-bottom:0; border-radius: .9rem .9rem 0 0; background: rgba(4,8,22,.86); }
+.source-workbench-scope { display:flex; align-items:center; gap:.45rem; min-width: 0; }
+.source-workbench-scope label { display:flex; align-items:center; gap:.35rem; color:#cbd5e1; font-size:.8rem; }
+.source-workbench-scope select { min-width: 180px; height: 30px; }
 .source-menu-wrap { position:relative; }
 .source-menu-button { height: 30px; padding: .25rem .65rem; border-radius:.45rem; }
 .source-file-menu, .source-context-menu { position: fixed; z-index: 80; min-width: 150px; padding:.35rem; background: #0b1020; border:1px solid rgba(148,163,184,.28); box-shadow: 0 18px 55px rgba(0,0,0,.45); border-radius:.65rem; }
@@ -3540,6 +3543,10 @@ html[data-theme="light"] #sources-tab .source-workbench-toolbar,
 body[data-theme="light"] #sources-tab .source-workbench-toolbar{
   background:linear-gradient(180deg,#f8fafc,#eef2f7) !important;
   border-color:rgba(148,163,184,.2) !important;
+}
+html[data-theme="light"] .source-workbench-scope label,
+body[data-theme="light"] .source-workbench-scope label{
+  color:#334155 !important;
 }
 html[data-theme="light"] #sources-tab .source-workbench,
 body[data-theme="light"] #sources-tab .source-workbench{
