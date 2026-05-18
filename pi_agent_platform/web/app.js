@@ -3063,22 +3063,33 @@ function sourceChildRows(items, depth=0) {
   });
   return rows;
 }
+async function openSourcePath(path='', type='') {
+  const p = String(path || '').trim();
+  const sourceType = String(type || '').trim().toLowerCase();
+  if (!p) return;
+  selectedSourceEntry = p;
+  if (sourceType === 'dir' || (!sourceType && !/\.[A-Za-z0-9._-]+$/.test(p.split('/').pop() || ''))) {
+    selectedSourceFolder = p;
+    if (sourceExpandedDirs.has(p)) sourceExpandedDirs.delete(p);
+    else sourceExpandedDirs.add(p);
+    await renderSources('', {preserveCache:true, focusPath:p});
+  } else {
+    await openSourceFile(p);
+  }
+  updateSourceActions();
+}
 function bindSourceTreeEvents(tree) {
-  tree.querySelectorAll('.source-row').forEach(btn => {
-    btn.onclick = async () => {
-      const p = btn.dataset.sourcePath || '';
-      selectedSourceEntry = p;
-      if (btn.dataset.sourceType === 'dir') {
-        selectedSourceFolder = p;
-        if (sourceExpandedDirs.has(p)) sourceExpandedDirs.delete(p); else sourceExpandedDirs.add(p);
-        await renderSources('', {preserveCache:true, focusPath:p});
-      } else {
-        openSourceFile(p);
-      }
-      updateSourceActions();
-    };
-    btn.oncontextmenu = (ev) => openSourceContextMenu(ev, btn.dataset.sourcePath || '', btn.dataset.sourceType || 'file');
-  });
+  tree.onclick = async (ev) => {
+    const btn = ev.target.closest?.('.source-row');
+    if (!btn) return;
+    ev.preventDefault();
+    await openSourcePath(btn.dataset.sourcePath || '', btn.dataset.sourceType || '');
+  };
+  tree.oncontextmenu = (ev) => {
+    const btn = ev.target.closest?.('.source-row');
+    if (!btn) return;
+    openSourceContextMenu(ev, btn.dataset.sourcePath || '', btn.dataset.sourceType || 'file');
+  };
   tree.querySelectorAll('.source-build-icon').forEach(btn => {
     btn.onclick = (ev) => {
       ev.preventDefault(); ev.stopPropagation();
@@ -5777,14 +5788,14 @@ if (closeSourceSetupModalBtn) closeSourceSetupModalBtn.onclick = () => { const m
 const sourceSetupModal = document.getElementById('sourceSetupModal');
 if (sourceSetupModal) sourceSetupModal.onclick = (ev) => { if (ev.target === sourceSetupModal) sourceSetupModal.hidden = true; };
 const sourceCodingToolsEl = document.getElementById('sourceCodingTools');
-if (sourceCodingToolsEl) sourceCodingToolsEl.onclick = async (ev) => {
+  if (sourceCodingToolsEl) sourceCodingToolsEl.onclick = async (ev) => {
   const openBtn = ev.target.closest('[data-tool-open]');
   if (openBtn) {
     const toolId = openBtn.getAttribute('data-tool-open') || '';
     const tool = sourceToolEntries().find(item => item.id === toolId);
     if (tool?.sourceAvailable) {
       try {
-        await openSourcePath(tool.sourcePath);
+        await openSourcePath(tool.sourcePath, 'dir');
       } catch (e) {
         paneError('Tool source could not be opened', e.message || String(e));
       }
@@ -5862,23 +5873,6 @@ if (askSourceCodingSessionBtn) askSourceCodingSessionBtn.onclick = async () => {
     paneError('Coding session prompt failed', e.message || String(e));
   }
 };
-document.addEventListener('click', async (ev) => {
-  const openBtn = ev.target.closest?.('[data-tool-open]');
-  if (openBtn) {
-    const toolId = openBtn.getAttribute('data-tool-open') || '';
-    sourceSelectedToolId = toolId;
-    selectedSourceFolder = `plugins/${toolId}`;
-    selectedSourceEntry = `plugins/${toolId}`;
-    await renderSources(`plugins/${toolId}`);
-    updateSourceCodingPanel();
-    return;
-  }
-  const selectBtn = ev.target.closest?.('[data-tool-select]');
-  if (selectBtn) {
-    sourceSelectedToolId = selectBtn.getAttribute('data-tool-select') || '';
-    updateSourceCodingPanel();
-  }
-});
 const loadPacRamBtn = document.getElementById('loadPacRam');
 if (loadPacRamBtn) loadPacRamBtn.onclick = () => loadPacRam().catch(e=>paneError('PAC RAM could not be loaded', e.message));
 const savePacRamBtn = document.getElementById('savePacRam');
