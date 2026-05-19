@@ -33,6 +33,7 @@ from .artifacts import write_artifact, list_artifacts
 from .workspace_index import build_workspace_index
 from .workspace_lessons import save_lesson, load_lessons, search_lessons, get_project_memory
 from .background_jobs import start_job
+from .checkpoint import save_checkpoint, load_latest_checkpoint, list_checkpoints
 
 
 TOOL_HELP = """
@@ -1522,6 +1523,74 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
         store.add_event(Event(session_id=session.id, task_id=task.id, type="tool_result", message=f"wait_for {target} timed out", data={"tool": "wait_for", "target": target, "timeout": timeout}))
         return json.dumps({"target": target, "ready": False, "error": f"timed out after {timeout}s"}), False
 
+    if tool == "resume_task":
+        target_task_id = str(inp.get("task_id") or "").strip()
+        if not target_task_id:
+            return "resume_task requires task_id", False
+
+        resumed_task = store.get_task(target_task_id)
+        if not resumed_task:
+            return f"Task not found: {target_task_id}", False
+
+        checkpoint = load_latest_checkpoint(resumed_task.session_id)
+        if not checkpoint:
+            return f"No checkpoint found for session {resumed_task.session_id}", False
+
+        if checkpoint.task_id != target_task_id:
+            return f"Checkpoint session mismatch: expected {target_task_id}, got {checkpoint.task_id}", False
+
+        resumed_task.metadata["checkpoint_seq"] = checkpoint.checkpoint_seq
+        resumed_task.metadata["checkpoint_step"] = checkpoint.step
+        resumed_task.metadata["checkpoint_at"] = checkpoint.checkpoint_at
+        resumed_task.metadata["resumed_from_checkpoint"] = True
+
+        resumed_task.status = TaskStatus.running
+
+        store.add_task(resumed_task)
+        store.add_event(Event(
+            session_id=resumed_task.session_id, task_id=resumed_task.id,
+            type="task_resumed", message=f"Task resumed from checkpoint seq={checkpoint.checkpoint_seq} step={checkpoint.step}",
+            data={"task_id": target_task_id, "checkpoint_seq": checkpoint.checkpoint_seq, "checkpoint_step": checkpoint.step}
+        ))
+
+        result = {
+            "task_id": target_task_id,
+            "resumed": True,
+            "checkpoint_seq": checkpoint.checkpoint_seq,
+            "checkpoint_step": checkpoint.step,
+            "checkpoint_at": datetime.fromtimestamp(checkpoint.checkpoint_at, timezone.utc).isoformat().replace("+00:00", "Z"),
+            "rolling_summary": checkpoint.rolling_summary[:500],
+            "transcript_len": checkpoint.transcript_len,
+            "prompt": checkpoint.prompt[:200],
+        }
+        return json.dumps(result, indent=2), False
+
+    if tool == "list_task_checkpoints":
+        target_task_id = str(inp.get("task_id") or "").strip()
+        if not target_task_id:
+            return "list_task_checkpoints requires task_id", False
+
+        t = store.get_task(target_task_id)
+        if not t:
+            return f"Task not found: {target_task_id}", False
+
+        checkpoints = list_checkpoints(t.session_id)
+
+        return json.dumps({
+            "task_id": target_task_id,
+            "session_id": t.session_id,
+            "checkpoints": checkpoints,
+            "count": len(checkpoints),
+        }, indent=2)[:8000], False
+
+    if tool == "clear_checkpoints":
+        target_session_id = str(inp.get("session_id") or "").strip()
+        if not target_session_id:
+            return "clear_checkpoints requires session_id", False
+        from .checkpoint import delete_checkpoints
+        count = delete_checkpoints(target_session_id)
+        return json.dumps({"session_id": target_session_id, "deleted": count}), False
+
     return f"Unknown tool: {tool}", False
 
 
@@ -1587,6 +1656,28 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     step = 0
     while True:
         step += 1
+        # Auto-checkpoint every 10 steps
+        if step % 10 == 0:
+            try:
+                cp_path = save_checkpoint(
+                    session_id=session.id,
+                    task_id=task.id,
+                    step=step,
+                    rolling_summary=rolling_summary or "",
+                    messages=messages[-20:],
+                    transcript=transcript[-20:],
+                    workspace_path=session.workspace_path or "",
+                    agent_profile=session.agent_profile or "",
+                    model=session.model or "",
+                    prompt=task.prompt or "",
+                    output=task.output or "",
+                    task_status=str(task.status.value) if hasattr(task.status, "value") else str(task.status),
+                    session_status=str(session.status.value) if hasattr(session.status, "value") else str(session.status),
+                    metadata=task.metadata or {},
+                )
+                store.add_event(Event(session_id=session.id, task_id=task.id, type="checkpoint_saved", message=f"Checkpoint {step} steps", data={"step": step, "path": cp_path}))
+            except Exception:
+                pass  # Never let checkpoint failures break the loop
         latest_task = store.get_task(task.id) or task
         stop_requested = bool((latest_task.metadata or {}).get("stop_requested"))
         if stop_requested:
@@ -1601,6 +1692,18 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             store.add_session(session)
             return task
         if time.monotonic() >= deadline:
+            try:
+                save_checkpoint(
+                    session_id=session.id, task_id=task.id, step=step,
+                    rolling_summary=rolling_summary or "", messages=messages[-20:],
+                    transcript=transcript[-20:], workspace_path=session.workspace_path or "",
+                    agent_profile=session.agent_profile or "", model=session.model or "",
+                    prompt=task.prompt or "", output=task.output or "", task_status="completed",
+                    session_status=str(session.status.value) if hasattr(session.status, "value") else str(session.status),
+                    metadata=task.metadata or {},
+                )
+            except Exception:
+                pass
             _save_task_lesson(session, task, transcript, config)
             task.status = TaskStatus.completed
             task.output = f"Agent stopped after reaching the runtime limit of {max_runtime_minutes} minute(s). Check the timeline and diff for partial work."
@@ -1625,6 +1728,18 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
         try:
             raw = await asyncio.to_thread(chat_complete, config, decision_model, messages, max_tokens=min(ctx["reserve_output_tokens"], 4096))
         except Exception as exc:
+            try:
+                save_checkpoint(
+                    session_id=session.id, task_id=task.id, step=step,
+                    rolling_summary=rolling_summary or "", messages=messages[-20:],
+                    transcript=transcript[-20:], workspace_path=session.workspace_path or "",
+                    agent_profile=session.agent_profile or "", model=session.model or "",
+                    prompt=task.prompt or "", output="", task_status="failed",
+                    session_status=str(session.status.value) if hasattr(session.status, "value") else str(session.status),
+                    metadata=task.metadata or {},
+                )
+            except Exception:
+                pass
             _save_task_lesson(session, task, transcript, config)
             task.status = TaskStatus.failed
             task.error = f"Model call failed: {exc}"
@@ -1639,6 +1754,18 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             if empty_model_retries <= 2:
                 messages.append({"role": "user", "content": "Your previous response was empty. Based on the latest tool result or context, return either ONE final answer or ONE valid tool_call JSON object now."})
                 continue
+            try:
+                save_checkpoint(
+                    session_id=session.id, task_id=task.id, step=step,
+                    rolling_summary=rolling_summary or "", messages=messages[-20:],
+                    transcript=transcript[-20:], workspace_path=session.workspace_path or "",
+                    agent_profile=session.agent_profile or "", model=session.model or "",
+                    prompt=task.prompt or "", output="", task_status="failed",
+                    session_status=str(session.status.value) if hasattr(session.status, "value") else str(session.status),
+                    metadata=task.metadata or {},
+                )
+            except Exception:
+                pass
             _save_task_lesson(session, task, transcript, config)
             task.status = TaskStatus.failed
             task.error = "Model returned an empty response repeatedly."
@@ -1667,6 +1794,18 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                     ),
                 })
                 continue
+            try:
+                save_checkpoint(
+                    session_id=session.id, task_id=task.id, step=step,
+                    rolling_summary=rolling_summary or "", messages=messages[-20:],
+                    transcript=transcript[-20:], workspace_path=session.workspace_path or "",
+                    agent_profile=session.agent_profile or "", model=session.model or "",
+                    prompt=task.prompt or "", output=raw[:2000], task_status="completed",
+                    session_status=str(session.status.value) if hasattr(session.status, "value") else str(session.status),
+                    metadata=task.metadata or {},
+                )
+            except Exception:
+                pass
             _save_task_lesson(session, task, transcript, config)
             task.status = TaskStatus.completed
             task.output = raw
@@ -1713,6 +1852,18 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                     ),
                 })
                 continue
+            try:
+                save_checkpoint(
+                    session_id=session.id, task_id=task.id, step=step,
+                    rolling_summary=rolling_summary or "", messages=messages[-20:],
+                    transcript=transcript[-20:], workspace_path=session.workspace_path or "",
+                    agent_profile=session.agent_profile or "", model=session.model or "",
+                    prompt=task.prompt or "", output=final_message[:2000], task_status="completed",
+                    session_status=str(session.status.value) if hasattr(session.status, "value") else str(session.status),
+                    metadata=task.metadata or {},
+                )
+            except Exception:
+                pass
             _save_task_lesson(session, task, transcript, config)
             task.status = TaskStatus.completed
             task.output = final_message
@@ -1732,9 +1883,33 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             task.metadata["agent_transcript"] = transcript[-20:]
             store.add_task(task)
             if paused:
+                try:
+                    save_checkpoint(
+                        session_id=session.id, task_id=task.id, step=step,
+                        rolling_summary=rolling_summary or "", messages=messages[-20:],
+                        transcript=transcript[-20:], workspace_path=session.workspace_path or "",
+                        agent_profile=session.agent_profile or "", model=session.model or "",
+                        prompt=task.prompt or "", output="", task_status="approval_required",
+                        session_status=str(session.status.value) if hasattr(session.status, "value") else str(session.status),
+                        metadata=task.metadata or {},
+                    )
+                except Exception:
+                    pass
                 return task
             latest_task = store.get_task(task.id) or task
             if (latest_task.metadata or {}).get("stop_requested"):
+                try:
+                    save_checkpoint(
+                        session_id=session.id, task_id=task.id, step=step,
+                        rolling_summary=rolling_summary or "", messages=messages[-20:],
+                        transcript=transcript[-20:], workspace_path=session.workspace_path or "",
+                        agent_profile=session.agent_profile or "", model=session.model or "",
+                        prompt=task.prompt or "", output="Agent stopped by user.", task_status="completed",
+                        session_status=str(session.status.value) if hasattr(session.status, "value") else str(session.status),
+                        metadata=task.metadata or {},
+                    )
+                except Exception:
+                    pass
                 _save_task_lesson(session, task, transcript, config)
                 task = latest_task
                 task.status = TaskStatus.completed

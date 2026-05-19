@@ -199,6 +199,9 @@ MAIN_PI_DEV_PROFILE_TOOLS = [
     "remote_memory",
     "query_workspace_index",
     "lessons",
+    "resume_task",
+    "list_task_checkpoints",
+    "clear_checkpoints",
 ]
 MAIN_PI_DEV_SYSTEM_PROMPT = (
     "You are PAC's main pi.dev coding and operations agent. "
