@@ -1698,7 +1698,7 @@ function fillSelects() {
     const label = [k, ctx.customer_id || '', ctx.workspace_profile || ''].filter(Boolean).join(' · ');
     if (document.getElementById('sessionSourceContext')) opt(sessionSourceContext, k, label);
   });
-  Object.keys(config.models || {}).forEach(k => { if (modelAvailability(k).ok) { opt(modelOverride,k); if (document.getElementById('taskModel')) opt(taskModel,k); } if (document.getElementById('profileModel')) opt(profileModel,k, `${k}${modelAvailability(k).ok ? '' : ' (not available)'}`); if (document.getElementById('profilePlannerModel')) opt(profilePlannerModel,k, `${k}${modelAvailability(k).ok ? '' : ' (not available)'}`); });
+  Object.keys(config.models || {}).forEach(k => { if (modelAvailability(k).ok) { opt(modelOverride,k); if (document.getElementById('taskModel')) opt(taskModel,k); } if (document.getElementById('profileModel')) opt(profileModel,k, k); if (document.getElementById('profilePlannerModel')) opt(profilePlannerModel,k, k); });
   if (document.getElementById('modelProvider')) { modelProvider.innerHTML=''; Object.keys(config.providers || {}).forEach(k => opt(modelProvider,k)); }
   fillModelEndpointOptions();
   Object.keys(config.permission_profiles || {}).forEach(k => { opt(permissionOverride,k); if (document.getElementById('profilePermission')) opt(profilePermission,k); });
@@ -2540,10 +2540,14 @@ function renderProfiles() {
   el.innerHTML = '';
   for (const [name,p] of Object.entries(config.agent_profiles || {})) {
     const av = p.model ? modelAvailability(p.model) : {ok:false, reason:'no model'};
+    const configured = !!(p.model && config.models?.[p.model]);
     const valid = av.ok;
     const row = document.createElement('div');
     row.className = 'model-card clickable-row';
-    row.innerHTML = `<code>${name} ${valid ? '' : '[not selectable]'}\nmodel: ${p.model}\ncontext: ${p.context_profile || p.context_mode}\npermissions: ${p.permission_profile}\ntools: ${(p.tools||[]).join(', ')}${valid ? '' : `\nreason: ${av.reason}`}</code>`;
+    row.innerHTML = `<code>${escapeHtml(name)}\nmodel: ${escapeHtml(p.model || '-')}${p.planner_model ? `\nplanner: ${escapeHtml(p.planner_model)}` : ''}
+context: ${escapeHtml(p.context_profile || p.context_mode)}
+permissions: ${escapeHtml(p.permission_profile)}
+tools: ${escapeHtml((p.tools||[]).join(', '))}${!configured ? '\n[model not configured]' : (av.ok ? '' : '\n[runtime unavailable: ' + av.reason + ']')}</code>`;
     row.onclick = () => fillProfileForm(name);
     el.appendChild(row);
   }
