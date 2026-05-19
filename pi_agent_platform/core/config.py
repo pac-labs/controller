@@ -191,6 +191,7 @@ MAIN_PI_DEV_PROFILE_TOOLS = [
     "artifacts",
     "consult_model",
     "remote_memory",
+    "query_workspace_index",
 ]
 MAIN_PI_DEV_SYSTEM_PROMPT = (
     "You are PAC's main pi.dev coding and operations agent. "

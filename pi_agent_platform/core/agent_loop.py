@@ -30,6 +30,7 @@ from .runtime import command_policy, ensure_workspace
 from .store import store
 from .web_tools import fetch_page_text, search_web_text, as_json_text
 from .artifacts import write_artifact, list_artifacts
+from .workspace_index import build_workspace_index
 
 
 TOOL_HELP = """
@@ -361,6 +362,52 @@ def _controller_session_runtime_context(session: Session, config: AppConfig) -> 
         f"- available tools in this session: {', '.join(tool_names[:20]) or '-'}\n"
         "Use this snapshot as background context; verify details in files or runtime state before making precise claims."
     )
+
+
+def _format_workspace_index_briefing(idx: dict) -> str:
+    """Format the workspace index as a compact system-message briefing."""
+    if idx.get("error"):
+        return ""
+    lines = ["=== WORKSPACE PROJECT CONTEXT ==="]
+    pt = idx.get("project_type", "unknown")
+    projects = idx.get("projects", [])
+    if projects:
+        proj_types = ', '.join(p['type'] for p in projects)
+        lines.append(f"Project: {proj_types}")
+    else:
+        lines.append(f"Project type: {pt}")
+
+    tree = idx.get("tree", {})
+    fc = tree.get("file_count", 0)
+    tb = tree.get("total_bytes", 0)
+    if fc:
+        mb = tb / (1024 * 1024)
+        lines.append(f"Files: {fc} (~{mb:.1f} MB)")
+
+    syms = idx.get("python_symbols", [])
+    if syms:
+        top_files = sorted(syms, key=lambda s: len(s.get("defs", [])) + len(s.get("classes", [])), reverse=True)[:8]
+        lines.append(f"Python top files: {', '.join(s['file'] for s in top_files)}")
+
+    git = idx.get("git_summary", {})
+    if git.get("branch"):
+        lines.append(f"Git branch: {git['branch']}, {git.get('total_commits', 0)} commits")
+        recent = git.get("recent_commits", [])
+        if recent:
+            lines.append(f"Recent: {recent[0].get('message', '')} ({recent[0].get('hash', '')})")
+
+    key_files = idx.get("key_files", [])
+    if key_files:
+        roles = {}
+        for kf in key_files:
+            role = kf.get("role", "other")
+            if role not in roles:
+                roles[role] = []
+            roles[role].append(kf["path"])
+        lines.append(f"Key files: {', '.join(roles.get('documentation', [])[:2])}")
+
+    lines.append("=== END CONTEXT ===")
+    return "\n".join(lines)
 
 
 def _safe_path(session: Session, rel_path: str) -> Path:
@@ -1055,6 +1102,59 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
         store.add_event(Event(session_id=session.id, task_id=task.id, type="model_consult", message=f"Consulted {len(target_models)} model(s)", data={"models": target_models, "ok": sum(1 for item in results if item.get('ok')), "failed": sum(1 for item in results if not item.get('ok'))}))
         return as_json_text({"results": results}), False
 
+    if tool == "query_workspace_index":
+        # Let agent query the pre-built workspace index without re-scanning
+        idx = task.metadata.get("workspace_index") or {}
+        if not idx or idx.get("error"):
+            return "No workspace index available", False
+        query = str(inp.get("query") or "").lower()
+        result_type = str(inp.get("type") or "summary").lower()
+
+        if result_type == "symbols" or "symbol" in query or "function" in query or "class" in query:
+            syms = idx.get("python_symbols", [])
+            if not syms:
+                return json.dumps({"note": "no Python symbols indexed"}), False
+            return json.dumps({"type": "python_symbols", "count": len(syms), "files": syms[:50]}, indent=2)[:12000], False
+
+        if result_type == "tree" or "tree" in query or "structure" in query or "files" in query:
+            tree = idx.get("tree", {}).get("root", {})
+
+            def _truncate_tree(t: dict, depth: int = 4) -> dict:
+                if depth <= 0:
+                    return {"type": "dir", "truncated": True}
+                result = {}
+                for k, v in list(t.items())[:40]:
+                    if isinstance(v, dict) and v.get("type") == "dir":
+                        result[k] = {"type": "dir", "children": _truncate_tree(v.get("children", {}), depth - 1)}
+                    else:
+                        result[k] = v
+                return result
+
+            return json.dumps({"type": "file_tree", "tree": _truncate_tree(tree, depth=4)}, indent=2)[:12000], False
+
+        if result_type == "git" or "commit" in query or "history" in query or "change" in query:
+            git = idx.get("git_summary", {})
+            if git.get("error"):
+                return f"No git info: {git.get('error', 'unknown')}", False
+            return json.dumps({"type": "git_summary", **git}, indent=2)[:12000], False
+
+        if result_type == "key_files" or "config" in query or "readme" in query:
+            kf = idx.get("key_files", [])
+            return json.dumps({"type": "key_files", "count": len(kf), "files": kf}, indent=2)[:12000], False
+
+        # Default: return project summary
+        summary = {
+            "project_type": idx.get("project_type"),
+            "projects": idx.get("projects", []),
+            "file_count": idx.get("tree", {}).get("file_count", 0),
+            "total_bytes": idx.get("tree", {}).get("total_bytes", 0),
+            "python_files": len(idx.get("python_symbols", [])),
+            "git_branch": idx.get("git_summary", {}).get("branch"),
+            "git_total_commits": idx.get("git_summary", {}).get("total_commits", 0),
+            "recent_commit": idx.get("git_summary", {}).get("recent_commits", [{}])[0] if idx.get("git_summary", {}).get("recent_commits") else None,
+        }
+        return json.dumps({"type": "workspace_summary", **summary}, indent=2)[:8000], False
+
     if tool == "remote_memory":
         if "remote_memory" not in allowed and "pac_memory" not in allowed:
             return "DENIED: remote_memory tool is not enabled for this session", False
@@ -1171,6 +1271,13 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     controller_context = _controller_session_runtime_context(session, config)
     if controller_context:
         messages.append({"role": "system", "content": controller_context})
+    # Build workspace index on session start
+    workspace_index = build_workspace_index(Path(session.workspace_path), max_files=600)
+    task.metadata["workspace_index"] = workspace_index
+    index_briefing = _format_workspace_index_briefing(workspace_index)
+    if index_briefing:
+        messages.append({"role": "system", "content": index_briefing})
+    store.add_event(Event(session_id=session.id, task_id=task.id, type="workspace_indexed", message="Workspace indexed", data={"project_type": workspace_index.get("project_type"), "file_count": workspace_index.get("tree", {}).get("file_count", 0), "projects": [p.get("type") for p in workspace_index.get("projects", [])]}))
     messages.extend(_session_history_messages(session, current_task_id=task.id, max_messages=12))
     messages.append({"role": "user", "content": "Current user request (answer this now; earlier conversation is context only):\n" + task.prompt})
 
