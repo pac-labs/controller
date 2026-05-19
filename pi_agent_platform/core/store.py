@@ -7,6 +7,7 @@ from threading import Lock
 from typing import Iterable
 
 from .models import AccessRequest, Event, Group, Session, Task, Runner, RunnerJob, RunnerJobStatus, User, UserWorkspace, now_utc
+from .config import ProxyRoute
 from .platform_home import pacp_path
 
 
@@ -42,6 +43,7 @@ class SQLiteStore:
             conn.execute('create table if not exists user_workspaces (id text primary key, owner_id text not null, owner_username text not null, name text not null, payload text not null, updated_at text not null)')
             conn.execute('create index if not exists idx_user_workspaces_owner on user_workspaces(owner_id, updated_at)')
             conn.execute('create index if not exists idx_user_workspaces_owner_name on user_workspaces(owner_id, name)')
+            conn.execute('create table if not exists proxy_routes (id text primary key, payload text not null, updated_at text not null)')
 
     def add_session(self, session: Session) -> Session:
         session.touch()
@@ -339,6 +341,29 @@ class SQLiteStore:
     def delete_user_workspace(self, workspace_id: str) -> bool:
         with self._lock, self._connect() as conn:
             cur = conn.execute('delete from user_workspaces where id = ?', (workspace_id,))
+        return cur.rowcount > 0
+
+    def list_proxy_routes(self) -> list[ProxyRoute]:
+        with self._connect() as conn:
+            rows = conn.execute('select payload from proxy_routes order by id asc').fetchall()
+        return [ProxyRoute.model_validate_json(r['payload']) for r in rows]
+
+    def get_proxy_route(self, route_id: str) -> ProxyRoute | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from proxy_routes where id = ?', (route_id,)).fetchone()
+        return ProxyRoute.model_validate_json(row['payload']) if row else None
+
+    def upsert_proxy_route(self, route: ProxyRoute, route_id: str) -> None:
+        with self._lock, self._connect() as conn:
+            now = now_utc().isoformat()
+            conn.execute(
+                'insert or replace into proxy_routes(id, payload, updated_at) values (?, ?, ?)',
+                (route_id, route.model_dump_json(), now),
+            )
+
+    def delete_proxy_route(self, route_id: str) -> bool:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute('delete from proxy_routes where id = ?', (route_id,))
         return cur.rowcount > 0
 
 

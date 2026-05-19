@@ -238,7 +238,7 @@
         <section class="card split-main">
           <div class="section-heading">
             <div><h2>Models</h2><p class="muted">Configured models, live provider inventory, and adaptation guidance.</p></div>
-            <div class="button-row"><button id="showUnconfigModels" class="ghost-button">Browse providers</button><button id="openMarketplaceModal" class="ghost-button">Marketplace</button><button id="openModelModal">Add model</button></div>
+            <div class="button-row"><button id="showUnconfigModels" class="ghost-button">Browse providers</button><button id="openMarketplaceModal" class="ghost-button">Marketplace</button><button id="syncModelProviderBtn" class="ghost-button">Sync from provider</button><button id="openModelModal">Add model</button></div>
           </div>
           <div id="modelFormResult" class="inline-result" hidden></div>
           <div id="models"></div>
@@ -621,6 +621,7 @@
         <button class="settings-sub-btn" data-settings-panel="endpoint">Endpoint</button>
         <button class="settings-sub-btn" data-settings-panel="service">Service</button>
         <button class="settings-sub-btn" data-settings-panel="tls">TLS / CA</button>
+        <button class="settings-sub-btn" data-settings-panel="proxy-routes">Proxy Routes</button>
         <button class="settings-sub-btn" data-settings-panel="config">Config</button>
       </div>
 
@@ -874,6 +875,28 @@
           </div>
         </div>
       </div>
+    <section id="proxy-routes-panel" class="settings-panel" style="display:none">
+      <div class="settings-panel-inner settings-panel-single">
+        <div class="settings-main">
+          <section class="card wide setting-cube">
+            <h2>Proxy Routes</h2>
+            <p class="muted">Expose services behind PAC as authenticated reverse proxy endpoints.</p>
+            <div id="proxyRoutesList" class="provider-grid"></div>
+            <div id="proxyRouteFormResult" class="inline-result" hidden></div>
+            <details id="proxyRouteFormDetails" class="card inset-panel">
+              <summary>Add / Edit Proxy Route</summary>
+              <div style="padding:.75rem; display:grid; gap:.5rem; grid-template-columns: 1fr 1fr;">
+                <div><label class="small-text">Name</label><input id="proxyRouteName" class="source-input" placeholder="my-service" /></div>
+                <div><label class="small-text">Target URL</label><input id="proxyRouteTarget" class="source-input" placeholder="http://localhost:9000" /></div>
+                <div style="grid-column: 1/-1;"><label class="small-text">Description</label><input id="proxyRouteDescription" class="source-input" placeholder="Optional description" /></div>
+                <div style="grid-column: 1/-1;"><label class="small-text">Allowed Profiles (comma-separated, empty = all)</label><input id="proxyRouteAllowed" class="source-input" placeholder="ask-first" /></div>
+                <div class="button-row" style="grid-column: 1/-1; margin-top:.5rem"><button id="saveProxyRoute" class="primary-button">Save</button><button id="cancelProxyRoute" class="ghost-button">Cancel</button></div>
+              </div>
+            </details>
+          </section>
+        </div>
+      </div>
+    </section>
     </section>
   </main>
   <aside id="eventsRail" class="events-rail" aria-label="Events" hidden>
@@ -908,6 +931,15 @@
     </section>
   </div>
   </div>
+  <!-- Model Provider Sync Modal -->
+  <div id="modelSyncModal" class="modal-backdrop" hidden>
+    <section class="modal-card wide-modal" role="dialog" aria-modal="true" aria-labelledby="modelSyncModalTitle">
+      <div class="section-heading"><div><h2 id="modelSyncModalTitle">Sync from Provider</h2><p class="muted">Detected context window mismatches between stored config and live provider values.</p></div><button id="closeModelSyncModal" class="ghost-button">Close</button></div>
+      <div id="modelSyncModalBody" class="modal-scroll-output"></div>
+      <div class="button-row" style="margin-top:.75rem"><button id="applyAllModelSync" class="primary-button">Apply All</button><button id="closeModelSyncModal2" class="ghost-button">Cancel</button></div>
+    </section>
+  </div>
+
   <footer class="app-footer"><img src="/ui/assets/pac-icon-green-32.png" alt="" /> <span>PAC Control • Orchestrate • Execute</span><span id="buildStamp" class="app-version" title="Backend and UI build information">backend v... • ui ...</span></footer>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="/ui/app.js"></script>

@@ -129,6 +129,12 @@ class ContextProfile(BaseModel):
     batch_overlap_tokens: int = 80
 
 
+class ProxyRoute(BaseModel):
+    target: str  # e.g. "http://localhost:9000"
+    allowed: list[str] = Field(default_factory=list)  # permission profile names, empty = all allowed
+    description: str = ""
+
+
 class ToolConfig(BaseModel):
     enabled: bool = True
     description: str | None = None
@@ -296,6 +302,7 @@ class AppConfig(BaseModel):
     context_profiles: dict[str, ContextProfile] = Field(default_factory=dict)
     tools: dict[str, ToolConfig] = Field(default_factory=dict)
     tool_packages: dict[str, ToolPackageConfig] = Field(default_factory=dict)
+    proxy_routes: dict[str, ProxyRoute] = Field(default_factory=dict)
     plugins: dict[str, PluginConfig] = Field(default_factory=dict)
     permission_profiles: dict[str, PermissionRule] = Field(default_factory=dict)
     agent_profiles: dict[str, AgentProfile] = Field(default_factory=dict)

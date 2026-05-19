@@ -2704,6 +2704,244 @@ function openModelModal(name='') {
 }
 function closeModelModal() { const modal = document.getElementById('modelModal'); if (modal) modal.hidden = true; }
 
+// ---- Model Sync from Provider Modal ----
+let _modelSyncData = [];
+
+async function openModelSyncModal() {
+  const modal = document.getElementById('modelSyncModal');
+  const body = document.getElementById('modelSyncModalBody');
+  if (!modal || !body) return;
+  body.innerHTML = '<div class="muted small-text">Checking provider model info...</div>';
+  modal.hidden = false;
+  try {
+    const result = await api('/v1/models/provider-status');
+    _modelSyncData = result.models || [];
+    renderModelSyncModal();
+  } catch(e) {
+    body.innerHTML = '<div class="muted small-text">Failed to load: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+function renderModelSyncModal() {
+  const body = document.getElementById('modelSyncModalBody');
+  const applyAllBtn = document.getElementById('applyAllModelSync');
+  if (!body) return;
+  const mismatches = _modelSyncData.filter(m => m.mismatch && (m.mismatch.context_window || m.mismatch.max_output_tokens));
+  if (!mismatches.length) {
+    body.innerHTML = '<div class="ok-text">All models are in sync with their providers.</div>';
+    if (applyAllBtn) applyAllBtn.style.display = 'none';
+    return;
+  }
+  if (applyAllBtn) applyAllBtn.style.display = '';
+  body.innerHTML = mismatches.map(m => {
+    const suggested = m.suggested || {};
+    const ctxMismatch = m.mismatch?.context_window;
+    const outMismatch = m.mismatch?.max_output_tokens;
+    return `<div class="pack-summary" style="margin-bottom:.75rem">
+      <div style="display:flex; justify-content:space-between; align-items:center">
+        <b>${escapeHtml(m.name)}</b>
+        <button class="ghost-button mini-button" onclick="applyModelSync('${escapeHtml(m.name)}')">Apply Fix</button>
+      </div>
+      <div class="small-text muted">Provider: ${escapeHtml(m.provider || '-')}</div>
+      ${ctxMismatch ? `<div><span class="warn-text">Context window:</span> stored ${m.stored?.context_window}, provider ${m.provider_info?.context_length || '?'} → suggest <b>${suggested.context_window || '-'}</b></div>` : ''}
+      ${outMismatch ? `<div><span class="warn-text">Max output:</span> stored ${m.stored?.max_output_tokens}, provider ${m.provider_info?.context_length ? Math.floor(m.provider_info.context_length/4) : '?'} → suggest <b>${suggested.max_output_tokens || '-'}</b></div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function applyModelSync(modelName) {
+  const m = _modelSyncData.find(x => x.name === modelName);
+  if (!m) return;
+  const suggested = m.suggested || {};
+  try {
+    await api(`/v1/models/${modelName}`, {method:'PATCH', body: JSON.stringify({
+      context_window: suggested.context_window,
+      max_output_tokens: suggested.max_output_tokens
+    })});
+    _modelSyncData = _modelSyncData.filter(x => x.name !== modelName);
+    renderModelSyncModal();
+    renderModels();
+  } catch(e) {
+    alert('Failed to update ' + modelName + ': ' + e.message);
+  }
+}
+
+async function applyAllModelSync() {
+  const mismatches = _modelSyncData.filter(m => m.mismatch && (m.mismatch.context_window || m.mismatch.max_output_tokens));
+  for (const m of mismatches) {
+    await applyModelSync(m.name);
+  }
+  closeModelSyncModal();
+  renderModels();
+}
+
+function closeModelSyncModal() {
+  const modal = document.getElementById('modelSyncModal');
+  if (modal) modal.hidden = true;
+  _modelSyncData = [];
+}
+
+// Add warning badge to model cards with mismatch
+function modelSyncBadge(name) {
+  const m = _modelSyncData.find(x => x.name === name);
+  if (!m || !m.mismatch) return '';
+  const parts = [];
+  if (m.mismatch.context_window) parts.push(`ctx: ${m.stored?.context_window}→${m.provider_info?.context_length}`);
+  if (m.mismatch.max_output_tokens) parts.push(`out: ${m.stored?.max_output_tokens}→${m.provider_info?.context_length ? Math.floor(m.provider_info.context_length/4) : '?'}`);
+  if (!parts.length) return '';
+  return ` <span class="warn-pill" title="Mismatch: ${parts.join(', ')}">⚠️</span>`;
+}
+
+
+// ---- Proxy Routes UI ----
+let _proxyRoutesCache = [];
+
+async function loadProxyRoutes() {
+  try {
+    const routes = await api('/v1/proxy-routes');
+    _proxyRoutesCache = Array.isArray(routes) ? routes : [];
+    renderProxyRoutes();
+  } catch(e) {
+    console.error('Failed to load proxy routes:', e);
+  }
+}
+
+function renderProxyRoutes() {
+  const el = document.getElementById('proxyRoutesList');
+  if (!el) return;
+  if (!_proxyRoutesCache.length) {
+    el.innerHTML = '<div class="muted small-text">No proxy routes configured.</div>';
+    return;
+  }
+  el.innerHTML = _proxyRoutesCache.map(route => {
+    const allowed = (route.allowed || []).join(', ') || '(all profiles)';
+    return `<div class="provider-card model-overview-card">
+      <div class="provider-card-head">
+        <div class="provider-title-block"><h3>${escapeHtml(route.name)}</h3></div>
+      </div>
+      <div class="provider-health-strip small-text">
+        <span>target: <code>${escapeHtml(route.target)}</code></span>
+      </div>
+      <div class="model-card-subline">${escapeHtml(route.description || '')}</div>
+      <div class="small-text muted">allowed: ${escapeHtml(allowed)}</div>
+      <div class="button-row" style="margin-top:.5rem">
+        <button class="ghost-button mini-button" onclick="testProxyRoute('${escapeHtml(route.name)}')">Test</button>
+        <button class="ghost-button mini-button" onclick="editProxyRoute('${escapeHtml(route.name)}')">Edit</button>
+        <button class="ghost-button mini-button danger-button" onclick="deleteProxyRoute('${escapeHtml(route.name)}')">Delete</button>
+      </div>
+      <div id="proxyRouteTestResult_${escapeHtml(route.name)}" class="inline-result" hidden></div>
+    </div>`;
+  }).join('');
+}
+
+function openProxyRouteForm(route) {
+  const details = document.getElementById('proxyRouteFormDetails');
+  const nameIn = document.getElementById('proxyRouteName');
+  const targetIn = document.getElementById('proxyRouteTarget');
+  const descIn = document.getElementById('proxyRouteDescription');
+  const allowedIn = document.getElementById('proxyRouteAllowed');
+  if (!details || !nameIn) return;
+  if (route) {
+    nameIn.value = route.name || '';
+    nameIn.disabled = true;
+    targetIn.value = route.target || '';
+    descIn.value = route.description || '';
+    allowedIn.value = (route.allowed || []).join(', ');
+  } else {
+    nameIn.value = '';
+    nameIn.disabled = false;
+    targetIn.value = '';
+    descIn.value = '';
+    allowedIn.value = '';
+  }
+  details.open = true;
+}
+
+async function testProxyRoute(name) {
+  const resultEl = document.getElementById('proxyRouteTestResult_' + name);
+  if (!resultEl) return;
+  resultEl.hidden = false;
+  resultEl.className = 'inline-result';
+  resultEl.textContent = 'Testing...';
+  try {
+    const r = await api('/v1/proxy-routes/' + name + '/test', {method:'POST'});
+    if (r.reachable) {
+      resultEl.className = 'inline-result ok-text';
+      resultEl.textContent = 'Reachable (status ' + r.status + ')';
+    } else {
+      resultEl.className = 'inline-result warn-text';
+      resultEl.textContent = 'Unreachable: ' + (r.error || 'unknown');
+    }
+  } catch(e) {
+    resultEl.className = 'inline-result warn-text';
+    resultEl.textContent = 'Error: ' + e.message;
+  }
+  setTimeout(() => { if (resultEl) resultEl.hidden = true; }, 5000);
+}
+
+async function deleteProxyRoute(name) {
+  if (!confirm('Delete proxy route ' + name + '?')) return;
+  try {
+    await api('/v1/proxy-routes/' + name, {method:'DELETE'});
+    await loadProxyRoutes();
+  } catch(e) {
+    alert('Delete failed: ' + e.message);
+  }
+}
+
+function editProxyRoute(name) {
+  const route = _proxyRoutesCache.find(r => r.name === name);
+  if (route) openProxyRouteForm(route);
+}
+
+async function saveProxyRoute() {
+  const name = document.getElementById('proxyRouteName')?.value?.trim();
+  const target = document.getElementById('proxyRouteTarget')?.value?.trim();
+  const description = document.getElementById('proxyRouteDescription')?.value?.trim();
+  const allowed = document.getElementById('proxyRouteAllowed')?.value?.split(',').map(s => s.trim()).filter(Boolean);
+  if (!name || !target) {
+    showInline('proxyRouteFormResult', 'Name and target are required', 'warn');
+    return;
+  }
+  try {
+    const isUpdate = _proxyRoutesCache.some(r => r.name === name);
+    if (isUpdate) {
+      await api('/v1/proxy-routes/' + name, {method:'PUT', body: JSON.stringify({target, description, allowed})});
+      showInline('proxyRouteFormResult', 'Route updated', 'ok');
+    } else {
+      await api('/v1/proxy-routes', {method:'POST', body: JSON.stringify({name, target, description, allowed})});
+      showInline('proxyRouteFormResult', 'Route created', 'ok');
+    }
+    document.getElementById('proxyRouteFormDetails').open = false;
+    await loadProxyRoutes();
+  } catch(e) {
+    showInline('proxyRouteFormResult', 'Error: ' + e.message, 'warn');
+  }
+}
+
+function cancelProxyRoute() {
+  const details = document.getElementById('proxyRouteFormDetails');
+  if (details) details.open = false;
+}
+
+// Wire up proxy route buttons
+const addProxyRouteBtn = document.getElementById('addProxyRouteBtn');
+if (addProxyRouteBtn) addProxyRouteBtn.onclick = () => openProxyRouteForm(null);
+const saveProxyRouteBtn = document.getElementById('saveProxyRoute');
+if (saveProxyRouteBtn) saveProxyRouteBtn.onclick = saveProxyRoute;
+const cancelProxyRouteBtn = document.getElementById('cancelProxyRoute');
+if (cancelProxyRouteBtn) cancelProxyRouteBtn.onclick = cancelProxyRoute;
+
+// Modal close button bindings
+const closeModelSyncModalBtn = document.getElementById('closeModelSyncModal');
+if (closeModelSyncModalBtn) closeModelSyncModalBtn.onclick = closeModelSyncModal;
+const closeModelSyncModal2Btn = document.getElementById('closeModelSyncModal2');
+if (closeModelSyncModal2Btn) closeModelSyncModal2Btn.onclick = closeModelSyncModal;
+const applyAllModelSyncBtn = document.getElementById('applyAllModelSync');
+if (applyAllModelSyncBtn) applyAllModelSyncBtn.onclick = applyAllModelSync;
+
+
+
 function fillProviderForm(name) {
   const p = config.providers?.[name]; if (!p) return;
   if (document.getElementById('providerPreset')) providerPreset.value='';
@@ -6582,6 +6820,12 @@ const closeProviderBtn = document.getElementById('closeProviderModal');
 if (closeProviderBtn) closeProviderBtn.onclick = closeProviderModal;
 const openModelBtn = document.getElementById('openModelModal');
 if (openModelBtn) openModelBtn.onclick = () => openModelModal();
+
+// Sync from Provider button
+const syncModelProviderBtn = document.getElementById('syncModelProviderBtn');
+if (syncModelProviderBtn) syncModelProviderBtn.onclick = () => openModelSyncModal();
+
+
 const closeModelBtn = document.getElementById('closeModelModal');
 if (closeModelBtn) closeModelBtn.onclick = closeModelModal;
 const showUnconfigModelsBtn = document.getElementById('showUnconfigModels');

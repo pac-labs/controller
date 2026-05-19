@@ -2776,6 +2776,126 @@ app.mount('/ui', StaticFiles(directory=Path(__file__).resolve().parents[1] / 'we
 
 
 
+
+# ---- Proxy Routes ----------------------------------------------------------------
+
+
+@app.get('/v1/proxy-routes')
+def list_proxy_routes(_auth: None = Depends(require_auth)) -> list[dict[str, Any]]:
+    return [{'name': name, **route.model_dump()} for name, route in config.proxy_routes.items()]
+
+
+@app.post('/v1/proxy-routes')
+def create_proxy_route(payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    global config
+    name = str(payload.get('name') or '').strip()
+    if not name:
+        raise HTTPException(status_code=400, detail='name is required')
+    if name in config.proxy_routes:
+        raise HTTPException(status_code=409, detail='Route already exists')
+    route = ProxyRoute(
+        target=str(payload.get('target') or '').strip(),
+        allowed=[str(a).strip() for a in (payload.get('allowed') or []) if str(a).strip()],
+        description=str(payload.get('description') or '').strip(),
+    )
+    config.proxy_routes[name] = route
+    save_config(config)
+    store.add_event(Event(session_id='system', type='proxy_route_created', message=f'Proxy route created: {name}', data={'name': name, 'target': route.target}))
+    return {'ok': True, 'name': name, **route.model_dump()}
+
+
+@app.get('/v1/proxy-routes/{route_name}')
+def get_proxy_route(route_name: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    route = config.proxy_routes.get(route_name)
+    if not route:
+        raise HTTPException(status_code=404, detail='Route not found')
+    return {'name': route_name, **route.model_dump()}
+
+
+@app.put('/v1/proxy-routes/{route_name}')
+def update_proxy_route(route_name: str, payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    global config
+    if route_name not in config.proxy_routes:
+        raise HTTPException(status_code=404, detail='Route not found')
+    route = config.proxy_routes[route_name]
+    if 'target' in payload:
+        route.target = str(payload['target']).strip()
+    if 'allowed' in payload:
+        route.allowed = [str(a).strip() for a in payload['allowed'] if str(a).strip()]
+    if 'description' in payload:
+        route.description = str(payload['description']).strip()
+    save_config(config)
+    store.add_event(Event(session_id='system', type='proxy_route_updated', message=f'Proxy route updated: {route_name}', data={'name': route_name}))
+    return {'ok': True, 'name': route_name, **route.model_dump()}
+
+
+@app.delete('/v1/proxy-routes/{route_name}')
+def delete_proxy_route(route_name: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    global config
+    if route_name not in config.proxy_routes:
+        raise HTTPException(status_code=404, detail='Route not found')
+    del config.proxy_routes[route_name]
+    save_config(config)
+    store.add_event(Event(session_id='system', type='proxy_route_deleted', message=f'Proxy route deleted: {route_name}'))
+    return {'ok': True, 'deleted': route_name}
+
+
+@app.post('/v1/proxy-routes/{route_name}/test')
+def test_proxy_route(route_name: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    route = config.proxy_routes.get(route_name)
+    if not route:
+        raise HTTPException(status_code=404, detail='Route not found')
+    target_url = route.target.rstrip('/') + '/'
+    headers = {"User-Agent": "PAC-ProxyRoute/1.0"}
+    try:
+        req = urllib.request.Request(target_url, headers=headers, method='GET')
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            body = resp.read().decode(errors='replace')[:2000]
+            return {'ok': True, 'route': route_name, 'target': route.target, 'status': resp.status, 'reachable': True, 'body': body[:500]}
+    except urllib.error.HTTPError as exc:
+        return {'ok': True, 'route': route_name, 'target': route.target, 'status': exc.code, 'reachable': True, 'error': str(exc)}
+    except Exception as exc:
+        return {'ok': True, 'route': route_name, 'target': route.target, 'reachable': False, 'error': str(exc)}
+
+
+@app.api_route('/v1/proxy/{route_name}/{path:path}', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'])
+def reverse_proxy(route_name: str, path: str, request: Request, _auth: None = Depends(require_auth)) -> Response:
+    route = config.proxy_routes.get(route_name)
+    if not route:
+        raise HTTPException(status_code=404, detail='Route not found')
+    # Check permission_profile
+    session_profile = getattr(selected_session(request) if False else None, 'permission_profile', None)
+    # Actually let's look up the session token's permission profile
+    auth_header = request.headers.get('authorization', '')
+    token = _bearer_token(auth_header)
+    session_profile = None
+    if token:
+        user = store.get_user_by_token(token)
+        if user:
+            session_profile = user.metadata.get('permission_profile') if user.metadata else None
+    # If route has allowed list and session_profile not in it, deny
+    if route.allowed and session_profile and session_profile not in route.allowed:
+        raise HTTPException(status_code=403, detail='Session permission profile not allowed for this route')
+    # Build target URL
+    target_url = route.target.rstrip('/') + '/' + path
+    query = request.url.query
+    if query:
+        target_url = target_url + '?' + query
+    # Forward headers
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in ('host', 'authorization')}
+    # Read body
+    body = request.body()
+    try:
+        req = urllib.request.Request(target_url, data=body, headers=headers, method=request.method)
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            content = resp.read()
+            return Response(content=content, status_code=resp.status, headers=dict(resp.headers))
+    except urllib.error.HTTPError as exc:
+        return Response(content=exc.read(), status_code=exc.code)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f'Proxy error: {exc}')
+
+
 @app.put('/v1/config')
 def update_config(payload: ConfigUpdateRequest, _auth: None = Depends(require_auth)) -> dict[str, Any]:
     global config
@@ -3663,6 +3783,42 @@ def get_model_card(model_name: str, context_profile: str | None = None, _auth: N
 @app.post('/v1/models/{model_name}/test')
 def model_health(model_name: str, _auth: None = Depends(require_auth)) -> dict:
     return test_model(config, model_name)
+
+
+@app.get('/v1/models/provider-status')
+def model_provider_status(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    from pi_agent_platform.core.providers import sync_model_context
+    results = []
+    for name in config.models:
+        result = sync_model_context(config, name)
+        if result.get('ok') is False and 'error' in result:
+            results.append({
+                'name': name,
+                'error': result.get('error'),
+                'provider': config.models[name].provider,
+                'stored': {'context_window': config.models[name].context_window, 'max_output_tokens': config.models[name].max_output_tokens},
+                'provider_info': {},
+                'mismatch': {'context_window': False, 'max_output_tokens': False},
+                'suggested': {},
+            })
+        else:
+            results.append(result)
+    return {'models': results}
+
+
+@app.patch('/v1/models/{model_name}')
+def model_update_limits(model_name: str, payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict:
+    global config
+    if model_name not in config.models:
+        raise HTTPException(status_code=404, detail='Model not found')
+    from pi_agent_platform.core.providers import update_model_limits
+    result = update_model_limits(config, model_name,
+        context_window=payload.get('context_window'),
+        max_output_tokens=payload.get('max_output_tokens'))
+    if result.get('ok'):
+        save_config(config)
+        store.add_event(Event(session_id='system', type='model_limits_updated', message=f'Model limits updated: {model_name}', data={'model': model_name, 'context_window': result.get('context_window'), 'max_output_tokens': result.get('max_output_tokens')}))
+    return result
 
 
 @app.get('/v1/models/{model_name}/lmstudio/inspect')

@@ -433,6 +433,57 @@ def test_model(config: AppConfig, model_name: str) -> dict[str, Any]:
     return {"ok": False, "type": provider.type, "error": "model test placeholder for this provider type"}
 
 
+def sync_model_context(config: AppConfig, model_name: str) -> dict[str, Any]:
+    """Query the provider's /v1/models for actual context_length and update model config."""
+    if model_name not in config.models:
+        return {"ok": False, "error": "unknown model"}
+    model, provider = _provider_for_model(config, model_name)
+    if not provider:
+        return {"ok": False, "error": f"unknown provider: {model.provider}"}
+    if not provider.enabled:
+        return {"ok": False, "error": "provider is not enabled", "model": model_name}
+    base = normalize_provider_base_url(provider, model)
+    if not base:
+        return {"ok": False, "error": "provider has no base_url", "model": model_name}
+    ok, body = _json_request(f"{base}/models", provider)
+    if not ok:
+        return {"ok": False, "error": f"unreachable: {body.get('error', body)}", "model": model_name}
+    models = _parse_model_list(provider.type, body)
+    model_id = model.model or model_name
+    found = next((m for m in models if m.get("id") == model_id or m.get("name") == model_id), None)
+    if not found:
+        return {"ok": False, "error": f"model {model_id} not in provider list", "model": model_name, "provider_models": [m.get("id") for m in models]}
+    raw = found.get("raw") or {}
+    context_length = raw.get("context_length") or raw.get("max_model_len")
+    suggested_context = int(context_length) if context_length else None
+    suggested_output = int(context_length // 4) if context_length else None
+    return {
+        "ok": True,
+        "model": model_name,
+        "provider": model.provider,
+        "stored": {"context_window": model.context_window, "max_output_tokens": model.max_output_tokens},
+        "provider_info": {"context_length": context_length, "max_model_len": raw.get("max_model_len")},
+        "suggested": {"context_window": suggested_context, "max_output_tokens": suggested_output},
+        "mismatch": {
+            "context_window": suggested_context is not None and suggested_context != model.context_window,
+            "max_output_tokens": suggested_output is not None and suggested_output != model.max_output_tokens,
+        },
+    }
+
+
+def update_model_limits(config: AppConfig, model_name: str, context_window: int | None = None, max_output_tokens: int | None = None) -> dict[str, Any]:
+    """Update context_window and/or max_output_tokens for a model."""
+    if model_name not in config.models:
+        return {"ok": False, "error": "unknown model"}
+    model = config.models[model_name]
+    if context_window is not None:
+        model.context_window = context_window
+    if max_output_tokens is not None:
+        model.max_output_tokens = max_output_tokens
+    return {"ok": True, "model": model_name, "context_window": model.context_window, "max_output_tokens": model.max_output_tokens}
+
+
+
 def chat_complete(config: AppConfig, model_name: str, messages: list[dict[str, str]], max_tokens: int | None = None) -> str:
     """Small synchronous chat abstraction for Stage 8 agent loop.
 
