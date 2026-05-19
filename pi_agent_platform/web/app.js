@@ -5510,6 +5510,31 @@ function renderEndpointConnectionSettings() {
   const mdnsInput = document.getElementById('endpointMdnsEnabled');
   if (urlInput) urlInput.value = config.server?.public_url || '';
   if (mdnsInput) mdnsInput.checked = config.mdns?.enabled !== false;
+
+  // Load letsencrypt status
+  fetch('/v1/server/letsencrypt/status').then(r => r.json()).then(data => {
+    const emailEl = document.getElementById('leEmail');
+    if (emailEl) emailEl.value = data.email || '';
+    const domainEl = document.getElementById('leDomain');
+    if (domainEl && !domainEl.value) domainEl.value = data.domain || 'pac.thebigtree.life';
+    const zoneEl = document.getElementById('leZoneId');
+    if (zoneEl && !zoneEl.value) zoneEl.value = '';
+    const statusEl = document.getElementById('leStatus');
+    if (statusEl) {
+      if (data.cert_exists) {
+        const info = data.cert_info || {};
+        statusEl.textContent = `Certificate present for ${data.domain || 'unknown'}. Valid until ${info.not_after || '?'}`;
+      } else if (data.enabled) {
+        statusEl.textContent = 'LE enabled but no cert file found.';
+      } else {
+        statusEl.textContent = 'No LE certificate installed. Enter your Cloudflare details and click Obtain.';
+      }
+    }
+    const cfTestEl = document.getElementById('leCloudflareTest');
+    if (cfTestEl) {
+      cfTestEl.textContent = data.cloudflare_configured ? 'Cloudflare: configured' : 'Cloudflare: not configured yet';
+    }
+  }).catch(() => {});
 }
 
 async function saveEndpointConnectionSettings() {
@@ -7517,3 +7542,58 @@ if (createGroupBtn) createGroupBtn.onclick = async () => {
     if (result) result.textContent = `Failed: ${error.message || String(error)}`;
   }
 };
+
+// --- Let's Encrypt DNS-01 handlers ---
+if (document.getElementById('leEnableBtn')) {
+    document.getElementById('leEnableBtn').onclick = async () => {
+        const email = document.getElementById('leEmail')?.value?.trim();
+        const domain = document.getElementById('leDomain')?.value?.trim();
+        const apiToken = document.getElementById('leApiToken')?.value?.trim();
+        const zoneId = document.getElementById('leZoneId')?.value?.trim();
+        const staging = !!document.getElementById('leStaging')?.checked;
+        const statusEl = document.getElementById('leStatus');
+
+        if (!email || !domain || !apiToken || !zoneId) {
+            statusEl.textContent = 'All fields are required'; return;
+        }
+
+        statusEl.textContent = 'Requesting certificate via Cloudflare DNS-01... (this can take 2-3 minutes)';
+
+        try {
+            const result = await api('/v1/server/letsencrypt/enable', {
+                method: 'POST',
+                body: JSON.stringify({email, domain, cloudflare_api_token: apiToken, cloudflare_zone_id: zoneId, staging, auto_enable: true})
+            });
+            statusEl.textContent = result.ok ? `Success! Certificate installed for ${domain}` : `Failed: ${result.error}`;
+            if (result.ok && result.cert_file) {
+                await api('/v1/server/connection', {method:'POST', body: JSON.stringify({public_url: `https://${domain}`})}).catch(()=>{});
+            }
+        } catch(e) {
+            statusEl.textContent = 'Error: ' + e.message;
+        }
+    };
+}
+
+if (document.getElementById('leDisableBtn')) {
+    document.getElementById('leDisableBtn').onclick = async () => {
+        const result = await api('/v1/server/letsencrypt/disable', {method:'POST'});
+        document.getElementById('leStatus').textContent = result.message || 'Done';
+    };
+}
+
+if (document.getElementById('leTestCfBtn')) {
+    document.getElementById('leTestCfBtn').onclick = async () => {
+        const apiToken = document.getElementById('leApiToken')?.value?.trim();
+        const zoneId = document.getElementById('leZoneId')?.value?.trim();
+        if (!apiToken || !zoneId) {
+            document.getElementById('leCloudflareTest').textContent = 'Enter API token and Zone ID first'; return;
+        }
+        document.getElementById('leCloudflareTest').textContent = 'Testing...';
+        try {
+            const result = await api(`/v1/server/letsencrypt/test-cloudflare?api_token=${encodeURIComponent(apiToken)}&zone_id=${encodeURIComponent(zoneId)}`, {method:'POST'});
+            document.getElementById('leCloudflareTest').textContent = result.ok ? `✓ Cloudflare OK — zone: ${result.zone}` : `✗ Cloudflare error: ${result.error}`;
+        } catch(e) {
+            document.getElementById('leCloudflareTest').textContent = 'Error: ' + e.message;
+        }
+    };
+}

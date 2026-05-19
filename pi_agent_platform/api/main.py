@@ -49,6 +49,13 @@ from pi_agent_platform.core.source_variables import source_variable_store
 from pi_agent_platform.core.source_library import ensure_source_library, list_tree as source_list_tree, read_text as source_read_text, write_text as source_write_text, make_archive as source_make_archive, build_container as source_build_container, build_binary as source_build_binary, list_binary_artifacts as source_list_binary_artifacts, binary_artifact_path as source_binary_artifact_path, delete_binary_artifact as source_delete_binary_artifact, prune_binary_artifacts as source_prune_binary_artifacts, inspect_feature_pack as source_inspect_feature_pack, apply_feature_pack as source_apply_feature_pack, create_entry as source_create_entry, rename_entry as source_rename_entry, delete_entry as source_delete_entry, fetch_online_package_updates as source_fetch_online_package_updates
 from pi_agent_platform.core.update_preservation import TRACKED_ROOTS, build_backup_archive, compare_trees, generate_local_diff, list_generated_diffs
 from pi_agent_platform.updates import fetch_latest_release_metadata, download_release_package
+from pi_agent_platform.core.letsencrypt_cert import (
+    issue_letsencrypt_certificate,
+    get_letsencrypt_status,
+    check_domain_dns,
+)
+from pi_agent_platform.core.dns_providers import test_cloudflare_credentials
+from pi_agent_platform.core.config import LetsEncryptConfig
 
 
 def _model_available(model_name: str) -> tuple[bool, str | None]:
@@ -6705,3 +6712,82 @@ def update_runner_job(job_id: str, payload: RunnerJobUpdate, _auth: None = Depen
                 task.exit_code = job.exit_code
             store.add_task(task)
     return job
+
+
+# --- Let's Encrypt DNS-01 routes ---
+
+@app.get("/v1/server/letsencrypt/status")
+def letsencrypt_status(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    """Return current LE configuration and certificate status."""
+    return get_letsencrypt_status()
+
+
+@app.post("/v1/server/letsencrypt/test-dns")
+def letsencrypt_test_dns(domain: str = Query(...), _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    """Test if a domain resolves."""
+    return check_domain_dns(domain)
+
+
+@app.post("/v1/server/letsencrypt/test-cloudflare")
+def letsencrypt_test_cloudflare(api_token: str = Query(...), zone_id: str = Query(...), _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    """Test Cloudflare credentials."""
+    return test_cloudflare_credentials(api_token, zone_id)
+
+
+class LetsEncryptEnableRequest(BaseModel):
+    email: str
+    domain: str
+    cloudflare_api_token: str
+    cloudflare_zone_id: str
+    auto_enable: bool = True
+    staging: bool = False
+
+
+@app.post("/v1/server/letsencrypt/enable")
+def letsencrypt_enable(payload: LetsEncryptEnableRequest, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    """Obtain a Let's Encrypt certificate via DNS-01 (Cloudflare)."""
+    domain = payload.domain.strip().lower()
+    email = payload.email.strip()
+
+    if not re.match(r'^[a-z0-9.-]+$', domain):
+        return {'ok': False, 'error': 'Invalid domain name'}
+    if '@' not in email:
+        return {'ok': False, 'error': 'Invalid email address'}
+
+    cred_test = test_cloudflare_credentials(payload.cloudflare_api_token, payload.cloudflare_zone_id)
+    if not cred_test.get('ok'):
+        return {'ok': False, 'error': f"Cloudflare credentials invalid: {cred_test.get('error')}"}
+
+    le = config.letsencrypt
+    le.email = email
+    le.domain = domain
+    le.cloudflare_api_token = payload.cloudflare_api_token
+    le.cloudflare_zone_id = payload.cloudflare_zone_id
+    le.auto_enable = payload.auto_enable
+    le.enabled = False
+
+    cert_dir = Path(le.cert_file).expanduser().parent
+    cert_dir.mkdir(parents=True, exist_ok=True)
+
+    save_config(config)
+    store.add_event(Event(session_id='system', type='letsencrypt_started', message=f'Starting LE DNS-01 for {domain}', data={'domain': domain, 'email': email, 'staging': payload.staging}))
+
+    result = issue_letsencrypt_certificate(domain, email, staging=payload.staging)
+
+    if result.get('ok'):
+        le.enabled = True
+        save_config(config)
+        store.add_event(Event(session_id='system', type='letsencrypt_cert_obtained', message=f"LE certificate obtained for {domain}", data={'cert_file': result.get('cert_file')}))
+        return {'ok': True, 'message': f"Certificate obtained for {domain}", 'cert_file': result.get('cert_file'), 'key_file': result.get('key_file')}
+
+    store.add_event(Event(session_id='system', type='letsencrypt_failed', message=f"LE failed: {result.get('error')}", data={'domain': domain}))
+    return {'ok': False, 'error': result.get('error', 'Unknown error')}
+
+
+@app.post("/v1/server/letsencrypt/disable")
+def letsencrypt_disable(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    """Disable LE and revert to internal CA."""
+    config.letsencrypt.enabled = False
+    save_config(config)
+    store.add_event(Event(session_id='system', type='letsencrypt_disabled', message='Lets Encrypt disabled', data={}))
+    return {'ok': True, 'message': 'Lets Encrypt disabled. Internal CA will be used.'}

@@ -859,6 +859,26 @@
                 <a class="button-link" href="/v1/tls/ca.pem" download>Download CA</a>
               </div>
             </section>
+
+            <section class="card setting-cube compact-setting-card">
+              <h2>Let's Encrypt HTTPS (DNS-01)</h2>
+              <p class="muted">Get a publicly-trusted certificate using Cloudflare DNS verification. No port 80 needed. Domain must have an A/AAAA record pointing to this machine.</p>
+              <div id="leCloudflareTest" class="inline-result compact-result muted" style="margin:4px 0"></div>
+              <div class="form-grid compact-form">
+                <label>Email <input id="leEmail" placeholder="your@email.com" /></label>
+                <label>Domain <input id="leDomain" placeholder="pac.thebigtree.life" value="pac.thebigtree.life" /></label>
+                <label>Cloudflare API Token <input id="leApiToken" type="password" placeholder="cf-token..." /></label>
+                <label>Cloudflare Zone ID <input id="leZoneId" placeholder="zone-id..." /></label>
+                <label class="checkbox-line"><input id="leStaging" type="checkbox" /> Use staging (test cert)</label>
+                <label class="checkbox-line"><input id="leAutoEnable" type="checkbox" checked /> Auto-enable when ready</label>
+              </div>
+              <div class="button-row">
+                <button id="leEnableBtn">Obtain certificate</button>
+                <button id="leDisableBtn" class="ghost-button">Disable</button>
+                <button id="leTestCfBtn" class="ghost-button">Test CF credentials</button>
+              </div>
+              <pre id="leStatus" class="inline-result compact-result"></pre>
+            </section>
           </div>
         </div>
       </div>

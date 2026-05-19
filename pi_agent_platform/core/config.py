@@ -27,6 +27,8 @@ class TlsConfig(BaseModel):
     ca_key_file: str = "~/.pacp/config/tls/private/pac-root-ca.key"
     server_cert_file: str = "~/.pacp/config/tls/pac-server.crt"
     server_key_file: str = "~/.pacp/config/tls/private/pac-server.key"
+    letsencrypt_cert_file: str = "~/.pacp/config/letsencrypt/cert.pem"
+    letsencrypt_key_file: str = "~/.pacp/config/letsencrypt/key.pem"
     details_file: str = "~/.pacp/config/tls/ca-details.yaml"
     install_ca_into_system: bool = True
     subject: str = "/CN=PAC Local Root CA/O=PAC/C=NL"
@@ -311,9 +313,23 @@ class ControllerHarnessConfig(BaseModel):
     required_tools: list[str] = Field(default_factory=lambda: ["git", "python3", "podman"] )
 
 
+class LetsEncryptConfig(BaseModel):
+    enabled: bool = False
+    email: str = ""
+    domain: str = ""
+    cert_file: str = "~/.pacp/config/letsencrypt/cert.pem"
+    key_file: str = "~/.pacp/config/letsencrypt/key.pem"
+    dns_provider: Literal["cloudflare"] = "cloudflare"
+    cloudflare_api_token: str = ""
+    cloudflare_zone_id: str = ""
+    auto_enable: bool = True
+    staging: bool = False
+
+
 class AppConfig(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     tls: TlsConfig = Field(default_factory=TlsConfig)
+    letsencrypt: LetsEncryptConfig = Field(default_factory=LetsEncryptConfig)
     mdns: MdnsConfig = Field(default_factory=MdnsConfig)
     service: ServiceConfig = Field(default_factory=ServiceConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
