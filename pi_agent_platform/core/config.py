@@ -181,6 +181,12 @@ MODEL_NOT_SELECTED = "__pac_model_not_selected__"
 CODING_SESSION_PERMISSION_PROFILE = "coding-session"
 MAIN_PI_DEV_PROFILE_TOOLS = [
     "shell",
+    "shell_bg",
+    "shell_bg_result",
+    "shell_bg_stop",
+    "log_tail",
+    "podman_ps",
+    "wait_for",
     "git",
     "ripgrep",
     "fd",
