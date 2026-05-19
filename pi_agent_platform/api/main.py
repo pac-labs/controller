@@ -4298,15 +4298,14 @@ def upsert_agent_profile(profile_name: str, payload: dict[str, Any], _auth: None
     data['valid'] = True
     return data
 
-
-@app.delete('/v1/agent-profiles/{profile_name}')
-def delete_agent_profile(profile_name: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
-    if profile_name not in config.agent_profiles:
-        raise HTTPException(status_code=404, detail='Profile not found')
-    del config.agent_profiles[profile_name]
+def delete_model(model_name: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    global config
+    if model_name not in config.models:
+        raise HTTPException(status_code=404, detail='Model not found')
+    del config.models[model_name]
     save_config(config)
-    store.add_event(Event(session_id='system', type='agent_profile_deleted', message=f'Profile deleted: {profile_name}'))
-    return {'ok': True, 'deleted': profile_name}
+    store.add_event(Event(session_id='system', type='model_deleted', message=f'Model deleted: {model_name}', data={'model': model_name}))
+    return {'ok': True, 'deleted': model_name}
 
 
 @app.put('/v1/workspaces/{workspace_name}')
@@ -5044,12 +5043,12 @@ def delete_session(session_id: str, remove_workspace: bool = False, _auth: None 
     session = store.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail='Session not found')
-    session.status = 'closed'
-    store.add_session(session)
-    if remove_workspace:
-        shutil.rmtree(session.workspace_path, ignore_errors=True)
-    store.add_event(Event(session_id=session.id, type='session_closed', message='Session closed'))
-    return {'status': 'closed'}
+    workspace_path = session.workspace_path
+    store.delete_session(session_id)
+    if remove_workspace and workspace_path:
+        shutil.rmtree(workspace_path, ignore_errors=True)
+    store.add_event(Event(session_id=session_id, type='session_deleted', message='Session deleted', data={'session_id': session_id, 'workspace_removed': bool(remove_workspace and workspace_path)}))
+    return {'ok': True, 'deleted': session_id}
 
 
 

@@ -1060,6 +1060,12 @@ function renderSessionSidebar(sessions = window.__pacSessions || []) {
     item.type = 'button';
     item.className = `session-sidebar-item${selectedSession?.id === s.id ? ' active' : ''}`;
     item.innerHTML = `<strong>${escapeHtml(s.name || s.id)}</strong><div class="session-sidebar-meta">${escapeHtml(s.agent_profile || '-')} · ${escapeHtml(s.model || '-')} · ${escapeHtml(s.permission_profile || '-')}</div><div class="session-sidebar-meta">${escapeHtml(s.workspace_path || '')}</div>`;
+    const del = document.createElement('button');
+    del.className = 'session-delete-btn';
+    del.title = 'Delete session';
+    del.textContent = '×';
+    del.onclick = async ev => { ev.stopPropagation(); ev.preventDefault(); if (!confirm('Delete session \'' + (s.name || s.id) + '\'?')) return; const r = await api(`/v1/sessions/${s.id}`, {method:'DELETE', body: JSON.stringify({remove_workspace: false})}); if (r?.ok) { if (selectedSession?.id === s.id) switchSession(null); renderSessionSidebar(); } else alert(r?.error || 'Delete failed'); };
+    item.appendChild(del);
     item.onclick = () => { switchToTab('sessions-tab'); selectSession(s.id); };
     list.appendChild(item);
   });
@@ -2313,8 +2319,13 @@ function renderModels() {
       test.textContent = 'Test model';
       test.className = 'ghost-button';
       test.onclick = async ev => { ev.stopPropagation(); const r = await api(`/v1/models/${name}/test`, {method:'POST'}); showInline('modelFormResult', {model:name, ...r}); };
+      const del = document.createElement('button');
+      del.textContent = 'Delete';
+      del.className = 'ghost-button danger-button';
+      del.onclick = async ev => { ev.stopPropagation(); if (!confirm('Delete model \'${name}\'?')) return; const r = await api(`/v1/models/${name}`, {method:'DELETE'}); if (r?.ok) renderModels(); else alert(r?.error || 'Delete failed'); };
       actions.appendChild(edit);
       actions.appendChild(test);
+      actions.appendChild(del);
       if (provider?.type === 'lmstudio') {
         const inspect = document.createElement('button');
         inspect.textContent = 'Inspect';

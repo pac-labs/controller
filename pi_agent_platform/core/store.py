@@ -59,6 +59,11 @@ class SQLiteStore:
             row = conn.execute('select payload from sessions where id = ?', (session_id,)).fetchone()
         return Session.model_validate_json(row['payload']) if row else None
 
+    def delete_session(self, session_id: str) -> bool:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute('delete from sessions where id = ?', (session_id,))
+        return cur.rowcount > 0
+
     def list_sessions(self) -> list[Session]:
         with self._connect() as conn:
             rows = conn.execute('select payload from sessions order by updated_at desc').fetchall()

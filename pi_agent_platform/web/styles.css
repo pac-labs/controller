@@ -4774,3 +4774,23 @@ body[data-theme="dark"] .tabs-wrap{
   /* Sidebar hidden on mobile — use top dropdown instead */
   #sessions-tab .integrated-session-head { display: flex !important; }
 }
+
+/* Delete buttons */
+.danger-button { color: #e05c5c !important; border-color: #e05c5c44 !important; }
+.danger-button:hover { background: #e05c5c22 !important; }
+.session-delete-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+}
+.session-delete-btn:hover { color: #e05c5c; background: #e05c5c22; }
+.session-sidebar-item { position: relative; }
