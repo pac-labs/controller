@@ -376,7 +376,7 @@
         <div class="section-heading"><div><h2 id="modelModalTitle">Model</h2><p class="muted">Choose the provider model ID and the endpoint that should run sessions using it.</p></div><button id="closeModelModal" class="ghost-button">Close</button></div>
         <div class="form-grid compact-form">
           <label>Model name <input id="modelName" placeholder="qwen-coder-local" /></label>
-          <label>Provider <select id="modelProvider"></select></label>
+          <label>Provider <span id="modelProviderDisplay" class="field-value"></span></label>
           <label>Provider model ID <input id="modelId" placeholder="qwen2.5-coder-14b-instruct" /></label>
           <label>Execution endpoint <select id="modelRunsOn"><option value="">PAC/local</option></select><small class="muted">Endpoint used by default for sessions using this model.</small></label>
           <label>Context window <input id="modelContextWindow" type="number" value="4096" /></label>

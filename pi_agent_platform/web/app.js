@@ -2063,7 +2063,8 @@ async function renderLiveModels() {
   live.innerHTML = chunks.join('');
   live.querySelectorAll('button[data-model]').forEach(btn => {
     btn.onclick = () => {
-      modelProvider.value = btn.dataset.provider;
+      const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = btn.dataset.provider;
+      const providerSelect = document.getElementById('modelProvider'); if (providerSelect) providerSelect.value = btn.dataset.provider;
       modelId.value = btn.dataset.model;
       modelName.value = btn.dataset.key || btn.dataset.model.replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase();
       modelRunsOn.value = '';
@@ -2072,7 +2073,8 @@ async function renderLiveModels() {
   live.querySelectorAll('button[data-add-live-model]').forEach(btn => {
     btn.onclick = async () => {
       openModelModal();
-      modelProvider.value = btn.dataset.provider;
+      const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = btn.dataset.provider;
+      const providerSelect = document.getElementById('modelProvider'); if (providerSelect) providerSelect.value = btn.dataset.provider;
       modelId.value = btn.dataset.model;
       modelName.value = btn.dataset.key || btn.dataset.model.replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase();
       modelRunsOn.value = '';
@@ -2089,7 +2091,8 @@ function providerModelKey(providerName, modelId) {
 }
 function openModelDraft(providerName, modelId) {
   openModelModal();
-  modelProvider.value = providerName;
+  const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = providerName;
+  const providerSelect = document.getElementById('modelProvider'); if (providerSelect) providerSelect.value = providerName;
   modelId.value = modelId;
   modelName.value = providerModelKey(providerName, modelId) || String(modelId || '').replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase();
   modelRunsOn.value = '';
@@ -2709,9 +2712,11 @@ function openProviderModal(name='') {
 function closeProviderModal() { const modal = document.getElementById('providerModal'); if (modal) modal.hidden = true; }
 function openModelModal(name='') {
   fillModelEndpointOptions();
-  if (name) fillModelForm(name); else {
-    modelName.value=''; modelProvider.value=modelProvider.options[0]?.value || ''; modelId.value=''; modelRunsOn.value=''; modelContextWindow.value=4096; modelMaxOutput.value=1024;
+  if (name) { fillModelForm(name); }
+  else {
+    modelName.value=''; modelId.value=''; modelRunsOn.value=''; modelContextWindow.value=4096; modelMaxOutput.value=1024;
     modelSupportsChat.checked=true; modelSupportsTools.checked=false; modelSupportsVision.checked=false; modelSupportsJson.checked=false; modelSupportsStreaming.checked=true; modelReasoning.value='none'; modelInputPrice.value=''; modelOutputPrice.value=''; fillLmStudioRuntimeFields({});
+    const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = modelProvider.options[0]?.value || '';
   }
   updateLmStudioModelControls();
   setModalStatus('modelModalStatus');
@@ -2967,7 +2972,8 @@ function fillProviderForm(name) {
 }
 function fillModelForm(name) {
   const m = config.models?.[name]; if (!m) return;
-  modelName.value=name; modelProvider.value=m.provider || ''; modelId.value=m.model || ''; modelRunsOn.value=m.runs_on || '';
+  modelName.value=name; const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = m.provider || '(none)'; modelId.value=m.model || ''; modelRunsOn.value=m.runs_on || '';
+  const providerSelect = document.getElementById('modelProvider'); if (providerSelect) { providerSelect.value = m.provider || ''; }
   modelContextWindow.value=m.context_window || 4096; modelMaxOutput.value=m.max_output_tokens || 1024;
   modelSupportsChat.checked=m.capabilities?.supports_chat !== false; modelSupportsTools.checked=!!m.capabilities?.supports_tools; modelSupportsVision.checked=!!m.capabilities?.supports_vision; modelSupportsJson.checked=!!m.capabilities?.supports_json;
   modelSupportsStreaming.checked=m.capabilities?.supports_streaming !== false;
