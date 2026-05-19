@@ -202,6 +202,12 @@ MAIN_PI_DEV_PROFILE_TOOLS = [
     "resume_task",
     "list_task_checkpoints",
     "clear_checkpoints",
+    "auto_approve",
+    "pty_shell",
+    "pty_read",
+    "pty_write",
+    "pty_resize",
+    "pty_close",
 ]
 MAIN_PI_DEV_SYSTEM_PROMPT = (
     "You are PAC's main pi.dev coding and operations agent. "

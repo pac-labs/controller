@@ -768,12 +768,18 @@ async def _run_shell(session: Session, task: Task, command: str, config: AppConf
     if decision == "deny":
         return f"DENIED: {reason}", False
     if decision == "ask" and session.permission_profile != "full-control":
-        task.status = TaskStatus.approval_required
-        task.metadata["agent_loop"] = True
-        task.metadata["pending_tool"] = {"tool": "shell", "input": {"command": command}}
-        store.add_task(task)
-        store.add_event(Event(session_id=session.id, task_id=task.id, type="approval_required", message=f"Agent wants to run: {command}", data={"command": command, "reason": reason}))
-        return "APPROVAL_REQUIRED", True
+        # Check auto-approve rules first
+        from .auto_approve import should_auto_approve
+        approved, reason = should_auto_approve("shell", {"command": command})
+        if approved:
+            store.add_event(Event(session_id=session.id, task_id=task.id, type="auto_approved", message=f"Auto-approved: {reason}", data={"tool": "shell", "command": command}))
+        else:
+            task.status = TaskStatus.approval_required
+            task.metadata["agent_loop"] = True
+            task.metadata["pending_tool"] = {"tool": "shell", "input": {"command": command}}
+            store.add_task(task)
+            store.add_event(Event(session_id=session.id, task_id=task.id, type="approval_required", message=f"Agent wants to run: {command}", data={"command": command, "reason": reason}))
+            return "APPROVAL_REQUIRED", True
 
     store.add_event(Event(session_id=session.id, task_id=task.id, type="tool_started", message=f"shell: {command}", data={"tool":"shell", "command": command}))
     proc = await asyncio.create_subprocess_shell(
@@ -1081,12 +1087,17 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
         if perm.file_write == "deny":
             return "DENIED: file writes are denied", False
         if perm.file_write == "ask" and session.permission_profile != "full-control":
-            task.status = TaskStatus.approval_required
-            task.metadata["agent_loop"] = True
-            task.metadata["pending_tool"] = {"tool": "write_file", "input": inp}
-            store.add_task(task)
-            store.add_event(Event(session_id=session.id, task_id=task.id, type="approval_required", message=f"Agent wants to write file: {inp.get('path')}", data={"path": inp.get("path")}))
-            return "APPROVAL_REQUIRED", True
+            from .auto_approve import should_auto_approve
+            approved, reason = should_auto_approve("write_file", inp)
+            if approved:
+                store.add_event(Event(session_id=session.id, task_id=task.id, type="auto_approved", message=f"Auto-approved: {reason}", data={"tool": "write_file", "path": inp.get("path")}))
+            else:
+                task.status = TaskStatus.approval_required
+                task.metadata["agent_loop"] = True
+                task.metadata["pending_tool"] = {"tool": "write_file", "input": inp}
+                store.add_task(task)
+                store.add_event(Event(session_id=session.id, task_id=task.id, type="approval_required", message=f"Agent wants to write file: {inp.get('path')}", data={"path": inp.get("path")}))
+                return "APPROVAL_REQUIRED", True
         path = str(inp.get("path") or "")
         content = str(inp.get("content") or "")
         target = _safe_path(session, path)
@@ -1249,12 +1260,17 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
         if perm.network == "deny":
             return "DENIED: network access is denied", False
         if perm.network == "ask" and session.permission_profile != "full-control":
-            task.status = TaskStatus.approval_required
-            task.metadata["agent_loop"] = True
-            task.metadata["pending_tool"] = {"tool": "web_fetch", "input": inp}
-            store.add_task(task)
-            store.add_event(Event(session_id=session.id, task_id=task.id, type="approval_required", message=f"Agent wants to fetch URL: {inp.get('url')}", data={"url": inp.get("url")}))
-            return "APPROVAL_REQUIRED", True
+            from .auto_approve import should_auto_approve
+            approved, reason = should_auto_approve("web_fetch", inp)
+            if approved:
+                store.add_event(Event(session_id=session.id, task_id=task.id, type="auto_approved", message=f"Auto-approved: {reason}", data={"tool": "web_fetch", "url": inp.get("url")}))
+            else:
+                task.status = TaskStatus.approval_required
+                task.metadata["agent_loop"] = True
+                task.metadata["pending_tool"] = {"tool": "web_fetch", "input": inp}
+                store.add_task(task)
+                store.add_event(Event(session_id=session.id, task_id=task.id, type="approval_required", message=f"Agent wants to fetch URL: {inp.get('url')}", data={"url": inp.get("url")}))
+                return "APPROVAL_REQUIRED", True
         url = str(inp.get("url") or "")
         max_chars = int(inp.get("max_chars") or 20000)
         try:
@@ -1270,12 +1286,17 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
         if perm.network == "deny":
             return "DENIED: network access is denied", False
         if perm.network == "ask" and session.permission_profile != "full-control":
-            task.status = TaskStatus.approval_required
-            task.metadata["agent_loop"] = True
-            task.metadata["pending_tool"] = {"tool": "web_search", "input": inp}
-            store.add_task(task)
-            store.add_event(Event(session_id=session.id, task_id=task.id, type="approval_required", message=f"Agent wants to search web: {inp.get('query')}", data={"query": inp.get("query")}))
-            return "APPROVAL_REQUIRED", True
+            from .auto_approve import should_auto_approve
+            approved, reason = should_auto_approve("web_search", inp)
+            if approved:
+                store.add_event(Event(session_id=session.id, task_id=task.id, type="auto_approved", message=f"Auto-approved: {reason}", data={"tool": "web_search", "query": inp.get("query")}))
+            else:
+                task.status = TaskStatus.approval_required
+                task.metadata["agent_loop"] = True
+                task.metadata["pending_tool"] = {"tool": "web_search", "input": inp}
+                store.add_task(task)
+                store.add_event(Event(session_id=session.id, task_id=task.id, type="approval_required", message=f"Agent wants to search web: {inp.get('query')}", data={"query": inp.get("query")}))
+                return "APPROVAL_REQUIRED", True
         query = str(inp.get("query") or "")
         max_results = int(inp.get("max_results") or 5)
         try:
@@ -1590,6 +1611,83 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
         from .checkpoint import delete_checkpoints
         count = delete_checkpoints(target_session_id)
         return json.dumps({"session_id": target_session_id, "deleted": count}), False
+
+    # ---- auto_approve: view or modify auto-approve rules ----
+    if tool == "auto_approve":
+        mode = str(inp.get("mode") or "list").strip().lower()
+        if mode == "list":
+            from .auto_approve import get_approval_rules
+            rules = get_approval_rules()
+            return json.dumps({"rules": rules, "count": len(rules)}), False
+        if mode == "add":
+            rule = {
+                "tool": str(inp.get("tool") or "").strip() or None,
+                "command_pattern": str(inp.get("command_pattern") or "").strip() or None,
+                "path_pattern": str(inp.get("path_pattern") or "").strip() or None,
+                "mode": str(inp.get("mode_key") or "").strip() or None,
+            }
+            if not any(v for v in rule.values()):
+                return "auto_approve add requires at least one pattern field", False
+            from .auto_approve import DEFAULT_RULES
+            DEFAULT_RULES.append(rule)
+            store.add_event(Event(session_id=session.id, task_id=task.id, type="auto_approve_rule_added", message=f"Added auto-approve rule: {rule}", data=rule))
+            return json.dumps({"ok": True, "rule": rule, "total_rules": len(DEFAULT_RULES)}), False
+        return f"auto_approve: unknown mode {mode}", False
+
+    # ---- PTY shell tools ----
+    if tool == "pty_shell":
+        if perm.shell == "deny":
+            return "DENIED: shell access is denied", False
+        command = str(inp.get("command") or "bash")
+        cwd = str(inp.get("cwd") or session.workspace_path or "/tmp")
+        rows = max(1, min(int(inp.get("rows") or 24), 200))
+        cols = max(1, min(int(inp.get("cols") or 80), 300))
+        session_id = str(uuid4())[:12]
+        try:
+            from .pty_shell import open_pty_session
+            ps = open_pty_session(session_id, command, cwd=cwd, rows=rows, cols=cols)
+            store.add_event(Event(session_id=session.id, task_id=task.id, type="pty_opened", message=f"PTY shell opened: {session_id}", data={"pty_session": session_id, "command": command, "pid": ps.pid}))
+            return json.dumps({"pty_session": session_id, "pid": ps.pid, "status": ps.status, "command": command, "rows": rows, "cols": cols}), False
+        except Exception as exc:
+            return f"pty_shell failed: {exc}", False
+
+    if tool == "pty_read":
+        pty_session_id = str(inp.get("pty_session") or "").strip()
+        if not pty_session_id:
+            return "pty_read requires pty_session", False
+        max_bytes = max(1, min(int(inp.get("max_bytes") or 4096), 8000))
+        from .pty_shell import read_pty
+        output = read_pty(pty_session_id, max_bytes=max_bytes)
+        store.add_event(Event(session_id=session.id, task_id=task.id, type="pty_read", message=f"PTY read {pty_session_id}: {len(output)} bytes", data={"pty_session": pty_session_id, "bytes": len(output)}))
+        return output[-8000:], False
+
+    if tool == "pty_write":
+        pty_session_id = str(inp.get("pty_session") or "").strip()
+        if not pty_session_id:
+            return "pty_write requires pty_session", False
+        data = str(inp.get("data") or "")
+        from .pty_shell import write_pty
+        written = write_pty(pty_session_id, data)
+        return json.dumps({"pty_session": pty_session_id, "bytes_written": written}), False
+
+    if tool == "pty_resize":
+        pty_session_id = str(inp.get("pty_session") or "").strip()
+        if not pty_session_id:
+            return "pty_resize requires pty_session", False
+        rows = max(1, min(int(inp.get("rows") or 24), 200))
+        cols = max(1, min(int(inp.get("cols") or 80), 300))
+        from .pty_shell import resize_pty
+        ok = resize_pty(pty_session_id, rows, cols)
+        return json.dumps({"pty_session": pty_session_id, "resized": ok, "rows": rows, "cols": cols}), False
+
+    if tool == "pty_close":
+        pty_session_id = str(inp.get("pty_session") or "").strip()
+        if not pty_session_id:
+            return "pty_close requires pty_session", False
+        from .pty_shell import close_pty_session
+        result = close_pty_session(pty_session_id)
+        store.add_event(Event(session_id=session.id, task_id=task.id, type="pty_closed", message=f"PTY closed: {pty_session_id}", data=result))
+        return json.dumps(result), False
 
     return f"Unknown tool: {tool}", False
 
