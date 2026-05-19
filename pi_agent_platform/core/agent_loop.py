@@ -956,7 +956,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
 
     agent = config.agent_profiles.get(session.agent_profile or "")
     context_name = (agent.context_profile if agent and agent.context_profile else session.context_mode)
-    decision_model = agent.planner_model if agent and agent.planner_model else session.model
+    decision_model = task.metadata.get('model') or (agent.planner_model if agent and agent.planner_model else session.model)
     decision_context_name = agent.planner_context_profile if agent and agent.planner_context_profile else context_name
     ctx = effective_context(config, decision_model, decision_context_name)
     budget = get_context_budget(config, decision_model, decision_context_name)

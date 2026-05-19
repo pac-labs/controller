@@ -1441,7 +1441,7 @@ def _queue_task_on_runner(session: Session, task: Task, target: dict[str, Any]) 
         workspace_path=session.workspace_path,
         session_id=session.id,
         task_id=task.id,
-        metadata={'agent_profile': session.agent_profile, 'model': session.model, **task.metadata},
+        metadata={'agent_profile': session.agent_profile, 'model': task.metadata.get('model') or session.model, **task.metadata},
     )
     store.add_runner_job(job)
     store.add_event(Event(session_id=session.id, task_id=task.id, type='runner_job_queued', message=f"Queued on runner {runner.name}", data={'runner_id': runner.id, 'runner_job_id': job.id, 'execution_mode': job.execution_mode, 'container_image': job.container_image}))
