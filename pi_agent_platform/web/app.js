@@ -5510,6 +5510,27 @@ function renderEndpointConnectionSettings() {
   const mdnsInput = document.getElementById('endpointMdnsEnabled');
   if (urlInput) urlInput.value = config.server?.public_url || '';
   if (mdnsInput) mdnsInput.checked = config.mdns?.enabled !== false;
+
+  // Load letsencrypt status
+  fetch('/v1/server/letsencrypt/status').then(r => r.json()).then(data => {
+    const emailEl = document.getElementById('leEmail');
+    if (emailEl) emailEl.value = data.email || '';
+    const domainEl = document.getElementById('leDomain');
+    if (domainEl) domainEl.value = data.domain || '';
+    const portEl = document.getElementById('leChallengePort');
+    if (portEl) portEl.value = data.challenge_port || 80;
+    const autoEl = document.getElementById('leAutoEnable');
+    if (autoEl) autoEl.checked = data.auto_enable !== false;
+
+    const statusEl = document.getElementById('leStatus');
+    if (statusEl && data.cert) {
+      if (data.cert.exists) {
+        statusEl.textContent = `Certificate present. Subject: ${data.cert.subject || 'unknown'}. Valid: ${data.cert.not_before || '?'} to ${data.cert.not_after || '?'}`;
+      } else {
+        statusEl.textContent = 'No Lets Encrypt certificate installed yet.';
+      }
+    }
+  }).catch(() => {});
 }
 
 async function saveEndpointConnectionSettings() {
@@ -7517,3 +7538,47 @@ if (createGroupBtn) createGroupBtn.onclick = async () => {
     if (result) result.textContent = `Failed: ${error.message || String(error)}`;
   }
 };
+
+// ---- Let's Encrypt button handlers ------------------------------------------------
+if (document.getElementById('leEnableBtn')) {
+    document.getElementById('leEnableBtn').onclick = async () => {
+        const email = document.getElementById('leEmail')?.value?.trim();
+        const domain = document.getElementById('leDomain')?.value?.trim();
+        const challengePort = parseInt(document.getElementById('leChallengePort')?.value || '80');
+        const autoEnable = !!document.getElementById('leAutoEnable')?.checked;
+        const statusEl = document.getElementById('leStatus');
+        if (!email || !domain) { statusEl.textContent = 'Email and domain are required'; return; }
+        statusEl.textContent = 'Requesting certificate... (this may take up to 2 minutes)';
+        try {
+            const result = await api('/v1/server/letsencrypt/enable', {
+                method: 'POST',
+                body: JSON.stringify({email, domain, challenge_port: challengePort, auto_enable: autoEnable})
+            });
+            statusEl.textContent = result.ok ? `Success: ${result.message}` : `Failed: ${result.error}`;
+            if (result.ok) {
+                const pubUrl = `https://${domain}`;
+                await api('/v1/server/connection', {method:'POST', body: JSON.stringify({public_url: pubUrl})});
+            }
+        } catch(e) {
+            statusEl.textContent = 'Error: ' + e.message;
+        }
+    };
+}
+
+if (document.getElementById('leDisableBtn')) {
+    document.getElementById('leDisableBtn').onclick = async () => {
+        const result = await api('/v1/server/letsencrypt/disable', {method:'POST'});
+        document.getElementById('leStatus').textContent = result.message || 'Done';
+    };
+}
+
+if (document.getElementById('leTestBtn')) {
+    document.getElementById('leTestBtn').onclick = async () => {
+        const domain = document.getElementById('leDomain')?.value?.trim();
+        if (!domain) { document.getElementById('leStatus').textContent = 'Enter a domain first'; return; }
+        const result = await api(`/v1/server/letsencrypt/test?domain=${encodeURIComponent(domain)}`, {method:'POST'});
+        document.getElementById('leStatus').textContent = result.resolves
+            ? `${domain} resolves to this machine's public IP — good!`
+            : `${domain} does NOT resolve to this machine. Set A record first.`;
+    };
+}

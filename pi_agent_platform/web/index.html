@@ -826,6 +826,23 @@
               <div class="button-row"><button id="saveEndpointConnection">Save endpoint URL</button></div>
               <pre id="endpointConnectionResult" class="inline-result compact-result"></pre>
             </section>
+
+            <section class="card setting-cube compact-setting-card">
+              <h2>Let's Encrypt HTTPS</h2>
+              <p class="muted">Get a publicly-trusted certificate for the PAC admin UI. The domain must resolve to this machine (A/AAAA record) and port 80 must be reachable for the ACME HTTP-01 challenge.</p>
+              <div class="form-grid compact-form">
+                <label>Email <input id="leEmail" placeholder="your@email.com" /></label>
+                <label>Domain <input id="leDomain" placeholder="pac.mydomain.com" /></label>
+                <label>ACME challenge port <input id="leChallengePort" type="number" value="80" min="1" max="65535" /></label>
+                <label class="checkbox-line"><input id="leAutoEnable" type="checkbox" checked /> Auto-enable when domain resolves</label>
+              </div>
+              <div class="button-row">
+                <button id="leEnableBtn">Obtain certificate</button>
+                <button id="leDisableBtn" class="ghost-button">Disable</button>
+                <button id="leTestBtn" class="ghost-button">Test domain</button>
+              </div>
+              <pre id="leStatus" class="inline-result compact-result"></pre>
+            </section>
           </div>
         </div>
       </div>
