@@ -589,6 +589,12 @@ def _runner_tool_command(tool: str, inp: dict[str, Any]) -> str | None:
             f"mkdir -p -- $(dirname {quoted}) && "
             f"cat > {quoted} <<'{marker}'\n{content}\n{marker}\n"
         )
+    if tool == "edit_file":
+        return None  # runner doesn't support edit_file directly
+    if tool == "ripgrep":
+        return None  # runner doesn't support ripgrep directly
+    if tool == "fd":
+        return None  # runner doesn't support fd directly
     return None
 
 
@@ -740,13 +746,205 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
         store.add_event(Event(session_id=session.id, task_id=task.id, type="tool_result", message=f"read chunk {chunk_index} from {path}", data={"tool": "read_file_chunk", "path": path, "chunk_index": chunk_index, "chunk_count": len(chunks)}))
         return result, False
 
+    if tool == "edit_file":
+        if perm.file_write == "deny":
+            return "DENIED: file writes are denied", False
+        path = str(inp.get("path") or "")
+        old_text = str(inp.get("old_text") or "")
+        new_text = str(inp.get("new_text") or "")
+        if not path or not old_text:
+            return "edit_file requires path and old_text", False
+        target = _safe_path(session, path)
+        if not target.is_file():
+            return f"File not found: {path}", False
+        content = target.read_text(errors="replace")
+        if old_text not in content:
+            return f"old_text not found in {path} — no changes made", False
+        backup_path = target.with_suffix(target.suffix + ".bak")
+        target.write_text(content, encoding="utf-8")  # overwrite backup with original
+        new_content = content.replace(old_text, new_text, 1)  # replace first occurrence only
+        target.write_text(new_content, encoding="utf-8")
+        store.add_event(Event(session_id=session.id, task_id=task.id, type="tool_result", message=f"edited {path}", data={"tool": "edit_file", "path": path}))
+        return f"EDITED {path}: replaced 1 occurrence", False
+
+    if tool == "ripgrep":
+        if perm.file_read == "deny":
+            return "DENIED: file reads are denied", False
+        query = str(inp.get("query") or "")
+        path = str(inp.get("path") or session.workspace_path)
+        file_filter = str(inp.get("file_filter") or "")
+        context = max(0, min(int(inp.get("context") or 0), 5))
+        max_results = max(1, min(int(inp.get("max_results") or 200), 2000))
+        if not query:
+            return "ripgrep requires query", False
+        target = _safe_path(session, path)
+        if not target.exists():
+            return f"Path not found: {path}", False
+        import re
+        try:
+            pattern = re.compile(query)
+        except Exception:
+            pattern = re.compile(re.escape(query))
+        matches = []
+        try:
+            files = list(target.rglob(file_filter or "*"))
+        except Exception:
+            files = []
+        for f in files:
+            if f.is_dir() or "/.git/" in str(f) or "/node_modules/" in str(f) or "/__pycache__/" in str(f):
+                continue
+            try:
+                lines = f.read_text(errors="replace").split("\n")
+            except Exception:
+                continue
+            for i, line in enumerate(lines):
+                if pattern.search(line):
+                    ctx_before = lines[max(0, i - context):i]
+                    ctx_after = lines[i + 1:i + 1 + context]
+                    matches.append({
+                        "file": str(f.relative_to(target)),
+                        "line": i + 1,
+                        "text": line.strip(),
+                        "context_before": ctx_before,
+                        "context_after": ctx_after,
+                    })
+                    if len(matches) >= max_results:
+                        break
+            if len(matches) >= max_results:
+                break
+        result = json.dumps({"query": query, "path": str(path), "count": len(matches), "matches": matches[:max_results]}, indent=2)
+        store.add_event(Event(session_id=session.id, task_id=task.id, type="tool_result", message=f"ripgrep: {query} → {len(matches)} matches", data={"tool": "ripgrep", "query": query, "count": len(matches)}))
+        return result[:15000], False
+
+    if tool == "fd":
+        if perm.file_read == "deny":
+            return "DENIED: file reads are denied", False
+        pattern = str(inp.get("pattern") or "*")
+        path = str(inp.get("path") or session.workspace_path)
+        max_results = max(1, min(int(inp.get("max_results") or 200), 2000))
+        target = _safe_path(session, path)
+        if not target.exists():
+            return f"Path not found: {path}", False
+        results = []
+        try:
+            for f in target.rglob(pattern):
+                if "/.git/" in str(f) or "/node_modules/" in str(f) or "/__pycache__/" in str(f):
+                    continue
+                rel = str(f.relative_to(target))
+                results.append({"name": rel, "type": "dir" if f.is_dir() else "file", "size": f.stat().st_size if f.is_file() else 0})
+                if len(results) >= max_results:
+                    break
+        except Exception as e:
+            return f"fd error: {e}", False
+        return json.dumps({"pattern": pattern, "count": len(results), "results": results}, indent=2)[:15000], False
+
     if tool == "workspace_manifest":
         if perm.file_read == "deny":
             return "DENIED: file reads are denied", False
         max_files = int(inp.get("max_files") or 200)
-        result = file_manifest(Path(session.workspace_path), max_files=max_files) or "No files found"
-        store.add_event(Event(session_id=session.id, task_id=task.id, type="tool_result", message="scanned workspace manifest", data={"tool": "workspace_manifest", "max_files": max_files}))
-        return result, False
+        import re
+        _ignored = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", ".next", ".cache"}
+        _ignored_ext = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".zip", ".gz", ".tar", ".sqlite", ".db", ".pyc"}
+        _project_markers = {
+            "package.json": "Node",
+            "pyproject.toml": "Python",
+            "setup.py": "Python",
+            "Cargo.toml": "Rust",
+            "go.mod": "Go",
+            "requirements.txt": "Python",
+            "Gemfile": "Ruby",
+            "pom.xml": "Java",
+            "build.gradle": "Java",
+        }
+        _key_files = ["README.md", "README", "readme.md", "README.rst", "config.yaml", "config.yml", "pyproject.toml", "package.json", "Cargo.toml", "go.mod", "Makefile", "Dockerfile", ".dockerignore", ".gitignore", "pyproject.toml", "setup.py", "setup.cfg"]
+
+        root = Path(session.workspace_path)
+        files_tree: dict = {}
+        flat_files: list[dict] = []
+        projects: list[dict] = []
+        total_size = 0
+        file_count = 0
+        detected_project_types: set[str] = set()
+        key_files_found: dict[str, str] = {}
+
+        def _tree_get(tree: dict, parts: list[str]) -> dict:
+            node = tree
+            for part in parts:
+                if part not in node:
+                    node[part] = {"__files": [], "__dirs": {}}
+                node = node[part]
+            return node
+
+        def _add_to_tree(tree: dict, rel_path: Path) -> None:
+            parts = list(rel_path.parts[:-1])
+            if not parts:
+                tree.setdefault("__files", []).append(rel_path.name)
+                return
+            node = _tree_get(tree, parts)
+            node.setdefault("__files", []).append(rel_path.name)
+
+        def _build_readme_snippet(p: Path) -> str:
+            try:
+                text = p.read_text(errors="replace")
+                lines = [l.strip() for l in text.splitlines() if l.strip()][:10]
+                return "\n".join(lines[:5])
+            except Exception:
+                return ""
+
+        try:
+            for p in root.rglob("*"):
+                if file_count >= max_files:
+                    break
+                if any(part in _ignored for part in p.parts):
+                    continue
+                if p.is_file():
+                    ext = p.suffix.lower()
+                    if ext in _ignored_ext:
+                        continue
+                    try:
+                        size = p.stat().st_size
+                        total_size += size
+                        file_count += 1
+                    except OSError:
+                        continue
+                    rel = p.relative_to(root)
+                    _add_to_tree(files_tree, rel)
+                    flat_files.append({"path": str(rel), "size": size})
+                    fname = p.name
+                    fname_lower = fname.lower()
+                    for marker, ptype in _project_markers.items():
+                        if fname == marker:
+                            detected_project_types.add(ptype)
+                            project_root = str(p.parent.relative_to(root))
+                            readme_p = None
+                            for rf in ["README.md", "README.rst", "README", "readme.md"]:
+                                candidate = p.parent / rf
+                                if candidate.is_file():
+                                    readme_p = candidate
+                                    break
+                            readme_snippet = _build_readme_snippet(readme_p) if readme_p else ""
+                            projects.append({"type": ptype, "root": project_root or ".", "readme": readme_snippet[:200]})
+                    for kf in _key_files:
+                        if fname_lower == kf.lower():
+                            key_files_found[fname] = str(rel)
+                elif p.is_dir():
+                    rel = p.relative_to(root)
+                    parts = list(rel.parts)
+                    node = _tree_get(files_tree, parts)
+        except Exception:
+            pass
+
+        result = {
+            "path": str(root),
+            "summary": {"files": file_count, "total_bytes": total_size},
+            "projects": list(detected_project_types),
+            "project_details": projects,
+            "key_files": key_files_found,
+            "tree": files_tree,
+            "flat_files": flat_files[:100],
+        }
+        store.add_event(Event(session_id=session.id, task_id=task.id, type="tool_result", message="scanned workspace manifest", data={"tool": "workspace_manifest", "files": file_count, "projects": list(detected_project_types)}))
+        return json.dumps(result, indent=2, default=str)[:15000], False
 
     if tool == "batch_analyze_text":
         instruction = str(inp.get("instruction") or "Summarize this text")
