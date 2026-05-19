@@ -116,6 +116,7 @@ class ModelConfig(BaseModel):
     output_price_per_million: float | None = None
     capabilities: ModelCapability = Field(default_factory=ModelCapability)
     extra: dict[str, Any] = Field(default_factory=dict)
+    read_only: bool = False  # if True, cannot be deleted
 
 
 class ContextProfile(BaseModel):

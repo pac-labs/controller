@@ -4298,10 +4298,27 @@ def upsert_agent_profile(profile_name: str, payload: dict[str, Any], _auth: None
     data['valid'] = True
     return data
 
+
+@app.delete('/v1/agent-profiles/{profile_name}')
+def delete_agent_profile(profile_name: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    global config
+    if profile_name not in config.agent_profiles:
+        raise HTTPException(status_code=404, detail='Agent profile not found')
+    if profile_name == MAIN_PI_DEV_PROFILE:
+        raise HTTPException(status_code=403, detail=f'Agent profile {MAIN_PI_DEV_PROFILE} is required and cannot be deleted')
+    del config.agent_profiles[profile_name]
+    save_config(config)
+    store.add_event(Event(session_id='system', type='agent_profile_deleted', message=f'Agent profile deleted: {profile_name}'))
+    return {'ok': True, 'deleted': profile_name}
+
+
+@app.delete('/v1/models/{model_name}')
 def delete_model(model_name: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
     global config
     if model_name not in config.models:
         raise HTTPException(status_code=404, detail='Model not found')
+    if getattr(config.models[model_name], 'read_only', False):
+        raise HTTPException(status_code=403, detail=f'Model {model_name} is read-only and cannot be deleted')
     del config.models[model_name]
     save_config(config)
     store.add_event(Event(session_id='system', type='model_deleted', message=f'Model deleted: {model_name}', data={'model': model_name}))

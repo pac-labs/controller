@@ -2322,10 +2322,12 @@ function renderModels() {
       const del = document.createElement('button');
       del.textContent = 'Delete';
       del.className = 'ghost-button danger-button';
-      del.onclick = async ev => { ev.stopPropagation(); if (!confirm('Delete model \'${name}\'?')) return; const r = await api(`/v1/models/${name}`, {method:'DELETE'}); if (r?.ok) renderModels(); else alert(r?.error || 'Delete failed'); };
+      del.onclick = async ev => { ev.stopPropagation(); if (!confirm('Delete model \'${name}\'')) return; const r = await api(`/v1/models/${name}`, {method:'DELETE'}); if (r?.ok) renderModels(); else alert(r?.error || (r?.detail ? r.detail : 'Delete failed')); };
       actions.appendChild(edit);
       actions.appendChild(test);
-      actions.appendChild(del);
+      if (!model.read_only) {
+        actions.appendChild(del);
+      }
       if (provider?.type === 'lmstudio') {
         const inspect = document.createElement('button');
         inspect.textContent = 'Inspect';
