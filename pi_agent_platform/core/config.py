@@ -208,6 +208,8 @@ MAIN_PI_DEV_PROFILE_TOOLS = [
     "pty_write",
     "pty_resize",
     "pty_close",
+    "auto_commit",
+    "git_changes",
 ]
 MAIN_PI_DEV_SYSTEM_PROMPT = (
     "You are PAC's main pi.dev coding and operations agent. "

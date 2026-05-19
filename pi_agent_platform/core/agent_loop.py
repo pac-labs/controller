@@ -1689,6 +1689,33 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
         store.add_event(Event(session_id=session.id, task_id=task.id, type="pty_closed", message=f"PTY closed: {pty_session_id}", data=result))
         return json.dumps(result), False
 
+    if tool == "auto_commit":
+        if perm.shell == "deny":
+            return "DENIED: shell access is denied", False
+        workspace = str(inp.get("workspace") or session.workspace_path or "")
+        message = str(inp.get("message") or "").strip()
+        push = bool(inp.get("push") or False)
+        if not workspace:
+            return "auto_commit requires workspace path", False
+        from .auto_commit import auto_commit as _ac, auto_push as _ap
+        result = _ac(workspace, message, task.id, commit_message=message or None)
+        if result.get("committed"):
+            store.add_event(Event(session_id=session.id, task_id=task.id, type="auto_committed", message=f"Committed: {result.get('sha', '')[:12]}", data=result))
+            if push:
+                push_result = _ap(workspace)
+                result["pushed"] = push_result.get("pushed")
+                result["push_error"] = push_result.get("error")
+            return json.dumps(result), False
+        return json.dumps({"committed": False, "error": result.get("error", "unknown")}), False
+
+    if tool == "git_changes":
+        workspace = str(inp.get("workspace") or session.workspace_path or "")
+        if not workspace:
+            return "git_changes requires workspace path", False
+        from .auto_commit import get_git_changes
+        result = get_git_changes(workspace)
+        return json.dumps(result, indent=2)[:10000], False
+
     return f"Unknown tool: {tool}", False
 
 
@@ -1788,6 +1815,16 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             store.add_event(Event(session_id=session.id, task_id=task.id, type="result", message=task.output, data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "agent_profile": session.agent_profile, "permission_profile": session.permission_profile, "stop_reason": "user_stop"}))
             session.status = SessionStatus.created
             store.add_session(session)
+            try:
+                from .auto_commit import auto_commit, get_git_changes
+                if task.status == TaskStatus.completed and session.workspace_path:
+                    changes = get_git_changes(session.workspace_path)
+                    if changes.get("has_changes"):
+                        result = auto_commit(session.workspace_path, task.prompt or "", task.id)
+                        if result.get("committed"):
+                            store.add_event(Event(session_id=session.id, task_id=task.id, type="auto_committed", message=f"Auto-committed: {result.get('sha', '')[:12]}", data={"sha": result.get("sha"), "message": result.get("message"), "changed_files": result.get("changed_files")}))
+            except Exception:
+                pass
             return task
         if time.monotonic() >= deadline:
             try:
@@ -1810,6 +1847,16 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             store.add_event(Event(session_id=session.id, task_id=task.id, type="result", message=task.output, data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "agent_profile": session.agent_profile, "permission_profile": session.permission_profile, "stop_reason": "runtime_limit"}))
             session.status = SessionStatus.created
             store.add_session(session)
+            try:
+                from .auto_commit import auto_commit, get_git_changes
+                if task.status == TaskStatus.completed and session.workspace_path:
+                    changes = get_git_changes(session.workspace_path)
+                    if changes.get("has_changes"):
+                        result = auto_commit(session.workspace_path, task.prompt or "", task.id)
+                        if result.get("committed"):
+                            store.add_event(Event(session_id=session.id, task_id=task.id, type="auto_committed", message=f"Auto-committed: {result.get('sha', '')[:12]}", data={"sha": result.get("sha"), "message": result.get("message"), "changed_files": result.get("changed_files")}))
+            except Exception:
+                pass
             return task
         current_tokens = message_tokens(messages)
         threshold = int(budget.input_budget_tokens * 0.82)
@@ -1910,6 +1957,16 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             task.metadata["agent_transcript"] = transcript[-20:]
             store.add_task(task)
             store.add_event(Event(session_id=session.id, task_id=task.id, type="result", message=raw[-4000:], data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "agent_profile": session.agent_profile, "permission_profile": session.permission_profile}))
+            try:
+                from .auto_commit import auto_commit, get_git_changes
+                if task.status == TaskStatus.completed and session.workspace_path:
+                    changes = get_git_changes(session.workspace_path)
+                    if changes.get("has_changes"):
+                        result = auto_commit(session.workspace_path, task.prompt or "", task.id)
+                        if result.get("committed"):
+                            store.add_event(Event(session_id=session.id, task_id=task.id, type="auto_committed", message=f"Auto-committed: {result.get('sha', '')[:12]}", data={"sha": result.get("sha"), "message": result.get("message"), "changed_files": result.get("changed_files")}))
+            except Exception:
+                pass
             return task
 
         thought_summary, thought_meta = _summarize_model_action(action)
@@ -1970,6 +2027,16 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             store.add_event(Event(session_id=session.id, task_id=task.id, type="result", message=task.output[-4000:], data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "agent_profile": session.agent_profile, "permission_profile": session.permission_profile}))
             session.status = SessionStatus.created
             store.add_session(session)
+            try:
+                from .auto_commit import auto_commit, get_git_changes
+                if task.status == TaskStatus.completed and session.workspace_path:
+                    changes = get_git_changes(session.workspace_path)
+                    if changes.get("has_changes"):
+                        result = auto_commit(session.workspace_path, task.prompt or "", task.id)
+                        if result.get("committed"):
+                            store.add_event(Event(session_id=session.id, task_id=task.id, type="auto_committed", message=f"Auto-committed: {result.get('sha', '')[:12]}", data={"sha": result.get("sha"), "message": result.get("message"), "changed_files": result.get("changed_files")}))
+            except Exception:
+                pass
             return task
 
         if action.get("type") == "tool_call":
@@ -2017,6 +2084,16 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                 store.add_event(Event(session_id=session.id, task_id=task.id, type="result", message=task.output, data={"role": "assistant", "model": session.model, "endpoint_id": task.metadata.get("runner_id"), "agent_profile": session.agent_profile, "permission_profile": session.permission_profile, "stop_reason": "user_stop"}))
                 session.status = SessionStatus.created
                 store.add_session(session)
+                try:
+                    from .auto_commit import auto_commit, get_git_changes
+                    if task.status == TaskStatus.completed and session.workspace_path:
+                        changes = get_git_changes(session.workspace_path)
+                        if changes.get("has_changes"):
+                            result = auto_commit(session.workspace_path, task.prompt or "", task.id)
+                            if result.get("committed"):
+                                store.add_event(Event(session_id=session.id, task_id=task.id, type="auto_committed", message=f"Auto-committed: {result.get('sha', '')[:12]}", data={"sha": result.get("sha"), "message": result.get("message"), "changed_files": result.get("changed_files")}))
+                except Exception:
+                    pass
                 return task
             if task.metadata.pop("_compact_now", False):
                 before_tokens = message_tokens(messages)
