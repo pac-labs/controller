@@ -41,16 +41,6 @@ class MdnsConfig(BaseModel):
     service_type: str = "_https._tcp.local."
 
 
-class LetsEncryptConfig(BaseModel):
-    enabled: bool = False
-    email: str = ""
-    domain: str = ""
-    cert_file: str = "~/.pacp/config/letsencrypt/cert.pem"
-    key_file: str = "~/.pacp/config/letsencrypt/key.pem"
-    challenge_port: int = 80
-    auto_enable: bool = True
-
-
 class ServiceConfig(BaseModel):
     mode: Literal["user", "host"] = "user"
     name: str = "pacp"
@@ -325,7 +315,6 @@ class AppConfig(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     tls: TlsConfig = Field(default_factory=TlsConfig)
     mdns: MdnsConfig = Field(default_factory=MdnsConfig)
-    letsencrypt: LetsEncryptConfig = Field(default_factory=LetsEncryptConfig)
     service: ServiceConfig = Field(default_factory=ServiceConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
