@@ -31,6 +31,7 @@ from .store import store
 from .web_tools import fetch_page_text, search_web_text, as_json_text
 from .artifacts import write_artifact, list_artifacts
 from .workspace_index import build_workspace_index
+from .workspace_lessons import save_lesson, load_lessons, search_lessons, get_project_memory
 
 
 TOOL_HELP = """
@@ -362,6 +363,65 @@ def _controller_session_runtime_context(session: Session, config: AppConfig) -> 
         f"- available tools in this session: {', '.join(tool_names[:20]) or '-'}\n"
         "Use this snapshot as background context; verify details in files or runtime state before making precise claims."
     )
+
+
+def _save_task_lesson(session: Session, task: Task, transcript: list[dict], config: AppConfig) -> None:
+    """
+    Save a lesson to workspace memory on task completion.
+    Called from both completed and failed task exits.
+    """
+    if not session.workspace_path:
+        return
+
+    # Determine category and title from task
+    category = "task_result"
+    title = task.prompt[:80] if task.prompt else "untitled task"
+
+    # Extract files touched
+    files_touched = []
+    for entry in transcript:
+        inp = entry.get("input", {})
+        if isinstance(inp, dict):
+            path = inp.get("path") or inp.get("file") or ""
+            if path and path not in files_touched:
+                files_touched.append(path)
+        elif isinstance(inp, str) and inp not in files_touched:
+            files_touched.append(inp[:200])
+
+    # Extract tool calls
+    tool_calls = [{"tool": e.get("tool"), "input": e.get("input", {}), "observation": e.get("observation", "")[:500]} for e in transcript[-12:]]
+
+    # Body: what was the task, what was the outcome
+    body_parts = []
+    if task.output:
+        body_parts.append(f"Outcome: {task.output[:1000]}")
+    if task.error:
+        body_parts.append(f"Error: {task.error[:500]}")
+
+    # Add workspace index info if available
+    idx = task.metadata.get("workspace_index", {})
+    if idx:
+        pt = idx.get("project_type", "unknown")
+        fc = idx.get("tree", {}).get("file_count", 0)
+        body_parts.append(f"Workspace: {pt} project, {fc} files indexed")
+        proj = idx.get("projects", [])
+        if proj:
+            body_parts.append(f"Projects: {', '.join(p.get('type', '') for p in proj)}")
+
+    body = "\n".join(body_parts) or title
+
+    try:
+        save_lesson(
+            workspace_path=session.workspace_path,
+            category=category,
+            title=title,
+            body=body,
+            tags=["task", session.agent_profile or "pi-dev"],
+            tool_calls=tool_calls,
+            files_touched=files_touched[:20],
+        )
+    except Exception:
+        pass  # Don't let lesson saving failures break task completion
 
 
 def _format_workspace_index_briefing(idx: dict) -> str:
@@ -1223,6 +1283,48 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
         except Exception as exc:
             return f"WEB_SEARCH_FAILED: {exc}", False
 
+    if tool == "lessons":
+        # Cross-session memory: save/load/query lessons learned in this workspace
+        mode = str(inp.get("mode") or "load").strip().lower()
+        workspace = session.workspace_path
+
+        if mode == "save":
+            # Save a lesson explicitly (agent can call this mid-task)
+            category = str(inp.get("category") or "implementation")
+            title = str(inp.get("title") or task.prompt[:80] or "untitled")
+            body = str(inp.get("body") or "")
+            tags = inp.get("tags")
+            if isinstance(tags, str):
+                tags = [t.strip() for t in tags.split(",")]
+            elif not isinstance(tags, list):
+                tags = []
+            files_touched = inp.get("files_touched") or []
+            result = save_lesson(
+                workspace_path=workspace,
+                category=category,
+                title=title,
+                body=body,
+                tags=tags,
+                tool_calls=[],
+                files_touched=files_touched if isinstance(files_touched, list) else [],
+            )
+            return json.dumps({"ok": True, "lesson_id": result.get("lesson_id")}), False
+
+        if mode == "search":
+            query = str(inp.get("query") or "").strip()
+            if not query:
+                return "lessons search requires query", False
+            category = str(inp.get("category") or "").strip() or None
+            limit = max(1, min(int(inp.get("limit") or 10), 30))
+            result = search_lessons(workspace, query, category=category, limit=limit)
+            return json.dumps(result, indent=2)[:12000], False
+
+        # Default: load recent lessons
+        category = str(inp.get("category") or "").strip() or None
+        limit = max(1, min(int(inp.get("limit") or 20), 50))
+        result = load_lessons(workspace, category=category, limit=limit)
+        return json.dumps(result, indent=2)[:12000], False
+
     if tool == "save_artifact":
         name = str(inp.get("name") or "artifact.txt")
         content = str(inp.get("content") or "")
@@ -1278,6 +1380,15 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     if index_briefing:
         messages.append({"role": "system", "content": index_briefing})
     store.add_event(Event(session_id=session.id, task_id=task.id, type="workspace_indexed", message="Workspace indexed", data={"project_type": workspace_index.get("project_type"), "file_count": workspace_index.get("tree", {}).get("file_count", 0), "projects": [p.get("type") for p in workspace_index.get("projects", [])]}))
+    # Inject accumulated project memory (cross-session lessons)
+    project_memory = get_project_memory(session.workspace_path)
+    if project_memory.get("has_memory"):
+        memory_brief = (
+            f"\nNote: this workspace has {project_memory['count']} prior lesson(s) in memory.\n"
+            f"Summary:\n{project_memory['summary']}\n"
+            "To recall specific lessons: use `lessons(mode=\"search\", query=\"...\")` tool.\n"
+        )
+        messages.append({"role": "system", "content": memory_brief})
     messages.extend(_session_history_messages(session, current_task_id=task.id, max_messages=12))
     messages.append({"role": "user", "content": "Current user request (answer this now; earlier conversation is context only):\n" + task.prompt})
 
@@ -1300,6 +1411,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
         latest_task = store.get_task(task.id) or task
         stop_requested = bool((latest_task.metadata or {}).get("stop_requested"))
         if stop_requested:
+            _save_task_lesson(session, task, transcript, config)
             task = latest_task
             task.status = TaskStatus.completed
             task.output = "Agent stopped by user."
@@ -1310,6 +1422,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             store.add_session(session)
             return task
         if time.monotonic() >= deadline:
+            _save_task_lesson(session, task, transcript, config)
             task.status = TaskStatus.completed
             task.output = f"Agent stopped after reaching the runtime limit of {max_runtime_minutes} minute(s). Check the timeline and diff for partial work."
             task.metadata["agent_transcript"] = transcript[-20:]
@@ -1333,6 +1446,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
         try:
             raw = await asyncio.to_thread(chat_complete, config, decision_model, messages, max_tokens=min(ctx["reserve_output_tokens"], 4096))
         except Exception as exc:
+            _save_task_lesson(session, task, transcript, config)
             task.status = TaskStatus.failed
             task.error = f"Model call failed: {exc}"
             store.add_task(task)
@@ -1346,6 +1460,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             if empty_model_retries <= 2:
                 messages.append({"role": "user", "content": "Your previous response was empty. Based on the latest tool result or context, return either ONE final answer or ONE valid tool_call JSON object now."})
                 continue
+            _save_task_lesson(session, task, transcript, config)
             task.status = TaskStatus.failed
             task.error = "Model returned an empty response repeatedly."
             store.add_task(task)
@@ -1373,6 +1488,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                     ),
                 })
                 continue
+            _save_task_lesson(session, task, transcript, config)
             task.status = TaskStatus.completed
             task.output = raw
             task.metadata["agent_transcript"] = transcript[-20:]
@@ -1418,6 +1534,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                     ),
                 })
                 continue
+            _save_task_lesson(session, task, transcript, config)
             task.status = TaskStatus.completed
             task.output = final_message
             task.metadata["agent_transcript"] = transcript[-20:]
@@ -1439,6 +1556,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                 return task
             latest_task = store.get_task(task.id) or task
             if (latest_task.metadata or {}).get("stop_requested"):
+                _save_task_lesson(session, task, transcript, config)
                 task = latest_task
                 task.status = TaskStatus.completed
                 task.output = "Agent stopped by user."
