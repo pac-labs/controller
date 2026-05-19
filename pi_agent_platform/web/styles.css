@@ -4475,3 +4475,83 @@ body[data-theme="dark"] .tabs-wrap{
   background-image:none !important;
   box-shadow:none !important;
 }
+
+/* v1.0.177: Mobile usability improvements */
+@media (max-width: 600px) {
+  /* General layout */
+  main { padding: 0.65rem; }
+
+  /* Nav: flatten group buttons, make them compact */
+  .tabs-groups { gap: 0.25rem; }
+  .nav-group-btn { padding: 0.5rem 0.65rem; font-size: 0.8rem; }
+  .tabs-primary { gap: 0.25rem; }
+  .tabs-primary .tab { padding: 0.5rem 0.65rem; font-size: 0.8rem; }
+
+  /* Settings subnav: horizontal scroll, not wrap */
+  .settings-subnav { flex-wrap: nowrap; overflow-x: auto; gap: 0.35rem; padding-bottom: 0.65rem; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .settings-subnav::-webkit-scrollbar { display: none; }
+  .settings-sub-btn { flex: 0 0 auto; min-height: 2rem; padding: 0.45rem 0.75rem; font-size: 0.8rem; }
+
+  /* Cards: tighter padding */
+  .card { padding: 0.85rem; }
+
+  /* Session composer: full-width inputs, stack controls cleanly */
+  .session-composer { padding: 0.65rem; }
+  .composer-controls.integrated.editor-like { grid-template-columns: 1fr auto !important; gap: 0.4rem; }
+  .composer-input-shell textarea { min-height: 48px; }
+  .session-session-meta { gap: 0.4rem; }
+  .session-quick-controls { flex-wrap: wrap; gap: 0.4rem; }
+  .session-quick-label { display: none; }
+  #sessionPermissionQuick, #applySessionPermission { max-width: 140px; }
+
+  /* Forms: single column */
+  .form-grid { grid-template-columns: 1fr; }
+  .button-row { flex-wrap: wrap; }
+
+  /* Dashboard: stack all grids */
+  .dashboard-grid { grid-template-columns: 1fr; }
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bar-chart, .health-grid { overflow-x: auto; }
+
+  /* Session list */
+  #sessions-tab .session-chat-layout { display: block; }
+  .chat-timeline { min-height: 40vh; }
+  .chat-bubble { max-width: 90%; }
+
+  /* Modal: full-screen on mobile */
+  .modal-card { width: 98vw; max-width: 98vw; margin: 1vh auto; max-height: 96vh; overflow-y: auto; }
+  .modal-card.wide-modal { width: 98vw; }
+
+  /* Source / IDE */
+  .source-library-layout { grid-template-columns: 1fr; }
+  .source-editor-card, .source-tree-card { min-width: 0; }
+
+  /* Provider cards: full width */
+  .provider-grid { grid-template-columns: 1fr; }
+
+  /* Settings panels: full width, no double-grid */
+  .settings-panel-inner { grid-template-columns: 1fr; }
+  .split-admin-layout { grid-template-columns: 1fr; }
+  .settings-layout { grid-template-columns: 1fr; }
+  .pi-dev-grid { grid-template-columns: 1fr; }
+
+  /* Event rail: full width, collapsible on mobile */
+  .events-rail { width: 100%; height: 280px; }
+
+  /* Session modal: stacked form fields */
+  .sessionModal .form-grid { grid-template-columns: 1fr; }
+  .sessionModal label { font-size: 0.8rem; }
+  #sessionEndpoint, #modelOverride { max-width: 100%; }
+
+  /* Compact form grid on mobile */
+  .compact-form { grid-template-columns: 1fr !important; }
+  .check-grid { grid-template-columns: 1fr !important; }
+}
+
+@media (max-width: 400px) {
+  .nav-group-btn { padding: 0.45rem 0.55rem; font-size: 0.75rem; }
+  .tabs-primary .tab { padding: 0.45rem 0.55rem; font-size: 0.75rem; }
+  .session-top-select { max-width: 120px; }
+  .session-picker-wrap { gap: 0.3rem; }
+  .session-plus-button { padding: 0.4rem 0.6rem; }
+}
