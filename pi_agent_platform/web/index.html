@@ -117,6 +117,7 @@
         <div class="form-grid">
           <label>Name <input id="sessionName" value="web-session" /></label>
           <label>Bootstrap mode <select id="sessionBootstrapMode"><option value="profile">profile / workspace</option><option value="source-context">source context</option></select></label>
+          <label>Agent context <select id="sessionAgentContext"><option value="">none</option></select><small class="muted">Reusable execution preset for workspace, runtime, profile, tools, and model routing.</small></label>
           <label>Source context <select id="sessionSourceContext"><option value="">none</option></select><small class="muted">Use a PAC source context to prefill customer, endpoint, profile, and workspace defaults.</small></label>
           <label>Profile <select id="agentProfile"></select></label>
           <label>Workspace <select id="workspaceProfile"></select></label>
@@ -285,6 +286,54 @@
           <section class="card side-panel">
             <h2>Session usage</h2>
             <div id="profilesUsage"><div class="muted small-text">Loading…</div></div>
+          </section>
+        </aside>
+      </div>
+    </section>
+
+    <section id="contexts-tab" class="tab-panel">
+      <div class="split-admin-layout">
+        <section class="card split-main workspace-manager">
+          <h2>Agent contexts</h2>
+          <p class="muted">Agent contexts are the reusable execution presets users actually select. They bind together workspace target, runtime placement, profile, model roles, tools, and access policy.</p>
+          <section class="source-sidecard">
+            <div class="section-heading compact-heading"><div><h3>Context definition</h3><p class="muted">Use these for coding, controller maintenance, research, or operational workflows.</p></div></div>
+            <div class="form-grid compact-form workspace-form">
+              <label>Context <select id="agentContextSelect"><option value="">New context</option></select></label>
+              <label>Name <input id="agentContextName" placeholder="csharp-coder" /></label>
+              <label>Kind <select id="agentContextKind"><option value="coding">coding</option><option value="controller">controller</option><option value="research">research</option><option value="operations">operations</option></select></label>
+              <label>Workspace <select id="agentContextWorkspace"><option value="">none</option></select></label>
+              <label>Workspace template <select id="agentContextTemplate"><option value="">none</option></select></label>
+              <label>Controller workdir <input id="agentContextControllerWorkdir" placeholder="/home/dorbian/.pacp/app" /></label>
+              <label>Endpoint <select id="agentContextEndpoint"><option value="">auto</option></select></label>
+              <label>Container image <input id="agentContextContainerImage" placeholder="localhost/dotnet-dev:latest" /></label>
+              <label>Agent profile <select id="agentContextProfile"><option value="">default</option></select></label>
+              <label>Permission profile <select id="agentContextPermission"><option value="">default</option></select></label>
+              <label>Executor model <select id="agentContextExecutorModel"><option value="">default</option></select></label>
+              <label>Planner model <select id="agentContextPlannerModel"><option value="">none</option></select></label>
+              <label>Reviewer model <select id="agentContextReviewerModel"><option value="">none</option></select></label>
+              <label>Retrieval model <select id="agentContextRetrievalModel"><option value="">none</option></select></label>
+              <label>Tools <select id="agentContextTools" multiple size="7"></select></label>
+              <label>Use groups <select id="agentContextUseGroups" multiple size="5"></select></label>
+              <label>Edit groups <select id="agentContextEditorGroups" multiple size="5"></select></label>
+              <label>Context mode <select id="agentContextMode"><option value="">default</option><option>low</option><option>medium</option><option>high</option><option>max</option></select></label>
+              <label class="checkbox-line"><input id="agentContextRequiresContainer" type="checkbox" checked /> Require container runtime</label>
+              <label class="checkbox-line"><input id="agentContextPinned" type="checkbox" /> Pin in selectors</label>
+            </div>
+            <label>Description <input id="agentContextDescription" placeholder="Workspace-backed coding agent with planner and container runtime." /></label>
+            <div class="button-row">
+              <button id="saveAgentContext">Save context</button>
+              <button id="deleteAgentContext" class="ghost-button">Delete</button>
+              <button id="openAgentContextSession" class="ghost-button">Open session</button>
+            </div>
+            <div id="agentContextFormResult" class="inline-result"></div>
+            <div id="agentContexts" class="workspace-list"></div>
+          </section>
+        </section>
+        <aside class="split-side">
+          <section class="card side-panel">
+            <h2>Context usage</h2>
+            <div id="agentContextUsage"><div class="muted small-text">Pick a context in Sessions or IDE to launch work with the right workspace, profile, tools, and models.</div></div>
           </section>
         </aside>
       </div>
@@ -461,6 +510,7 @@
     <section id="sources-tab" class="tab-panel source-workbench-panel">
       <div class="source-workbench-toolbar">
         <div class="source-workbench-scope">
+          <label>Context <select id="ideContextSelect"><option value="">Select context</option></select></label>
           <label>My workspace <select id="ideWorkspaceSelect"><option value="">Select workspace</option></select></label>
           <label hidden>Session <select id="ideSessionSelect"><option value="">Select coding session</option></select></label>
         </div>

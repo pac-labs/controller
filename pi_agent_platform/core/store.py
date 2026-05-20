@@ -6,7 +6,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Iterable
 
-from .models import AccessRequest, Event, Group, Session, Task, Runner, RunnerJob, RunnerJobStatus, User, UserWorkspace, now_utc
+from .models import AccessRequest, AgentContext, Event, Group, Session, Task, Runner, RunnerJob, RunnerJobStatus, User, UserWorkspace, now_utc
 from .config import ProxyRoute
 from .platform_home import pacp_path
 
@@ -43,6 +43,9 @@ class SQLiteStore:
             conn.execute('create table if not exists user_workspaces (id text primary key, owner_id text not null, owner_username text not null, name text not null, payload text not null, updated_at text not null)')
             conn.execute('create index if not exists idx_user_workspaces_owner on user_workspaces(owner_id, updated_at)')
             conn.execute('create index if not exists idx_user_workspaces_owner_name on user_workspaces(owner_id, name)')
+            conn.execute('create table if not exists agent_contexts (id text primary key, owner_id text not null, owner_username text not null, name text not null, payload text not null, updated_at text not null)')
+            conn.execute('create index if not exists idx_agent_contexts_owner on agent_contexts(owner_id, updated_at)')
+            conn.execute('create index if not exists idx_agent_contexts_owner_name on agent_contexts(owner_id, name)')
             conn.execute('create table if not exists proxy_routes (id text primary key, payload text not null, updated_at text not null)')
 
     def add_session(self, session: Session) -> Session:
@@ -346,6 +349,38 @@ class SQLiteStore:
     def delete_user_workspace(self, workspace_id: str) -> bool:
         with self._lock, self._connect() as conn:
             cur = conn.execute('delete from user_workspaces where id = ?', (workspace_id,))
+        return cur.rowcount > 0
+
+    def add_agent_context(self, context: AgentContext) -> AgentContext:
+        context.touch()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'insert or replace into agent_contexts(id, owner_id, owner_username, name, payload, updated_at) values (?, ?, ?, ?, ?, ?)',
+                (context.id, context.owner_id, context.owner_username, context.name, context.model_dump_json(), context.updated_at.isoformat()),
+            )
+        return context
+
+    def get_agent_context(self, context_id: str) -> AgentContext | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from agent_contexts where id = ?', (context_id,)).fetchone()
+        return AgentContext.model_validate_json(row['payload']) if row else None
+
+    def list_agent_contexts(self, owner_id: str | None = None) -> list[AgentContext]:
+        with self._connect() as conn:
+            if owner_id:
+                rows = conn.execute('select payload from agent_contexts where owner_id = ? order by updated_at desc', (owner_id,)).fetchall()
+            else:
+                rows = conn.execute('select payload from agent_contexts order by updated_at desc').fetchall()
+        return [AgentContext.model_validate_json(r['payload']) for r in rows]
+
+    def find_agent_context_by_name(self, owner_id: str, name: str) -> AgentContext | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from agent_contexts where owner_id = ? and name = ? order by updated_at desc limit 1', (owner_id, name)).fetchone()
+        return AgentContext.model_validate_json(row['payload']) if row else None
+
+    def delete_agent_context(self, context_id: str) -> bool:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute('delete from agent_contexts where id = ?', (context_id,))
         return cur.rowcount > 0
 
     def list_proxy_routes(self) -> list[ProxyRoute]:

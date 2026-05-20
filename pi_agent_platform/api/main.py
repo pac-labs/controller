@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field
 from pi_agent_platform.core.config import AppConfig, ProviderConfig, AgentProfile, WorkspaceProfile, SourceContextConfig, save_config, load_config, default_config_path, MAIN_PI_DEV_PROFILE, AGENT_CONTROL_WORKSPACE, MODEL_NOT_SELECTED, CODING_SESSION_PERMISSION_PROFILE
 from pi_agent_platform.api.routes.marketplace import create_marketplace_router
 from pi_agent_platform.core.platform_home import ensure_pacp_layout, pacp_path
-from pi_agent_platform.core.models import AccessRequest, AccessRequestStatus, Event, Group, ResourceGrant, Session, SessionCreate, Task, TaskCreate, TaskStatus, SessionStatus, Runner, RunnerCreateRequest, RunnerRegisterRequest, RunnerHeartbeat, RunnerStatus, RunnerJobCreate, RunnerJob, RunnerJobStatus, RunnerJobUpdate, RunnerJobLog, RunnerExecutionMode, User, UserWorkspace, WorkspaceSpec
+from pi_agent_platform.core.models import AccessRequest, AccessRequestStatus, AgentContext, Event, Group, ResourceGrant, Session, SessionCreate, Task, TaskCreate, TaskStatus, SessionStatus, Runner, RunnerCreateRequest, RunnerRegisterRequest, RunnerHeartbeat, RunnerStatus, RunnerJobCreate, RunnerJob, RunnerJobStatus, RunnerJobUpdate, RunnerJobLog, RunnerExecutionMode, User, UserWorkspace, WorkspaceSpec
 from pi_agent_platform.core.runtime import git_diff, git_status, run_shell_task
 from pi_agent_platform.core.agent_loop import run_agent_loop, execute_tool
 from pi_agent_platform.core.session_commands import list_session_slash_commands, parse_session_slash_command, slash_help_text
@@ -1736,6 +1736,31 @@ class UserWorkspacePayload(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class AgentContextPayload(BaseModel):
+    name: str
+    description: str | None = None
+    kind: str | None = None
+    workspace_id: str | None = None
+    workspace_template_id: str | None = None
+    controller_workdir: str | None = None
+    endpoint_id: str | None = None
+    endpoint_selector: str | None = None
+    container_image: str | None = None
+    requires_container: bool = True
+    agent_profile: str | None = None
+    permission_profile: str | None = None
+    context_mode: str | None = None
+    executor_model: str | None = None
+    planner_model: str | None = None
+    reviewer_model: str | None = None
+    retrieval_model: str | None = None
+    tools: list[str] = Field(default_factory=list)
+    use_groups: list[str] = Field(default_factory=list)
+    editor_groups: list[str] = Field(default_factory=list)
+    pinned: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 def _best_default_agent_profile() -> str | None:
     for candidate in ('code_planner', MAIN_PI_DEV_PROFILE, 'main-pi-dev'):
         if candidate in (config.agent_profiles or {}):
@@ -1925,6 +1950,166 @@ def _ensure_user_workspace_session(item: UserWorkspace, auth: CurrentUser) -> Se
     )
     item.last_session_id = session.id
     store.add_user_workspace(item)
+    return session
+
+
+def _public_agent_context(item: AgentContext) -> dict[str, Any]:
+    workspace = store.get_user_workspace(item.workspace_id) if item.workspace_id else None
+    template = _workspace_template_catalog().get(str(item.workspace_template_id or '').strip()) if item.workspace_template_id else None
+    return {
+        'id': item.id,
+        'owner_id': item.owner_id,
+        'owner_username': item.owner_username,
+        'name': item.name,
+        'description': item.description,
+        'kind': item.kind,
+        'workspace_id': item.workspace_id,
+        'workspace': _public_user_workspace(workspace) if workspace else None,
+        'workspace_template_id': item.workspace_template_id,
+        'workspace_template': _public_workspace_template(template) if template else None,
+        'controller_workdir': item.controller_workdir,
+        'endpoint_id': item.endpoint_id,
+        'endpoint_selector': item.endpoint_selector,
+        'container_image': item.container_image,
+        'requires_container': bool(item.requires_container),
+        'agent_profile': item.agent_profile,
+        'permission_profile': item.permission_profile,
+        'context_mode': item.context_mode,
+        'executor_model': item.executor_model,
+        'planner_model': item.planner_model,
+        'reviewer_model': item.reviewer_model,
+        'retrieval_model': item.retrieval_model,
+        'tools': list(item.tools or []),
+        'use_groups': list(item.use_groups or []),
+        'editor_groups': list(item.editor_groups or []),
+        'last_session_id': item.last_session_id,
+        'pinned': bool(item.pinned),
+        'metadata': item.metadata or {},
+        'created_at': item.created_at.isoformat(),
+        'updated_at': item.updated_at.isoformat(),
+    }
+
+
+def _context_visibility_owner_ids(auth: CurrentUser) -> tuple[str, str]:
+    return _workspace_owner(auth)
+
+
+def _can_use_agent_context(item: AgentContext, auth: CurrentUser) -> bool:
+    if auth.is_admin or not auth.user:
+        return True
+    if item.owner_id == auth.user.id:
+        return True
+    group_ids = set(auth.user.groups or [])
+    allowed = set(item.use_groups or []) | set(item.editor_groups or [])
+    return bool(group_ids & allowed)
+
+
+def _can_edit_agent_context(item: AgentContext, auth: CurrentUser) -> bool:
+    if auth.is_admin or not auth.user:
+        return True
+    if item.owner_id == auth.user.id:
+        return True
+    return bool(set(auth.user.groups or []) & set(item.editor_groups or []))
+
+
+def _agent_context_payload_to_item(existing: AgentContext | None, payload: AgentContextPayload, auth: CurrentUser) -> AgentContext:
+    owner_id, owner_username = (existing.owner_id, existing.owner_username) if existing else _context_visibility_owner_ids(auth)
+    base = existing or AgentContext(owner_id=owner_id, owner_username=owner_username, name=payload.name.strip())
+    base.owner_id = owner_id
+    base.owner_username = owner_username
+    base.name = payload.name.strip()
+    base.description = payload.description.strip() if isinstance(payload.description, str) and payload.description.strip() else None
+    base.kind = str(payload.kind or base.kind or 'coding')
+    base.workspace_id = payload.workspace_id or None
+    base.workspace_template_id = payload.workspace_template_id or None
+    base.controller_workdir = payload.controller_workdir or None
+    base.endpoint_id = payload.endpoint_id or None
+    base.endpoint_selector = payload.endpoint_selector or None
+    base.container_image = payload.container_image or None
+    base.requires_container = bool(payload.requires_container)
+    base.agent_profile = payload.agent_profile or None
+    base.permission_profile = payload.permission_profile or None
+    base.context_mode = payload.context_mode or None
+    base.executor_model = payload.executor_model or None
+    base.planner_model = payload.planner_model or None
+    base.reviewer_model = payload.reviewer_model or None
+    base.retrieval_model = payload.retrieval_model or None
+    base.tools = [str(item).strip() for item in (payload.tools or []) if str(item).strip()]
+    base.use_groups = [str(item).strip() for item in (payload.use_groups or []) if str(item).strip()]
+    base.editor_groups = [str(item).strip() for item in (payload.editor_groups or []) if str(item).strip()]
+    base.pinned = bool(payload.pinned)
+    base.metadata = dict(base.metadata or {})
+    if payload.metadata:
+        base.metadata.update(payload.metadata)
+    return base
+
+
+def _agent_context_to_session_create(item: AgentContext) -> SessionCreate:
+    metadata = dict(item.metadata or {})
+    metadata['agent_context_id'] = item.id
+    metadata['agent_context_name'] = item.name
+    metadata['agent_context_kind'] = item.kind
+    metadata['workspace_trusted'] = True
+    metadata['agent_enabled'] = True
+    metadata['endpoint_locked'] = bool(item.endpoint_id or item.endpoint_selector)
+    if item.endpoint_id:
+        metadata['preferred_endpoint'] = item.endpoint_id
+    if item.endpoint_selector:
+        metadata['preferred_endpoint_selector'] = item.endpoint_selector
+    if item.requires_container:
+        metadata['preferred_execution_mode'] = 'container'
+    if item.container_image:
+        metadata['container_image'] = item.container_image
+    if item.workspace_id:
+        workspace = store.get_user_workspace(item.workspace_id)
+        if workspace:
+            spec, workspace_meta = _user_workspace_to_session_spec(workspace)
+            metadata.update(workspace_meta)
+            metadata['workspace_origin'] = 'user-workspace'
+            return SessionCreate(
+                name=f'ctx-{re.sub(r"[^A-Za-z0-9._-]+", "-", item.name).lower()}',
+                agent_profile=item.agent_profile or workspace.agent_profile,
+                permission_profile=item.permission_profile or workspace.permission_profile or CODING_SESSION_PERMISSION_PROFILE,
+                workspace=spec,
+                model=item.executor_model or workspace.model,
+                context_mode=item.context_mode or workspace.context_mode,
+                tools=list(item.tools or []),
+                metadata=metadata,
+            )
+    if item.workspace_template_id:
+        template = _workspace_template_catalog().get(item.workspace_template_id)
+        if template and template.get('workspace_profile'):
+            return SessionCreate(
+                name=f'ctx-{re.sub(r"[^A-Za-z0-9._-]+", "-", item.name).lower()}',
+                agent_profile=item.agent_profile or template.get('agent_profile'),
+                permission_profile=item.permission_profile or template.get('permission_profile') or CODING_SESSION_PERMISSION_PROFILE,
+                workspace=WorkspaceSpec(type='profile', profile=template.get('workspace_profile')),
+                model=item.executor_model,
+                context_mode=item.context_mode,
+                tools=list(item.tools or []),
+                metadata=metadata,
+            )
+    workspace_path = item.controller_workdir or None
+    return SessionCreate(
+        name=f'ctx-{re.sub(r"[^A-Za-z0-9._-]+", "-", item.name).lower()}',
+        agent_profile=item.agent_profile,
+        permission_profile=item.permission_profile or CODING_SESSION_PERMISSION_PROFILE,
+        workspace=WorkspaceSpec(type='local', path=workspace_path),
+        model=item.executor_model,
+        context_mode=item.context_mode,
+        tools=list(item.tools or []),
+        metadata=metadata,
+    )
+
+
+def _ensure_agent_context_session(item: AgentContext, auth: CurrentUser) -> Session:
+    if item.last_session_id:
+        existing = store.get_session(item.last_session_id)
+        if existing:
+            return existing
+    session = create_session(_agent_context_to_session_create(item), _auth=auth)
+    item.last_session_id = session.id
+    store.add_agent_context(item)
     return session
 
 
@@ -2400,6 +2585,78 @@ def ensure_my_workspace_session(workspace_id: str, _auth: CurrentUser = Depends(
         raise HTTPException(status_code=403, detail='Workspace not available')
     session = _ensure_user_workspace_session(item, _auth)
     return {'ok': True, 'workspace': _public_user_workspace(item), 'session': session.model_dump(mode='json')}
+
+
+@app.get('/v1/agent-contexts')
+def list_agent_contexts(_auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    owner_id, _ = _context_visibility_owner_ids(_auth)
+    items = [
+        _public_agent_context(item)
+        for item in store.list_agent_contexts()
+        if (item.owner_id == owner_id or _can_use_agent_context(item, _auth))
+    ]
+    return {'items': items}
+
+
+@app.post('/v1/agent-contexts')
+def create_agent_context(payload: AgentContextPayload, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    owner_id, _ = _context_visibility_owner_ids(_auth)
+    existing = store.find_agent_context_by_name(owner_id, payload.name.strip())
+    if existing:
+        raise HTTPException(status_code=409, detail='An agent context with that name already exists')
+    item = _agent_context_payload_to_item(None, payload, _auth)
+    store.add_agent_context(item)
+    store.add_event(Event(session_id='system', type='agent_context_created', message=f'Agent context created: {item.name}', data={'context_id': item.id, 'owner': item.owner_username}))
+    return {'ok': True, 'context': _public_agent_context(item)}
+
+
+@app.get('/v1/agent-contexts/{context_id}')
+def get_agent_context(context_id: str, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    item = store.get_agent_context(context_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='Agent context not found')
+    if not _can_use_agent_context(item, _auth):
+        raise HTTPException(status_code=403, detail='Agent context not available')
+    return {'context': _public_agent_context(item)}
+
+
+@app.put('/v1/agent-contexts/{context_id}')
+def update_agent_context(context_id: str, payload: AgentContextPayload, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    item = store.get_agent_context(context_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='Agent context not found')
+    if not _can_edit_agent_context(item, _auth):
+        raise HTTPException(status_code=403, detail='Agent context not editable')
+    conflict = store.find_agent_context_by_name(item.owner_id, payload.name.strip())
+    if conflict and conflict.id != item.id:
+        raise HTTPException(status_code=409, detail='An agent context with that name already exists')
+    updated = _agent_context_payload_to_item(item, payload, _auth)
+    store.add_agent_context(updated)
+    store.add_event(Event(session_id='system', type='agent_context_updated', message=f'Agent context updated: {updated.name}', data={'context_id': updated.id, 'owner': updated.owner_username}))
+    return {'ok': True, 'context': _public_agent_context(updated)}
+
+
+@app.delete('/v1/agent-contexts/{context_id}')
+def delete_agent_context(context_id: str, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    item = store.get_agent_context(context_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='Agent context not found')
+    if not _can_edit_agent_context(item, _auth):
+        raise HTTPException(status_code=403, detail='Agent context not editable')
+    store.delete_agent_context(context_id)
+    store.add_event(Event(session_id='system', type='agent_context_deleted', message=f'Agent context deleted: {item.name}', data={'context_id': item.id, 'owner': item.owner_username}))
+    return {'ok': True, 'deleted': context_id}
+
+
+@app.post('/v1/agent-contexts/{context_id}/session')
+def ensure_agent_context_session(context_id: str, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    item = store.get_agent_context(context_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='Agent context not found')
+    if not _can_use_agent_context(item, _auth):
+        raise HTTPException(status_code=403, detail='Agent context not available')
+    session = _ensure_agent_context_session(item, _auth)
+    return {'ok': True, 'context': _public_agent_context(item), 'session': session.model_dump(mode='json')}
 
 
 @app.post('/v1/auth/tokens')

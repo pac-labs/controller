@@ -338,3 +338,37 @@ class UserWorkspace(BaseModel):
 
     def touch(self) -> None:
         self.updated_at = now_utc()
+
+
+class AgentContext(BaseModel):
+    id: str = Field(default_factory=lambda: f"ctx_{uuid4().hex[:12]}")
+    owner_id: str
+    owner_username: str
+    name: str
+    description: str | None = None
+    kind: Literal["coding", "controller", "research", "operations"] = "coding"
+    workspace_id: str | None = None
+    workspace_template_id: str | None = None
+    controller_workdir: str | None = None
+    endpoint_id: str | None = None
+    endpoint_selector: str | None = None
+    container_image: str | None = None
+    requires_container: bool = True
+    agent_profile: str | None = None
+    permission_profile: str | None = None
+    context_mode: str | None = None
+    executor_model: str | None = None
+    planner_model: str | None = None
+    reviewer_model: str | None = None
+    retrieval_model: str | None = None
+    tools: list[str] = Field(default_factory=list)
+    use_groups: list[str] = Field(default_factory=list)
+    editor_groups: list[str] = Field(default_factory=list)
+    last_session_id: str | None = None
+    pinned: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+
+    def touch(self) -> None:
+        self.updated_at = now_utc()
