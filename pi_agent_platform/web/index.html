@@ -250,18 +250,10 @@
             <div id="unconfiguredModelsList"></div>
           </section>
         </section>
-        <aside class="split-side">
-          <section id="modelsRecommendationsPanel" class="card side-panel" hidden>
-            <div class="section-heading compact-heading"><div><h3>Configuration Recommendations</h3><p class="muted small-text">Model adaptation and runtime guidance derived from the current environment.</p></div></div>
+        <aside class="split-side models-side">
+          <section id="modelsRecommendationsPanel" class="card side-panel models-recommendations-panel" hidden>
+            <div class="section-heading compact-heading"><div><h3>Configuration Recommendations</h3><p class="muted small-text">Compact adaptation guidance from the current provider and runtime state.</p></div></div>
             <div id="modelsRecommendationsBody"></div>
-          </section>
-          <section class="card side-panel">
-            <h2>Active sessions</h2>
-            <div id="modelsActiveSessions"><div class="muted small-text">Loading…</div></div>
-          </section>
-          <section class="card side-panel">
-            <h2>Live server models</h2>
-            <div id="modelsLive"><div class="muted small-text">Loading…</div></div>
           </section>
         </aside>
       </div>
@@ -373,12 +365,13 @@
 
     <div id="modelModal" class="modal-backdrop" hidden>
       <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modelModalTitle">
-        <div class="section-heading"><div><h2 id="modelModalTitle">Model</h2><p class="muted">Choose the provider model ID and the endpoint that should run sessions using it.</p></div><button id="closeModelModal" class="ghost-button">Close</button></div>
+        <div class="section-heading"><div><h2 id="modelModalTitle">Model</h2><p class="muted">Choose the provider model ID, give it a PAC function, and optionally pin a preferred endpoint for sessions.</p></div><button id="closeModelModal" class="ghost-button">Close</button></div>
         <div class="form-grid compact-form">
-          <label>Model name <input id="modelName" placeholder="qwen-coder-local" /></label>
+          <label>PAC model key <input id="modelName" placeholder="coding/glm-4.7-flash" /><small class="muted">Use a stable key like <code>provider/model</code> or <code>function/model</code>.</small></label>
           <label>Provider <span id="modelProviderDisplay" class="field-value"></span><select id="modelProvider" hidden aria-hidden="true"></select></label>
           <label>Provider model ID <input id="modelId" placeholder="qwen2.5-coder-14b-instruct" /></label>
-          <label>Execution endpoint <select id="modelRunsOn"><option value="">PAC/local</option></select><small class="muted">Endpoint used by default for sessions using this model.</small></label>
+          <label>Function <select id="modelFunction"><option value="general">general</option><option value="coding">coding</option><option value="planner">planner</option><option value="reviewer">reviewer</option><option value="embedding">embedding</option><option value="docs">docs</option><option value="vision">vision</option><option value="reasoning">reasoning</option></select><small class="muted">What this model is mainly used for in PAC.</small></label>
+          <label>Preferred session endpoint <select id="modelRunsOn"><option value="">provider default</option></select><small class="muted">Optional. Only pin this when placement matters.</small></label>
           <label>Context window <input id="modelContextWindow" type="number" value="4096" /></label>
           <label>Max output tokens <input id="modelMaxOutput" type="number" value="1024" /></label>
           <label>Reasoning level <select id="modelReasoning"><option value="none">none</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select></label>

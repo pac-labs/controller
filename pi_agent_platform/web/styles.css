@@ -2710,6 +2710,7 @@ body[data-theme="dark"] .events-rail{
 .inline-browser-row b{color:#f8fafc}
 .inline-browser-group{flex-wrap:wrap;justify-content:flex-end}
 .recommendation-card{border:1px solid rgba(148,163,184,.18);border-left-width:4px;border-radius:.6rem;padding:.78rem .85rem;background:linear-gradient(180deg,rgba(15,23,42,.78),rgba(2,6,23,.9));display:grid;gap:.35rem;margin-top:.7rem}
+.recommendation-card.compact{padding:.68rem .78rem;gap:.28rem;margin-top:.55rem}
 .recommendation-card h4{margin:0;color:#f8fafc;font-size:.96rem}
 .recommendation-card p{margin:0;color:#dbe7ff;line-height:1.42}
 .recommendation-card.info{border-left-color:#60a5fa}
@@ -4231,9 +4232,16 @@ body[data-theme="light"] .download-pill small{
 }
 .model-card-grid{
   display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(360px,1fr));
+  grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
   gap:1rem;
   align-items:start;
+}
+.models-side{
+  grid-template-columns:minmax(260px,340px);
+}
+.models-recommendations-panel{
+  position:sticky;
+  top:1rem;
 }
 .model-overview-card{
   border:1px solid rgba(36,195,107,.16);

@@ -2219,7 +2219,7 @@ async function renderLiveModels() {
     const models = result.models || [];
     const rows = models.map(m => {
       const id = m.id || m.name;
-      const key = `${name}-${String(id).replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase()}`.replace(/^-+|-+$/g,'');
+      const key = providerModelKey(name, id, inferModelFunction(name, id));
       const configured = !!config.models?.[key] || Object.values(config.models || {}).some(x => x.provider === name && (x.model || '') === id);
       return `<li><button class="link-button" data-provider="${escapeHtml(name)}" data-model="${escapeHtml(id)}" data-key="${escapeHtml(key)}">${escapeHtml(id)}</button><button class="ghost-button mini-button" data-add-live-model="1" data-provider="${escapeHtml(name)}" data-model="${escapeHtml(id)}" data-key="${escapeHtml(key)}">${configured ? 'Edit' : 'Configure'}</button><span class="muted">${escapeHtml(modelSummaryLine(m))}</span></li>`;
     }).join('');
@@ -2231,8 +2231,11 @@ async function renderLiveModels() {
       const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = btn.dataset.provider;
       const providerSelect = document.getElementById('modelProvider'); if (providerSelect) providerSelect.value = btn.dataset.provider;
       modelId.value = btn.dataset.model;
-      modelName.value = btn.dataset.key || btn.dataset.model.replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase();
-      modelRunsOn.value = btn.dataset.provider || '';
+      const modelFunction = document.getElementById('modelFunction');
+      if (modelFunction) modelFunction.value = inferModelFunction(btn.dataset.provider, btn.dataset.model);
+      modelName.value = btn.dataset.key || providerModelKey(btn.dataset.provider, btn.dataset.model, modelFunction?.value || 'general');
+      modelName.dataset.auto = 'true';
+      modelRunsOn.value = '';
     };
   });
   live.querySelectorAll('button[data-add-live-model]').forEach(btn => {
@@ -2241,8 +2244,11 @@ async function renderLiveModels() {
       const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = btn.dataset.provider;
       const providerSelect = document.getElementById('modelProvider'); if (providerSelect) providerSelect.value = btn.dataset.provider;
       modelId.value = btn.dataset.model;
-      modelName.value = btn.dataset.key || btn.dataset.model.replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase();
-      modelRunsOn.value = btn.dataset.provider || '';
+      const modelFunction = document.getElementById('modelFunction');
+      if (modelFunction) modelFunction.value = inferModelFunction(btn.dataset.provider, btn.dataset.model);
+      modelName.value = btn.dataset.key || providerModelKey(btn.dataset.provider, btn.dataset.model, modelFunction?.value || 'general');
+      modelName.dataset.auto = 'true';
+      modelRunsOn.value = '';
       setModalStatus('modelModalStatus', 'Review and save this model.');
     };
   });
@@ -2251,16 +2257,44 @@ function providerLabel(providerName) {
   const provider = config.providers?.[providerName];
   return provider ? `${providerName} (${provider.type || 'provider'})` : providerName;
 }
-function providerModelKey(providerName, modelId) {
-  return `${providerName}-${String(modelId || '').replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase()}`.replace(/^-+|-+$/g,'');
+function sanitizeModelKeySegment(value) {
+  return String(value || '').split('/').filter(Boolean).pop()?.replace(/[^a-zA-Z0-9_.-]+/g,'-').replace(/^-+|-+$/g,'').toLowerCase() || '';
+}
+function inferModelFunction(providerName, modelId) {
+  const text = String(modelId || '').toLowerCase();
+  if (text.includes('embed')) return 'embedding';
+  if (text.includes('vision') || text.includes('vl') || text.includes('llava')) return 'vision';
+  if (text.includes('reason')) return 'reasoning';
+  if (text.includes('coder') || text.includes('code')) return 'coding';
+  return 'general';
+}
+function providerModelKey(providerName, modelId, modelFunction='') {
+  const prefix = (modelFunction && modelFunction !== 'general') ? modelFunction : providerName;
+  const suffix = sanitizeModelKeySegment(modelId);
+  return `${sanitizeModelKeySegment(prefix)}/${suffix}`.replace(/^\/+|\/+$/g,'');
+}
+function syncSuggestedModelKey(force=false) {
+  if (!modelName) return;
+  const provider = modelProvider?.value || '';
+  const modelIdValue = modelId?.value || '';
+  const modelFunction = document.getElementById('modelFunction')?.value || 'general';
+  if (!provider || !modelIdValue) return;
+  const suggested = providerModelKey(provider, modelIdValue, modelFunction);
+  if (force || !modelName.value.trim() || modelName.dataset.auto === 'true') {
+    modelName.value = suggested;
+    modelName.dataset.auto = 'true';
+  }
 }
 function openModelDraft(providerName, modelId) {
   openModelModal();
   const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = providerName;
   const providerSelect = document.getElementById('modelProvider'); if (providerSelect) providerSelect.value = providerName;
   modelId.value = modelId;
-  modelName.value = providerModelKey(providerName, modelId) || String(modelId || '').replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase();
-  modelRunsOn.value = providerName || '';
+  const modelFunction = document.getElementById('modelFunction');
+  if (modelFunction) modelFunction.value = inferModelFunction(providerName, modelId);
+  modelName.value = providerModelKey(providerName, modelId, modelFunction?.value || 'general') || sanitizeModelKeySegment(modelId);
+  modelName.dataset.auto = 'true';
+  modelRunsOn.value = '';
   setModalStatus('modelModalStatus', 'Review and save this model.');
 }
 function groupedSessionsBy(field) {
@@ -2292,7 +2326,7 @@ async function unloadLmStudioModelByName(name) {
   return r;
 }
 function recommendationCardHtml(level, title, body, detail = '') {
-  return `<article class="recommendation-card ${escapeHtml(level)}"><h4>${escapeHtml(title)}</h4><p>${escapeHtml(body)}</p>${detail ? `<div class="muted small-text">${escapeHtml(detail)}</div>` : ''}</article>`;
+  return `<article class="recommendation-card compact ${escapeHtml(level)}"><h4>${escapeHtml(title)}</h4><p>${escapeHtml(body)}</p>${detail ? `<div class="muted small-text">${escapeHtml(detail)}</div>` : ''}</article>`;
 }
 async function renderUnconfiguredModelsPanelFromLive() {
   const target = document.getElementById('unconfiguredModelsList');
@@ -2359,16 +2393,14 @@ function renderModelRecommendations() {
     if (!availability.ok) recommendations.push(recommendationCardHtml('warn', `${name} is not currently available`, availability.reason || 'The provider is not returning this model.', `${providerLabel(model.provider || '-')}${sessionCount ? ` - ${sessionCount} session(s) reference it` : ''}`));
     if (provider?.type === 'lmstudio') {
       const runtime = model.extra?.lmstudio_runtime || {};
-      if (!model.runs_on && endpoints.length > 1) recommendations.push(recommendationCardHtml('info', `Pin ${name} to an endpoint`, 'This LM Studio model is not pinned to a runtime endpoint, so PAC cannot make placement decisions consistently.', 'Select an execution endpoint in the model configuration.'));
       if (!runtime.gpu_offload && (endpoint?.capabilities?.gpu?.available || endpoint?.capabilities?.gpu?.devices?.length)) recommendations.push(recommendationCardHtml('info', `Tune ${name} for GPU use`, 'A GPU-capable endpoint is available, but the LM Studio runtime fields are still mostly default.', 'Review GPU offload, context, and batch sizing in the model form.'));
       if (runtime.context_length && model.context_window && Number(runtime.context_length) < Number(model.context_window)) recommendations.push(recommendationCardHtml('warn', `LM Studio load window is shorter for ${name}`, 'PAC is configured to expect a larger context window than the LM Studio runtime will load.', 'Raise the runtime context length or lower the configured model context to keep behavior consistent.'));
       if (!runtime.context_length && model.context_window) recommendations.push(recommendationCardHtml('info', `Set an explicit LM Studio load window for ${name}`, 'The model has a configured PAC context window, but the LM Studio load runtime still relies on implicit defaults.', 'Set the runtime context length so load behavior is predictable.'));
     }
-    if (model.context_window && Number(model.context_window) >= 64000 && !model.runs_on && endpoints.length) recommendations.push(recommendationCardHtml('info', `Review placement for ${name}`, 'This model is configured with a large context window and should usually be tied to a known-capacity endpoint.', 'Pinning prevents weak endpoints from being chosen implicitly.'));
   }
   const liveProviderModels = Object.entries(config.providers || {}).reduce((count, [providerName, provider]) => count + ((provider.cached_models || []).filter(model => !configuredModelMatchesProviderModel(providerName, model.id || model.name || model.model)).length), 0);
   if (liveProviderModels > 0) recommendations.push(recommendationCardHtml('info', 'Additional provider models are available', `${liveProviderModels} live model(s) are visible from connected providers but not configured in PAC yet.`, 'Browse providers to promote them into session models.'));
-  const visible = recommendations.slice(0, 6);
+  const visible = recommendations.slice(0, 4);
   const hiddenCount = Math.max(0, recommendations.length - visible.length);
   body.innerHTML = (visible.join('') || '<div class="muted small-text">No adaptation recommendations right now.</div>') + (hiddenCount ? `<div class="muted small-text recommendation-summary">+ ${hiddenCount} more recommendation(s). Resolve current issues to reduce this list.</div>` : '');
   panel.hidden = false;
@@ -2457,9 +2489,10 @@ function renderModels() {
         model.capabilities?.supports_streaming ? ['streaming', 'streaming output enabled'] : null,
         model.capabilities?.reasoning && model.capabilities.reasoning !== 'none' ? [`reasoning ${model.capabilities.reasoning}`, 'reasoning-oriented model'] : null,
       ].filter(Boolean).map(([label, title]) => `<span class="pill model-cap-pill" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`).join('');
+      const modelFunction = model.extra?.function || inferModelFunction(model.provider, model.model || name);
       const cardMeta = [
         provider?.type ? `${provider.type}` : '',
-        model.model || '',
+        `${modelFunction} role`,
       ].filter(Boolean).join(' • ');
       card.innerHTML = `<div class="provider-card-head"><div class="provider-title-block"><h3>${escapeHtml(name)}</h3><span class="muted">${escapeHtml(providerLabel(model.provider || '-'))}</span></div><span class="pill ${availability.ok ? 'ok-pill' : 'warn-pill'}">${escapeHtml(availability.ok ? 'available' : 'attention')}</span></div>
         <div class="provider-health-strip"><span class="pill ${escapeHtml(health.klass)}">${escapeHtml(health.pill)}</span><span class="small-text">${escapeHtml(health.detail)}</span></div>
@@ -2467,7 +2500,7 @@ function renderModels() {
         ${caps ? `<div class="provider-pill-list model-cap-list">${caps}</div>` : ''}
         <div class="workspace-card-grid model-stats-grid">
           <div><small>model id</small><b>${escapeHtml(model.model || '-')}</b></div>
-          <div><small>endpoint</small><b>${escapeHtml(endpointName(model.runs_on))}</b></div>
+          <div><small>preferred endpoint</small><b>${escapeHtml(model.runs_on ? endpointName(model.runs_on) : 'provider default')}</b></div>
           <div><small>context</small><b>${escapeHtml(model.context_window || '-')}</b></div>
           <div><small>max output</small><b>${escapeHtml(model.max_output_tokens || '-')}</b></div>
           <div><small>reasoning</small><b>${escapeHtml(model.capabilities?.reasoning || 'none')}</b></div>
@@ -2475,7 +2508,7 @@ function renderModels() {
           <div><small>input price / 1M</small><b>${escapeHtml(model.input_price_per_million ?? '-')}</b></div>
           <div><small>output price / 1M</small><b>${escapeHtml(model.output_price_per_million ?? '-')}</b></div>
         </div>
-        <div class="muted small-text">${escapeHtml(availability.ok ? 'Configured and visible to PAC.' : `Issue: ${availability.reason}`)}</div>
+        <div class="muted small-text">${escapeHtml(availability.ok ? `Configured for ${modelFunction} work.` : `Issue: ${availability.reason}`)}</div>
         ${provider?.type === 'lmstudio' ? `<div class="model-runtime-strip"><span>LM Studio</span><span>ctx ${escapeHtml(runtime.context_length || model.context_window || '-')}</span><span>gpu ${escapeHtml(runtime.gpu_offload || 'default')}</span><span>batch ${escapeHtml(runtime.eval_batch_size || runtime.batch_size || 'default')}</span><span>temp ${escapeHtml(runtime.temperature ?? 'default')}</span></div>` : ''}`;
       card.onclick = () => openModelModal(name);
       const actions = document.createElement('div');
@@ -2518,8 +2551,6 @@ function renderModels() {
     }
   }
   renderModelRecommendations();
-  renderModelActiveSessionsPanel();
-  renderLiveModels().catch(()=>{});
   renderUnconfiguredModelsPanelFromLive().catch(()=>{});
 }
 async function renderLiveModels() {
@@ -2856,7 +2887,7 @@ function fillModelEndpointOptions(endpoints = window.__pacEndpoints || []) {
   const sel = document.getElementById('modelRunsOn');
   if (!sel || sel.tagName !== 'SELECT') return;
   const current = sel.value;
-  sel.innerHTML = '<option value="">PAC/local</option>';
+  sel.innerHTML = '<option value="">provider default</option>';
   (endpoints || []).forEach(r => opt(sel, r.id, `${r.name || r.id} (${r.status || 'unknown'})`));
   if (current && !Array.from(sel.options).some(o => o.value === current)) opt(sel, current, current);
   sel.value = current || '';
@@ -2880,6 +2911,8 @@ function openModelModal(name='') {
   if (name) { fillModelForm(name); }
   else {
     modelName.value=''; modelId.value=''; modelRunsOn.value=''; modelContextWindow.value=4096; modelMaxOutput.value=1024;
+    const modelFunction = document.getElementById('modelFunction'); if (modelFunction) modelFunction.value='general';
+    modelName.dataset.auto = 'true';
     modelSupportsChat.checked=true; modelSupportsTools.checked=false; modelSupportsVision.checked=false; modelSupportsJson.checked=false; modelSupportsStreaming.checked=true; modelReasoning.value='none'; modelInputPrice.value=''; modelOutputPrice.value=''; fillLmStudioRuntimeFields({});
     const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = modelProvider.options[0]?.value || '';
   }
@@ -3139,6 +3172,8 @@ function fillModelForm(name) {
   const m = config.models?.[name]; if (!m) return;
   modelName.value=name; const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = m.provider || '(none)'; modelId.value=m.model || ''; modelRunsOn.value=m.runs_on || '';
   const providerSelect = document.getElementById('modelProvider'); if (providerSelect) { providerSelect.value = m.provider || ''; }
+  const modelFunction = document.getElementById('modelFunction'); if (modelFunction) modelFunction.value = m.extra?.function || inferModelFunction(m.provider, m.model || name);
+  modelName.dataset.auto = 'false';
   modelContextWindow.value=m.context_window || 4096; modelMaxOutput.value=m.max_output_tokens || 1024;
   modelSupportsChat.checked=m.capabilities?.supports_chat !== false; modelSupportsTools.checked=!!m.capabilities?.supports_tools; modelSupportsVision.checked=!!m.capabilities?.supports_vision; modelSupportsJson.checked=!!m.capabilities?.supports_json;
   modelSupportsStreaming.checked=m.capabilities?.supports_streaming !== false;
@@ -6545,7 +6580,10 @@ if (document.getElementById('saveProvider')) saveProvider.onclick=()=>saveProvid
 if (document.getElementById('connectProviderForm')) connectProviderForm.onclick=()=>connectProviderFromForm().catch(e=>paneError('Provider connect failed', e.message));
 if (document.getElementById('saveModel')) saveModel.onclick=()=>saveModelFromForm().catch(e=>paneError('Model save failed', e.message));
 if (document.getElementById('testModelForm')) testModelForm.onclick=()=>testModelFromForm().catch(e=>paneError('Model test failed', e.message));
-if (document.getElementById('modelProvider')) modelProvider.onchange=()=>updateLmStudioModelControls();
+if (document.getElementById('modelProvider')) modelProvider.onchange=()=>{ updateLmStudioModelControls(); syncSuggestedModelKey(true); };
+if (document.getElementById('modelId')) modelId.oninput = () => syncSuggestedModelKey();
+if (document.getElementById('modelFunction')) document.getElementById('modelFunction').onchange = () => syncSuggestedModelKey(true);
+if (document.getElementById('modelName')) modelName.oninput = () => { modelName.dataset.auto = 'false'; };
 const checkSourceUpdatesBtn = document.getElementById('checkSourceUpdates');
 if (checkSourceUpdatesBtn) checkSourceUpdatesBtn.onclick = checkSourceOnlineUpdates;
 if (document.getElementById('loadLmStudioModel')) loadLmStudioModel.onclick=()=>loadLmStudioModelFromForm().catch(e=>paneError('LM Studio load failed', e.message));
@@ -6827,7 +6865,10 @@ async function saveModelFromForm() {
       supports_streaming: !!modelSupportsStreaming.checked,
       reasoning: modelReasoning.value || 'none'
     },
-    extra: currentModelProvider()?.type === 'lmstudio' ? {lmstudio_runtime: collectLmStudioRuntimeFields()} : {},
+    extra: {
+      ...(currentModelProvider()?.type === 'lmstudio' ? {lmstudio_runtime: collectLmStudioRuntimeFields()} : {}),
+      function: document.getElementById('modelFunction')?.value || 'general',
+    },
   };
   const savedName = modelName.value.trim();
   await persistConfigAndReload(null, null);
