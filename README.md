@@ -4,6 +4,21 @@
 
 # PAC - Pi Agent Control
 
+## Engineering Rule
+
+This repository follows an explicit structural rule for ongoing changes:
+
+- aim for files around `150` to `350` lines
+- keep each file or class focused on one responsibility
+- group code into purpose-focused directories
+- isolate complex logic into dedicated modules instead of growing monoliths
+- when adding code to a large file, prefer extracting the touched subsystem at the same time
+
+Authoritative guidance:
+
+- [AGENTS.md](AGENTS.md)
+- [docs/codebase-migration-plan.md](docs/codebase-migration-plan.md)
+
 PAC is a local-first, distributed agent control platform for running AI-assisted development, operations, documentation and automation sessions across trusted machines.
 
 The controller provides the Web UI, API, session state, model/provider configuration, approvals, artifacts, source management and endpoint orchestration. Endpoints provide the actual execution environments: local binaries, approved workspaces, containerized coding sessions and pi.dev runtime integration.
