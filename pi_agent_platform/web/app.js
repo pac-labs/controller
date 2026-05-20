@@ -2038,12 +2038,12 @@ function renderModels() {
   }
   el.appendChild(configured);
   const live = document.createElement('div');
-  live.innerHTML = '<h3>Live server models</h3><div id="liveModels" class="remote-models">Loading live model lists…</div>';
+  live.innerHTML = '<h3>Live server models</h3><div id="modelsLive" class="remote-models">Loading live model lists…</div>';
   el.appendChild(live);
   renderLiveModels().catch(()=>{});
 }
 async function renderLiveModels() {
-  const live = document.getElementById('liveModels');
+  const live = document.getElementById('modelsLive');
   if (!live) return;
   const providers = Object.keys(config.providers || {});
   if (!providers.length) { live.textContent = 'No providers configured.'; return; }
@@ -2325,7 +2325,7 @@ function renderModels() {
       const del = document.createElement('button');
       del.textContent = 'Delete';
       del.className = 'ghost-button danger-button';
-      del.onclick = async ev => { ev.stopPropagation(); if (!confirm('Delete model \'${name}\'')) return; const r = await api(`/v1/models/${name}`, {method:'DELETE'}); if (r?.ok) renderModels(); else alert(r?.error || (r?.detail ? r.detail : 'Delete failed')); };
+      del.onclick = async ev => { ev.stopPropagation(); if (!confirm(`Delete model '${name}'`)) return; const r = await api(`/v1/models/${name}`, {method:'DELETE'}); if (r?.ok) renderModels(); else alert(r?.error || (r?.detail ? r.detail : 'Delete failed')); };
       actions.appendChild(edit);
       actions.appendChild(test);
       if (!model.read_only) {
