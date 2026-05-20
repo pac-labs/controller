@@ -30,6 +30,7 @@ let config = null;
 let workspaceTemplates = [];
 let personalWorkspaces = [];
 let agentContexts = [];
+let sharedStorages = [];
 let selectedSession = null;
 let selectedSourcePath = null;
 let selectedSourceFolder = '';
@@ -2599,6 +2600,99 @@ function setSelectedMultiValues(fieldId, values = []) {
   Array.from(el.options || []).forEach((o) => { o.selected = wanted.has(o.value); });
 }
 
+function storageNameById(id) {
+  const item = (sharedStorages || []).find((entry) => entry.id === id);
+  return item ? item.name : (id || '-');
+}
+
+function renderSharedStorages() {
+  const listEl = document.getElementById('sharedStorageList');
+  const selectIds = [
+    'userWorkspaceSharedStorage',
+    'agentContextSharedStorage',
+    'workspaceSharedStorage',
+    'sourceStorageSelect',
+  ];
+  const options = (sharedStorages || []).map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
+  selectIds.forEach((fieldId) => {
+    const el = document.getElementById(fieldId);
+    if (!el) return;
+    const current = el.value;
+    el.innerHTML = `<option value="">none</option>${options}`;
+    if (current && (sharedStorages || []).some((item) => item.id === current)) el.value = current;
+  });
+  if (!listEl) return;
+  listEl.innerHTML = (sharedStorages || []).map((item) => `
+    <div class="workspace-card clickable-row" data-shared-storage="${escapeHtml(item.id)}">
+      <div class="workspace-card-title"><b>${escapeHtml(item.name)}</b><span>${escapeHtml(item.driver || 'custom')}</span></div>
+      <div class="workspace-card-grid">
+        <div><small>controller</small><b>${escapeHtml(item.controller_path || '-')}</b></div>
+        <div><small>network</small><b>${escapeHtml(item.network_path || '-')}</b></div>
+        <div><small>mount</small><b>${escapeHtml(item.mount_path || '/workspace')}</b></div>
+        <div><small>mode</small><b>${item.writable ? 'rw' : 'ro'}</b></div>
+      </div>
+      <code>${escapeHtml(item.description || '')}${item.description ? '\n' : ''}selector: ${escapeHtml(item.endpoint_selector || '-')}\ndefault subpath: ${escapeHtml(item.default_subpath || '-')}</code>
+    </div>`).join('') || '<div class="muted">No shared storage defined yet.</div>';
+  listEl.querySelectorAll('[data-shared-storage]').forEach((row) => {
+    row.onclick = () => fillSharedStorageForm(row.getAttribute('data-shared-storage') || '');
+  });
+}
+
+function fillSharedStorageForm(id = '') {
+  const item = (sharedStorages || []).find((entry) => entry.id === id);
+  const set = (fieldId, value='') => { const el = document.getElementById(fieldId); if (el) el.value = value ?? ''; };
+  set('sharedStorageSelect', item?.id || '');
+  set('sharedStorageName', item?.name || '');
+  set('sharedStorageDescription', item?.description || '');
+  set('sharedStorageDriver', item?.driver || 'nfs');
+  set('sharedStorageNetworkPath', item?.network_path || '');
+  set('sharedStorageControllerPath', item?.controller_path || '');
+  set('sharedStorageMountPath', item?.mount_path || '/workspace');
+  set('sharedStorageEndpointSelector', item?.endpoint_selector || '');
+  set('sharedStorageEndpointIds', (item?.endpoint_ids || []).join(', '));
+  set('sharedStorageDefaultSubpath', item?.default_subpath || '');
+  const writable = document.getElementById('sharedStorageWritable'); if (writable) writable.checked = item?.writable !== false;
+}
+
+function sharedStorageFormPayload() {
+  return {
+    name: (document.getElementById('sharedStorageName')?.value || '').trim(),
+    description: (document.getElementById('sharedStorageDescription')?.value || '').trim() || null,
+    driver: document.getElementById('sharedStorageDriver')?.value || 'nfs',
+    network_path: (document.getElementById('sharedStorageNetworkPath')?.value || '').trim() || null,
+    controller_path: (document.getElementById('sharedStorageControllerPath')?.value || '').trim() || null,
+    mount_path: (document.getElementById('sharedStorageMountPath')?.value || '').trim() || '/workspace',
+    endpoint_selector: (document.getElementById('sharedStorageEndpointSelector')?.value || '').trim() || null,
+    endpoint_ids: csv(document.getElementById('sharedStorageEndpointIds')?.value || ''),
+    writable: !!document.getElementById('sharedStorageWritable')?.checked,
+    default_subpath: (document.getElementById('sharedStorageDefaultSubpath')?.value || '').trim() || null,
+  };
+}
+
+async function saveSharedStorageFromForm() {
+  const payload = sharedStorageFormPayload();
+  if (!payload.name) return alert('Shared storage name is required');
+  const existingId = document.getElementById('sharedStorageSelect')?.value || '';
+  const path = existingId ? `/v1/shared-storages/${encodeURIComponent(existingId)}` : '/v1/shared-storages';
+  const method = existingId ? 'PUT' : 'POST';
+  const result = await api(path, {method, body: JSON.stringify(payload)});
+  await loadWorkspaceCatalogs();
+  fillSharedStorageForm(result.storage?.id || '');
+  renderSharedStorages();
+  showInline('sharedStorageFormResult', `Saved shared storage ${payload.name}`);
+}
+
+async function deleteSharedStorageFromForm() {
+  const id = document.getElementById('sharedStorageSelect')?.value || '';
+  if (!id) return alert('Select an existing shared storage first');
+  if (!confirm('Delete this shared storage?')) return;
+  await api(`/v1/shared-storages/${encodeURIComponent(id)}`, {method:'DELETE'});
+  await loadWorkspaceCatalogs();
+  fillSharedStorageForm('');
+  renderSharedStorages();
+  showInline('sharedStorageFormResult', 'Shared storage deleted');
+}
+
 function ideContexts() {
   return (agentContexts || []).slice().sort((a, b) => {
     if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
@@ -2631,6 +2725,7 @@ function renderAgentContexts() {
   const ideSelect = document.getElementById('ideContextSelect');
   const workspaceSelect = document.getElementById('agentContextWorkspace');
   const templateSelect = document.getElementById('agentContextTemplate');
+  const storageSelect = document.getElementById('agentContextSharedStorage');
   const endpointSelect = document.getElementById('agentContextEndpoint');
   const profileSelect = document.getElementById('agentContextProfile');
   const permissionSelect = document.getElementById('agentContextPermission');
@@ -2657,6 +2752,9 @@ function renderAgentContexts() {
   }
   if (templateSelect) {
     templateSelect.innerHTML = `<option value="">none</option>` + workspaceTemplates.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
+  }
+  if (storageSelect) {
+    storageSelect.innerHTML = `<option value="">none</option>` + (sharedStorages || []).map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
   }
   if (endpointSelect) {
     endpointSelect.innerHTML = `<option value="">auto</option>`;
@@ -2695,16 +2793,18 @@ function renderAgentContexts() {
     listEl.innerHTML = contexts.map((item) => {
       const workspace = item.workspace?.name || item.workspace_template?.name || item.controller_workdir || 'none';
       const runtime = item.endpoint_id || item.endpoint_selector || 'auto';
+      const storage = item.shared_storage?.name || storageNameById(item.shared_storage_id);
       const models = [item.executor_model, item.planner_model, item.reviewer_model, item.retrieval_model].filter(Boolean).length;
       return `<div class="workspace-card clickable-row ${item.id === selectedIdeContextId ? 'selected' : ''}" data-agent-context="${escapeHtml(item.id)}">
         <div class="workspace-card-title"><b>${escapeHtml(item.name)}</b><span>${item.pinned ? 'pinned' : escapeHtml(item.kind || 'coding')}</span></div>
         <div class="workspace-card-grid">
           <div><small>workspace</small><b>${escapeHtml(workspace)}</b></div>
+          <div><small>storage</small><b>${escapeHtml(storage || '-')}</b></div>
           <div><small>runtime</small><b>${escapeHtml(runtime)}</b></div>
           <div><small>profile</small><b>${escapeHtml(item.agent_profile || 'default')}</b></div>
           <div><small>models</small><b>${escapeHtml(String(models || 1))}</b></div>
         </div>
-        <code>${escapeHtml(item.description || '')}${item.description ? '\n' : ''}executor: ${escapeHtml(item.executor_model || '-')}\nplanner: ${escapeHtml(item.planner_model || '-')}\ntools: ${escapeHtml((item.tools || []).join(', ') || '-')}</code>
+        <code>${escapeHtml(item.description || '')}${item.description ? '\n' : ''}executor: ${escapeHtml(item.executor_model || '-')}\nplanner: ${escapeHtml(item.planner_model || '-')}\nstorage path: ${escapeHtml(item.storage_subpath || '-')}\ntools: ${escapeHtml((item.tools || []).join(', ') || '-')}</code>
       </div>`;
     }).join('') || '<div class="muted">No agent contexts yet. Create one here and select it in Sessions or IDE.</div>';
     listEl.querySelectorAll('[data-agent-context]').forEach((row) => {
@@ -2727,6 +2827,9 @@ function fillAgentContextForm(id='') {
   set('agentContextWorkspace', item?.workspace_id || '');
   set('agentContextTemplate', item?.workspace_template_id || '');
   set('agentContextControllerWorkdir', item?.controller_workdir || '');
+  set('agentContextSharedStorage', item?.shared_storage_id || '');
+  set('agentContextStorageSubpath', item?.storage_subpath || '');
+  set('agentContextStorageMountPath', item?.storage_mount_path || '');
   set('agentContextEndpoint', item?.endpoint_id || '');
   set('agentContextContainerImage', item?.container_image || '');
   set('agentContextProfile', item?.agent_profile || '');
@@ -2754,6 +2857,9 @@ function agentContextFormPayload() {
     workspace_id: document.getElementById('agentContextWorkspace')?.value || null,
     workspace_template_id: document.getElementById('agentContextTemplate')?.value || null,
     controller_workdir: (document.getElementById('agentContextControllerWorkdir')?.value || '').trim() || null,
+    shared_storage_id: document.getElementById('agentContextSharedStorage')?.value || null,
+    storage_subpath: (document.getElementById('agentContextStorageSubpath')?.value || '').trim() || null,
+    storage_mount_path: (document.getElementById('agentContextStorageMountPath')?.value || '').trim() || null,
     endpoint_id: document.getElementById('agentContextEndpoint')?.value || null,
     container_image: (document.getElementById('agentContextContainerImage')?.value || '').trim() || null,
     agent_profile: document.getElementById('agentContextProfile')?.value || null,
@@ -2817,6 +2923,7 @@ function renderWorkspaces() {
   const personalEl = document.getElementById('personalWorkspaces');
   const templateSelect = document.getElementById('userWorkspaceTemplate');
   const workspaceSelect = document.getElementById('userWorkspaceSelect');
+  const storageSelect = document.getElementById('userWorkspaceSharedStorage');
   const endpointSelect = document.getElementById('userWorkspaceEndpoint');
   const profileSelect = document.getElementById('userWorkspaceAgentProfile');
   const modelSelect = document.getElementById('userWorkspaceModel');
@@ -2826,6 +2933,9 @@ function renderWorkspaces() {
   if (workspaceSelect) {
     workspaceSelect.innerHTML = '<option value="">New workspace</option>' + ideWorkspaces().map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
     if (selectedIdeWorkspaceId && ideWorkspaces().some((item) => item.id === selectedIdeWorkspaceId)) workspaceSelect.value = selectedIdeWorkspaceId;
+  }
+  if (storageSelect) {
+    storageSelect.innerHTML = '<option value="">none</option>' + (sharedStorages || []).map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
   }
   if (endpointSelect) {
     endpointSelect.innerHTML = '<option value="">auto</option>';
@@ -2845,15 +2955,17 @@ function renderWorkspaces() {
     personalEl.innerHTML = ideWorkspaces().map((item) => {
       const target = item.path || item.url || item.workspace_profile || '-';
       const templateName = item.template?.name || item.template_id || 'custom';
+      const storage = item.shared_storage?.name || storageNameById(item.shared_storage_id);
       return `<div class="workspace-card clickable-row ${item.id === selectedIdeWorkspaceId ? 'selected' : ''}" data-user-workspace="${escapeHtml(item.id)}">
         <div class="workspace-card-title"><b>${escapeHtml(item.name)}</b><span>${item.pinned ? 'pinned' : templateName}</span></div>
         <div class="workspace-card-grid">
           <div><small>type</small><b>${escapeHtml(item.workspace_type || 'local')}</b></div>
+          <div><small>storage</small><b>${escapeHtml(storage || '-')}</b></div>
           <div><small>endpoint</small><b>${escapeHtml(item.endpoint_id || 'auto')}</b></div>
           <div><small>profile</small><b>${escapeHtml(item.agent_profile || 'default')}</b></div>
           <div><small>session</small><b>${escapeHtml(item.last_session_id ? 'attached' : 'none')}</b></div>
         </div>
-        <code>${escapeHtml(item.description || '')}${item.description ? '\n' : ''}target: ${escapeHtml(target)}</code>
+        <code>${escapeHtml(item.description || '')}${item.description ? '\n' : ''}target: ${escapeHtml(target)}\nstorage path: ${escapeHtml(item.storage_subpath || '-')}</code>
       </div>`;
     }).join('') || '<div class="muted">No personal workspaces yet. Create one from a template above.</div>';
     personalEl.querySelectorAll('[data-user-workspace]').forEach((row) => {
@@ -2866,6 +2978,7 @@ function renderWorkspaces() {
     const lifecycle = w.ephemeral ? `ephemeral${w.ttl_hours ? `, ${w.ttl_hours}h TTL` : ''}` : 'persistent';
     const placement = w.endpoint_id || w.endpoint_selector || 'select at runtime';
     const data = w.data_bundle_url || w.data_bundle_path || 'none';
+    const storage = storageNameById(w.shared_storage_id);
     const row = document.createElement('div');
     row.className = 'workspace-card clickable-row';
     row.innerHTML = `<div class="workspace-card-title"><b>${escapeHtml(name)}</b><span>${escapeHtml(lifecycle)}</span></div>
@@ -2873,9 +2986,10 @@ function renderWorkspaces() {
         <div><small>type</small><b>${escapeHtml(w.type || 'local')}</b></div>
         <div><small>runtime</small><b>${escapeHtml(w.runtime || 'any')}</b></div>
         <div><small>placement</small><b>${escapeHtml(placement)}</b></div>
+        <div><small>storage</small><b>${escapeHtml(storage || '-')}</b></div>
         <div><small>profile</small><b>${escapeHtml(w.default_agent_profile || '-')}</b></div>
       </div>
-      <code>${escapeHtml(w.description || '')}${w.description ? '\n' : ''}path: ${escapeHtml(w.path || '-')}\nurl: ${escapeHtml(w.url || '-')}\nbranch: ${escapeHtml(w.branch || '-')}\ncontainer: ${escapeHtml(w.container_image || '-')}\ndata zip: ${escapeHtml(data)}\ndata path: ${escapeHtml(w.data_mount_path || '-')}\ndefault: ${w.is_default ? 'yes' : 'no'}</code>`;
+      <code>${escapeHtml(w.description || '')}${w.description ? '\n' : ''}path: ${escapeHtml(w.path || '-')}\nurl: ${escapeHtml(w.url || '-')}\nbranch: ${escapeHtml(w.branch || '-')}\ncontainer: ${escapeHtml(w.container_image || '-')}\nstorage subpath: ${escapeHtml(w.storage_subpath || '-')}\nmount: ${escapeHtml(w.storage_mount_path || '-')}\ndata zip: ${escapeHtml(data)}\ndata path: ${escapeHtml(w.data_mount_path || '-')}\ndefault: ${w.is_default ? 'yes' : 'no'}</code>`;
     row.onclick = () => fillWorkspaceForm(name);
     el.appendChild(row);
   }
@@ -2898,6 +3012,9 @@ function fillUserWorkspaceForm(id='') {
   set('userWorkspacePath', item?.path || '');
   set('userWorkspaceUrl', item?.url || '');
   set('userWorkspaceBranch', item?.branch || '');
+  set('userWorkspaceSharedStorage', item?.shared_storage_id || '');
+  set('userWorkspaceStorageSubpath', item?.storage_subpath || '');
+  set('userWorkspaceStorageMountPath', item?.storage_mount_path || '');
   set('userWorkspaceEndpoint', item?.endpoint_id || '');
   set('userWorkspaceContainerImage', item?.container_image || '');
   set('userWorkspaceAgentProfile', item?.agent_profile || '');
@@ -2917,6 +3034,9 @@ function userWorkspaceFormPayload() {
     path: (document.getElementById('userWorkspacePath')?.value || '').trim() || null,
     url: (document.getElementById('userWorkspaceUrl')?.value || '').trim() || null,
     branch: (document.getElementById('userWorkspaceBranch')?.value || '').trim() || null,
+    shared_storage_id: document.getElementById('userWorkspaceSharedStorage')?.value || null,
+    storage_subpath: (document.getElementById('userWorkspaceStorageSubpath')?.value || '').trim() || null,
+    storage_mount_path: (document.getElementById('userWorkspaceStorageMountPath')?.value || '').trim() || null,
     endpoint_id: document.getElementById('userWorkspaceEndpoint')?.value || null,
     container_image: (document.getElementById('userWorkspaceContainerImage')?.value || '').trim() || null,
     agent_profile: document.getElementById('userWorkspaceAgentProfile')?.value || null,
@@ -5331,6 +5451,9 @@ function fillWorkspaceForm(name) {
   workspaceType.value = w.type || 'local';
   if (document.getElementById('workspaceRuntime')) workspaceRuntime.value = w.runtime || 'any';
   workspacePath.value = w.path || ''; workspaceUrl.value = w.url || ''; workspaceBranch.value = w.branch || '';
+  if (document.getElementById('workspaceSharedStorage')) workspaceSharedStorage.value = w.shared_storage_id || '';
+  if (document.getElementById('workspaceStorageSubpath')) workspaceStorageSubpath.value = w.storage_subpath || '';
+  if (document.getElementById('workspaceStorageMountPath')) workspaceStorageMountPath.value = w.storage_mount_path || '';
   if (document.getElementById('workspaceContainerImage')) workspaceContainerImage.value = w.container_image || '';
   workspaceDefaultProfile.value = w.default_agent_profile || '';
   if (document.getElementById('workspaceEndpoint')) workspaceEndpoint.value = w.endpoint_id || '';
@@ -5353,6 +5476,9 @@ async function saveWorkspaceFromForm() {
     path: workspacePath.value.trim() || null,
     url: workspaceUrl.value.trim() || null,
     branch: workspaceBranch.value.trim() || null,
+    shared_storage_id: workspaceValue('workspaceSharedStorage') || null,
+    storage_subpath: workspaceValue('workspaceStorageSubpath') || null,
+    storage_mount_path: workspaceValue('workspaceStorageMountPath') || null,
     container_image: workspaceValue('workspaceContainerImage') || null,
     default_agent_profile: workspaceDefaultProfile.value || null,
     endpoint_id: document.getElementById('workspaceEndpoint')?.value || null,
@@ -6025,15 +6151,17 @@ async function saveEndpointConnectionSettings() {
 }
 
 async function loadWorkspaceCatalogs() {
-  const [templateData, workspaceData, contextData, groupsData] = await Promise.all([
+  const [templateData, workspaceData, contextData, groupsData, storageData] = await Promise.all([
     api('/v1/workspace-templates').catch(() => ({templates: []})),
     api('/v1/my-workspaces').catch(() => ({items: []})),
     api('/v1/agent-contexts').catch(() => ({items: []})),
     api('/v1/groups').catch(() => []),
+    api('/v1/shared-storages').catch(() => ({items: []})),
   ]);
   workspaceTemplates = Array.isArray(templateData?.templates) ? templateData.templates : [];
   personalWorkspaces = Array.isArray(workspaceData?.items) ? workspaceData.items : [];
   agentContexts = Array.isArray(contextData?.items) ? contextData.items : [];
+  sharedStorages = Array.isArray(storageData?.items) ? storageData.items : [];
   window.__pacGroups = Array.isArray(groupsData) ? groupsData : [];
   if (selectedIdeWorkspaceId && !personalWorkspaces.some((item) => item.id === selectedIdeWorkspaceId)) selectedIdeWorkspaceId = '';
   if (!selectedIdeWorkspaceId && personalWorkspaces.length) {
@@ -6050,7 +6178,7 @@ async function loadConfig() {
   authStatus = {...(authStatus || {}), ...(config?.auth || {})};
   sessionSlashCommands = Array.isArray(config?.session_slash_commands) ? config.session_slash_commands : [];
   await loadWorkspaceCatalogs();
-  fillSelects(); renderAgentContexts(); renderWorkspaces(); renderProfiles(); renderProviders(); renderModels(); renderTools();
+  fillSelects(); renderSharedStorages(); renderAgentContexts(); renderWorkspaces(); renderProfiles(); renderProviders(); renderModels(); renderTools();
   document.getElementById('configEditor').value = JSON.stringify(config, null, 2);
   renderSystemInfo();
   renderHeaderAuthBox();
@@ -6937,6 +7065,9 @@ if (document.getElementById('userWorkspaceTemplate')) userWorkspaceTemplate.onch
   if (!template) return;
   if (document.getElementById('userWorkspaceType') && !userWorkspaceType.value) userWorkspaceType.value = template.workspace_type || 'local';
   if (document.getElementById('userWorkspaceProfile') && !userWorkspaceProfile.value) userWorkspaceProfile.value = template.workspace_profile || '';
+  if (document.getElementById('userWorkspaceSharedStorage') && !userWorkspaceSharedStorage.value) userWorkspaceSharedStorage.value = template.shared_storage_id || '';
+  if (document.getElementById('userWorkspaceStorageSubpath') && !userWorkspaceStorageSubpath.value) userWorkspaceStorageSubpath.value = template.storage_subpath || '';
+  if (document.getElementById('userWorkspaceStorageMountPath') && !userWorkspaceStorageMountPath.value) userWorkspaceStorageMountPath.value = template.storage_mount_path || '';
   if (document.getElementById('userWorkspaceEndpoint') && !userWorkspaceEndpoint.value) userWorkspaceEndpoint.value = template.endpoint_id || '';
   if (document.getElementById('userWorkspaceContainerImage') && !userWorkspaceContainerImage.value) userWorkspaceContainerImage.value = template.container_image || '';
   if (document.getElementById('userWorkspaceAgentProfile') && !userWorkspaceAgentProfile.value) userWorkspaceAgentProfile.value = template.agent_profile || '';
@@ -6949,6 +7080,9 @@ if (document.getElementById('agentContextSelect')) agentContextSelect.onchange =
 if (document.getElementById('saveAgentContext')) saveAgentContext.onclick = () => saveAgentContextFromForm().catch(e=>paneError('Saving agent context failed', e.message));
 if (document.getElementById('deleteAgentContext')) deleteAgentContext.onclick = () => deleteAgentContextFromForm().catch(e=>paneError('Deleting agent context failed', e.message));
 if (document.getElementById('openAgentContextSession')) openAgentContextSession.onclick = () => openAgentContextSessionFromForm().catch(e=>paneError('Opening agent context session failed', e.message));
+if (document.getElementById('sharedStorageSelect')) sharedStorageSelect.onchange = () => fillSharedStorageForm(sharedStorageSelect.value || '');
+if (document.getElementById('saveSharedStorage')) saveSharedStorage.onclick = () => saveSharedStorageFromForm().catch(e=>paneError('Saving shared storage failed', e.message));
+if (document.getElementById('deleteSharedStorage')) deleteSharedStorage.onclick = () => deleteSharedStorageFromForm().catch(e=>paneError('Deleting shared storage failed', e.message));
 const sourceEditorInput = document.getElementById('sourceEditor');
 if (sourceEditorInput) {
   sourceEditorInput.addEventListener('input', () => {

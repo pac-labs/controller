@@ -322,6 +322,9 @@ class UserWorkspace(BaseModel):
     path: str | None = None
     url: str | None = None
     branch: str | None = None
+    shared_storage_id: str | None = None
+    storage_subpath: str | None = None
+    storage_mount_path: str | None = None
     endpoint_id: str | None = None
     endpoint_selector: str | None = None
     container_image: str | None = None
@@ -350,6 +353,9 @@ class AgentContext(BaseModel):
     workspace_id: str | None = None
     workspace_template_id: str | None = None
     controller_workdir: str | None = None
+    shared_storage_id: str | None = None
+    storage_subpath: str | None = None
+    storage_mount_path: str | None = None
     endpoint_id: str | None = None
     endpoint_selector: str | None = None
     container_image: str | None = None

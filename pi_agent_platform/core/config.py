@@ -246,6 +246,9 @@ class WorkspaceProfile(BaseModel):
     path: str | None = None
     url: str | None = None
     branch: str | None = None
+    shared_storage_id: str | None = None
+    storage_subpath: str | None = None
+    storage_mount_path: str | None = None
     default_agent_profile: str | None = None
     endpoint_id: str | None = None
     endpoint_selector: str | None = None

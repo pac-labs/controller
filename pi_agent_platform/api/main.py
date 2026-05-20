@@ -50,6 +50,7 @@ from pi_agent_platform.core.source_variables import source_variable_store
 from pi_agent_platform.core.source_library import ensure_source_library, list_tree as source_list_tree, read_text as source_read_text, write_text as source_write_text, make_archive as source_make_archive, build_container as source_build_container, build_binary as source_build_binary, list_binary_artifacts as source_list_binary_artifacts, binary_artifact_path as source_binary_artifact_path, delete_binary_artifact as source_delete_binary_artifact, prune_binary_artifacts as source_prune_binary_artifacts, inspect_feature_pack as source_inspect_feature_pack, apply_feature_pack as source_apply_feature_pack, create_entry as source_create_entry, rename_entry as source_rename_entry, delete_entry as source_delete_entry, fetch_online_package_updates as source_fetch_online_package_updates
 from pi_agent_platform.core.update_preservation import TRACKED_ROOTS, build_backup_archive, compare_trees, generate_local_diff, list_generated_diffs
 from pi_agent_platform.updates import fetch_latest_release_metadata, download_release_package
+from pi_agent_platform.core.shared_storage import SharedStorage, controller_storage_path, public_shared_storage, shared_storage_binding
 from pi_agent_platform.core.letsencrypt_cert import (
     issue_letsencrypt_certificate,
     get_letsencrypt_status,
@@ -1724,6 +1725,9 @@ class UserWorkspacePayload(BaseModel):
     path: str | None = None
     url: str | None = None
     branch: str | None = None
+    shared_storage_id: str | None = None
+    storage_subpath: str | None = None
+    storage_mount_path: str | None = None
     endpoint_id: str | None = None
     endpoint_selector: str | None = None
     container_image: str | None = None
@@ -1743,6 +1747,9 @@ class AgentContextPayload(BaseModel):
     workspace_id: str | None = None
     workspace_template_id: str | None = None
     controller_workdir: str | None = None
+    shared_storage_id: str | None = None
+    storage_subpath: str | None = None
+    storage_mount_path: str | None = None
     endpoint_id: str | None = None
     endpoint_selector: str | None = None
     container_image: str | None = None
@@ -1761,6 +1768,26 @@ class AgentContextPayload(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class SharedStoragePayload(BaseModel):
+    id: str | None = None
+    name: str
+    description: str | None = None
+    driver: str | None = None
+    network_path: str | None = None
+    controller_path: str | None = None
+    mount_path: str | None = None
+    endpoint_selector: str | None = None
+    endpoint_ids: list[str] = Field(default_factory=list)
+    writable: bool = True
+    default_subpath: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+def _storage_id_from_name(name: str) -> str:
+    slug = re.sub(r'[^A-Za-z0-9._-]+', '-', str(name or '').strip().lower()).strip('-')
+    return slug or f'storage-{uuid.uuid4().hex[:8]}'
+
+
 def _best_default_agent_profile() -> str | None:
     for candidate in ('code_planner', MAIN_PI_DEV_PROFILE, 'main-pi-dev'):
         if candidate in (config.agent_profiles or {}):
@@ -1769,6 +1796,7 @@ def _best_default_agent_profile() -> str | None:
 
 
 def _workspace_template_catalog() -> dict[str, dict[str, Any]]:
+    _storage_catalog()
     templates: dict[str, dict[str, Any]] = {}
     profile_name = _best_default_agent_profile()
     builtins = [
@@ -1779,6 +1807,7 @@ def _workspace_template_catalog() -> dict[str, dict[str, Any]]:
             'workspace_type': 'local',
             'workspace_profile': None,
             'runtime': 'container',
+            'shared_storage_id': 'shared-controller-workspaces',
             'endpoint_id': _default_coding_endpoint_id(),
             'container_image': 'localhost/python-dev:latest',
             'agent_profile': profile_name,
@@ -1791,6 +1820,7 @@ def _workspace_template_catalog() -> dict[str, dict[str, Any]]:
             'workspace_type': 'local',
             'workspace_profile': None,
             'runtime': 'container',
+            'shared_storage_id': 'shared-controller-workspaces',
             'endpoint_id': _default_coding_endpoint_id(),
             'container_image': 'localhost/docs-search:latest',
             'agent_profile': profile_name,
@@ -1803,6 +1833,7 @@ def _workspace_template_catalog() -> dict[str, dict[str, Any]]:
             'workspace_type': 'local',
             'workspace_profile': None,
             'runtime': 'container',
+            'shared_storage_id': 'shared-controller-workspaces',
             'endpoint_id': _default_coding_endpoint_id(),
             'container_image': 'localhost/python-dev:latest',
             'agent_profile': profile_name,
@@ -1819,6 +1850,9 @@ def _workspace_template_catalog() -> dict[str, dict[str, Any]]:
             'workspace_type': workspace.type,
             'workspace_profile': name,
             'runtime': workspace.runtime,
+            'shared_storage_id': workspace.shared_storage_id,
+            'storage_subpath': workspace.storage_subpath,
+            'storage_mount_path': workspace.storage_mount_path,
             'endpoint_id': workspace.endpoint_id,
             'endpoint_selector': workspace.endpoint_selector,
             'container_image': workspace.container_image,
@@ -1829,6 +1863,39 @@ def _workspace_template_catalog() -> dict[str, dict[str, Any]]:
     return templates
 
 
+def _storage_catalog() -> list[SharedStorage]:
+    items = store.list_shared_storages()
+    if items:
+        return items
+    defaults = [
+        SharedStorage(
+            id='shared-controller-workspaces',
+            name='Controller workspaces',
+            description='Shared workspace root mounted on the controller and available to container-capable endpoints.',
+            driver='custom',
+            controller_path=str(Path(config.server.default_workspace_root).expanduser()),
+            network_path=f'controller://{Path(config.server.default_workspace_root).expanduser()}',
+            mount_path='/workspace',
+            endpoint_selector='container',
+            writable=True,
+        ),
+        SharedStorage(
+            id='shared-controller-sources',
+            name='Controller source tree',
+            description='PAC source tree and plugin workspace shared for controller-maintenance and coding flows.',
+            driver='custom',
+            controller_path=str((_app_dir() / 'sources').expanduser()),
+            network_path=f'controller://{(_app_dir() / "sources").expanduser()}',
+            mount_path='/workspace',
+            endpoint_selector='container',
+            writable=True,
+        ),
+    ]
+    for item in defaults:
+        store.add_shared_storage(item)
+    return store.list_shared_storages()
+
+
 def _public_workspace_template(template: dict[str, Any]) -> dict[str, Any]:
     return {
         'id': template.get('id'),
@@ -1837,6 +1904,9 @@ def _public_workspace_template(template: dict[str, Any]) -> dict[str, Any]:
         'workspace_type': template.get('workspace_type'),
         'workspace_profile': template.get('workspace_profile'),
         'runtime': template.get('runtime'),
+        'shared_storage_id': template.get('shared_storage_id'),
+        'storage_subpath': template.get('storage_subpath'),
+        'storage_mount_path': template.get('storage_mount_path'),
         'endpoint_id': template.get('endpoint_id'),
         'endpoint_selector': template.get('endpoint_selector'),
         'container_image': template.get('container_image'),
@@ -1849,6 +1919,7 @@ def _public_workspace_template(template: dict[str, Any]) -> dict[str, Any]:
 
 def _public_user_workspace(item: UserWorkspace) -> dict[str, Any]:
     template = _workspace_template_catalog().get(str(item.template_id or '').strip())
+    storage = store.get_shared_storage(item.shared_storage_id) if item.shared_storage_id else None
     return {
         'id': item.id,
         'owner_id': item.owner_id,
@@ -1862,6 +1933,10 @@ def _public_user_workspace(item: UserWorkspace) -> dict[str, Any]:
         'path': item.path,
         'url': item.url,
         'branch': item.branch,
+        'shared_storage_id': item.shared_storage_id,
+        'shared_storage': public_shared_storage(storage) if storage else None,
+        'storage_subpath': item.storage_subpath,
+        'storage_mount_path': item.storage_mount_path,
         'endpoint_id': item.endpoint_id,
         'endpoint_selector': item.endpoint_selector,
         'container_image': item.container_image,
@@ -1898,6 +1973,9 @@ def _workspace_payload_to_item(existing: UserWorkspace | None, payload: UserWork
     base.path = payload.path if payload.path is not None else base.path
     base.url = payload.url if payload.url is not None else base.url
     base.branch = payload.branch if payload.branch is not None else base.branch
+    base.shared_storage_id = payload.shared_storage_id if payload.shared_storage_id is not None else (template or {}).get('shared_storage_id')
+    base.storage_subpath = payload.storage_subpath if payload.storage_subpath is not None else (template or {}).get('storage_subpath')
+    base.storage_mount_path = payload.storage_mount_path if payload.storage_mount_path is not None else (template or {}).get('storage_mount_path')
     base.endpoint_id = payload.endpoint_id if payload.endpoint_id is not None else (template or {}).get('endpoint_id')
     base.endpoint_selector = payload.endpoint_selector if payload.endpoint_selector is not None else (template or {}).get('endpoint_selector')
     base.container_image = payload.container_image if payload.container_image is not None else (template or {}).get('container_image')
@@ -1919,6 +1997,14 @@ def _user_workspace_to_session_spec(item: UserWorkspace) -> tuple[WorkspaceSpec,
     metadata['ide_mode'] = True
     metadata['user_workspace_id'] = item.id
     metadata['workspace_trusted'] = True
+    resolved_path = item.path
+    if item.shared_storage_id:
+        storage = store.get_shared_storage(item.shared_storage_id)
+        if storage:
+            metadata.update(shared_storage_binding(storage, item.storage_subpath, item.storage_mount_path))
+            metadata['workspace_storage_required'] = True
+            metadata['preferred_execution_mode'] = 'container'
+            resolved_path = controller_storage_path(storage, item.storage_subpath) or resolved_path
     if item.endpoint_id:
         metadata['preferred_endpoint'] = item.endpoint_id
     if item.container_image:
@@ -1926,8 +2012,8 @@ def _user_workspace_to_session_spec(item: UserWorkspace) -> tuple[WorkspaceSpec,
     if item.workspace_profile and item.workspace_profile in (config.workspaces or {}):
         return WorkspaceSpec(type='profile', profile=item.workspace_profile), metadata
     if item.workspace_type == 'git':
-        return WorkspaceSpec(type='git', path=item.path, url=item.url, branch=item.branch), metadata
-    return WorkspaceSpec(type='local', path=item.path), metadata
+        return WorkspaceSpec(type='git', path=resolved_path, url=item.url, branch=item.branch), metadata
+    return WorkspaceSpec(type='local', path=resolved_path), metadata
 
 
 def _ensure_user_workspace_session(item: UserWorkspace, auth: CurrentUser) -> Session:
@@ -1956,6 +2042,7 @@ def _ensure_user_workspace_session(item: UserWorkspace, auth: CurrentUser) -> Se
 def _public_agent_context(item: AgentContext) -> dict[str, Any]:
     workspace = store.get_user_workspace(item.workspace_id) if item.workspace_id else None
     template = _workspace_template_catalog().get(str(item.workspace_template_id or '').strip()) if item.workspace_template_id else None
+    storage = store.get_shared_storage(item.shared_storage_id) if item.shared_storage_id else None
     return {
         'id': item.id,
         'owner_id': item.owner_id,
@@ -1968,6 +2055,10 @@ def _public_agent_context(item: AgentContext) -> dict[str, Any]:
         'workspace_template_id': item.workspace_template_id,
         'workspace_template': _public_workspace_template(template) if template else None,
         'controller_workdir': item.controller_workdir,
+        'shared_storage_id': item.shared_storage_id,
+        'shared_storage': public_shared_storage(storage) if storage else None,
+        'storage_subpath': item.storage_subpath,
+        'storage_mount_path': item.storage_mount_path,
         'endpoint_id': item.endpoint_id,
         'endpoint_selector': item.endpoint_selector,
         'container_image': item.container_image,
@@ -2023,6 +2114,9 @@ def _agent_context_payload_to_item(existing: AgentContext | None, payload: Agent
     base.workspace_id = payload.workspace_id or None
     base.workspace_template_id = payload.workspace_template_id or None
     base.controller_workdir = payload.controller_workdir or None
+    base.shared_storage_id = payload.shared_storage_id or None
+    base.storage_subpath = payload.storage_subpath or None
+    base.storage_mount_path = payload.storage_mount_path or None
     base.endpoint_id = payload.endpoint_id or None
     base.endpoint_selector = payload.endpoint_selector or None
     base.container_image = payload.container_image or None
@@ -2041,6 +2135,8 @@ def _agent_context_payload_to_item(existing: AgentContext | None, payload: Agent
     base.metadata = dict(base.metadata or {})
     if payload.metadata:
         base.metadata.update(payload.metadata)
+    if base.shared_storage_id and not store.get_shared_storage(base.shared_storage_id):
+        raise HTTPException(status_code=400, detail=f'Unknown shared storage: {base.shared_storage_id}')
     return base
 
 
@@ -2052,6 +2148,12 @@ def _agent_context_to_session_create(item: AgentContext) -> SessionCreate:
     metadata['workspace_trusted'] = True
     metadata['agent_enabled'] = True
     metadata['endpoint_locked'] = bool(item.endpoint_id or item.endpoint_selector)
+    if item.shared_storage_id:
+        storage = store.get_shared_storage(item.shared_storage_id)
+        if storage:
+            metadata.update(shared_storage_binding(storage, item.storage_subpath, item.storage_mount_path))
+            metadata['workspace_storage_required'] = True
+            metadata['preferred_execution_mode'] = 'container'
     if item.endpoint_id:
         metadata['preferred_endpoint'] = item.endpoint_id
     if item.endpoint_selector:
@@ -2090,6 +2192,8 @@ def _agent_context_to_session_create(item: AgentContext) -> SessionCreate:
                 metadata=metadata,
             )
     workspace_path = item.controller_workdir or None
+    if item.shared_storage_id and (storage := store.get_shared_storage(item.shared_storage_id)):
+        workspace_path = controller_storage_path(storage, item.storage_subpath) or workspace_path
     return SessionCreate(
         name=f'ctx-{re.sub(r"[^A-Za-z0-9._-]+", "-", item.name).lower()}',
         agent_profile=item.agent_profile,
@@ -2111,6 +2215,24 @@ def _ensure_agent_context_session(item: AgentContext, auth: CurrentUser) -> Sess
     item.last_session_id = session.id
     store.add_agent_context(item)
     return session
+
+
+def _shared_storage_payload_to_item(existing: SharedStorage | None, payload: SharedStoragePayload) -> SharedStorage:
+    base = existing or SharedStorage(id=(payload.id or _storage_id_from_name(payload.name.strip())), name=payload.name.strip())
+    base.name = payload.name.strip()
+    base.description = payload.description.strip() if isinstance(payload.description, str) and payload.description.strip() else None
+    base.driver = str(payload.driver or base.driver or 'nfs')
+    base.network_path = payload.network_path or None
+    base.controller_path = payload.controller_path or None
+    base.mount_path = str(payload.mount_path or base.mount_path or '/workspace').strip() or '/workspace'
+    base.endpoint_selector = payload.endpoint_selector or None
+    base.endpoint_ids = [str(item).strip() for item in (payload.endpoint_ids or []) if str(item).strip()]
+    base.writable = bool(payload.writable)
+    base.default_subpath = payload.default_subpath or None
+    base.metadata = dict(base.metadata or {})
+    if payload.metadata:
+        base.metadata.update(payload.metadata)
+    return base
 
 
 def _resource_grants_from_user(user: User | None) -> list[ResourceGrant]:
@@ -2214,6 +2336,32 @@ def _default_coding_endpoint_id() -> str | None:
         if runner.status == RunnerStatus.online and runner.allow_container_execution:
             return runner.id
     return None
+
+
+def _resolve_endpoint_selector(selector: str | None, require_container: bool = False) -> str | None:
+    tokens = [token.strip().lower() for token in str(selector or '').split(',') if token.strip()]
+    for runner in store.list_runners():
+        if runner.status != RunnerStatus.online:
+            continue
+        if require_container and not runner.allow_container_execution:
+            continue
+        if not tokens:
+            return runner.id
+        haystack = {str(runner.id).lower(), str(runner.name or '').lower(), *(str(label).lower() for label in (runner.labels or []))}
+        if all(any(token in value for value in haystack) for token in tokens):
+            return runner.id
+    return None
+
+
+def _preferred_endpoint_for_storage(meta: dict[str, Any]) -> str | None:
+    preferred = str(meta.get('preferred_endpoint') or '').strip()
+    if preferred:
+        return preferred
+    for endpoint_id in (meta.get('shared_storage_endpoint_ids') or []):
+        runner = store.get_runner(str(endpoint_id))
+        if runner and runner.status == RunnerStatus.online and runner.allow_container_execution:
+            return runner.id
+    return _resolve_endpoint_selector(meta.get('shared_storage_endpoint_selector'), require_container=True)
 
 
 def _default_coding_container_image(workspace: WorkspaceSpec, metadata: dict[str, Any] | None) -> str:
@@ -2657,6 +2805,55 @@ def ensure_agent_context_session(context_id: str, _auth: CurrentUser = Depends(r
         raise HTTPException(status_code=403, detail='Agent context not available')
     session = _ensure_agent_context_session(item, _auth)
     return {'ok': True, 'context': _public_agent_context(item), 'session': session.model_dump(mode='json')}
+
+
+@app.get('/v1/shared-storages')
+def list_shared_storages(_auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
+    return {'items': [public_shared_storage(item) for item in _storage_catalog()]}
+
+
+@app.post('/v1/shared-storages')
+def create_shared_storage(payload: SharedStoragePayload, _auth: CurrentUser = Depends(require_admin)) -> dict[str, Any]:
+    existing = next((item for item in store.list_shared_storages() if item.name == payload.name.strip()), None)
+    if existing:
+        raise HTTPException(status_code=409, detail='A shared storage with that name already exists')
+    item = _shared_storage_payload_to_item(None, payload)
+    store.add_shared_storage(item)
+    store.add_event(Event(session_id='system', type='shared_storage_created', message=f'Shared storage created: {item.name}', data={'storage_id': item.id, 'driver': item.driver}))
+    return {'ok': True, 'storage': public_shared_storage(item)}
+
+
+@app.put('/v1/shared-storages/{storage_id}')
+def update_shared_storage(storage_id: str, payload: SharedStoragePayload, _auth: CurrentUser = Depends(require_admin)) -> dict[str, Any]:
+    item = store.get_shared_storage(storage_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='Shared storage not found')
+    conflict = next((entry for entry in store.list_shared_storages() if entry.name == payload.name.strip() and entry.id != storage_id), None)
+    if conflict:
+        raise HTTPException(status_code=409, detail='A shared storage with that name already exists')
+    updated = _shared_storage_payload_to_item(item, payload)
+    store.add_shared_storage(updated)
+    store.add_event(Event(session_id='system', type='shared_storage_updated', message=f'Shared storage updated: {updated.name}', data={'storage_id': updated.id, 'driver': updated.driver}))
+    return {'ok': True, 'storage': public_shared_storage(updated)}
+
+
+@app.delete('/v1/shared-storages/{storage_id}')
+def delete_shared_storage(storage_id: str, _auth: CurrentUser = Depends(require_admin)) -> dict[str, Any]:
+    item = store.get_shared_storage(storage_id)
+    if not item:
+        raise HTTPException(status_code=404, detail='Shared storage not found')
+    for workspace in store.list_user_workspaces():
+        if workspace.shared_storage_id == storage_id:
+            raise HTTPException(status_code=409, detail=f'Storage is still used by workspace {workspace.name}')
+    for context in store.list_agent_contexts():
+        if context.shared_storage_id == storage_id:
+            raise HTTPException(status_code=409, detail=f'Storage is still used by context {context.name}')
+    for profile in (config.workspaces or {}).values():
+        if profile.shared_storage_id == storage_id:
+            raise HTTPException(status_code=409, detail='Storage is still used by a workspace template')
+    store.delete_shared_storage(storage_id)
+    store.add_event(Event(session_id='system', type='shared_storage_deleted', message=f'Shared storage deleted: {item.name}', data={'storage_id': item.id}))
+    return {'ok': True, 'deleted': storage_id}
 
 
 @app.post('/v1/auth/tokens')
@@ -4366,8 +4563,11 @@ def save_workspace_profile(workspace_name: str, payload: dict[str, Any], _auth: 
     if default_agent_profile and default_agent_profile not in config.agent_profiles:
         raise HTTPException(status_code=400, detail=f'Unknown default agent profile: {default_agent_profile}')
     endpoint_id = payload.get('endpoint_id') or None
-    if endpoint_id and endpoint_id not in store.runners:
+    if endpoint_id and not store.get_runner(endpoint_id):
         raise HTTPException(status_code=400, detail=f'Unknown endpoint: {endpoint_id}')
+    shared_storage_id = payload.get('shared_storage_id') or None
+    if shared_storage_id and not store.get_shared_storage(shared_storage_id):
+        raise HTTPException(status_code=400, detail=f'Unknown shared storage: {shared_storage_id}')
     runtime = payload.get('runtime') or 'any'
     if runtime not in {'any', 'local', 'container'}:
         raise HTTPException(status_code=400, detail='Workspace runtime must be any, local or container')
@@ -4393,6 +4593,9 @@ def save_workspace_profile(workspace_name: str, payload: dict[str, Any], _auth: 
         endpoint_id=endpoint_id,
         endpoint_selector=payload.get('endpoint_selector') or None,
         runtime=runtime,
+        shared_storage_id=shared_storage_id,
+        storage_subpath=payload.get('storage_subpath') or None,
+        storage_mount_path=payload.get('storage_mount_path') or None,
         container_image=payload.get('container_image') or None,
         data_bundle_url=payload.get('data_bundle_url') or None,
         data_bundle_path=payload.get('data_bundle_path') or None,
@@ -4452,19 +4655,33 @@ def create_session(payload: SessionCreate, _auth: CurrentUser = Depends(require_
         workspace.path = w.path
         workspace.url = w.url
         workspace.branch = w.branch
+        if w.shared_storage_id and (storage := store.get_shared_storage(w.shared_storage_id)):
+            payload.metadata.update(shared_storage_binding(storage, w.storage_subpath, w.storage_mount_path))
+            payload.metadata['workspace_storage_required'] = True
+            workspace.path = controller_storage_path(storage, w.storage_subpath) or workspace.path
         if not payload.agent_profile and w.default_agent_profile and w.default_agent_profile in config.agent_profiles:
             payload.agent_profile = w.default_agent_profile
 
     coding_session = _is_coding_session_metadata(payload.metadata)
+    storage_bound_session = bool(payload.metadata.get('workspace_storage_required'))
     if coding_session:
         payload.metadata['coding_session'] = True
         payload.metadata['agent_enabled'] = True
         payload.metadata['execution_mode'] = 'container'
         payload.metadata['preferred_execution_mode'] = 'container'
         if not payload.metadata.get('preferred_endpoint'):
-            payload.metadata['preferred_endpoint'] = _default_coding_endpoint_id()
+            payload.metadata['preferred_endpoint'] = _preferred_endpoint_for_storage(payload.metadata) or _default_coding_endpoint_id()
         if not payload.metadata.get('container_image'):
             payload.metadata['container_image'] = _default_coding_container_image(workspace, payload.metadata)
+    if storage_bound_session:
+        payload.metadata['agent_enabled'] = True
+        payload.metadata['execution_mode'] = 'container'
+        payload.metadata['preferred_execution_mode'] = 'container'
+        storage_endpoint = _preferred_endpoint_for_storage(payload.metadata)
+        if storage_endpoint:
+            payload.metadata['preferred_endpoint'] = storage_endpoint
+        elif not payload.metadata.get('preferred_endpoint'):
+            payload.metadata['preferred_endpoint'] = _default_coding_endpoint_id()
 
     agent_profile = config.agent_profiles.get(payload.agent_profile) if payload.agent_profile else None
 
@@ -4503,18 +4720,20 @@ def create_session(payload: SessionCreate, _auth: CurrentUser = Depends(require_
     if selected_permission not in config.permission_profiles:
         raise HTTPException(status_code=400, detail=f'Unknown permission profile: {selected_permission}')
 
-    if coding_session:
+    if coding_session or storage_bound_session:
         endpoint_id = str(payload.metadata.get('preferred_endpoint') or '').strip()
         if not endpoint_id:
-            raise HTTPException(status_code=400, detail='Coding sessions require an online endpoint with container execution enabled')
+            raise HTTPException(status_code=400, detail='Container-backed sessions require an online endpoint with container execution enabled')
         endpoint = store.get_runner(endpoint_id)
         if not endpoint:
             raise HTTPException(status_code=400, detail=f'Unknown endpoint: {endpoint_id}')
         if not endpoint.allow_container_execution:
-            raise HTTPException(status_code=400, detail='Coding sessions require an endpoint that allows container execution')
+            raise HTTPException(status_code=400, detail='Container-backed sessions require an endpoint that allows container execution')
         container_image = str(payload.metadata.get('container_image') or '').strip()
         if not container_image:
-            raise HTTPException(status_code=400, detail='Coding sessions require a container image')
+            raise HTTPException(status_code=400, detail='Container-backed sessions require a container image')
+    if storage_bound_session and not (payload.metadata.get('shared_storage_controller_path') or workspace.path):
+        raise HTTPException(status_code=400, detail='Shared-storage sessions require a controller-mounted workspace path')
 
     root = Path(config.server.default_workspace_root)
     root.mkdir(parents=True, exist_ok=True)

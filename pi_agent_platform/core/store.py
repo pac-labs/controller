@@ -7,6 +7,7 @@ from threading import Lock
 from typing import Iterable
 
 from .models import AccessRequest, AgentContext, Event, Group, Session, Task, Runner, RunnerJob, RunnerJobStatus, User, UserWorkspace, now_utc
+from .shared_storage import SharedStorage
 from .config import ProxyRoute
 from .platform_home import pacp_path
 
@@ -46,6 +47,8 @@ class SQLiteStore:
             conn.execute('create table if not exists agent_contexts (id text primary key, owner_id text not null, owner_username text not null, name text not null, payload text not null, updated_at text not null)')
             conn.execute('create index if not exists idx_agent_contexts_owner on agent_contexts(owner_id, updated_at)')
             conn.execute('create index if not exists idx_agent_contexts_owner_name on agent_contexts(owner_id, name)')
+            conn.execute('create table if not exists shared_storages (id text primary key, name text not null, payload text not null, updated_at text not null)')
+            conn.execute('create index if not exists idx_shared_storages_name on shared_storages(name)')
             conn.execute('create table if not exists proxy_routes (id text primary key, payload text not null, updated_at text not null)')
 
     def add_session(self, session: Session) -> Session:
@@ -381,6 +384,30 @@ class SQLiteStore:
     def delete_agent_context(self, context_id: str) -> bool:
         with self._lock, self._connect() as conn:
             cur = conn.execute('delete from agent_contexts where id = ?', (context_id,))
+        return cur.rowcount > 0
+
+    def add_shared_storage(self, storage: SharedStorage) -> SharedStorage:
+        storage.touch()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'insert or replace into shared_storages(id, name, payload, updated_at) values (?, ?, ?, ?)',
+                (storage.id, storage.name, storage.model_dump_json(), storage.updated_at.isoformat()),
+            )
+        return storage
+
+    def get_shared_storage(self, storage_id: str) -> SharedStorage | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from shared_storages where id = ?', (storage_id,)).fetchone()
+        return SharedStorage.model_validate_json(row['payload']) if row else None
+
+    def list_shared_storages(self) -> list[SharedStorage]:
+        with self._connect() as conn:
+            rows = conn.execute('select payload from shared_storages order by updated_at desc').fetchall()
+        return [SharedStorage.model_validate_json(r['payload']) for r in rows]
+
+    def delete_shared_storage(self, storage_id: str) -> bool:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute('delete from shared_storages where id = ?', (storage_id,))
         return cur.rowcount > 0
 
     def list_proxy_routes(self) -> list[ProxyRoute]:
