@@ -1,2 +1,0 @@
-[container] status=running
-[container] started_at=2026-05-07T23:29:04+00:00
