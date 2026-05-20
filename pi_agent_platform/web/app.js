@@ -2067,7 +2067,7 @@ async function renderLiveModels() {
       const providerSelect = document.getElementById('modelProvider'); if (providerSelect) providerSelect.value = btn.dataset.provider;
       modelId.value = btn.dataset.model;
       modelName.value = btn.dataset.key || btn.dataset.model.replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase();
-      modelRunsOn.value = '';
+      modelRunsOn.value = btn.dataset.provider || '';
     };
   });
   live.querySelectorAll('button[data-add-live-model]').forEach(btn => {
@@ -2077,7 +2077,7 @@ async function renderLiveModels() {
       const providerSelect = document.getElementById('modelProvider'); if (providerSelect) providerSelect.value = btn.dataset.provider;
       modelId.value = btn.dataset.model;
       modelName.value = btn.dataset.key || btn.dataset.model.replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase();
-      modelRunsOn.value = '';
+      modelRunsOn.value = btn.dataset.provider || '';
       setModalStatus('modelModalStatus', 'Review and save this model.');
     };
   });
@@ -2095,7 +2095,7 @@ function openModelDraft(providerName, modelId) {
   const providerSelect = document.getElementById('modelProvider'); if (providerSelect) providerSelect.value = providerName;
   modelId.value = modelId;
   modelName.value = providerModelKey(providerName, modelId) || String(modelId || '').replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase();
-  modelRunsOn.value = '';
+  modelRunsOn.value = providerName || '';
   setModalStatus('modelModalStatus', 'Review and save this model.');
 }
 function groupedSessionsBy(field) {
