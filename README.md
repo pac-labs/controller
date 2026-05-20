@@ -1,152 +1,388 @@
+<p align="center">
+  <img src="pi_agent_platform/web/assets/pac-banner-green.png" alt="PAC - Pi Agent Control" width="720" />
+</p>
+
 # PAC - Pi Agent Control
 
-PAC is a lightweight agent control system with a Python control server, endpoint services, model/tool configuration, pi.dev container execution, artifacts, self-update support and a dark purple Web UI.
+PAC is a local-first, distributed agent control platform for running AI-assisted development, operations, documentation and automation sessions across trusted machines.
 
-State and configuration live in `~/.pacp` by default, so the app can be launched from any directory without creating a second/confused instance.
+The controller provides the Web UI, API, session state, model/provider configuration, approvals, artifacts, source management and endpoint orchestration. Endpoints provide the actual execution environments: local binaries, approved workspaces, containerized coding sessions and pi.dev runtime integration.
 
-## Install
-
-```bash
-./install.sh
-```
-
-Open the UI at the configured host/port, normally `https://admin.pac.local` or `https://localhost`.
-
-## Version history
-
-See `PAC_CHANGELOG.json` for release history. Version 1.0.57 separates endpoints as remote execution environments from pi.dev workloads. Endpoints can expose local binaries, Node.js-gated pi.dev enablement, default workspaces, and controller-queued command execution.
+PAC is designed for environments where work should be observable, auditable and routed to the right machine instead of blindly executed wherever the chat UI happens to run.
 
 ---
 
-# PAC - Pi Agent Control - Stage 16
+## What PAC Does
 
-Stage 16 renames the visible product to **PAC - Pi Agent Control** and adds a persistent right-side Events rail for a more dashboard-like control room experience. Runtime/config state still lives under `~/.pacp` by default.
+PAC gives you a control plane for agent-backed work:
 
-Stage 11 adds a real `pi_container` execution mode. The Python runner can now start a disposable container that contains Node and pi.dev, stream logs back to the PAC, and upload artifacts from the workspace.
+- Start sessions from the Web UI, IDE integrations, MCP clients or automation.
+- Select a profile, model, workspace, endpoint and execution mode per session.
+- Route work to Linux, Windows, macOS or container-capable endpoints.
+- Expose endpoint-local tools such as `rg`, `fd`, `jq`, `git`, `delta`, `bat` and `just` to agents.
+- Run tasks directly on endpoints, inside containers, or through the pi.dev runtime container.
+- Keep task events, approvals, artifacts, logs, timelines and source diffs visible in one place.
+- Manage model providers such as OpenAI-compatible APIs, LM Studio, Ollama and vLLM without making the PAC controller a model host.
+- Maintain customer, user, workspace and profile context for repeatable sessions.
 
-## Stage 12: PAC home and dashboard tabs
+---
 
-PACP now uses a persistent home directory by default:
+## Product Ideology
+
+PAC follows a few strong design rules.
+
+### Local-first control
+
+PAC keeps its default state in `~/.pacp`, including configuration, sessions, workspaces, artifacts, logs, cache and runtime locks. The controller can be started from different directories without accidentally creating a second state tree.
+
+### Controller coordinates; endpoints do the work
+
+The controller is the authority for orchestration, state, policy and visibility. Heavy work belongs on endpoints or endpoint-launched containers. This keeps the controller predictable and prevents it from becoming an overloaded general-purpose compute node.
+
+### Explicit execution boundaries
+
+Sessions are tied to selected workspaces, endpoints, permission profiles and execution modes. Users and agents should be able to see where work runs, which tools are available, and what has changed.
+
+### Tools are local binaries; plugins are skills around them
+
+Endpoint tools are real binaries installed on the selected endpoint. Plugins and slash commands are lightweight routing or skill layers that decide how to use those binaries or when to invoke controller-side behavior.
+
+### pi.dev is the runtime; PAC is the wrapper and control plane
+
+PAC treats `pi`, `agent` and `harness` as the pi.dev runtime. PAC-specific code around it is called a PAC wrapper, endpoint wrapper, controller wrapper or PAC tooling.
+
+### Auditable automation
+
+Approvals, task events, structured timelines, artifacts, diffs, endpoint jobs and source operations are surfaced through the controller so the user can inspect what happened and why.
+
+### Bring your own model provider
+
+PAC does not host language models itself. It routes to configured providers such as OpenAI-compatible endpoints, LM Studio, Ollama or vLLM, using declared model capabilities and context profiles.
+
+---
+
+## Architecture Overview
+
+```mermaid
+flowchart TD
+    User[User / Operator] --> UI[Web UI]
+    IDE[Zed / VS Code / MCP Client] --> MCP[MCP Bridge / pacctl]
+    UI --> Controller[PAC Controller API]
+    MCP --> Controller
+
+    Controller --> Store[(~/.pacp state.db / config / sessions / artifacts)]
+    Controller --> Providers[Model Providers\nOpenAI-compatible / LM Studio / Ollama / vLLM]
+    Controller --> Sources[Source Library\npackages / containers / binaries / docs]
+    Controller --> Approvals[Approvals / Events / Timeline]
+
+    Controller --> EndpointA[pac-endpoint\nLinux / Windows / macOS]
+    Controller --> EndpointB[pac-endpoint\nContainer-capable host]
+
+    EndpointA --> Tools[Local tools\nrg / fd / jq / git / delta / bat / just / shell]
+    EndpointA --> WorkspaceA[Approved workspace]
+
+    EndpointB --> WorkspaceB[Approved workspace]
+    EndpointB --> Containers[Workspace containers\nPython / Node / Go / .NET / C / docs-search]
+    EndpointB --> Pi[pi.dev runtime container]
+
+    Pi --> ScopedWorker[Scoped session worker]
+    Containers --> ScopedWorker
+```
+
+---
+
+## Main Components
+
+### Controller
+
+The controller is the central PAC service. It is implemented as a Python FastAPI application and serves both the API and the Web UI.
+
+Responsibilities include:
+
+- Session creation and lifecycle management.
+- Endpoint registration, heartbeat and job routing.
+- Model and provider registry.
+- Context profile and permission profile management.
+- Workspace and source-context resolution.
+- Approvals, audit events and timeline cards.
+- Artifact upload, indexing and download.
+- Source library browsing and package build actions.
+- TLS, mDNS, local service and setup handling.
+- Update archive, local diff and restore workflows.
+
+Important paths:
+
+```text
+pi_agent_platform/api/main.py       Main API and Web UI server
+pi_agent_platform/core/             Core services and orchestration logic
+pi_agent_platform/web/              Browser UI assets
+config/example.config.yaml          Default configuration shape
+deploy/                             Container and reverse-proxy deployment examples
+```
+
+### Web UI
+
+<p align="center">
+  <img src="pi_agent_platform/web/assets/pac-logo-lockup-transparent.png" alt="PAC logo" width="420" />
+</p>
+
+The Web UI is the operator console for PAC. It contains grouped navigation for operating, building, agent configuration, administration and observation.
+
+Major UI areas include:
+
+- **Dashboard**: current state across sessions, endpoints, providers, controller runtime and recent events.
+- **Sessions**: chat-style session workspace with model, endpoint and execution controls.
+- **Endpoints**: endpoint inventory, endpoint wizard, onboarding token generation and install-kit output.
+- **Models and Providers**: configured models, live provider inventory, provider tests and model adaptation guidance.
+- **Sources**: source tree, package sources, binary/container build actions, feature packs and source archives.
+- **Approvals**: pending task and access approvals.
+- **Settings**: server, TLS, authentication, controller runtime and update settings.
+- **Events rail**: recent platform and session activity.
+
+### Endpoints
+
+Endpoints are machines that PAC can route work to. The primary endpoint binary is `pac-endpoint`.
+
+An endpoint can:
+
+- Register identity and labels with the controller.
+- Send heartbeat and capability information.
+- Report available tools and package capability groups.
+- Execute controller-queued jobs in an approved workspace.
+- Run with command execution enabled or disabled through `PAC_RUNNER_ENABLED`.
+- Use optional TLS client certificates.
+- Receive maintenance and self-update jobs.
+- Support container-backed and pi.dev-backed execution when local runtimes are available.
+
+Important endpoint sources:
+
+```text
+binaries/pac-endpoint/              Main endpoint wrapper and embedded runner
+binaries/pac-endpoint-runner/       Compatibility source for older runner references
+scripts/install-runner.sh           Endpoint install helper
+```
+
+### Endpoint Tool Bridge
+
+PAC exposes endpoint tools as named tool jobs rather than forcing every action through raw shell commands.
+
+Common tools:
+
+| Tool | Purpose |
+| --- | --- |
+| `rg` / ripgrep | Search text quickly inside a workspace. |
+| `fd` | Find files and directories. |
+| `jq` | Process JSON. |
+| `git` | Inspect and manipulate repositories. |
+| `delta` | Render readable diffs. |
+| `bat` / `batcat` | Preview files. |
+| `just` | Run project recipes. |
+| `shell` | Run controlled shell commands when allowed. |
+
+Slash commands such as `/rg`, `/fd`, `/jq`, `/git`, `/delta`, `/bat`, `/just`, `/compact` and `/subagent` build on this model. Endpoint commands run on the locked session endpoint and inside the session workspace.
+
+### pi.dev Runtime Integration
+
+PAC can bootstrap and supervise a local pi.dev runtime through PAC wrappers and a dedicated runtime container.
+
+The controller can prepare:
+
+- A local `local-PAC` endpoint.
+- The controller wrapper binary at `~/.pacp/bin/pac-endpoint`.
+- The pi.dev runtime container image.
+- The `agent-control` workspace.
+- A managed controller session using the configured profile and model.
+
+The runtime container source lives in:
+
+```text
+containers/pi-agent-harness/
+```
+
+### Workspace Containers
+
+PAC ships purpose-built workspace containers for repeatable endpoint/container sessions.
+
+| Container | Purpose |
+| --- | --- |
+| `python-dev` | Python 3 development with `uv`, `pytest` and code search tools. |
+| `node-dev` | Node.js, npm, pnpm and TypeScript-oriented tooling. |
+| `go-dev` | Go development, formatting and code review tooling. |
+| `dotnet-dev` | .NET SDK environment for C# and .NET workloads. |
+| `c-dev` | C/C++ development with GCC, GDB, CMake and search tools. |
+| `docs-search` | Documentation and repository search environment. |
+| `mcp-builder` | Builder source for MCP/client binaries. |
+| `pi-agent-harness` | Isolated pi.dev runtime container. |
+
+Container sources live under:
+
+```text
+containers/
+```
+
+### CLI and Integration Binaries
+
+PAC includes small Go binaries for endpoint, IDE and automation integration.
+
+| Binary | Role |
+| --- | --- |
+| `pac-endpoint` | Turns a host into a PAC endpoint and optionally executes queued jobs. |
+| `pac-agent` | PAC-side wrapper around pi.dev runtime integration. |
+| `pacctl` | Lightweight CLI for IDE helpers, containers and endpoint workflows. |
+| `zed-binary` | Packaged helper for Zed context-server integration. |
+| `pac-mcp-go` | MCP stdio bridge that forwards MCP tool calls to a PAC server. |
+
+Relevant paths:
+
+```text
+binaries/
+mcp/pac-mcp-go/
+vscode-extension/
+docs-zed-mcp-example.json
+```
+
+### Source Library
+
+The source library is how PAC keeps package, binary, container and documentation sources visible and buildable from the controller.
+
+It contains:
+
+- Component metadata through `pac-component.json` files.
+- Binary build sources.
+- Container build sources.
+- Documentation packages.
+- Feature-pack inspection and apply workflows.
+- Online update and release package support.
+- Binary artifact storage and download APIs.
+
+### Configuration and Profiles
+
+The default configuration supports:
+
+- Controller host, port and public URL.
+- TLS certificate generation and local CA handling.
+- mDNS publication as `admin.pac.local`.
+- User-mode or service-mode operation.
+- Optional dev-token authentication.
+- Provider definitions for OpenAI-compatible APIs, LM Studio, Ollama and vLLM.
+- Context profiles from small 4k sessions to large-context profiles.
+- Tool packages and endpoint tool definitions.
+- Plugin definitions for Python helper scripts, slash-command routing, context compaction and subagent tasks.
+- Workspace profiles and execution defaults.
+- Endpoint/runtime defaults.
+
+Primary config file:
+
+```text
+config/example.config.yaml
+```
+
+---
+
+## Infrastructure Build
+
+### Runtime stack
+
+PAC is built around:
+
+- **Python 3.9+** application package.
+- **FastAPI** API server.
+- **Uvicorn** ASGI runtime.
+- **Pydantic** models and validation.
+- **PyYAML** configuration handling.
+- **HTTPX** provider and HTTP integration.
+- **Zeroconf** for mDNS service publication.
+- **Cryptography** for TLS and certificate workflows.
+- **Go** for endpoint, CLI and MCP helper binaries.
+- **Podman or Docker** for controller deployment, endpoint workspace containers and the pi.dev runtime container.
+
+### Default state layout
 
 ```text
 ~/.pacp/
-  config/config.yaml
+  config/
+    config.yaml
+    tls/
   state.db
   workspaces/
   sessions/
   artifacts/
   logs/
   cache/
-  run/server.lock
+  run/
+    server.lock
   app/
+  bin/
 ```
 
-This means you can start the server from a different directory and it will still use the same configuration, database, workspaces and artifacts. Override the location with:
+### Deployment options
 
-```bash
-PACP_HOME=/data/pacp ./install.sh
+PAC includes multiple deployment paths:
+
+| Path | Files | Use case |
+| --- | --- | --- |
+| Local install | `install.sh` | Install and run PAC directly on a host. |
+| Development run | `scripts/dev-run.sh` | Run the API/UI during development. |
+| Container image | `deploy/Containerfile` | Build the controller as a container image. |
+| Compose | `deploy/compose.yaml` | Basic containerized controller deployment. |
+| Podman compose | `deploy/compose.podman.yaml` | SELinux-friendly Podman deployment. |
+| Traefik compose | `deploy/compose.traefik.yaml` | Public HTTPS exposure with Traefik and Let’s Encrypt. |
+| Endpoint install | `scripts/install-runner.sh` | Install a remote endpoint wrapper. |
+| MCP bridge build | `scripts/build-mcp-bridge.sh` | Build MCP helper binaries. |
+
+### CI and release workflows
+
+The repository contains GitHub workflow definitions for:
+
+- Building PAC release packages.
+- Generating PAC diff releases.
+- Applying validated diff PRs.
+- Seeding package sources.
+
+Relevant files:
+
+```text
+.github/workflows/pac-release.yml
+.github/workflows/pac-diff-release.yml
+.github/workflows/apply-diff-pr.yml
+.github/workflows/seed-packages.yml
 ```
 
-The PAC also uses a lock file at `~/.pacp/run/server.lock` so two servers do not accidentally run against the same state directory.
-
-The web UI now has top-level tabs for Dashboard, Sessions, Runners, Models, Approvals and Settings.
-
-
-## Python / uv installer note
-
-The project requires Python 3.11+. The install scripts now use `uv` by default and will bootstrap a Python 3.11 virtual environment even on hosts where `/usr/bin/python3` is older, such as Python 3.9 on RHEL-like systems.
-
-PAC:
-
-```bash
-./install.sh
-```
-
-Runner:
-
-```bash
-sudo CONTROL_PLANE=https://agent.example.nl PI_AGENT_TOKEN=change-me ./scripts/install-runner.sh
-```
-
-To disable uv and use an existing Python 3.11 manually:
-
-```bash
-PI_AGENT_USE_UV=0 PYTHON_BIN=python3.11 ./install.sh
-```
-
-## Build the pi.dev image
-
-```bash
-scripts/build-pi-container.sh localhost/pi-agent-harness:stage11
-```
-
-If the upstream pi.dev npm package name differs, override it:
-
-```bash
-podman build --build-arg PI_NPM_PACKAGE=<actual-package> -t localhost/pi-agent-harness:stage11 containers/pi-agent-harness
-```
-
-## Install a runner with Pi container support
-
-```bash
-sudo CONTROL_PLANE=https://agent.example.nl \
-  PI_AGENT_TOKEN=change-me \
-  PI_CONTAINER_IMAGE=localhost/pi-agent-harness:stage11 \
-  scripts/install-runner.sh
-```
-
-In the Web UI, select a runner and choose execution mode **pi container**.
+The release tooling also produces manifests, changelog metadata and update diff artifacts.
 
 ---
 
-# PAC - Pi Agent Control — Stage 7
+## Session Flow
 
-A small remote agent PAC for running Codex/OpenClaw-like sessions from a web UI, IDE clients, MCP bridges or HTTP automation.
+A normal PAC-backed session works like this:
 
-Stage 7 focuses on **real mixed execution**: local PAC commands, remote host runners, and remote container execution through Podman/Docker.
+1. A user starts a session from the Web UI, an IDE, MCP, `pacctl` or automation.
+2. PAC resolves the selected profile, workspace, source context and permission profile.
+3. PAC selects or locks an endpoint for the session.
+4. The controller chooses the model/provider configuration for the session.
+5. The endpoint executes allowed tool calls in the selected workspace.
+6. If requested, the endpoint starts a workspace container or pi.dev runtime container.
+7. Events, approvals, task output, timeline cards and artifacts flow back to the controller.
+8. The user reviews state, diffs, logs and artifacts from the UI or integration client.
 
-## What this is
+---
 
-```text
-Zed / VS Code / Web UI / CLI / OpenClaw
-        |
-        v
-Pi Agent Control
-        |
-        ├─ providers: OpenAI, LM Studio, Ollama, vLLM, OpenAI-compatible
-        ├─ models: context window, output budget, capabilities, where it runs
-        ├─ context profiles: low / medium / high / max token budgets
-        ├─ permission profiles: read-only / ask-first / full-dev
-        ├─ sessions and workspaces
-        ├─ approvals and audit events
-        └─ worker command execution
-```
+## Quick Start
 
-The Pi does **not** need to run the model. It can simply route requests to LM Studio on your desktop, Ollama on another machine, vLLM on a GPU host, or a hosted API.
-
-## Quick install on Linux
+Install locally:
 
 ```bash
-unzip pi-agent-platform-stage7.zip
-cd pi-agent-platform-stage7
 ./install.sh
 ```
 
-Then open:
+Open the configured UI, commonly:
 
 ```text
+https://admin.pac.local
 https://localhost
 ```
 
-Override defaults:
-
-```bash
-PI_AGENT_DIR=/opt/pi-agent-platform PI_AGENT_PORT=443 ./install.sh
-```
-
-The installer creates a Python venv, installs the app, copies `config/example.config.yaml` to `config/config.yaml`, writes `run.sh`, and tries to enable a user-level systemd service.
-
-## Manual dev run
+Run manually during development:
 
 ```bash
 python3 -m venv .venv
@@ -156,436 +392,76 @@ cp config/example.config.yaml config/config.yaml
 uvicorn pi_agent_platform.api.main:app --host 0.0.0.0 --port 443
 ```
 
-## Configure your own models
-
-Edit `config/config.yaml`:
-
-```yaml
-providers:
-  lmstudio-desktop:
-    type: lmstudio
-    base_url: http://192.168.1.50:1234/v1
-
-models:
-  my-local-coder:
-    provider: lmstudio-desktop
-    model: qwen2.5-coder-32b-instruct
-    runs_on: desktop-lmstudio
-    context_window: 32768
-    max_output_tokens: 8192
-    capabilities:
-      supports_chat: true
-      supports_tools: false
-      supports_json: true
-      supports_streaming: true
-```
-
-For Ollama:
-
-```yaml
-providers:
-  ollama-box:
-    type: ollama
-    base_url: http://192.168.1.60:11434
-
-models:
-  ollama-qwen:
-    provider: ollama-box
-    model: qwen2.5-coder:7b
-    runs_on: ollama-box
-    context_window: 16384
-    max_output_tokens: 4096
-```
-
-## Context windows
-
-Set the actual model server context in LM Studio/Ollama/vLLM, then declare the safe value here. The PAC uses the declared value to decide how much history and file context to send.
-
-Effective context is calculated as:
-
-```text
-effective_context = min(model.context_window, selected_context_profile.budget_tokens)
-```
-
-Check it with:
+Build the pi.dev runtime container:
 
 ```bash
-curl https://localhost/v1/models/lmstudio-qwen-coder/effective-context?context_profile=medium
+scripts/build-pi-container.sh localhost/pi-agent-harness:stage11
 ```
 
-## Useful API endpoints
-
-```text
-GET  /v1/config
-GET  /v1/providers
-POST /v1/providers/{name}/test
-GET  /v1/models/{name}/card
-POST /v1/models/{name}/test
-GET  /v1/models/{name}/effective-context?context_profile=medium
-GET  /v1/sessions
-POST /v1/sessions
-POST /v1/sessions/{id}/tasks
-GET  /v1/sessions/{id}/events
-GET  /v1/tasks/pending-approvals
-```
-
-## Traefik
-
-The `deploy/traefik` compose example is retained from Stage 3/4. For public exposure, put the Web UI and API behind Traefik with TLS and enable bearer auth or an external auth proxy.
-
-## Standalone binary workflow
-
-A GitHub Actions workflow is included at:
-
-```text
-.github/workflows/build-standalone.yml
-```
-
-It builds a single Linux binary with PyInstaller and packages it with config/deploy examples.
-
-## Current limitation
-
-The LLM planning loop is still an integration point. The platform manages providers, models, sessions, commands, permissions, approvals, remote runners, host execution and container execution. The next major feature should wire a real agent loop that calls the selected model and tools automatically.
-
-## Stage 6: mixed execution and remote agent hosts
-
-Stage 6 adds the foundation for using both container workers and direct host runners.
-
-New concepts:
-
-- **Runner / remote agent host**: a Linux machine that registers with the PAC.
-- **Host execution mode**: run directly on the runner host, similar to a GitHub/Forgejo runner.
-- **Container execution mode**: run inside Podman/Docker when available.
-- **Mixed mode**: the runner reports what it can do, and the PAC can schedule accordingly.
-- **Capability discovery**: the runner reports installed tools, GPU availability, and container runtimes.
-- **Container inventory**: the runner reports currently running Podman/Docker containers back to the Web UI.
-
-### Running the host runner
-
-From a Linux host that should become an agent worker:
+Install an endpoint:
 
 ```bash
-python -m pi_agent_platform.runner \
-  --PAC https://agent.example.nl \
-  --token "$PI_AGENT_TOKEN" \
-  --name gpu-workstation-01 \
-  --labels linux,gpu,nvidia,host-runner
+sudo CONTROL_PLANE=https://admin.pac.local \
+  PI_AGENT_TOKEN=change-me \
+  PI_CONTAINER_IMAGE=localhost/pi-agent-harness:stage11 \
+  scripts/install-runner.sh
 ```
-
-For local development:
-
-```bash
-python -m pi_agent_platform.runner \
-  --PAC https://127.0.0.1 \
-  --name local-runner \
-  --labels linux,local,host-runner
-```
-
-The runner sends heartbeats containing:
-
-- hostname
-- installed tools such as git, python3, node, podman, docker, kubectl, oc, helm, talosctl
-- GPU status via `nvidia-smi` when available
-- available container runtime(s)
-- currently running containers
-
-### Web UI
-
-The Web UI now has a **Remote agent hosts / runners** section where you can:
-
-- add a runner placeholder from the browser
-- see registered runners
-- see labels/capabilities
-- see reported containers
-- run local discovery on the PAC host
-
-### API additions
-
-```text
-GET    /v1/runners
-POST   /v1/runners
-POST   /v1/runners/register
-POST   /v1/runners/heartbeat
-GET    /v1/runners/local/discover
-GET    /v1/runners/{runner_id}
-DELETE /v1/runners/{runner_id}
-POST   /v1/runners/{runner_id}/jobs
-```
-
-`POST /v1/runners/{runner_id}/jobs` defines the scheduling contract. The runner pull/execution loop is intentionally kept as the next implementation step so the security model can be tightened before arbitrary remote command execution is enabled.
-
-### Example runner job contract
-
-```json
-{
-  "prompt": "Run tests on this host",
-  "command": "pytest -q",
-  "execution_mode": "host",
-  "workspace_path": "/var/lib/pi-agent-runner/workspaces/example"
-}
-```
-
-Container execution contract:
-
-```json
-{
-  "prompt": "Run the repo checks inside a container",
-  "command": "npm test",
-  "execution_mode": "container",
-  "container_image": "node:22-bookworm"
-}
-```
-
-
-## Stage 7: execution options are implemented
-
-You now have three practical execution paths:
-
-```text
-1. Control-plane/local execution
-   Web/API task -> command runs on the Pi/PAC host workspace
-
-2. Remote host runner execution
-   Web/API task -> queued to registered runner -> command runs directly on that Linux host
-
-3. Remote container execution
-   Web/API task -> queued to registered runner -> runner starts Podman/Docker container -> command runs in /workspace
-```
-
-### Start a runner
-
-```bash
-python -m pi_agent_platform.runner \
-  --PAC https://127.0.0.1 \
-  --name local-runner \
-  --labels linux,local,host-runner \
-  --interval 5
-```
-
-With auth:
-
-```bash
-PI_AGENT_TOKEN=change-me python -m pi_agent_platform.runner \
-  --PAC https://agent.example.nl \
-  --token "$PI_AGENT_TOKEN" \
-  --name gpu-workstation-01 \
-  --labels linux,gpu,nvidia,host-runner
-```
-
-### Queue host execution
-
-From Web UI: select a session, select a runner, choose `host`, enter a command, then run.
-
-API example:
-
-```bash
-curl -X POST https://localhost/v1/runners/RUNNER_ID/jobs \
-  -H 'content-type: application/json' \
-  -d '{"prompt":"list workspace","command":"pwd && ls -la","execution_mode":"host"}'
-```
-
-### Queue container execution
-
-```bash
-curl -X POST https://localhost/v1/runners/RUNNER_ID/jobs \
-  -H 'content-type: application/json' \
-  -d '{"prompt":"run in python","command":"python --version && pwd","execution_mode":"container","container_image":"python:3.12-alpine"}'
-```
-
-The runner automatically reports installed tools, GPU visibility and running Podman/Docker containers back to the Web UI.
-
-### Model selection vs execution location
-
-Model location and execution location are separate:
-
-```text
-Selected model -> can run on OpenAI, LM Studio, Ollama, vLLM, etc.
-Selected execution target -> can run on Pi, direct remote host, or a container on a remote host.
-```
-
-For example, a runner on your desktop can execute commands locally while the selected model points to `http://localhost:1234/v1` from that machine only after a later model-call runner proxy is added. Today, model calls are still made from the PAC, so LM Studio URLs should be reachable from the Pi/PAC.
-
-## Stage 8: Agent loop
-
-Stage 8 adds the first real agent loop. If you create a task with only a prompt and leave `command` empty, the PAC calls the selected model and lets it choose from workspace tools using JSON tool calls.
-
-### Agent loop tools
-
-- `list_files`
-- `read_file`
-- `write_file`
-- `shell`
-- `git_status`
-- `git_diff`
-
-The loop expects the model to return one JSON object at a time, for example:
-
-```json
-{"type":"tool_call","tool":"git_status","input":{}}
-```
-
-or:
-
-```json
-{"type":"final","message":"Done."}
-```
-
-### Full control
-
-The `full-control` permission profile is included. It allows shell and file writes without approval prompts. Every tool call still appears in the event timeline.
-
-Use it only for safe/disposable workspaces or trusted runners.
-
-### Web UI style
-
-The UI has moved toward the requested darker graphite/purple style with sharper corners. The next UX pass should turn this into a proper guided session wizard and better event timeline.
-
-## Stage 9: small-context agent support
-
-Stage 9 adds mechanisms to make small models useful, including 4k/8k context windows:
-
-- rolling context compaction when the prompt history approaches the input budget
-- estimated token budgeting per model/context profile
-- `tiny-4k` context profile
-- chunked file reads via `read_file_chunk`
-- workspace overview via `workspace_manifest`
-- batched map/reduce-style analysis via `batch_analyze_text` and `batch_analyze_file`
-- task metadata fields for `rolling_context_summary` and context token estimates
-- timeline events named `context_compacted` and `batch_result`
-
-The effective context is still bounded by the real model server. A profile can tell the PAC to behave as if a model has 4096 tokens, but LM Studio/Ollama/vLLM must also be configured to actually serve that context window.
-
-Example tiny profile:
-
-```yaml
-context_profiles:
-  tiny-4k:
-    budget_tokens: 4096
-    reserve_output_tokens: 768
-    history_tokens: 1400
-    file_context_tokens: 1200
-    summarization: rolling
-    batch_chunk_tokens: 700
-```
-
-For small-context work, use an agent prompt like:
-
-```text
-Inspect this repository using workspace_manifest first. Use read_file_chunk and batch_analyze_file for large files. Keep a compact rolling summary and produce a final patch plan.
-```
-
-The agent loop now tries to compact automatically, but the new tools also let the agent intentionally process a large file in batches without stuffing the whole file into a single model call.
 
 ---
 
-# Stage 10: internet tools and artifacts
-
-Stage 10 adds text-first web access and artifact exchange between the PAC and runners.
-
-## Agent web tools
-
-The agent can now call:
-
-```json
-{"type":"tool_call","tool":"web_search","input":{"query":"OpenShift route TLS self signed ingress", "max_results":5}}
-```
-
-and:
-
-```json
-{"type":"tool_call","tool":"web_fetch","input":{"url":"https://example.com", "max_chars":12000}}
-```
-
-`web_fetch` prefers `lynx`, `links2`, or `w3m` when installed. If none are available, it uses the built-in HTML cleaner and strips script/style/noise before returning text.
-
-Install optional text browsers on RHEL/Fedora-like hosts:
-
-```bash
-dnf install -y lynx links
-```
-
-or Debian/Ubuntu:
-
-```bash
-apt-get update && apt-get install -y lynx links2 w3m
-```
-
-## Network permissions
-
-Web tools use the permission profile's `network` rule:
-
-```yaml
-permission_profiles:
-  ask-first:
-    network: ask
-  full-dev:
-    network: allow
-  full-control:
-    network: allow
-```
-
-With `ask`, the loop pauses and asks for approval before web access. With `full-control`, it proceeds and logs everything.
-
-## Artifacts
-
-Agents can save files for download:
-
-```json
-{"type":"tool_call","tool":"save_artifact","input":{"name":"analysis/notes.txt","content":"..."}}
-```
-
-List artifacts:
-
-```bash
-curl https://localhost/v1/artifacts
-```
-
-Upload an artifact manually:
-
-```bash
-curl -X PUT --data-binary @result.tar.gz \
-  https://localhost/v1/artifacts/sess_x/task_y/result.tar.gz
-```
-
-Download:
-
-```bash
-curl -o result.tar.gz \
-  https://localhost/v1/artifacts/sess_x/task_y/result.tar.gz
-```
-
-## Runner artifact sync
-
-A remote runner automatically uploads a tarball if the job workspace contains either:
+## Repository Map
 
 ```text
-artifacts/
-pi-agent-artifacts/
+.github/workflows/                 Release, diff and package workflows
+binaries/                          Go binaries for endpoint, CLI and IDE/MCP helpers
+config/                            Example controller configuration
+containers/                        Workspace, builder and pi.dev runtime containers
+deploy/                            Container, Compose, Podman and Traefik deployment files
+docs/                              Technical, endpoint, runtime and integration documentation
+mcp/                               MCP stdio bridge source
+pi_agent_platform/api/             FastAPI controller and route definitions
+pi_agent_platform/core/            Controller services, state, runtime and orchestration logic
+pi_agent_platform/web/             Web UI, styles and brand assets
+scripts/                           Build, install, validation and release helper scripts
+vscode-extension/                  VS Code integration scaffold
 ```
 
-This lets host/container jobs generate files without requiring shared storage.
+---
 
-Example job command:
+## Brand Assets
 
-```bash
-mkdir -p artifacts
-make test | tee artifacts/test-output.txt
+<p align="center">
+  <img src="pi_agent_platform/web/assets/pac-brand-mark-transparent-256.png" alt="PAC brand mark" width="128" />
+  &nbsp;&nbsp;&nbsp;
+  <img src="pi_agent_platform/web/assets/pac-icon-green-256.png" alt="PAC green icon" width="128" />
+</p>
+
+The README references assets already shipped with the product under:
+
+```text
+pi_agent_platform/web/assets/
 ```
 
-After the job finishes, the runner uploads the bundle to the PAC.
+Useful assets include:
 
-## Stage 13: PAC brand integration
+- `pac-banner-green.png`
+- `pac-logo-lockup-transparent.png`
+- `pac-logo-compact-transparent.png`
+- `pac-brand-mark-transparent-*.png`
+- `pac-icon-green-*.png`
+- `pac-icon.svg`
+- `pac-loader.svg`
 
-- Added PAC logo assets under `pi_agent_platform/web/assets/`.
-- Added favicon and PAC node icon.
-- Integrated the PAC logo into the top header.
-- Added a five-node PAC loader/status mark for active PAC states.
-- Added PAC footer branding: `PAC Control • Orchestrate • Execute`.
-- Kept the dark purple, sharper-corner theme from Stage 12.
+---
 
+## Current Product Shape
 
-## Stage 17 self-update uploads
+PAC is a controller-driven platform for agent sessions, endpoint orchestration, model-provider routing, source/package management and observable execution. Its strongest architectural boundary is the split between control and execution:
 
-PAC can now update itself from the Web UI. Go to **Settings → Self update / stage package**, upload a PAC stage zip, and apply it. PAC will validate the archive, back up `~/.pacp/app`, copy the new app files, reinstall the editable package into the existing virtualenv, and mark the server as restart-required. Use the **Restart PAC** button when running under systemd or another restart policy. Manual runs will exit and need to be started again.
+- The **controller** owns orchestration, state, policy, UI and auditability.
+- **Endpoints** own local execution, tools, workspaces and host/container capabilities.
+- **Containers** provide isolated and repeatable workspaces.
+- **pi.dev** provides the agent runtime, wrapped and supervised by PAC.
+- **Providers** supply model inference externally.
 
-- Feature update packs: docs/feature-update-packs.md
+That separation makes PAC suitable for multi-machine development, operational automation, customer-scoped documentation work, controlled code execution and IDE-integrated agent workflows.
