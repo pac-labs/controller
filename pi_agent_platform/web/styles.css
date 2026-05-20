@@ -4840,3 +4840,21 @@ body[data-theme="dark"] .tabs-wrap{
 }
 .session-delete-btn:hover { color: #e05c5c; background: #e05c5c22; }
 .session-sidebar-item { position: relative; }
+
+.wizard-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.8rem;
+}
+
+.wizard-progress .ghost-button {
+  min-width: 0;
+  padding: 0.35rem 0.7rem;
+}
+
+.wizard-progress .ghost-button.active {
+  border-color: var(--accent-color, #42be65);
+  color: var(--text-strong, #fff);
+  background: color-mix(in srgb, var(--accent-color, #42be65) 14%, transparent);
+}

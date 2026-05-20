@@ -50,12 +50,16 @@
       <div class="section-heading">
         <div>
           <h2 id="setupWizardTitle">Finish PAC setup</h2>
-          <p class="muted">PAC can load, but required configuration is still missing for agent-backed sessions.</p>
+          <p id="setupWizardMeta" class="muted">PAC can load, but required configuration is still missing for agent-backed sessions.</p>
         </div>
         <button id="dismissSetupWizard" class="ghost-button">Continue in limited mode</button>
       </div>
+      <div id="setupWizardProgress" class="button-row wizard-progress"></div>
       <div id="setupWizardBody" class="stacked-output"></div>
       <div class="button-row">
+        <button id="setupWizardBack" class="ghost-button">Back</button>
+        <button id="setupWizardNext">Next</button>
+        <button id="setupWizardDone" hidden>Done</button>
         <button id="recheckSetupWizard">Recheck setup</button>
       </div>
     </section>
