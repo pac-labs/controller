@@ -715,22 +715,60 @@ pre#events, pre#diff { min-width: 0; width: 100%; overflow: auto; white-space: p
   font-size:.88rem;
   line-height:1.35;
 }
-.composer-thinking-status .tiny-spinner.square{
-  flex:0 0 auto;
-}
-.composer-thinking-copy{
+.composer-thinking-entry{
   min-width:0;
   display:flex;
-  align-items:center;
-  gap:.5rem;
-  flex-wrap:wrap;
+  flex-direction:column;
+  gap:.1rem;
 }
-.composer-thinking-text{
+.composer-thinking-entry[role="button"]{ cursor:pointer; }
+.composer-thinking-heading{
+  color:#dbe5f3;
+  font-weight:650;
+}
+.composer-thinking-chevron{
+  color:#8ea1b9;
+}
+.composer-thinking-summary{
   color:#dbe5f3;
 }
 .composer-thinking-meta{
   color:#8ea1b9;
   font-size:.78rem;
+}
+.composer-reply-actions{
+  display:flex;
+  align-items:center;
+  gap:.35rem;
+  padding:.35rem .2rem .1rem;
+}
+.reply-action-row{
+  display:flex;
+  align-items:center;
+  gap:.35rem;
+  margin-top:.6rem;
+}
+.reply-action-button{
+  min-width:1.9rem;
+  height:1.9rem;
+  display:inline-grid;
+  place-items:center;
+  padding:0 .4rem;
+  border-radius:999px;
+  border:1px solid rgba(148,163,184,.24);
+  background:rgba(255,255,255,.04);
+  color:#cbd5e1;
+  font-size:.88rem;
+}
+.reply-action-button:hover{
+  background:rgba(36,195,107,.14);
+  border-color:rgba(36,195,107,.38);
+  color:#f8fafc;
+}
+.reply-action-button.active{
+  background:rgba(36,195,107,.2);
+  border-color:rgba(36,195,107,.55);
+  color:#f8fafc;
 }
 .composer-input-shell {
   display: grid;

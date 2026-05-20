@@ -78,6 +78,8 @@ let suppressSessionAutoScroll = false;
 let sessionHydrationToken = 0;
 let sessionHydrationActiveFor = null;
 let sessionHydrationBufferedEvents = [];
+let sessionTaskPrompts = new Map();
+let latestAssistantReplyState = null;
 let sessionAutoScrollPinned = true;
 let providerHealthCache = new Map();
 let controllerHarnessStatusCache = null;
@@ -331,6 +333,136 @@ function appendChatText(parent, role, text) {
     return el;
   }
   return appendText(parent, 'div', 'chat-bubble-text', normalized);
+}
+function looksLikeInternalResultMessage(event, text = '') {
+  const type = String(event?.type || '').toLowerCase();
+  if (!type.includes('result')) return false;
+  const data = event?.data && typeof event.data === 'object' ? event.data : {};
+  if (data.exit_code != null || data.tool || data.command) return true;
+  const normalized = normalizeAssistantText(text).trim();
+  if (!normalized) return true;
+  if (normalized.length > 140 || normalized.includes('\n\n')) return false;
+  return /^(workspace indexed|shell exited|listed\b|listing\b|read\b|wrote\b|written\b|saved\b|created\b|updated\b|deleted\b|renamed\b|moved\b|copied\b|built\b|tested\b|formatted\b|indexed\b|downloaded\b|uploaded\b|complete\b|done\b)/i.test(normalized);
+}
+function updateLatestAssistantReply(event, text = '') {
+  const normalized = normalizeAssistantText(text).trim();
+  if (!normalized) return;
+  latestAssistantReplyState = {
+    eventId: event?.id || '',
+    taskId: event?.task_id || '',
+    sessionId: event?.session_id || selectedSession?.id || '',
+    text: normalized,
+    createdAt: event?.created_at || new Date().toISOString(),
+  };
+  renderComposerReplyActions();
+}
+function getLatestAssistantReply() {
+  return latestAssistantReplyState;
+}
+async function copyReplyText(text) {
+  await navigator.clipboard.writeText(String(text || ''));
+  emitUiEvent('reply_copied', 'Assistant reply copied to clipboard.', {text_length: String(text || '').length});
+}
+function replyFeedbackStorageKey(reply) {
+  return `pac_reply_feedback:${reply?.sessionId || ''}:${reply?.eventId || ''}`;
+}
+function currentReplyFeedback(reply) {
+  try { return localStorage.getItem(replyFeedbackStorageKey(reply)) || ''; } catch { return ''; }
+}
+function setReplyFeedback(reply, value) {
+  try { localStorage.setItem(replyFeedbackStorageKey(reply), value); } catch {}
+  emitUiEvent('reply_feedback_recorded', `Recorded ${value === 'up' ? 'thumbs up' : 'thumbs down'} for the latest reply.`, {session_id: reply?.sessionId, event_id: reply?.eventId, feedback: value});
+  renderComposerReplyActions();
+}
+async function shareReply(reply) {
+  const shareUrl = `${location.origin}${location.pathname}#session=${encodeURIComponent(reply?.sessionId || selectedSession?.id || '')}&event=${encodeURIComponent(reply?.eventId || '')}`;
+  const payload = `${reply?.text || ''}\n\nShared from PAC session ${reply?.sessionId || selectedSession?.id || ''}\n${shareUrl}`;
+  await navigator.clipboard.writeText(payload);
+  emitUiEvent('reply_shared', 'Share text copied to clipboard.', {session_id: reply?.sessionId, event_id: reply?.eventId});
+}
+async function regenerateLatestReply() {
+  const reply = getLatestAssistantReply();
+  if (!selectedSession?.id || !reply?.taskId) throw new Error('No recent assistant reply is available to regenerate.');
+  const prompt = sessionTaskPrompts.get(reply.taskId);
+  if (!prompt) throw new Error('The original prompt for this reply is no longer available.');
+  await createSessionTask(selectedSession.id, prompt, {});
+}
+async function branchLatestReplyToNewSession() {
+  const reply = getLatestAssistantReply();
+  if (!selectedSession?.id || !reply?.text) throw new Error('No assistant reply is available to branch from.');
+  const endpointId = selectedSession.metadata?.preferred_endpoint || '';
+  const workspace = selectedSession.workspace_path
+    ? {type:'local', path:selectedSession.workspace_path}
+    : {type:'profile', profile:selectedSession.workspace_profile || null};
+  const payload = {
+    name: `${selectedSession.name || 'session'}-branch`,
+    agent_profile: selectedSession.agent_profile || null,
+    permission_profile: selectedSession.permission_profile || null,
+    context_mode: selectedSession.context_mode || null,
+    workspace,
+    tools: [],
+    metadata: {
+      preferred_endpoint: endpointId,
+      endpoint_locked: !!endpointId,
+      agent_enabled: selectedSession.metadata?.agent_enabled !== false,
+      execution_mode: selectedSession.metadata?.execution_mode || 'pi.dev',
+    },
+  };
+  if (selectedSession.model) payload.model = selectedSession.model;
+  const session = await api('/v1/sessions', {method:'POST', body:JSON.stringify(payload)});
+  await loadSessions();
+  await selectSession(session.id);
+  taskPrompt.value = `Branch from this previous reply and continue the work:\n\n${reply.text}\n\nContinue from here.`;
+  autosizeSessionPrompt();
+  taskPrompt.focus();
+  emitUiEvent('reply_branched', `Created branch session ${session.name || session.id}.`, {source_session: selectedSession?.id, branch_session: session.id});
+}
+function ensureComposerReplyActions() {
+  const composer = document.querySelector('.session-composer.chatgpt-composer');
+  if (!composer) return null;
+  let row = document.getElementById('composerReplyActions');
+  if (row) return row;
+  row = document.createElement('div');
+  row.id = 'composerReplyActions';
+  row.className = 'composer-reply-actions';
+  row.hidden = true;
+  composer.appendChild(row);
+  return row;
+}
+function renderComposerReplyActions() {
+  const row = ensureComposerReplyActions();
+  if (!row) return;
+  const reply = getLatestAssistantReply();
+  if (!reply?.text) {
+    row.hidden = true;
+    row.innerHTML = '';
+    return;
+  }
+  const feedback = currentReplyFeedback(reply);
+  row.hidden = false;
+  row.innerHTML = `
+    <button type="button" class="reply-action-button" data-reply-action="copy" title="Copy reply" aria-label="Copy reply">⧉</button>
+    <button type="button" class="reply-action-button${feedback === 'up' ? ' active' : ''}" data-reply-action="up" title="Thumbs up" aria-label="Thumbs up">👍</button>
+    <button type="button" class="reply-action-button${feedback === 'down' ? ' active' : ''}" data-reply-action="down" title="Thumbs down" aria-label="Thumbs down">👎</button>
+    <button type="button" class="reply-action-button" data-reply-action="share" title="Share reply" aria-label="Share reply">⤴</button>
+    <button type="button" class="reply-action-button" data-reply-action="refresh" title="Regenerate reply" aria-label="Regenerate reply">↻</button>
+    <button type="button" class="reply-action-button" data-reply-action="branch" title="Branch into new chat" aria-label="Branch into new chat">⑂</button>
+  `;
+  row.querySelectorAll('[data-reply-action]').forEach((btn) => {
+    btn.onclick = async () => {
+      try {
+        const action = btn.dataset.replyAction || '';
+        if (action === 'copy') await copyReplyText(reply.text);
+        else if (action === 'up') setReplyFeedback(reply, 'up');
+        else if (action === 'down') setReplyFeedback(reply, 'down');
+        else if (action === 'share') await shareReply(reply);
+        else if (action === 'refresh') await regenerateLatestReply();
+        else if (action === 'branch') await branchLatestReplyToNewSession();
+      } catch (error) {
+        paneError('Reply action failed', error.message || String(error));
+      }
+    };
+  });
 }
 function normalizeTimelineBlock(event) {
   const data = event?.data && typeof event.data === 'object' ? event.data : {};
@@ -1304,7 +1436,9 @@ function renderSessionTimelineEvent(event, options = {}) {
   if (empty) empty.remove();
   const block = normalizeTimelineBlock(event);
   const role = sessionEventRole(event);
-  const internal = isInternalSessionEvent(event);
+  const text = timelineText(event, block);
+  if (event.type === 'user_message' && event.task_id && text) sessionTaskPrompts.set(event.task_id, String(text));
+  const internal = isInternalSessionEvent(event) || looksLikeInternalResultMessage(event, text);
   if (internal && prepend) {
     return;
   }
@@ -1319,6 +1453,7 @@ function renderSessionTimelineEvent(event, options = {}) {
     if (typeLower.includes('approval_required')) renderSessionApprovalRow(event);
     if (String(event?.type || '').toLowerCase().includes('task_completed') || String(event?.type || '').toLowerCase().includes('task_failed')) {
       flushSessionThinkingGroup(event);
+      refreshComposerThinkingStatusForTask(group.taskId);
     }
     while (el.children.length > 250) el.removeChild(el.firstChild);
     scrollSessionToBottom();
@@ -1326,6 +1461,7 @@ function renderSessionTimelineEvent(event, options = {}) {
   }
   if (sessionLifecycleEventIsNoise(event)) return;
   flushSessionThinkingGroup(event);
+  refreshComposerThinkingStatusForTask(event.task_id || '');
   const row = document.createElement('article');
   row.className = `chat-message-row ${role}`;
   const bubble = document.createElement('div');
@@ -1335,11 +1471,11 @@ function renderSessionTimelineEvent(event, options = {}) {
   const label = role === 'user' ? 'You' : role === 'error' ? 'Error' : role === 'system' ? 'System' : 'Agent';
   meta.innerHTML = `<span>${escapeHtml(label)}</span><span>${escapeHtml(formatEventTime(event.created_at))}</span>`;
   bubble.appendChild(meta);
-  const text = timelineText(event, block);
   if (!text && role === 'assistant' && !block) return;
   if (text) appendChatText(bubble, role, text);
   if (role === 'assistant') {
     bubble.classList.add('copyable-reply');
+    updateLatestAssistantReply(event, text);
   }
   if (role === 'user' && event.task_id) addPendingRow(event.task_id);
   if (role === 'assistant' || (block && (block.fields || block.meta || block.links))) {
@@ -1349,6 +1485,35 @@ function renderSessionTimelineEvent(event, options = {}) {
     more.textContent = role === 'assistant' ? 'Details' : 'Open details';
     more.onclick = () => openSessionEventModal(event, block);
     bubble.appendChild(more);
+  }
+  if (role === 'assistant' && text) {
+    const actions = document.createElement('div');
+    actions.className = 'reply-action-row';
+    const feedback = currentReplyFeedback({sessionId:event.session_id || selectedSession?.id || '', eventId:event.id || ''});
+    actions.innerHTML = `
+      <button type="button" class="reply-action-button" data-reply-action="copy" title="Copy reply" aria-label="Copy reply">⧉</button>
+      <button type="button" class="reply-action-button${feedback === 'up' ? ' active' : ''}" data-reply-action="up" title="Thumbs up" aria-label="Thumbs up">👍</button>
+      <button type="button" class="reply-action-button${feedback === 'down' ? ' active' : ''}" data-reply-action="down" title="Thumbs down" aria-label="Thumbs down">👎</button>
+      <button type="button" class="reply-action-button" data-reply-action="share" title="Share reply" aria-label="Share reply">⤴</button>
+      <button type="button" class="reply-action-button" data-reply-action="refresh" title="Regenerate reply" aria-label="Regenerate reply">↻</button>
+      <button type="button" class="reply-action-button" data-reply-action="branch" title="Branch into new chat" aria-label="Branch into new chat">⑂</button>`;
+    actions.querySelectorAll('[data-reply-action]').forEach((btn) => {
+      btn.onclick = async () => {
+        const reply = {eventId: event.id || '', taskId: event.task_id || '', sessionId: event.session_id || selectedSession?.id || '', text: normalizeAssistantText(text), createdAt: event.created_at || new Date().toISOString()};
+        try {
+          const action = btn.dataset.replyAction || '';
+          if (action === 'copy') await copyReplyText(reply.text);
+          else if (action === 'up') setReplyFeedback(reply, 'up');
+          else if (action === 'down') setReplyFeedback(reply, 'down');
+          else if (action === 'share') await shareReply(reply);
+          else if (action === 'refresh') await regenerateLatestReply();
+          else if (action === 'branch') await branchLatestReplyToNewSession();
+        } catch (error) {
+          paneError('Reply action failed', error.message || String(error));
+        }
+      };
+    });
+    bubble.appendChild(actions);
   }
   row.appendChild(bubble);
   if (prepend && el.firstChild) el.insertBefore(row, el.firstChild);
@@ -6148,36 +6313,39 @@ async function sendSessionComposer(){
   taskPrompt.value='';
   taskCommand.value='';
   autosizeSessionPrompt();
-  if (sessionHydrationActiveFor === selectedSession.id) {
+  await createSessionTask(selectedSession.id, rawPrompt, metadata);
+}
+async function createSessionTask(sessionId, rawPrompt, metadata = {}) {
+  if (sessionHydrationActiveFor === sessionId) {
     sessionHydrationToken += 1;
     sessionHydrationActiveFor = null;
     sessionHydrationBufferedEvents = [];
   }
-  const created = await api(`/v1/sessions/${selectedSession.id}/tasks`,{method:'POST',body:JSON.stringify({prompt:rawPrompt,command:'',metadata})});
+  const created = await api(`/v1/sessions/${sessionId}/tasks`,{method:'POST',body:JSON.stringify({prompt:rawPrompt,command:'',metadata})});
   if (created && created.id) {
     activeSessionTaskId = created.id;
     refreshSessionRunButton().catch(()=>{});
     const localEvent = {
       id: `local_user_${created.id}`,
-      session_id: selectedSession.id,
+      session_id: sessionId,
       task_id: created.id,
       type: 'user_message',
       message: rawPrompt,
       created_at: created.created_at || new Date().toISOString(),
-      data: {role:'user', model: metadata.model || selectedSession.model, endpoint_id: metadata.runner_id || selectedSession.metadata?.preferred_endpoint, command:'', execution_mode: metadata.execution_mode, stored:true, pi_dev_enabled:selectedSession.metadata?.agent_enabled !== false, routing:'pi.dev'}
+      data: {role:'user', model: metadata.model || selectedSession?.model, endpoint_id: metadata.runner_id || selectedSession?.metadata?.preferred_endpoint, command:'', execution_mode: metadata.execution_mode, stored:true, pi_dev_enabled:selectedSession?.metadata?.agent_enabled !== false, routing:'pi.dev'}
     };
     renderSessionTimelineEvent(localEvent);
     renderComposerThinkingStatus({active:true, summary:'Thinking about your latest request', startedAt: localEvent.created_at, toolCount:0, approvalPending:false});
     renderSessionTimelineEvent({
       id: `local_thinking_${created.id}`,
-      session_id: selectedSession.id,
+      session_id: sessionId,
       task_id: created.id,
       type: 'agent_thinking',
       message: 'Thinking about your latest request',
       created_at: created.created_at || new Date().toISOString(),
       data: {role:'assistant', step: 0, local: true}
     });
-    pollSessionEvents(selectedSession.id).catch(()=>{});
+    pollSessionEvents(sessionId).catch(()=>{});
   }
 }
 
@@ -7681,4 +7849,100 @@ async function searchMarketplaceModal() {
     } catch (e) {
         el.textContent = e.message || String(e);
     }
+}
+
+function deriveComposerThinkingState(events) {
+    const rows = Array.isArray(events) ? events : [];
+    const byTask = new Map();
+    rows.forEach((event) => {
+        const taskId = String(event?.task_id || '').trim();
+        if (!taskId) return;
+        if (!byTask.has(taskId)) byTask.set(taskId, []);
+        byTask.get(taskId).push(event);
+    });
+    const preferredTaskId = activeSessionTaskId && byTask.has(activeSessionTaskId) ? activeSessionTaskId : Array.from(byTask.keys()).at(-1);
+    if (!preferredTaskId) return null;
+    const taskEvents = byTask.get(preferredTaskId) || [];
+    const internal = taskEvents.filter((event) => isInternalSessionEvent(event) || looksLikeInternalResultMessage(event, timelineText(event, normalizeTimelineBlock(event))));
+    if (!internal.length) return {active: true, summary: 'Thinking about your latest request', startedAt: taskEvents[0]?.created_at, toolCount: 0, approvalPending: false};
+    let summary = '';
+    let approvalPending = false;
+    let toolCount = 0;
+    for (const event of internal) {
+        const type = String(event?.type || '').toLowerCase();
+        if (type.includes('tool_call')) toolCount += 1;
+        if (type.includes('approval_required')) approvalPending = true;
+        const next = sessionThinkingSummary(event, normalizeTimelineBlock(event));
+        if (next) summary = next;
+        else if (!summary && (type.includes('tool_result') || type.includes('result'))) summary = String(event?.message || '').trim();
+    }
+    return {
+        active: true,
+        summary: summary || 'Thinking about your latest request',
+        startedAt: internal[0]?.created_at || taskEvents[0]?.created_at,
+        toolCount,
+        approvalPending,
+    };
+}
+
+function renderComposerThinkingStatus(state) {
+    const el = document.getElementById('composerThinkingStatus');
+    if (!el) return;
+    if (!state || (!state.active && !state.closed)) {
+        el.hidden = true;
+        el.innerHTML = '';
+        el.classList.remove('closed', 'active');
+        return;
+    }
+    const endAt = state.closed ? (state.endedAt || new Date().toISOString()) : new Date().toISOString();
+    const duration = formatDurationMs(Math.max(0, (new Date(endAt).getTime() - new Date(state.startedAt || new Date().toISOString()).getTime())));
+    const statusBits = [];
+    if (state.approvalPending) statusBits.push('Awaiting approval');
+    else if (state.closed) statusBits.push('Completed');
+    else statusBits.push('Thinking');
+    if (state.toolCount) statusBits.push(`${state.toolCount} ${state.toolCount === 1 ? 'tool' : 'tools'}`);
+    el.hidden = false;
+    el.classList.toggle('closed', !!state.closed);
+    el.classList.toggle('active', !state.closed);
+    const opener = state.onOpen ? ' role="button" tabindex="0"' : '';
+    el.innerHTML = `<span class="composer-thinking-entry"${opener}><span class="composer-thinking-heading">${escapeHtml(state.closed ? `Thought for ${duration}` : `Thinking for ${duration}`)} <span class="composer-thinking-chevron">›</span></span><span class="composer-thinking-summary">${escapeHtml(state.summary || (state.closed ? 'Done.' : 'Thinking'))}</span>${statusBits.length ? `<span class="composer-thinking-meta">${escapeHtml(statusBits.join(' · '))}</span>` : ''}</span>`;
+    if (state.onOpen) {
+        const open = () => state.onOpen();
+        el.onclick = open;
+        el.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); } };
+    } else {
+        el.onclick = null;
+        el.onkeydown = null;
+    }
+}
+
+function resetSessionTimelineState() {
+    sessionThinkingGroups = new Map();
+    sessionEventSeen = new Set();
+    sessionMessageSeen = new Set();
+    sessionPendingRows = new Map();
+    sessionApprovalRows = new Map();
+    sessionLatestEventId = null;
+    sessionHydrationBufferedEvents = [];
+    sessionTaskPrompts = new Map();
+    latestAssistantReplyState = null;
+    renderComposerReplyActions();
+}
+
+function refreshComposerThinkingStatusForTask(taskId='') {
+    const group = getThinkingGroup(taskId);
+    if (group && Array.isArray(group.events) && group.events.length) {
+        const state = deriveComposerThinkingState(group.events.map(item => item?.event).filter(Boolean)) || {};
+        state.closed = !!group.closed;
+        state.active = !group.closed;
+        state.startedAt = group.startedAt || state.startedAt;
+        state.endedAt = group.endedAt || null;
+        state.summary = group.summary || state.summary || (group.closed ? 'Done.' : 'Thinking');
+        state.toolCount = thinkingGroupToolCount(group);
+        state.approvalPending = thinkingGroupNeedsApproval(group);
+        state.onOpen = () => openSessionThinkingModal(group);
+        renderComposerThinkingStatus(state);
+        return;
+    }
+    renderComposerThinkingStatus(null);
 }
