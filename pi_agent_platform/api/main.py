@@ -4023,7 +4023,15 @@ def _provider_marketplace_fit(params_b: float | None, quants: list[str], profile
 
 
 def _marketplace_model_detail(model_id: str) -> dict[str, Any]:
-    model = _hf_get_json(_hf_model_api_url(model_id))
+    try:
+        model = _hf_get_json(_hf_model_api_url(model_id))
+    except HTTPException:
+        query = urllib.parse.quote(str(model_id or ''))
+        raw = _hf_get_json(f'{HF_API}/models?search={query}&filter=gguf&full=true&limit=25')
+        match = next((item for item in (raw or []) if str(item.get('id') or '').lower() == str(model_id or '').lower()), None)
+        if not match:
+            raise
+        model = match
     siblings = model.get('siblings', []) or []
     tags = [str(tag) for tag in (model.get('tags') or [])]
     quants = _marketplace_available_quants(siblings)
@@ -4055,6 +4063,7 @@ def marketplace_providers(_auth: None = Depends(require_auth)) -> dict[str, Any]
 
 @app.get('/v1/models/marketplace/search')
 def marketplace_search_models(q: str = '', limit: int = 20, sort: str = 'downloads', capability: str | None = None, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    provider_profiles = _marketplace_provider_profiles()
     params = [('search', q), ('filter', 'gguf'), ('full', 'true'), ('direction', '-1'), ('limit', max(1, min(limit, 50))), ('sort', sort)]
     query = '&'.join(f'{key}={urllib.parse.quote(str(value))}' for key, value in params if str(value))
     raw = _hf_get_json(f'{HF_API}/models?{query}')
@@ -4076,6 +4085,8 @@ def marketplace_search_models(q: str = '', limit: int = 20, sort: str = 'downloa
         if capability and capability not in {'all', 'any'} and not capabilities.get(capability, False):
             continue
         params_b = _marketplace_param_billions(model_id)
+        provider_scores = [{'provider': profile, **_provider_marketplace_fit(params_b, quants, profile)} for profile in provider_profiles]
+        preferred_fit = next((entry for entry in provider_scores if entry.get('can_run') is True), None) or next((entry for entry in provider_scores if entry.get('provider', {}).get('type') == 'lmstudio'), None) or (provider_scores[0] if provider_scores else None)
         results.append(
             {
                 'model_id': model_id,
@@ -4088,6 +4099,8 @@ def marketplace_search_models(q: str = '', limit: int = 20, sort: str = 'downloa
                 'params_b': params_b,
                 'available_quants': quants,
                 'vram_q4_k_m_gb': _marketplace_vram_gb(params_b, 'q4_k_m'),
+                'provider_scores': provider_scores,
+                'preferred_fit': preferred_fit,
                 'gated': bool(item.get('gated')),
                 'private': bool(item.get('private')),
             }

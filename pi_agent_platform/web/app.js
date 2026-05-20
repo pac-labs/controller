@@ -7607,3 +7607,78 @@ if (document.getElementById('leTestCfBtn')) {
         }
     };
 }
+
+function marketplaceFitSummary(item) {
+    const fit = item?.preferred_fit || null;
+    const fitProvider = fit?.provider?.name || '';
+    const fitLabel = fit?.can_run === true ? 'fits configured provider' : (fit?.can_run === false ? 'no provider fit' : (fitProvider ? 'compatibility unknown' : 'no provider data'));
+    const fitClass = fit?.can_run === true ? 'ok-pill' : (fit?.can_run === false ? 'warn-pill' : '');
+    const fitDetail = fitProvider ? `${fitProvider}${fit?.quant_recommended ? ` • ${fit.quant_recommended}` : ''}` : '';
+    return { fitLabel, fitClass, fitDetail };
+}
+
+function renderMarketplaceResults(data) {
+    const el = document.getElementById('marketplaceResults');
+    if (!el) return;
+    const results = data?.results || [];
+    marketplaceResultCache = results;
+    if (!results.length) {
+        el.innerHTML = '<span class="muted">No marketplace models matched this query.</span>';
+        return;
+    }
+    el.innerHTML = results.map(item => {
+        const caps = Object.entries(item.capabilities || {}).filter(([, v]) => !!v).map(([k]) => `<span class="marketplace-pill">${escapeHtml(k)}</span>`).join('');
+        const quants = (item.available_quants || []).slice(0, 4).map(q => `<span class="marketplace-pill">${escapeHtml(String(q).toUpperCase())}</span>`).join('');
+        const fit = marketplaceFitSummary(item);
+        return `<button class="marketplace-card marketplace-card-button" data-marketplace-source-model="${escapeHtml(item.model_id)}"><b>${escapeHtml(item.model_id)}</b><div class="marketplace-meta">${caps}${quants}</div><div class="button-row" style="margin:.35rem 0 .2rem 0"><span class="pill ${fit.fitClass}">${escapeHtml(fit.fitLabel)}</span><span class="muted small-text">${escapeHtml(fit.fitDetail)}</span></div><div class="muted small-text">${escapeHtml(item.author || 'unknown author')} • ${escapeHtml(String(item.downloads || 0))} downloads • ${escapeHtml(String(item.params_b || '?'))}B</div></button>`;
+    }).join('');
+    el.querySelectorAll('[data-marketplace-source-model]').forEach(btn => btn.onclick = async () => {
+        const modelId = btn.dataset.marketplaceSourceModel || '';
+        const input = document.getElementById('marketplaceModalQuery');
+        if (input) input.value = modelId;
+        openMarketplaceModal();
+        try {
+            const detail = await api(`/v1/models/marketplace/model/${encodeURIComponent(modelId)}`);
+            renderMarketplaceModalDetail(detail);
+        } catch (e) {
+            paneError('Marketplace details failed', e.message || String(e));
+        }
+    });
+}
+
+async function searchMarketplaceModal() {
+    const query = document.getElementById('marketplaceModalQuery')?.value?.trim() || '';
+    const capability = document.getElementById('marketplaceModalCapability')?.value || '';
+    const sort = document.getElementById('marketplaceModalSort')?.value || 'downloads';
+    const el = document.getElementById('marketplaceModalResults');
+    if (!el) return;
+    el.textContent = 'Searching marketplace...';
+    try {
+        const params = new URLSearchParams({q: query, limit: '18', sort});
+        if (capability) params.set('capability', capability);
+        const data = await api(`/v1/models/marketplace/search?${params.toString()}`);
+        const results = data?.results || [];
+        marketplaceResultCache = results;
+        if (!results.length) {
+            el.innerHTML = '<span class="muted">No marketplace models matched this query.</span>';
+            renderMarketplaceModalDetail();
+            return;
+        }
+        el.innerHTML = results.map(item => {
+            const caps = Object.entries(item.capabilities || {}).filter(([, v]) => !!v).map(([k]) => `<span class="marketplace-pill">${escapeHtml(k)}</span>`).join('');
+            const quants = (item.available_quants || []).slice(0, 4).map(q => `<span class="marketplace-pill">${escapeHtml(String(q).toUpperCase())}</span>`).join('');
+            const fit = marketplaceFitSummary(item);
+            return `<button class="marketplace-card marketplace-card-button" data-marketplace-model="${escapeHtml(item.model_id)}"><b>${escapeHtml(item.model_id)}</b><div class="marketplace-meta">${caps}${quants}</div><div class="button-row" style="margin:.35rem 0 .2rem 0"><span class="pill ${fit.fitClass}">${escapeHtml(fit.fitLabel)}</span><span class="muted small-text">${escapeHtml(fit.fitDetail)}</span></div><div class="muted small-text">${escapeHtml(item.author || 'unknown author')} • ${escapeHtml(String(item.downloads || 0))} downloads • ${escapeHtml(String(item.params_b || '?'))}B</div></button>`;
+        }).join('');
+        el.querySelectorAll('[data-marketplace-model]').forEach(btn => btn.onclick = async () => {
+            try {
+                const detail = await api(`/v1/models/marketplace/model/${encodeURIComponent(btn.dataset.marketplaceModel || '')}`);
+                renderMarketplaceModalDetail(detail);
+            } catch (e) {
+                paneError('Marketplace details failed', e.message || String(e));
+            }
+        });
+    } catch (e) {
+        el.textContent = e.message || String(e);
+    }
+}
