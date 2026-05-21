@@ -678,9 +678,10 @@ function appendChatText(parent, role, text) {
 }
 function looksLikeInternalResultMessage(event, text = '') {
   const type = String(event?.type || '').toLowerCase();
-  if (!type.includes('result')) return false;
+  if (!(type.includes('result') || type.includes('assistant_message') || type === 'final')) return false;
   const data = event?.data && typeof event.data === 'object' ? event.data : {};
   if (data.exit_code != null || data.tool || data.command) return true;
+  if (type.includes('task_completed')) return true;
   const normalized = normalizeAssistantText(text).trim();
   if (!normalized) return true;
   if (normalized.length > 140 || normalized.includes('\n\n')) return false;
@@ -784,12 +785,17 @@ function renderComposerReplyActions() {
   row.hidden = false;
   row.innerHTML = `
     <button type="button" class="reply-action-button" data-reply-action="copy" title="Copy reply" aria-label="Copy reply">⧉</button>
-    <button type="button" class="reply-action-button${feedback === 'up' ? ' active' : ''}" data-reply-action="up" title="Thumbs up" aria-label="Thumbs up">👍</button>
-    <button type="button" class="reply-action-button${feedback === 'down' ? ' active' : ''}" data-reply-action="down" title="Thumbs down" aria-label="Thumbs down">👎</button>
-    <button type="button" class="reply-action-button" data-reply-action="share" title="Share reply" aria-label="Share reply">⤴</button>
+    <button type="button" class="reply-action-button${feedback === 'up' ? ' active' : ''}" data-reply-action="up" title="Thumbs up" aria-label="Thumbs up">▲</button>
+    <button type="button" class="reply-action-button${feedback === 'down' ? ' active' : ''}" data-reply-action="down" title="Thumbs down" aria-label="Thumbs down">▼</button>
+    <button type="button" class="reply-action-button" data-reply-action="share" title="Share reply" aria-label="Share reply">↗</button>
     <button type="button" class="reply-action-button" data-reply-action="refresh" title="Regenerate reply" aria-label="Regenerate reply">↻</button>
     <button type="button" class="reply-action-button" data-reply-action="branch" title="Branch into new chat" aria-label="Branch into new chat">⑂</button>
   `;
+  row.querySelectorAll('[data-reply-action]').forEach((btn) => {
+    const glyphs = {copy:'⧉', up:'▲', down:'▼', share:'↗', refresh:'↻', branch:'⑂'};
+    const action = btn.dataset.replyAction || '';
+    if (glyphs[action]) btn.textContent = glyphs[action];
+  });
   row.querySelectorAll('[data-reply-action]').forEach((btn) => {
     btn.onclick = async () => {
       try {
@@ -936,7 +942,7 @@ function sessionThinkingSummary(event, block) {
   if (type.includes('task_approved')) return 'Approval granted';
   if (type.includes('task_rejected')) return 'Approval rejected';
   if (type.includes('task_failed')) return event?.message || 'Task failed';
-  if (type.includes('task_completed')) return 'Finished thinking';
+  if (type.includes('task_completed')) return '';
   if (type.includes('agent_thinking')) return '';
   if (type.includes('model_response')) return '';
   if (type.includes('tool_call')) {
@@ -953,7 +959,14 @@ function sessionThinkingSummary(event, block) {
     return event?.message || 'Choosing next step';
   }
   if (type.includes('agent_routing')) return event?.message || 'Routing task';
-  if (type.includes('tool_result')) return '';
+  if (type.includes('tool_result')) {
+    const text = timelineText(event, block);
+    if (!text) return '';
+    const normalized = normalizeAssistantText(text).trim();
+    if (!normalized) return '';
+    if (normalized.length > 120 || normalized.includes('\n\n')) return '';
+    return normalized.split('\n')[0];
+  }
   if (data.tool) return `Using ${data.tool}`;
   if (data.command) return `Running ${data.command}`;
   if (data.path) return `Working with ${data.path}`;
@@ -1824,7 +1837,9 @@ function renderSessionTimelineEvent(event, options = {}) {
     const more = document.createElement('button');
     more.type = 'button';
     more.className = 'inline-link-button';
-    more.textContent = role === 'assistant' ? 'Details' : 'Open details';
+    more.textContent = 'ⓘ';
+    more.title = role === 'assistant' ? 'Reply details' : 'Open details';
+    more.setAttribute('aria-label', role === 'assistant' ? 'Reply details' : 'Open details');
     more.onclick = () => openSessionEventModal(event, block);
     bubble.appendChild(more);
   }
@@ -1834,9 +1849,9 @@ function renderSessionTimelineEvent(event, options = {}) {
     const feedback = currentReplyFeedback({sessionId:event.session_id || selectedSession?.id || '', eventId:event.id || ''});
     actions.innerHTML = `
       <button type="button" class="reply-action-button" data-reply-action="copy" title="Copy reply" aria-label="Copy reply">⧉</button>
-      <button type="button" class="reply-action-button${feedback === 'up' ? ' active' : ''}" data-reply-action="up" title="Thumbs up" aria-label="Thumbs up">👍</button>
-      <button type="button" class="reply-action-button${feedback === 'down' ? ' active' : ''}" data-reply-action="down" title="Thumbs down" aria-label="Thumbs down">👎</button>
-      <button type="button" class="reply-action-button" data-reply-action="share" title="Share reply" aria-label="Share reply">⤴</button>
+      <button type="button" class="reply-action-button${feedback === 'up' ? ' active' : ''}" data-reply-action="up" title="Thumbs up" aria-label="Thumbs up">▲</button>
+      <button type="button" class="reply-action-button${feedback === 'down' ? ' active' : ''}" data-reply-action="down" title="Thumbs down" aria-label="Thumbs down">▼</button>
+      <button type="button" class="reply-action-button" data-reply-action="share" title="Share reply" aria-label="Share reply">↗</button>
       <button type="button" class="reply-action-button" data-reply-action="refresh" title="Regenerate reply" aria-label="Regenerate reply">↻</button>
       <button type="button" class="reply-action-button" data-reply-action="branch" title="Branch into new chat" aria-label="Branch into new chat">⑂</button>`;
     actions.querySelectorAll('[data-reply-action]').forEach((btn) => {
@@ -1854,6 +1869,11 @@ function renderSessionTimelineEvent(event, options = {}) {
           paneError('Reply action failed', error.message || String(error));
         }
       };
+    });
+    actions.querySelectorAll('[data-reply-action]').forEach((btn) => {
+      const glyphs = {copy:'⧉', up:'▲', down:'▼', share:'↗', refresh:'↻', branch:'⑂'};
+      const action = btn.dataset.replyAction || '';
+      if (glyphs[action]) btn.textContent = glyphs[action];
     });
     bubble.appendChild(actions);
   }
@@ -8968,16 +8988,13 @@ function renderComposerThinkingStatus(state) {
     }
     const endAt = state.closed ? (state.endedAt || new Date().toISOString()) : new Date().toISOString();
     const duration = formatDurationMs(Math.max(0, (new Date(endAt).getTime() - new Date(state.startedAt || new Date().toISOString()).getTime())));
-    const statusBits = [];
-    if (state.approvalPending) statusBits.push('Awaiting approval');
-    else if (state.closed) statusBits.push('Completed');
-    else statusBits.push('Thinking');
-    if (state.toolCount) statusBits.push(`${state.toolCount} ${state.toolCount === 1 ? 'tool' : 'tools'}`);
+    const summary = state.summary || (state.closed ? 'Done.' : 'Thinking');
+    const meta = state.approvalPending ? '<span class="composer-thinking-meta">Awaiting approval</span>' : '';
     el.hidden = false;
     el.classList.toggle('closed', !!state.closed);
     el.classList.toggle('active', !state.closed);
     const opener = state.onOpen ? ' role="button" tabindex="0"' : '';
-    el.innerHTML = `<span class="composer-thinking-entry"${opener}><span class="composer-thinking-heading">${escapeHtml(state.closed ? `Thought for ${duration}` : `Thinking for ${duration}`)} <span class="composer-thinking-chevron">›</span></span><span class="composer-thinking-summary">${escapeHtml(state.summary || (state.closed ? 'Done.' : 'Thinking'))}</span>${statusBits.length ? `<span class="composer-thinking-meta">${escapeHtml(statusBits.join(' · '))}</span>` : ''}</span>`;
+    el.innerHTML = `<span class="composer-thinking-entry"${opener}><span class="composer-thinking-heading">${escapeHtml(state.closed ? `Thought for ${duration}` : `Thinking for ${duration}`)} <span class="composer-thinking-chevron">›</span></span><span class="composer-thinking-summary">${escapeHtml(summary)}</span>${meta}</span>`;
     if (state.onOpen) {
         const open = () => state.onOpen();
         el.onclick = open;
