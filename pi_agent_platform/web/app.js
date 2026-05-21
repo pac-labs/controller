@@ -6821,6 +6821,25 @@ function renderAuthInfo() {
     el.appendChild(row);
   });
 }
+
+function serializeGroupGrants(grants = []) {
+  return (grants || []).map((grant) => `${grant.resource_type}:${grant.pattern}:${grant.access}`).join(', ');
+}
+
+function parseGroupGrants(value) {
+  return String(value || '').split(',').map((item) => item.trim()).filter(Boolean).map((item) => {
+    const parts = item.split(':');
+    const access = (parts.pop() || 'read').trim();
+    const resource_type = (parts.shift() || 'workspace').trim();
+    const pattern = parts.join(':').trim();
+    return {resource_type, pattern, access};
+  }).filter((item) => item.pattern);
+}
+
+function roleOptions(selected) {
+  const current = String(selected || 'user');
+  return ['user', 'admin', 'readonly'].map((role) => `<option value="${role}" ${current === role ? 'selected' : ''}>${role}</option>`).join('');
+}
 async function loadUsersList() {
   const el = document.getElementById('usersList');
   if (!el) return;
@@ -8163,27 +8182,48 @@ async function loadUsersList() {
     return;
   }
   try {
-    const [users, groups] = await Promise.all([api('/v1/users'), api('/v1/groups').catch(() => [])]);
-    const groupIds = (groups || []).map((group) => String(group.id || ''));
+    const users = await api('/v1/users');
     if (!users.length) {
       el.innerHTML = '<div class="muted small-text">No users found.</div>';
       return;
     }
-    el.innerHTML = users.map((user) => `
-      <div class="row">
-        <div><b>${escapeHtml(user.display_name || user.username)}</b><br><span class="muted small-text">${escapeHtml(user.username)} · ${escapeHtml(user.role || 'user')}</span><br><span class="muted small-text">groups: ${escapeHtml((user.groups || []).join(', ') || '-')}</span></div>
-        <div class="button-row">
-          <input class="user-groups-input" data-user-id="${escapeHtml(user.id)}" value="${escapeHtml((user.groups || []).join(', '))}" placeholder="group-a,group-b" />
-          <button class="ghost-button save-user-groups-btn" data-user-id="${escapeHtml(user.id)}" type="button">Save</button>
-          ${user.id === currentUser?.id ? '<span class="muted small-text">current</span>' : `<button class="ghost-button delete-user-btn" data-user-id="${escapeHtml(user.id)}" type="button">Delete</button>`}
-        </div>
-      </div>`).join('');
-    el.querySelectorAll('.save-user-groups-btn').forEach((btn) => {
+    el.innerHTML = users.map((user) => {
+      const current = user.id === currentUser?.id;
+      return `
+        <article class="admin-item-card">
+          <div class="admin-item-head">
+            <div>
+              <b>${escapeHtml(user.display_name || user.username)}</b>
+              <span class="muted small-text">${escapeHtml(user.username)} · ${escapeHtml(user.role || 'user')}</span>
+            </div>
+            <div class="admin-item-badges">
+              <span class="admin-badge subtle">${escapeHtml(user.role || 'user')}</span>
+              ${current ? '<span class="admin-badge">current</span>' : ''}
+            </div>
+          </div>
+          <div class="admin-item-summary">Users inherit platform administration separately from resource usage. Use groups to control which contexts, workspaces, and tools they may actually use.</div>
+          <div class="admin-inline-grid">
+            <label>Display name <input class="user-display-input" data-user-id="${escapeHtml(user.id)}" value="${escapeHtml(user.display_name || user.username)}" placeholder="Display name" /></label>
+            <label>Role <select class="user-role-input" data-user-id="${escapeHtml(user.id)}">${roleOptions(user.role || 'user')}</select></label>
+            <label class="admin-form-wide">Groups <input class="user-groups-input" data-user-id="${escapeHtml(user.id)}" value="${escapeHtml((user.groups || []).join(', '))}" placeholder="admin,docs,coders" /></label>
+          </div>
+          <div class="admin-item-actions">
+            <span class="muted">Created ${escapeHtml(formatDate(user.created_at) || '-')}</span>
+            <div class="button-row">
+              <button class="ghost-button save-user-btn" data-user-id="${escapeHtml(user.id)}" type="button">Save</button>
+              ${current ? '' : `<button class="ghost-button delete-user-btn" data-user-id="${escapeHtml(user.id)}" type="button">Delete</button>`}
+            </div>
+          </div>
+        </article>`;
+    }).join('');
+    el.querySelectorAll('.save-user-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const userId = btn.dataset.userId || '';
-        const input = btn.parentElement?.querySelector('.user-groups-input');
-        const selected = String(input?.value || '').split(',').map((item) => item.trim()).filter(Boolean);
-        await api(`/v1/users/${encodeURIComponent(userId)}`, {method:'PUT', body: JSON.stringify({groups:selected})});
+        const card = btn.closest('.admin-item-card');
+        const display_name = card?.querySelector('.user-display-input')?.value?.trim() || userId;
+        const role = card?.querySelector('.user-role-input')?.value || 'user';
+        const groups = String(card?.querySelector('.user-groups-input')?.value || '').split(',').map((item) => item.trim()).filter(Boolean);
+        await api(`/v1/users/${encodeURIComponent(userId)}`, {method:'PUT', body: JSON.stringify({display_name, role, groups})});
         await fetchAuthStatus();
         renderAuthInfo();
         await loadUsersList();
@@ -8214,10 +8254,43 @@ async function loadGroupsList() {
       return;
     }
     el.innerHTML = groups.map((group) => `
-      <div class="row">
-        <div><b>${escapeHtml(group.name || group.id)}</b><br><span class="muted small-text">${escapeHtml(group.id)}</span><br><span class="muted small-text">${escapeHtml(group.description || '')}</span><br><span class="muted small-text">grants: ${escapeHtml((group.grants || []).map((grant) => `${grant.resource_type}:${grant.pattern}(${grant.access})`).join(', ') || '-')}</span></div>
-        <div class="button-row"><button class="ghost-button delete-group-btn" data-group-id="${escapeHtml(group.id)}" type="button">Delete</button></div>
-      </div>`).join('');
+      <article class="admin-item-card">
+        <div class="admin-item-head">
+          <div>
+            <b>${escapeHtml(group.name || group.id)}</b>
+            <span class="muted small-text">${escapeHtml(group.id)}</span>
+          </div>
+          <div class="admin-item-badges">
+            <span class="admin-badge subtle">${escapeHtml(String((group.grants || []).length))} grants</span>
+          </div>
+        </div>
+        <div class="admin-inline-grid">
+          <label>Name <input class="group-name-input" data-group-id="${escapeHtml(group.id)}" value="${escapeHtml(group.name || group.id)}" /></label>
+          <label>Description <input class="group-description-input" data-group-id="${escapeHtml(group.id)}" value="${escapeHtml(group.description || '')}" /></label>
+          <label class="admin-form-wide">Grants <input class="group-grants-input" data-group-id="${escapeHtml(group.id)}" value="${escapeHtml(serializeGroupGrants(group.grants || []))}" placeholder="workspace:*:write, source_context:*:write" /></label>
+        </div>
+        <div class="admin-item-actions">
+          <span class="muted">Use groups on agent contexts for who may use or edit them. Grants cover broad resource access.</span>
+          <div class="button-row">
+            <button class="ghost-button save-group-btn" data-group-id="${escapeHtml(group.id)}" type="button">Save</button>
+            <button class="ghost-button delete-group-btn" data-group-id="${escapeHtml(group.id)}" type="button">Delete</button>
+          </div>
+        </div>
+      </article>`).join('');
+    el.querySelectorAll('.save-group-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const groupId = btn.dataset.groupId || '';
+        const card = btn.closest('.admin-item-card');
+        const name = card?.querySelector('.group-name-input')?.value?.trim() || groupId;
+        const description = card?.querySelector('.group-description-input')?.value?.trim() || '';
+        const grants = parseGroupGrants(card?.querySelector('.group-grants-input')?.value || '');
+        await api(`/v1/groups/${encodeURIComponent(groupId)}`, {method:'PUT', body: JSON.stringify({name, description, grants})});
+        await fetchAuthStatus();
+        renderAuthInfo();
+        await loadGroupsList();
+        await loadUsersList();
+      });
+    });
     el.querySelectorAll('.delete-group-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const groupId = btn.dataset.groupId || '';
@@ -8533,13 +8606,7 @@ if (createGroupBtn) createGroupBtn.onclick = async () => {
   const id = document.getElementById('newGroupId')?.value.trim() || '';
   const name = document.getElementById('newGroupName')?.value.trim() || id;
   const description = document.getElementById('newGroupDescription')?.value.trim() || '';
-  const grants = (document.getElementById('newGroupGrants')?.value || '').split(',').map((item) => item.trim()).filter(Boolean).map((item) => {
-    const parts = item.split(':');
-    const access = (parts.pop() || 'read').trim();
-    const resource_type = (parts.shift() || 'workspace').trim();
-    const pattern = parts.join(':').trim();
-    return {resource_type, pattern, access};
-  }).filter((item) => item.pattern);
+  const grants = parseGroupGrants(document.getElementById('newGroupGrants')?.value || '');
   const result = document.getElementById('groupsResult');
   try {
     if (!id) throw new Error('Group id is required.');

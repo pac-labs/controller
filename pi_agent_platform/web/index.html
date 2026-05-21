@@ -787,41 +787,81 @@
 
       <div id="settings-users" class="settings-panel" style="display:none">
         <div class="settings-panel-inner settings-panel-single">
-          <div class="settings-main">
-            <section class="card setting-cube compact-setting-card">
-              <h2>PAC home</h2>
-              <div id="pacpInfo" class="kv compact-kv"></div>
-              <p class="muted">Override with <code>PACP_HOME=/path/to/.pacp</code>. Default is <code>~/.pacp</code>.</p>
-            </section>
-            <section class="card setting-cube compact-setting-card">
-              <h2>Auth</h2>
-              <p class="muted">Bearer-backed session tokens. Auth mode and user count.</p>
-              <div id="authInfo" class="kv compact-kv"></div>
-            </section>
-            <section class="card setting-cube compact-setting-card">
-              <h2>Users</h2>
-              <div id="usersList" class="stacked-output compact-scroll-output"><div class="muted small-text">No users loaded.</div></div>
-              <div class="form-grid compact-form">
-                <label>Username <input id="newUsername" placeholder="developer" /></label>
-                <label>Display name <input id="newDisplayName" placeholder="Developer" /></label>
-                <label>Password <input id="newUserPassword" type="password" placeholder="min 8 characters" /></label>
-                <label>Role <select id="newUserRole"><option value="user">user</option><option value="admin">admin</option><option value="readonly">readonly</option></select></label>
-                <label>Groups <input id="newUserGroups" placeholder="devs,readonly" /></label>
+          <div class="settings-main admin-settings-main">
+            <section class="card setting-cube compact-setting-card wide">
+              <div class="admin-summary-grid">
+                <div>
+                  <h2>PAC home</h2>
+                  <div id="pacpInfo" class="kv compact-kv"></div>
+                  <p class="muted">Override with <code>PACP_HOME=/path/to/.pacp</code>. Default is <code>~/.pacp</code>.</p>
+                </div>
+                <div>
+                  <h2>Auth</h2>
+                  <p class="muted">Bearer-backed session tokens, admin scaffolding, and usage governance.</p>
+                  <div id="authInfo" class="kv compact-kv"></div>
+                </div>
               </div>
-              <div class="button-row"><button id="createUserBtn">Create user</button><button id="refreshUsersBtn" class="ghost-button">Refresh</button></div>
-              <pre id="usersResult" class="inline-result compact-result"></pre>
             </section>
-            <section class="card setting-cube compact-setting-card">
-              <h2>Groups</h2>
-              <div id="groupsList" class="stacked-output compact-scroll-output"><div class="muted small-text">No groups loaded.</div></div>
-              <div class="form-grid compact-form">
-                <label>Group id <input id="newGroupId" placeholder="devs" /></label>
-                <label>Name <input id="newGroupName" placeholder="Developers" /></label>
-                <label>Description <input id="newGroupDescription" placeholder="Workspace and source access for developers" /></label>
-                <label>Grants <input id="newGroupGrants" placeholder="workspace:profile:main-pi-dev:write, source_context:context:docs/*:read" /></label>
+            <section class="card setting-cube compact-setting-card wide">
+              <div class="admin-management-grid">
+                <section class="admin-pane">
+                  <div class="admin-pane-head">
+                    <div>
+                      <h2>Users</h2>
+                      <p class="muted">Manage PAC users, roles, and group membership without leaving this page.</p>
+                    </div>
+                    <button id="refreshUsersBtn" class="ghost-button">Refresh</button>
+                  </div>
+                  <div id="usersList" class="stacked-output admin-list-shell"><div class="muted small-text">No users loaded.</div></div>
+                </section>
+                <section class="admin-pane admin-form-pane">
+                  <div class="admin-pane-head">
+                    <div>
+                      <h2>Create user</h2>
+                      <p class="muted">Seed platform users directly and attach them to the right usage groups.</p>
+                    </div>
+                  </div>
+                  <div class="form-grid compact-form">
+                    <label>Username <input id="newUsername" placeholder="developer" /></label>
+                    <label>Display name <input id="newDisplayName" placeholder="Developer" /></label>
+                    <label>Password <input id="newUserPassword" type="password" placeholder="min 8 characters" /></label>
+                    <label>Role <select id="newUserRole"><option value="user">user</option><option value="admin">admin</option><option value="readonly">readonly</option></select></label>
+                    <label class="admin-form-wide">Groups <input id="newUserGroups" placeholder="admin,docs,coders" /></label>
+                  </div>
+                  <div class="button-row"><button id="createUserBtn">Create user</button></div>
+                  <pre id="usersResult" class="inline-result compact-result"></pre>
+                </section>
               </div>
-              <div class="button-row"><button id="createGroupBtn">Create group</button><button id="refreshGroupsBtn" class="ghost-button">Refresh</button></div>
-              <pre id="groupsResult" class="inline-result compact-result"></pre>
+            </section>
+            <section class="card setting-cube compact-setting-card wide">
+              <div class="admin-management-grid">
+                <section class="admin-pane">
+                  <div class="admin-pane-head">
+                    <div>
+                      <h2>Groups</h2>
+                      <p class="muted">Define who may use, edit, and administer agent contexts, workspaces, and other PAC resources.</p>
+                    </div>
+                    <button id="refreshGroupsBtn" class="ghost-button">Refresh</button>
+                  </div>
+                  <div id="groupsList" class="stacked-output admin-list-shell"><div class="muted small-text">No groups loaded.</div></div>
+                </section>
+                <section class="admin-pane admin-form-pane">
+                  <div class="admin-pane-head">
+                    <div>
+                      <h2>Create group</h2>
+                      <p class="muted">Use grants for coarse resource access and bind the group to contexts for real usage permissions.</p>
+                    </div>
+                  </div>
+                  <div class="form-grid compact-form">
+                    <label>Group id <input id="newGroupId" placeholder="coders" /></label>
+                    <label>Name <input id="newGroupName" placeholder="Coding team" /></label>
+                    <label class="admin-form-wide">Description <input id="newGroupDescription" placeholder="Workspace and context access for coding sessions" /></label>
+                    <label class="admin-form-wide">Grants <input id="newGroupGrants" placeholder="workspace:*:write, source_context:*:write, session:*:write" /></label>
+                  </div>
+                  <div class="button-row"><button id="createGroupBtn">Create group</button></div>
+                  <pre id="groupsResult" class="inline-result compact-result"></pre>
+                </section>
+              </div>
             </section>
           </div>
         </div>

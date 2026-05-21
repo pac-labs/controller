@@ -2376,8 +2376,116 @@ def _default_coding_container_image(workspace: WorkspaceSpec, metadata: dict[str
     return 'localhost/python-dev:latest'
 
 
+DEFAULT_ADMIN_GROUP_ID = 'admin'
+DEFAULT_ADMIN_CONTEXT_NAME = 'PAC system'
+
+
+def _default_admin_group() -> Group:
+    grants = [
+        ResourceGrant(resource_type='workspace', pattern='*', access='write'),
+        ResourceGrant(resource_type='source_context', pattern='*', access='write'),
+        ResourceGrant(resource_type='secret', pattern='*', access='write'),
+        ResourceGrant(resource_type='session', pattern='*', access='write'),
+    ]
+    return Group(
+        id=DEFAULT_ADMIN_GROUP_ID,
+        name='Admin',
+        description='Default PAC administration and system-context usage group.',
+        grants=grants,
+    )
+
+
+def _ensure_default_admin_group() -> Group:
+    existing = store.get_group(DEFAULT_ADMIN_GROUP_ID)
+    if existing:
+        return existing
+    group = _default_admin_group()
+    store.add_group(group)
+    return group
+
+
+def _ensure_admin_user_group_membership(user: User) -> User:
+    if user.role != 'admin':
+        return user
+    groups = list(user.groups or [])
+    if DEFAULT_ADMIN_GROUP_ID in groups:
+        return user
+    user.groups = groups + [DEFAULT_ADMIN_GROUP_ID]
+    store.add_user(user)
+    return user
+
+
+def _ensure_default_admin_context(user: User) -> AgentContext:
+    builtins = [item for item in store.list_agent_contexts() if (item.metadata or {}).get('builtin_kind') == 'pac_admin_base']
+    item = builtins[0] if builtins else None
+    permission_profile = 'full-control' if 'full-control' in config.permission_profiles else (config.controller_harness.permission_profile or 'ask-first')
+    model_name = str(config.controller_harness.model or '').strip()
+    desired = {
+        'owner_id': user.id,
+        'owner_username': user.username,
+        'name': DEFAULT_ADMIN_CONTEXT_NAME,
+        'description': 'Built-in PAC system administration context for controller maintenance and direct PAC code/config work.',
+        'kind': 'controller',
+        'controller_workdir': str(_app_dir()),
+        'endpoint_id': config.controller_harness.runner_id or 'local-PAC',
+        'container_image': None,
+        'requires_container': False,
+        'agent_profile': config.controller_harness.agent_profile or MAIN_PI_DEV_PROFILE,
+        'permission_profile': permission_profile,
+        'executor_model': None if model_name in {'', MODEL_NOT_SELECTED} else model_name,
+        'use_groups': [DEFAULT_ADMIN_GROUP_ID],
+        'editor_groups': [DEFAULT_ADMIN_GROUP_ID],
+    }
+    if item is None:
+        item = AgentContext(
+            owner_id=desired['owner_id'],
+            owner_username=desired['owner_username'],
+            name=desired['name'],
+            description=desired['description'],
+            kind='controller',
+            controller_workdir=desired['controller_workdir'],
+            endpoint_id=desired['endpoint_id'],
+            requires_container=False,
+            agent_profile=desired['agent_profile'],
+            permission_profile=desired['permission_profile'],
+            executor_model=desired['executor_model'],
+            use_groups=[DEFAULT_ADMIN_GROUP_ID],
+            editor_groups=[DEFAULT_ADMIN_GROUP_ID],
+            metadata={'builtin_kind': 'pac_admin_base', 'admin_only': True, 'system_context': True},
+        )
+        store.add_agent_context(item)
+        return item
+    changed = False
+    for field, value in desired.items():
+        if getattr(item, field) != value:
+            setattr(item, field, value)
+            changed = True
+    metadata = dict(item.metadata or {})
+    for key, value in {'builtin_kind': 'pac_admin_base', 'admin_only': True, 'system_context': True}.items():
+        if metadata.get(key) != value:
+            metadata[key] = value
+            changed = True
+    if changed:
+        item.metadata = metadata
+        store.add_agent_context(item)
+    return item
+
+
+def _ensure_auth_admin_scaffolding() -> None:
+    if config.auth.mode != 'user-password':
+        return
+    admins = [user for user in store.list_users() if user.role == 'admin']
+    if not admins:
+        return
+    _ensure_default_admin_group()
+    for admin_user in admins:
+        admin_user = _ensure_admin_user_group_membership(admin_user)
+        _ensure_default_admin_context(admin_user)
+
+
 @app.get('/v1/auth/status')
 def auth_status() -> dict[str, Any]:
+    _ensure_auth_admin_scaffolding()
     user_count = len(store.list_users())
     return {
         'enabled': config.auth.enabled,
@@ -2406,6 +2514,8 @@ def auth_setup(payload: dict[str, Any]) -> dict[str, Any]:
     user = User(id=username, username=username, display_name=display_name, role='admin')
     user.set_password(password)
     store.add_user(user)
+    _ensure_auth_admin_scaffolding()
+    user = store.get_user(username) or user
     token = uuid.uuid4().hex + uuid.uuid4().hex
     expires_at = (datetime.utcnow() + timedelta(hours=max(1, int(config.auth.token_ttl_hours or 720)))).isoformat()
     store.add_user_token(token, user.id, expires_at)
@@ -2493,6 +2603,8 @@ def create_user(payload: dict[str, Any], _auth: CurrentUser = Depends(require_ad
     )
     user.set_password(password)
     store.add_user(user)
+    _ensure_auth_admin_scaffolding()
+    user = store.get_user(username) or user
     store.add_event(Event(session_id='system', type='user_created', message=f'User created: {username}', data={'username': username}))
     return {'ok': True, 'user': _public_user(user)}
 
@@ -2516,6 +2628,8 @@ def update_user(user_id: str, payload: dict[str, Any], _auth: CurrentUser = Depe
             raise HTTPException(status_code=400, detail='Password must be at least 8 characters')
         user.set_password(password)
     store.add_user(user)
+    _ensure_auth_admin_scaffolding()
+    user = store.get_user(user_id) or user
     store.add_event(Event(session_id='system', type='user_updated', message=f'User updated: {user.username}', data={'username': user.username}))
     return {'ok': True, 'user': _public_user(user)}
 
