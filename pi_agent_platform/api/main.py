@@ -702,6 +702,8 @@ def _ensure_controller_harness_session() -> dict[str, Any]:
     profile = config.agent_profiles.get(profile_name) if profile_name else None
     desired_context_mode = (profile.context_mode if profile and getattr(profile, 'context_mode', None) else settings.context_mode) or 'medium'
     existing = _find_controller_harness_session()
+    _ensure_auth_admin_scaffolding()
+    system_context = _find_pac_system_context()
     pac_wrapper = (runner.capabilities or {}).get('pac_wrapper') or {}
     if not pac_wrapper.get('available'):
         return {'ok': False, 'enabled': True, 'runner': runner.model_dump(), 'workspace': workspace.model_dump(), 'session': existing.model_dump() if existing else None, 'message': pac_wrapper.get('reason') or 'The main server requires the local PAC wrapper before the controller session can run.'}
@@ -738,10 +740,24 @@ def _ensure_controller_harness_session() -> dict[str, Any]:
         if existing.tools != desired_tools:
             existing.tools = desired_tools; changed = True
         existing.workspace = existing.workspace.model_copy(update={'type': 'profile', 'profile': settings.workspace_profile, 'path': workspace.path})
-        existing.metadata.update({'controller_harness': True, 'preferred_endpoint': settings.runner_id, 'endpoint_locked': True, 'agent_enabled': True, 'execution_mode': 'pi.dev'})
+        desired_metadata = {'controller_harness': True, 'preferred_endpoint': settings.runner_id, 'endpoint_locked': True, 'agent_enabled': True, 'execution_mode': 'pi.dev'}
+        if system_context:
+            desired_metadata.update({
+                'agent_context_id': system_context.id,
+                'agent_context_name': system_context.name,
+                'agent_context_kind': system_context.kind,
+                'system_context': True,
+            })
+        for key, value in desired_metadata.items():
+            if existing.metadata.get(key) != value:
+                existing.metadata[key] = value
+                changed = True
         if changed:
             existing.touch()
             store.add_session(existing)
+        if system_context and system_context.last_session_id != existing.id:
+            system_context.last_session_id = existing.id
+            store.add_agent_context(system_context)
         return {'ok': True, 'enabled': True, 'runner': runner.model_dump(), 'workspace': workspace.model_dump(), 'session': existing.model_dump(), 'message': 'Controller pi.dev session is active'}
     session = Session(
         name=settings.session_name,
@@ -752,10 +768,25 @@ def _ensure_controller_harness_session() -> dict[str, Any]:
         workspace_path=workspace.path or _platform_workspace_path(),
         model=model_name,
         tools=list(config.tools.keys()) if settings.expose_platform_tools else [],
-        metadata={'controller_harness': True, 'preferred_endpoint': settings.runner_id, 'endpoint_locked': True, 'agent_enabled': True, 'execution_mode': 'pi.dev'},
+        metadata={
+            'controller_harness': True,
+            'preferred_endpoint': settings.runner_id,
+            'endpoint_locked': True,
+            'agent_enabled': True,
+            'execution_mode': 'pi.dev',
+            **({
+                'agent_context_id': system_context.id,
+                'agent_context_name': system_context.name,
+                'agent_context_kind': system_context.kind,
+                'system_context': True,
+            } if system_context else {}),
+        },
     )
     Path(session.workspace_path).mkdir(parents=True, exist_ok=True)
     store.add_session(session)
+    if system_context and system_context.last_session_id != session.id:
+        system_context.last_session_id = session.id
+        store.add_agent_context(system_context)
     store.add_event(Event(session_id=session.id, type='controller_harness_started', message='Controller pi.dev session created', data={'workspace_path': session.workspace_path, 'runner_id': settings.runner_id, 'model': model_name, 'agent_profile': profile_name}))
     return {'ok': True, 'enabled': True, 'runner': runner.model_dump(), 'workspace': workspace.model_dump(), 'session': session.model_dump(), 'message': 'Controller pi.dev session created'}
 
@@ -2077,6 +2108,8 @@ def _public_agent_context(item: AgentContext) -> dict[str, Any]:
         'last_session_id': item.last_session_id,
         'pinned': bool(item.pinned),
         'metadata': metadata,
+        'workspace_label': metadata.get('workspace_label') or (DEFAULT_ADMIN_WORKSPACE_LABEL if metadata.get('system_context') else None),
+        'runtime_label': metadata.get('runtime_label') or (item.endpoint_id or ('controller' if item.controller_workdir else None)),
         'builtin': bool(metadata.get('builtin_kind')),
         'builtin_kind': metadata.get('builtin_kind'),
         'system_context': bool(metadata.get('system_context')),
@@ -2117,14 +2150,24 @@ def _agent_context_payload_to_item(existing: AgentContext | None, payload: Agent
     owner_id, owner_username = (existing.owner_id, existing.owner_username) if existing else _context_visibility_owner_ids(auth)
     base = existing or AgentContext(owner_id=owner_id, owner_username=owner_username, name=payload.name.strip())
     if _is_pac_system_context(existing):
+        locked_profile = config.controller_harness.agent_profile or MAIN_PI_DEV_PROFILE
+        locked_permission = _admin_permission_profile_name()
+        locked_endpoint = config.controller_harness.runner_id or 'local-PAC'
         payload.workspace_id = None
         payload.workspace_template_id = None
         payload.shared_storage_id = None
         payload.storage_subpath = None
         payload.storage_mount_path = None
+        payload.endpoint_selector = None
+        payload.container_image = None
         payload.controller_workdir = str(_app_dir())
         payload.kind = 'controller'
         payload.requires_container = False
+        payload.endpoint_id = locked_endpoint
+        payload.agent_profile = locked_profile
+        payload.permission_profile = locked_permission
+        payload.use_groups = [DEFAULT_ADMIN_GROUP_ID]
+        payload.editor_groups = [DEFAULT_ADMIN_GROUP_ID]
         payload.name = DEFAULT_ADMIN_CONTEXT_NAME
     base.owner_id = owner_id
     base.owner_username = owner_username
@@ -2155,6 +2198,20 @@ def _agent_context_payload_to_item(existing: AgentContext | None, payload: Agent
     base.metadata = dict(base.metadata or {})
     if payload.metadata:
         base.metadata.update(payload.metadata)
+    if _is_pac_system_context(base):
+        base.metadata.update({
+            'builtin_kind': 'pac_admin_base',
+            'admin_only': True,
+            'system_context': True,
+            'workspace_label': DEFAULT_ADMIN_WORKSPACE_LABEL,
+            'runtime_label': base.endpoint_id or 'local-PAC',
+            'locked_endpoint': True,
+            'locked_groups': True,
+            'locked_workdir': True,
+            'locked_workspace': True,
+            'locked_agent_profile': True,
+            'locked_permission_profile': True,
+        })
     if base.shared_storage_id and not store.get_shared_storage(base.shared_storage_id):
         raise HTTPException(status_code=400, detail=f'Unknown shared storage: {base.shared_storage_id}')
     return base
@@ -2397,7 +2454,8 @@ def _default_coding_container_image(workspace: WorkspaceSpec, metadata: dict[str
 
 
 DEFAULT_ADMIN_GROUP_ID = 'admin'
-DEFAULT_ADMIN_CONTEXT_NAME = 'PAC system'
+DEFAULT_ADMIN_CONTEXT_NAME = 'PAC/core'
+DEFAULT_ADMIN_WORKSPACE_LABEL = 'PAC'
 
 
 def _default_admin_group() -> Group:
@@ -2413,6 +2471,17 @@ def _default_admin_group() -> Group:
         description='Default PAC administration and system-context usage group.',
         grants=grants,
     )
+
+
+def _admin_permission_profile_name() -> str:
+    if 'full-control' in config.permission_profiles:
+        return 'full-control'
+    return config.controller_harness.permission_profile or 'ask-first'
+
+
+def _find_pac_system_context() -> AgentContext | None:
+    builtins = [item for item in store.list_agent_contexts() if (item.metadata or {}).get('builtin_kind') == 'pac_admin_base']
+    return builtins[0] if builtins else None
 
 
 def _ensure_default_admin_group() -> Group:
@@ -2436,9 +2505,8 @@ def _ensure_admin_user_group_membership(user: User) -> User:
 
 
 def _ensure_default_admin_context(user: User) -> AgentContext:
-    builtins = [item for item in store.list_agent_contexts() if (item.metadata or {}).get('builtin_kind') == 'pac_admin_base']
-    item = builtins[0] if builtins else None
-    permission_profile = 'full-control' if 'full-control' in config.permission_profiles else (config.controller_harness.permission_profile or 'ask-first')
+    item = _find_pac_system_context()
+    permission_profile = _admin_permission_profile_name()
     model_name = str(config.controller_harness.model or '').strip()
     desired = {
         'owner_id': user.id,
@@ -2453,6 +2521,7 @@ def _ensure_default_admin_context(user: User) -> AgentContext:
         'storage_subpath': None,
         'storage_mount_path': None,
         'endpoint_id': config.controller_harness.runner_id or 'local-PAC',
+        'endpoint_selector': None,
         'container_image': None,
         'requires_container': False,
         'agent_profile': config.controller_harness.agent_profile or MAIN_PI_DEV_PROFILE,
@@ -2460,6 +2529,7 @@ def _ensure_default_admin_context(user: User) -> AgentContext:
         'executor_model': None if model_name in {'', MODEL_NOT_SELECTED} else model_name,
         'use_groups': [DEFAULT_ADMIN_GROUP_ID],
         'editor_groups': [DEFAULT_ADMIN_GROUP_ID],
+        'pinned': True,
     }
     if item is None:
         item = AgentContext(
@@ -2476,7 +2546,20 @@ def _ensure_default_admin_context(user: User) -> AgentContext:
             executor_model=desired['executor_model'],
             use_groups=[DEFAULT_ADMIN_GROUP_ID],
             editor_groups=[DEFAULT_ADMIN_GROUP_ID],
-            metadata={'builtin_kind': 'pac_admin_base', 'admin_only': True, 'system_context': True},
+            pinned=True,
+            metadata={
+                'builtin_kind': 'pac_admin_base',
+                'admin_only': True,
+                'system_context': True,
+                'workspace_label': DEFAULT_ADMIN_WORKSPACE_LABEL,
+                'runtime_label': desired['endpoint_id'],
+                'locked_endpoint': True,
+                'locked_groups': True,
+                'locked_workdir': True,
+                'locked_workspace': True,
+                'locked_agent_profile': True,
+                'locked_permission_profile': True,
+            },
         )
         store.add_agent_context(item)
         return item
@@ -2486,7 +2569,19 @@ def _ensure_default_admin_context(user: User) -> AgentContext:
             setattr(item, field, value)
             changed = True
     metadata = dict(item.metadata or {})
-    for key, value in {'builtin_kind': 'pac_admin_base', 'admin_only': True, 'system_context': True}.items():
+    for key, value in {
+        'builtin_kind': 'pac_admin_base',
+        'admin_only': True,
+        'system_context': True,
+        'workspace_label': DEFAULT_ADMIN_WORKSPACE_LABEL,
+        'runtime_label': desired['endpoint_id'],
+        'locked_endpoint': True,
+        'locked_groups': True,
+        'locked_workdir': True,
+        'locked_workspace': True,
+        'locked_agent_profile': True,
+        'locked_permission_profile': True,
+    }.items():
         if metadata.get(key) != value:
             metadata[key] = value
             changed = True
@@ -2941,7 +3036,7 @@ def delete_agent_context(context_id: str, _auth: CurrentUser = Depends(require_a
     if not _can_edit_agent_context(item, _auth):
         raise HTTPException(status_code=403, detail='Agent context not editable')
     if _is_pac_system_context(item):
-        raise HTTPException(status_code=403, detail='PAC system context cannot be deleted')
+        raise HTTPException(status_code=403, detail='PAC/core context cannot be deleted')
     store.delete_agent_context(context_id)
     store.add_event(Event(session_id='system', type='agent_context_deleted', message=f'Agent context deleted: {item.name}', data={'context_id': item.id, 'owner': item.owner_username}))
     return {'ok': True, 'deleted': context_id}

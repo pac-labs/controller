@@ -3078,14 +3078,39 @@ function selectedSessionContextId() {
   return String(selectedSession?.metadata?.agent_context_id || '').trim();
 }
 
+function systemContextWorkspaceLabel(item) {
+  return item?.workspace_label || item?.metadata?.workspace_label || 'PAC';
+}
+
 function contextWorkspaceLabel(item) {
+  if (isProtectedAgentContext(item)) return systemContextWorkspaceLabel(item);
   return item?.workspace?.name || item?.workspace_template?.name || item?.controller_workdir || 'none';
 }
 
 function contextRuntimeLabel(item) {
   if (!item) return 'auto';
+  if (isProtectedAgentContext(item)) return item?.runtime_label || item?.metadata?.runtime_label || item?.endpoint_id || 'local-PAC';
   if (item.controller_workdir) return item.endpoint_id || 'controller';
   return item.endpoint_id || item.endpoint_selector || 'auto';
+}
+
+function sessionContextLabel(session = selectedSession) {
+  return String(session?.metadata?.agent_context_name || '').trim();
+}
+
+function renderSelectedSessionSummary(session = selectedSession) {
+  if (!session) return;
+  const preferredEndpoint = session.metadata?.preferred_endpoint || '';
+  const endpointName = (window.__pacEndpoints || []).find((e) => e.id === preferredEndpoint)?.name || preferredEndpoint || 'PAC/local';
+  const contextName = sessionContextLabel(session);
+  const summaryEl = document.getElementById('selectedSession');
+  if (summaryEl) {
+    summaryEl.innerHTML = `<span class="session-lock-dot"></span><span>Profile: ${escapeHtml(session.agent_profile || 'default')}</span><span>Permissions: ${escapeHtml(session.permission_profile || '-')}</span><span>Endpoint: ${escapeHtml(endpointName)}</span><span>Mode: ${escapeHtml(session.metadata?.execution_mode || (session.metadata?.agent_enabled === false ? 'direct model' : 'pi.dev'))}</span>${contextName ? `<span>Context: ${escapeHtml(contextName)}</span>` : ''}<span>Model: ${escapeHtml(session.model || '')}</span><span>${escapeHtml(session.workspace_path || '')}</span>`;
+  }
+  const lockEl = document.getElementById('sessionEndpointLock');
+  if (lockEl) {
+    lockEl.textContent = `Profile: ${session.agent_profile || 'default'} · permissions: ${session.permission_profile || '-'} · endpoint: ${endpointName}${contextName ? ` · context: ${contextName}` : ''} · model: ${session.model || 'session default'}`;
+  }
 }
 
 function renderAgentContextUsageCard(item) {
@@ -3424,6 +3449,247 @@ function openAgentContextWizard(id = '') {
 function closeAgentContextWizard() {
   const modal = document.getElementById('agentContextWizardModal');
   if (modal) modal.hidden = true;
+}
+
+function syncSessionPermissionQuick() {
+  const select = document.getElementById('sessionPermissionQuick');
+  const button = document.getElementById('applySessionPermission');
+  if (!select || !button) return;
+  const profiles = Object.keys(config?.permission_profiles || {});
+  select.innerHTML = '';
+  if (!selectedSession) {
+    opt(select, '', 'No session');
+    select.disabled = true;
+    button.disabled = true;
+    return;
+  }
+  profiles.forEach((name) => opt(select, name, name));
+  select.value = selectedSession.permission_profile || profiles[0] || '';
+  const locked = !!selectedSession?.metadata?.system_context;
+  select.disabled = !profiles.length || locked;
+  button.disabled = !profiles.length || locked || select.value === (selectedSession.permission_profile || '');
+  if (locked) select.title = 'PAC/core uses a locked permission profile.';
+  else select.title = 'Permissions';
+}
+
+async function applySessionPermissionProfile() {
+  if (!selectedSession?.id || selectedSession?.metadata?.system_context) return;
+  const select = document.getElementById('sessionPermissionQuick');
+  const next = select?.value || '';
+  if (!next || next === selectedSession.permission_profile) return;
+  const updated = await api(`/v1/sessions/${selectedSession.id}`, {method:'PUT', body:JSON.stringify({permission_profile: next})});
+  selectedSession = updated;
+  renderSelectedSessionSummary(selectedSession);
+  syncSessionPermissionQuick();
+  renderSessionSidebar(window.__pacSessions || []);
+  emitUiEvent('session_permission_profile_changed', `Session permissions changed to ${next}`, {session_id: selectedSession.id, permission_profile: next});
+}
+
+function renderSessionSidebar(sessions = window.__pacSessions || []) {
+  const list = document.getElementById('sessionSidebarList');
+  if (!list) return;
+  if (!sessions.length) {
+    list.innerHTML = '<div class="muted">No sessions yet.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  sessions.slice().reverse().forEach((s) => {
+    const contextName = String(s?.metadata?.agent_context_name || '').trim();
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = `session-sidebar-item${selectedSession?.id === s.id ? ' active' : ''}`;
+    item.innerHTML = `<strong>${escapeHtml(s.name || s.id)}</strong><div class="session-sidebar-meta">${escapeHtml(s.agent_profile || '-')} · ${escapeHtml(s.model || '-')} · ${escapeHtml(s.permission_profile || '-')}</div>${contextName ? `<div class="session-sidebar-meta">${escapeHtml(contextName)}</div>` : ''}<div class="session-sidebar-meta">${escapeHtml(s.workspace_path || '')}</div>`;
+    const del = document.createElement('button');
+    del.className = 'session-delete-btn';
+    del.title = 'Delete session';
+    del.textContent = '×';
+    del.onclick = async (ev) => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      if (!confirm(`Delete session '${s.name || s.id}'?`)) return;
+      const r = await api(`/v1/sessions/${s.id}`, {method:'DELETE', body: JSON.stringify({remove_workspace: false})});
+      if (r?.ok) {
+        if (selectedSession?.id === s.id) switchSession(null);
+        renderSessionSidebar();
+      } else {
+        alert(r?.error || 'Delete failed');
+      }
+    };
+    item.appendChild(del);
+    item.onclick = () => { switchToTab('sessions-tab'); selectSession(s.id); };
+    list.appendChild(item);
+  });
+}
+
+function applyAgentContextFieldLocks(item) {
+  const system = isProtectedAgentContext(item);
+  const disableIds = [
+    'agentContextName',
+    'agentContextDescription',
+    'agentContextKind',
+    'agentContextWorkspace',
+    'agentContextTemplate',
+    'agentContextControllerWorkdir',
+    'agentContextSharedStorage',
+    'agentContextStorageSubpath',
+    'agentContextStorageMountPath',
+    'agentContextEndpoint',
+    'agentContextContainerImage',
+    'agentContextRequiresContainer',
+    'agentContextProfile',
+    'agentContextPermission',
+    'agentContextUseGroups',
+    'agentContextEditorGroups',
+  ];
+  disableIds.forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if ('disabled' in el) el.disabled = system;
+    if ('readOnly' in el && id === 'agentContextControllerWorkdir') el.readOnly = system;
+  });
+  const deleteBtn = document.getElementById('deleteAgentContext');
+  if (deleteBtn) deleteBtn.hidden = system || !item?.id;
+}
+
+function renderAgentContexts() {
+  const listEl = document.getElementById('agentContexts');
+  const selectEl = document.getElementById('agentContextSelect');
+  const sessionSelect = document.getElementById('sessionAgentContext');
+  const composerSelect = document.getElementById('composerAgentContext');
+  const ideSelect = document.getElementById('ideContextSelect');
+  const workspaceSelect = document.getElementById('agentContextWorkspace');
+  const templateSelect = document.getElementById('agentContextTemplate');
+  const storageSelect = document.getElementById('agentContextSharedStorage');
+  const endpointSelect = document.getElementById('agentContextEndpoint');
+  const profileSelect = document.getElementById('agentContextProfile');
+  const permissionSelect = document.getElementById('agentContextPermission');
+  const executorSelect = document.getElementById('agentContextExecutorModel');
+  const plannerSelect = document.getElementById('agentContextPlannerModel');
+  const reviewerSelect = document.getElementById('agentContextReviewerModel');
+  const retrievalSelect = document.getElementById('agentContextRetrievalModel');
+  const toolsSelect = document.getElementById('agentContextTools');
+  const groupsSelect = document.getElementById('agentContextUseGroups');
+  const editorsSelect = document.getElementById('agentContextEditorGroups');
+  const contexts = ideContexts().slice().sort((a, b) => {
+    const aRank = isProtectedAgentContext(a) ? 0 : (a?.pinned ? 1 : 2);
+    const bRank = isProtectedAgentContext(b) ? 0 : (b?.pinned ? 1 : 2);
+    if (aRank !== bRank) return aRank - bRank;
+    return String(a?.name || '').localeCompare(String(b?.name || ''));
+  });
+  const contextOptions = contexts.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
+  if (selectEl && selectedIdeContextId && contexts.some((item) => item.id === selectedIdeContextId)) selectEl.value = selectedIdeContextId;
+  if (sessionSelect) sessionSelect.innerHTML = `<option value="">none</option>${contextOptions}`;
+  if (composerSelect) {
+    composerSelect.innerHTML = `<option value="">agent context</option>${contextOptions}`;
+    composerSelect.value = selectedSessionContextId() || (!selectedSession ? (selectedIdeContextId || '') : '');
+  }
+  if (ideSelect) {
+    ideSelect.innerHTML = `<option value="">Select context</option>${contextOptions}`;
+    if (selectedIdeContextId && contexts.some((item) => item.id === selectedIdeContextId)) ideSelect.value = selectedIdeContextId;
+  }
+  if (workspaceSelect) workspaceSelect.innerHTML = `<option value="">none</option>` + ideWorkspaces().map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
+  if (templateSelect) templateSelect.innerHTML = `<option value="">none</option>` + workspaceTemplates.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
+  if (storageSelect) storageSelect.innerHTML = `<option value="">none</option>` + (sharedStorages || []).map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
+  if (endpointSelect) {
+    endpointSelect.innerHTML = `<option value="">auto</option>`;
+    (window.__pacEndpoints || []).forEach((runner) => opt(endpointSelect, runner.id, `${runner.name || runner.id} (${runner.status || 'unknown'})`));
+  }
+  const fillModelSelect = (el, empty='default') => {
+    if (!el) return;
+    el.innerHTML = `<option value="">${escapeHtml(empty)}</option>`;
+    Object.keys(config.models || {}).forEach((name) => opt(el, name));
+  };
+  if (profileSelect) {
+    profileSelect.innerHTML = '<option value="">default</option>';
+    Object.entries(config.agent_profiles || {}).forEach(([name]) => opt(profileSelect, name));
+  }
+  if (permissionSelect) {
+    permissionSelect.innerHTML = '<option value="">default</option>';
+    Object.keys(config.permission_profiles || {}).forEach((name) => opt(permissionSelect, name));
+  }
+  fillModelSelect(executorSelect, 'default');
+  fillModelSelect(plannerSelect, 'none');
+  fillModelSelect(reviewerSelect, 'none');
+  fillModelSelect(retrievalSelect, 'none');
+  if (toolsSelect) {
+    toolsSelect.innerHTML = '';
+    Object.keys(config.tools || {}).forEach((name) => opt(toolsSelect, name));
+  }
+  const groups = window.__pacGroups || [];
+  const fillGroupSelect = (el) => {
+    if (!el) return;
+    el.innerHTML = '';
+    groups.forEach((group) => opt(el, group.id, group.name || group.id));
+  };
+  fillGroupSelect(groupsSelect);
+  fillGroupSelect(editorsSelect);
+  if (listEl) {
+    listEl.innerHTML = contexts.map((item) => {
+      const workspace = contextWorkspaceLabel(item);
+      const runtime = contextRuntimeLabel(item);
+      const models = [
+        item.executor_model ? 'executor' : '',
+        item.planner_model ? 'planner' : '',
+        item.reviewer_model ? 'reviewer' : '',
+        item.retrieval_model ? 'retrieval' : '',
+      ].filter(Boolean);
+      const badges = [
+        isProtectedAgentContext(item) ? '<span class="agent-context-chip system">system</span>' : '',
+        item.pinned ? '<span class="agent-context-chip">pinned</span>' : '',
+        `<span class="agent-context-chip">${escapeHtml(item.kind || 'coding')}</span>`,
+      ].filter(Boolean).join('');
+      return `<article class="agent-context-card clickable-row ${item.id === selectedIdeContextId ? 'selected' : ''}" data-agent-context="${escapeHtml(item.id)}">
+        <div class="agent-context-card-head">
+          <div><h3>${escapeHtml(item.name)}</h3><div class="muted small-text">${escapeHtml(item.description || (isProtectedAgentContext(item) ? 'Built-in PAC product maintenance context.' : 'Reusable execution preset.'))}</div></div>
+          <div class="agent-context-card-badges">${badges}</div>
+        </div>
+        <div class="agent-context-stat-grid">
+          <div><small>workspace</small><b>${escapeHtml(workspace)}</b></div>
+          <div><small>runtime</small><b>${escapeHtml(runtime)}</b></div>
+          <div><small>profile</small><b>${escapeHtml(item.agent_profile || 'default')}</b></div>
+          <div><small>permission</small><b>${escapeHtml(item.permission_profile || 'default')}</b></div>
+          <div><small>executor</small><b>${escapeHtml(item.executor_model || '-')}</b></div>
+          <div><small>support</small><b>${escapeHtml(models.filter((role) => role !== 'executor').join(', ') || '-')}</b></div>
+        </div>
+        <div class="agent-context-card-footer">
+          <span class="muted small-text">tools ${(item.tools || []).length || 0}</span>
+          <span class="muted small-text">${isProtectedAgentContext(item) ? 'admin-only' : `${(item.use_groups || []).length || 0} use group(s)`}</span>
+        </div>
+        <div class="workspace-card-actions">
+          <button type="button" data-context-open="${escapeHtml(item.id)}">Open session</button>
+          <button type="button" class="ghost-button" data-context-edit="${escapeHtml(item.id)}">Edit</button>
+          ${isProtectedAgentContext(item) ? '' : `<button type="button" class="ghost-button" data-context-delete="${escapeHtml(item.id)}">Delete</button>`}
+        </div>
+      </article>`;
+    }).join('') || '<div class="muted">No agent contexts yet. Use + to create one, then select it in Sessions or IDE.</div>';
+    listEl.querySelectorAll('[data-agent-context]').forEach((row) => {
+      row.onclick = (ev) => {
+        if (ev.target.closest('button')) return;
+        fillAgentContextForm(row.getAttribute('data-agent-context') || '');
+      };
+    });
+    listEl.querySelectorAll('[data-context-edit]').forEach((button) => {
+      button.onclick = (ev) => {
+        ev.stopPropagation();
+        openAgentContextWizard(button.getAttribute('data-context-edit') || '');
+      };
+    });
+    listEl.querySelectorAll('[data-context-open]').forEach((button) => {
+      button.onclick = async (ev) => {
+        ev.stopPropagation();
+        fillAgentContextForm(button.getAttribute('data-context-open') || '');
+        await openAgentContextSessionFromForm();
+      };
+    });
+    listEl.querySelectorAll('[data-context-delete]').forEach((button) => {
+      button.onclick = async (ev) => {
+        ev.stopPropagation();
+        fillAgentContextForm(button.getAttribute('data-context-delete') || '');
+        await deleteAgentContextFromForm();
+      };
+    });
+  }
+  renderAgentContextUsageCard(contexts.find((item) => item.id === selectedIdeContextId) || null);
 }
 
 function renderWorkspaces() {
@@ -6849,6 +7115,52 @@ async function selectSession(id) {
   }
   await refreshSessionRunButton().catch(()=>{});
 }
+async function selectSession(id) {
+  ensureSessionWorkspaceChrome();
+  sessionHydrationToken += 1;
+  selectedSession = await api(`/v1/sessions/${id}`);
+  const preferredEndpoint = selectedSession.metadata?.preferred_endpoint || '';
+  const currentContextId = selectedSessionContextId();
+  renderSelectedSessionSummary(selectedSession);
+  if (document.getElementById('sessionTopSelect')) sessionTopSelect.value = selectedSession.id;
+  if (document.getElementById('composerAgentContext')) composerAgentContext.value = currentContextId || '';
+  if (document.getElementById('taskRunner')) taskRunner.value = preferredEndpoint || '';
+  syncSessionPermissionQuick();
+  const timeline = document.getElementById('events');
+  if (timeline) timeline.innerHTML = '<div class="empty-timeline">Waiting for session events.</div>';
+  renderComposerThinkingStatus(null);
+  resetSessionTimelineState();
+  renderSessionSidebar(window.__pacSessions || []);
+  updateSourceCodingPanel();
+  try {
+    const snapshot = await api(`/v1/sessions/${id}/events/snapshot?latest=true&limit=220`);
+    renderSessionSnapshotFast(snapshot, id);
+  } catch (_) {
+    suppressSessionAutoScroll = false;
+  }
+  if (source) {
+    source.close();
+    source = null;
+  }
+  if (authStatus?.enabled) {
+    startSessionPolling(id);
+    pollSessionEvents(id).catch(()=>{});
+  } else {
+    source = new EventSource(`/v1/sessions/${id}/events`);
+    source.onerror = () => {
+      if (source) {
+        source.close();
+        source = null;
+      }
+      startSessionPolling(id);
+    };
+    source.onmessage = (e) => { try { appendEvent('message', JSON.parse(e.data)); } catch { appendEvent('message', e.data); } };
+    ['user_message','agent_routing','agent_intent','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','final','full_control_enabled','subagent_started'].forEach((t) => source.addEventListener(t, (e) => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
+    stopSessionPolling();
+  }
+  await refreshSessionRunButton().catch(()=>{});
+}
+
 function appendEvent(type, payload) {
   const event = normalizeEvent(type, payload);
   if (selectedSession?.id && sessionHydrationActiveFor === selectedSession.id) {
