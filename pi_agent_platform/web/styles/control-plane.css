@@ -1,0 +1,203 @@
+/* PAC v1.0.284 CSS split: Flat-slate control-plane shell, primary layout, cards, forms, navigation, and generic components.
+   Source range from the former monolithic styles.css: lines 1561-1760. */
+
+/* v1.0.110: restore flat-slate control-plane styling from backup pass. */
+:root {
+  --bg: #0c0f14;
+  --panel: rgba(15,23,42,.70);
+  --panel-2: rgba(20,27,44,.78);
+  --panel-3: rgba(28,35,54,.82);
+  --border: rgba(148,163,184,.20);
+  --radius: 6px;
+}
+body {
+  background: #080f14;
+}
+.app-header,
+.tabs,
+.app-footer,
+.card,
+.events-rail,
+.events-rail-header,
+.modal-card,
+.session-chat-card,
+.session-chat-main,
+.endpoint-card,
+.remote-provider,
+.setting-cube,
+.source-build-card,
+.source-tree-card,
+.source-editor-card,
+.feature-pack-card {
+  background: rgba(15,23,42,.70) !important;
+}
+.app-header,
+.tabs,
+.app-footer,
+.events-rail-header {
+  border-color: rgba(148,163,184,.20) !important;
+}
+.card,
+.endpoint-card,
+.modal-card,
+.events-rail,
+.session-chat-main,
+.source-build-card,
+.source-tree-card,
+.source-editor-card,
+.feature-pack-card {
+  border: 1px solid rgba(148,163,184,.20) !important;
+  box-shadow: 0 10px 30px rgba(0,0,0,.28) !important;
+}
+.tab {
+  background: rgba(15,23,42,.60) !important;
+  border-color: rgba(148,163,184,.20) !important;
+}
+.tab.active {
+  background: rgba(37,32,71,.70) !important;
+  border-color: var(--accent) !important;
+  box-shadow: none !important;
+}
+button,
+.button-link,
+.ghost-button,
+.top-icon-button,
+.icon-button,
+.mini-button,
+.composer-icon-button,
+.composer-send-button,
+.event-chip,
+.source-tab,
+.source-row,
+.source-row-wrap,
+.session-plus-button {
+  border-radius: 0 !important;
+}
+button,
+.button-link,
+.ghost-button,
+.top-icon-button,
+.icon-button,
+.composer-icon-button,
+.composer-send-button,
+.event-chip {
+  background: rgba(37,32,71,.70);
+}
+.button-row button,
+.segmented-control button,
+.provider-card .provider-actions button,
+.endpoint-actions button,
+.thought-actions button,
+.approval-actions button,
+.row button {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+}
+.composer-controls.integrated,
+.composer-controls.integrated.editor-like {
+  gap: .3rem !important;
+}
+.composer-controls.integrated.editor-like {
+  grid-template-columns: auto minmax(120px,150px) minmax(180px,1fr) minmax(120px,150px) minmax(120px,1fr) auto !important;
+}
+.session-top-select {
+  max-width: 320px;
+}
+.row button,
+.provider-card .provider-actions button,
+.endpoint-actions button,
+.button-row button {
+  padding: .42rem .62rem !important;
+}
+.composer-input-shell,
+.composer-controls.integrated.editor-like,
+.session-composer .composer-input-shell,
+.session-composer .composer-controls.integrated.editor-like {
+  color: #f4f1ff !important;
+  box-shadow: none !important;
+}
+.session-composer textarea#taskPrompt,
+.session-composer input#taskCommand,
+.session-composer input#taskImage,
+.composer-controls.integrated input,
+.composer-controls.integrated select,
+.composer-controls.integrated.editor-like input,
+.composer-controls.integrated.editor-like select {
+  background: rgba(10,8,16,.82) !important;
+  color: #f4f1ff !important;
+  border-color: rgba(148,163,184,.20) !important;
+}
+.session-composer textarea#taskPrompt::placeholder,
+.session-composer input#taskCommand::placeholder,
+.session-composer input#taskImage::placeholder {
+  color: #94a3b8 !important;
+}
+.source-row,
+.source-row-wrap:not(.buildable-source-row) {
+  background: transparent !important;
+}
+.source-row:hover,
+.source-row-wrap:hover .source-row {
+  background: rgba(148,163,184,.10) !important;
+}
+.brand-logo,
+.hero-mark,
+.pac-loader {
+  filter: none !important;
+}
+.tool-activity-list {
+  display:grid;
+  gap:0;
+}
+.tool-activity-item {
+  border-bottom:1px solid rgba(255,255,255,.10);
+  padding:0;
+}
+.tool-activity-item:last-child { border-bottom:0; }
+.tool-activity-item summary {
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto auto;
+  align-items:center;
+  gap:.65rem;
+  list-style:none;
+  cursor:pointer;
+  padding:.82rem 1rem;
+  color:#e5e7eb;
+}
+.tool-activity-item summary::-webkit-details-marker { display:none; }
+.tool-activity-item summary:hover { background:rgba(255,255,255,.045); }
+.tool-activity-icon {
+  color:#d1d5db;
+  font-size:1rem;
+}
+.tool-activity-title {
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-weight:650;
+}
+.tool-activity-status,
+.tool-activity-time {
+  color:#a1a1aa;
+  font-size:.76rem;
+  white-space:nowrap;
+}
+.tool-activity-item pre {
+  margin:0 1rem 1rem 2.55rem;
+  max-height:46vh;
+  overflow:auto;
+  background:#0b0b0d;
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:10px;
+  padding:.8rem;
+  color:#d4d4d8;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
+.tool-activity-empty {
+  padding:1rem;
+  color:#a1a1aa;
+}
+

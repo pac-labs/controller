@@ -1,0 +1,294 @@
+/* PAC v1.0.284 CSS split: Source-library build panels, feature updates, downloads, and early source/workbench layout rules.
+   Source range from the former monolithic styles.css: lines 200-490. */
+
+/* v1.0.52: endpoint tool packages and default workspace previews */
+.pill-list { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.35rem; }
+.package-strip { border: 1px solid rgba(148,163,184,.22); border-radius: 12px; padding: .7rem; background: rgba(15,23,42,.35); }
+.source-root-actions { flex-wrap: wrap; }
+.source-tree { display: flex; flex-direction: column; gap: .35rem; max-height: 58vh; overflow: auto; }
+.source-row { width: 100%; text-align: left; justify-content: flex-start; border: 1px solid rgba(148,163,184,.2); background: rgba(15,23,42,.45); color: inherit; padding: .55rem .7rem; border-radius: .75rem; }
+.source-dir { font-weight: 700; }
+.source-file { color: #cbd5e1; }
+.source-editor { min-height: 58vh; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: pre; overflow: auto; }
+
+.warn-pill{border-color:#854d0e;color:#fde68a;background:rgba(133,77,14,.18)}
+
+.source-library-layout { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(340px, 440px); gap: 1rem; align-items: start; }
+.source-tree-card { min-width: 0; }
+.source-build-card { min-width: 0; position: sticky; top: 1rem; }
+.source-editor-card { grid-column: 1 / -1; }
+.source-row-wrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .45rem; align-items: center; }
+.source-row-wrap .source-row { min-width: 0; }
+.buildable-source-row { border-radius: .9rem; background: rgba(34,197,94,.06); padding: .15rem; }
+.mini-button { border: 1px solid rgba(148,163,184,.35); background: rgba(15,23,42,.7); color: #e5e7eb; padding: .42rem .55rem; border-radius: .65rem; font-size: .82rem; cursor: pointer; white-space: nowrap; }
+.mini-button:hover { border-color: rgba(34,197,94,.65); }
+.artifact-row { padding: .35rem 0; border-bottom: 1px solid rgba(148,163,184,.14); overflow-wrap: anywhere; }
+@media (max-width: 1050px) { .source-library-layout { grid-template-columns: 1fr; } .source-build-card { position: static; } .source-editor-card { grid-column: auto; } }
+
+/* v1.0.52: Source Library build output is part of the side panel. */
+.source-build-card .compact-result { max-height: 520px; min-height: 160px; padding: .75rem; border: 1px solid var(--border); border-radius: var(--radius); background: rgba(10, 8, 22, .45); }
+.source-build-card .compact-result pre { margin: .5rem 0 0; max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.source-build-summary { display:flex; gap:.75rem; align-items:center; flex-wrap:wrap; padding:.65rem .75rem; border-radius: var(--radius); margin-bottom:.75rem; }
+.source-build-summary.ok { background: rgba(61, 180, 118, .14); border: 1px solid rgba(61, 180, 118, .45); }
+.source-build-summary.failed { background: rgba(230, 75, 86, .14); border: 1px solid rgba(230, 75, 86, .45); }
+.build-status.pending { padding:.75rem; border-radius: var(--radius); background: rgba(239, 158, 67, .14); border: 1px solid rgba(239, 158, 67, .45); }
+.source-build-card details { margin-top:.75rem; }
+.source-build-card summary { cursor:pointer; font-weight:700; }
+
+/* v1.0.52: Source Library build panel is a normal side panel, not a floating overlay. */
+.source-build-card { position: static; top: auto; align-self: start; }
+.source-build-card .compact-result { max-height: none; min-height: 0; overflow: visible; }
+.source-build-card .artifact-list { margin: .45rem 0 0; padding-left: 1.1rem; }
+.source-build-card .artifact-list li { margin: .25rem 0; overflow-wrap: anywhere; }
+.source-build-card .kv code { white-space: normal; }
+
+
+/* v1.0.52: Source Library build panel stays inside the grid and only shows downloads/status hints. */
+.source-library-layout {
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(300px, 360px);
+  overflow: hidden;
+}
+.feature-pack-card, .source-tree-card, .source-build-card, .source-editor-card { max-width: 100%; overflow: hidden; }
+.source-build-card { position: relative; inset: auto; z-index: 0; align-self: start; }
+.source-build-card .source-build-hint {
+  border: 1px dashed rgba(148,163,184,.28);
+  background: rgba(10,8,16,.35);
+  padding: .7rem;
+  margin: .65rem 0;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+  font-family: inherit;
+}
+.source-build-card .artifact-list {
+  max-height: 40vh;
+  overflow: auto;
+  padding-right: .25rem;
+}
+.source-build-card .button-row { flex-wrap: wrap; }
+.source-build-card .button-row button { flex: 1 1 130px; }
+.binary-filter-label { margin: .75rem 0 .35rem; }
+.binary-filter-actions button.active { border-color: rgba(118, 181, 255, .75); background: rgba(118, 181, 255, .14); }
+.source-tree { max-height: 42vh; }
+@media (max-width: 1250px) {
+  .source-library-layout { grid-template-columns: minmax(0, 1fr); overflow: visible; }
+  .source-build-card .artifact-list { max-height: 280px; }
+}
+
+.feature-pack-card { align-self: start; }
+.compact-heading { margin-bottom: 8px; }
+.feature-pack-actions { display: grid; gap: .5rem; align-items: stretch; }
+.feature-pack-actions input[type="file"] { width: 100%; max-width: 100%; font-size: .82rem; }
+.feature-pack-actions button { width: 100%; }
+.feature-pack-preview { margin-top: 10px; overflow-x: auto; max-height: 30vh; }
+.pack-summary { margin-bottom: 8px; font-weight: 700; }
+.compact-table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+.compact-table th, .compact-table td { padding: 7px 8px; border-bottom: 1px solid rgba(148,163,184,.2); text-align: left; vertical-align: top; }
+.compact-table th { color: var(--muted); font-weight: 700; }
+
+/* v1.0.52: keep Feature Updates and Build Output as compact side panels. */
+.source-library-layout {
+  grid-template-columns: 138px minmax(0, 1fr) 210px;
+  gap: .75rem;
+  overflow: hidden;
+}
+.feature-pack-card, .source-build-card {
+  padding: .65rem;
+}
+.feature-pack-card .section-heading, .source-build-card .section-heading {
+  margin-bottom: .45rem;
+}
+.feature-pack-card h2, .source-build-card h2 {
+  font-size: .9rem;
+  margin: 0 0 .15rem;
+  line-height: 1.15;
+}
+.feature-pack-card .muted, .source-build-card .muted {
+  font-size: .72rem;
+  line-height: 1.25;
+}
+.feature-pack-actions { gap: .35rem; }
+.feature-pack-actions input[type="file"] {
+  max-width: 100%;
+  font-size: .68rem;
+  padding: .35rem;
+}
+.feature-pack-actions button, .compact-build-actions button {
+  width: 100%;
+  padding: .38rem .42rem;
+  font-size: .72rem;
+}
+.feature-pack-preview {
+  margin-top: .45rem;
+  max-height: 170px;
+  overflow: auto;
+  font-size: .7rem;
+}
+.feature-pack-preview .compact-table { font-size: .68rem; }
+.feature-pack-preview .compact-table th, .feature-pack-preview .compact-table td {
+  padding: 4px 3px;
+}
+.feature-pack-preview .compact-table th:nth-child(2),
+.feature-pack-preview .compact-table td:nth-child(2),
+.feature-pack-preview .compact-table th:nth-child(3),
+.feature-pack-preview .compact-table td:nth-child(3) {
+  display: none;
+}
+.source-build-card .kv {
+  display: block;
+  font-size: .72rem;
+}
+.source-build-card .kv b {
+  display: block;
+  margin-bottom: .2rem;
+}
+.source-build-card .kv code {
+  display: block;
+  max-height: 3.6rem;
+  overflow: auto;
+  font-size: .68rem;
+}
+.source-build-card .button-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: .35rem;
+}
+.source-build-card .source-build-hint {
+  padding: .5rem;
+  margin: .45rem 0;
+  max-height: 115px;
+  overflow: auto;
+  font-size: .7rem;
+}
+.source-build-card h3 {
+  font-size: .82rem;
+  margin: .55rem 0 .35rem;
+}
+.source-build-card .artifact-list {
+  max-height: 185px;
+  font-size: .7rem;
+}
+.source-tree { max-height: 46vh; }
+@media (max-width: 1250px) {
+  .source-library-layout { grid-template-columns: minmax(0, 1fr); overflow: visible; }
+  .feature-pack-card, .source-build-card { padding: 1rem; }
+  .feature-pack-card .compact-table th:nth-child(2),
+  .feature-pack-card .compact-table td:nth-child(2),
+  .feature-pack-card .compact-table th:nth-child(3),
+  .feature-pack-card .compact-table td:nth-child(3) { display: table-cell; }
+}
+
+
+/* v1.0.52: keep side panels compact, but do not shrink their typography. */
+.source-library-layout {
+  grid-template-columns: minmax(170px, 200px) minmax(0, 1fr) minmax(260px, 320px);
+}
+.feature-pack-card h2, .source-build-card h2 { font-size: 1.05rem; line-height: 1.25; }
+.feature-pack-card .muted, .source-build-card .muted { font-size: .86rem; line-height: 1.45; }
+.feature-pack-actions input[type="file"] { font-size: .86rem; padding: .5rem; }
+.feature-pack-actions button { padding: .55rem .65rem; }
+.feature-pack-preview { font-size: .86rem; max-height: 220px; }
+.feature-pack-preview .compact-table { font-size: .84rem; }
+.feature-pack-preview .compact-table th, .feature-pack-preview .compact-table td { padding: 6px 5px; }
+.source-build-card .kv { font-size: .86rem; line-height: 1.4; }
+.source-build-card .kv code { font-size: .82rem; }
+.source-build-card .source-build-hint { font-size: .86rem; line-height: 1.4; max-height: 170px; }
+.source-build-card h3 { font-size: 1rem; }
+.source-build-card .artifact-list { font-size: .86rem; }
+@media (max-width: 1250px) {
+  .source-library-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* v1.0.52: Feature updates stays small; Source Library and Build Output share the remaining width. */
+.source-library-layout {
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+.feature-pack-card { padding: .8rem; }
+.source-tree-card, .source-build-card { padding: 1rem; }
+.feature-pack-card, .source-build-card { font-size: inherit; }
+.feature-pack-card h2, .source-build-card h2 { font-size: 1.05rem; line-height: 1.25; }
+.feature-pack-card .muted, .source-build-card .muted,
+.feature-pack-actions input[type="file"], .feature-pack-actions button,
+.source-build-card .kv,
+.source-build-card .source-build-hint, .source-build-card .artifact-list {
+  font-size: .86rem;
+  line-height: 1.4;
+}
+.source-build-card .button-row {
+  display: flex;
+  flex-wrap: wrap;
+}
+.source-build-card .button-row button { flex: 1 1 130px; }
+.binary-filter-label { margin: .75rem 0 .35rem; }
+.binary-filter-actions button.active { border-color: rgba(118, 181, 255, .75); background: rgba(118, 181, 255, .14); }
+.source-build-card .source-build-hint { max-height: 220px; }
+.source-build-card .artifact-list { max-height: 320px; }
+@media (max-width: 1250px) {
+  .source-library-layout { grid-template-columns: minmax(0, 1fr); overflow: visible; }
+}
+
+
+/* v1.0.52: Downloads panel is a passive category filter with versioned download groups. */
+.source-build-card .field-label {
+  display: block;
+  margin: .75rem 0 .35rem;
+  font-weight: 750;
+  color: var(--text);
+}
+.binary-folder-filter {
+  width: 100%;
+  min-width: 0;
+  padding: .6rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(10, 8, 22, .72);
+  color: var(--text);
+  font: inherit;
+}
+.source-build-card .artifact-list { padding-left: 0; }
+.download-version-list { display: grid; gap: .7rem; }
+.download-version-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .75rem;
+  background: rgba(255, 255, 255, .03);
+}
+.download-version-title {
+  display: flex;
+  justify-content: space-between;
+  gap: .75rem;
+  align-items: baseline;
+  margin-bottom: .55rem;
+}
+.download-version-title span { color: var(--muted); font-weight: 700; }
+.download-pill-list { display: flex; flex-wrap: wrap; gap: .45rem; }
+.download-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: .35rem .55rem;
+  color: var(--text);
+  text-decoration: none;
+  background: rgba(118, 181, 255, .10);
+}
+.download-pill small { color: var(--muted); }
+.binary-maintenance-actions { margin: .45rem 0 .55rem; gap: .4rem; }
+.download-artifact { display: inline-flex; align-items: center; gap: .2rem; }
+.icon-button.delete-artifact {
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 999px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--border);
+}
+.icon-button.delete-artifact:hover { color: var(--danger); border-color: rgba(255, 96, 96, .45); }
+

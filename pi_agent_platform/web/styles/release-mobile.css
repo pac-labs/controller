@@ -1,0 +1,370 @@
+/* PAC v1.0.284 CSS split: Release apply overlay, mobile usability rules, session mobile layout, and destructive button states.
+   Source range from the former monolithic styles.css: lines 4753-5119. */
+
+/* v1.0.176: solid dark header surface and release-apply blackout overlay */
+.blackout-overlay{
+  background:rgba(0,0,0,.94) !important;
+  backdrop-filter:none !important;
+  z-index:240 !important;
+}
+.blackout-card{
+  width:min(720px,92vw);
+  max-height:none;
+  overflow:visible;
+  background:#080f14 !important;
+  border:1px solid rgba(148,163,184,.24);
+  box-shadow:0 28px 80px rgba(0,0,0,.72);
+}
+.blackout-card .button-row{
+  justify-content:flex-end;
+  margin-top:1rem;
+}
+html[data-theme="dark"],
+body[data-theme="dark"],
+html[data-theme="dark"] .app-header,
+html[data-theme="dark"] .tabs,
+html[data-theme="dark"] .tabs-wrap,
+body[data-theme="dark"] .app-header,
+body[data-theme="dark"] .tabs,
+body[data-theme="dark"] .tabs-wrap{
+  background:#080f14 !important;
+  background-image:none !important;
+  box-shadow:none !important;
+}
+
+/* v1.0.177: Mobile usability improvements */
+@media (max-width: 600px) {
+  /* General layout */
+  main { padding: 0.65rem; }
+
+  /* Nav: flatten group buttons, make them compact */
+  .tabs-groups { gap: 0.25rem; }
+  .nav-group-btn { padding: 0.5rem 0.65rem; font-size: 0.8rem; }
+  .tabs-primary { gap: 0.25rem; }
+  .tabs-primary .tab { padding: 0.5rem 0.65rem; font-size: 0.8rem; }
+
+  /* Settings subnav: horizontal scroll, not wrap */
+  .settings-subnav { flex-wrap: nowrap; overflow-x: auto; gap: 0.35rem; padding-bottom: 0.65rem; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .settings-subnav::-webkit-scrollbar { display: none; }
+  .settings-sub-btn { flex: 0 0 auto; min-height: 2rem; padding: 0.45rem 0.75rem; font-size: 0.8rem; }
+
+  /* Cards: tighter padding */
+  .card { padding: 0.85rem; }
+
+  /* Session composer: full-width inputs, stack controls cleanly */
+  .session-composer { padding: 0.65rem; }
+  .composer-controls.integrated.editor-like { grid-template-columns: 1fr auto !important; gap: 0.4rem; }
+  .composer-input-shell textarea { min-height: 48px; }
+  .session-session-meta { gap: 0.4rem; }
+  .session-quick-controls { flex-wrap: wrap; gap: 0.4rem; }
+  .session-quick-label { display: none; }
+  #sessionPermissionQuick, #applySessionPermission { max-width: 140px; }
+
+  /* Forms: single column */
+  .form-grid { grid-template-columns: 1fr; }
+  .button-row { flex-wrap: wrap; }
+
+  /* Dashboard: stack all grids */
+  .dashboard-grid { grid-template-columns: 1fr; }
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bar-chart, .health-grid { overflow-x: auto; }
+
+  /* Session list */
+  #sessions-tab .session-chat-layout { display: block; }
+  .chat-timeline { min-height: 40vh; }
+  .chat-bubble { max-width: 90%; }
+
+  /* Modal: full-screen on mobile */
+  .modal-card { width: 98vw; max-width: 98vw; margin: 1vh auto; max-height: 96vh; overflow-y: auto; }
+  .modal-card.wide-modal { width: 98vw; }
+
+  /* Source / IDE */
+  .source-library-layout { grid-template-columns: 1fr; }
+  .source-editor-card, .source-tree-card { min-width: 0; }
+
+  /* Provider cards: full width */
+  .provider-grid { grid-template-columns: 1fr; }
+
+  /* Settings panels: full width, no double-grid */
+  .settings-panel-inner { grid-template-columns: 1fr; }
+  .split-admin-layout { grid-template-columns: 1fr; }
+  .settings-layout { grid-template-columns: 1fr; }
+  .pi-dev-grid { grid-template-columns: 1fr; }
+
+  /* Event rail: full width, collapsible on mobile */
+  .events-rail { width: 100%; height: 280px; }
+
+  /* Session modal: stacked form fields */
+  .sessionModal .form-grid { grid-template-columns: 1fr; }
+  .sessionModal label { font-size: 0.8rem; }
+  #sessionEndpoint, #modelOverride { max-width: 100%; }
+
+  /* Compact form grid on mobile */
+  .compact-form { grid-template-columns: 1fr !important; }
+  .check-grid { grid-template-columns: 1fr !important; }
+}
+
+@media (max-width: 400px) {
+  .nav-group-btn { padding: 0.45rem 0.55rem; font-size: 0.75rem; }
+  .tabs-primary .tab { padding: 0.45rem 0.55rem; font-size: 0.75rem; }
+  .session-top-select { max-width: 120px; }
+  .session-picker-wrap { gap: 0.3rem; }
+  .session-plus-button { padding: 0.4rem 0.6rem; }
+}
+
+/* v1.0.178: Sessions tab mobile layout — full-height flex column, readable timeline */
+@media (max-width: 600px) {
+  /* Override desktop 100%-height rules with natural-height flex column */
+  #sessions-tab.sessions-workspace.active {
+    display: flex !important;
+    flex-direction: column;
+    height: auto !important;
+    min-height: 0;
+    overflow: visible !important;
+    padding: 0.65rem;
+    gap: 0;
+  }
+
+  /* Hide sidebar list on mobile — use the dropdown picker instead */
+  #sessions-tab .sessions-list-card { display: none !important; }
+
+  /* Card fills width, natural height */
+  #sessions-tab .session-chat-card {
+    display: flex !important;
+    flex-direction: column;
+    height: auto !important;
+    min-height: 0;
+    overflow: visible !important;
+    padding: 0;
+    border-radius: 12px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    gap: 0;
+  }
+
+  /* Session picker head: stack vertically */
+  #sessions-tab .session-chat-head {
+    flex: 0 0 auto !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0.5rem !important;
+    padding: 0 0 0.5rem;
+    border-bottom: 1px solid rgba(148,163,184,0.16);
+    margin-bottom: 0.5rem !important;
+  }
+
+  #sessions-tab .session-picker-wrap {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.4rem !important;
+  }
+
+  #sessions-tab .session-top-select {
+    flex: 1 1 auto !important;
+    min-width: 0;
+    max-width: 100% !important;
+    font-size: 0.85rem;
+    padding: 0.4rem 0.5rem;
+  }
+
+  #sessions-tab .session-plus-button {
+    padding: 0.4rem 0.65rem !important;
+    font-size: 1rem;
+  }
+
+  /* Session meta: stack below picker */
+  #sessions-tab .session-session-meta {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0.4rem !important;
+    min-width: 0;
+  }
+
+  #sessions-tab .session-lock-summary {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 0.25rem !important;
+    font-size: 0.72rem !important;
+    max-width: 100% !important;
+  }
+
+  #sessions-tab .session-lock-summary span {
+    max-width: none !important;
+    white-space: normal !important;
+  }
+
+  #sessions-tab .session-quick-controls {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.4rem !important;
+    flex-wrap: wrap !important;
+  }
+
+  #sessions-tab .session-quick-label { display: none !important; }
+  #sessions-tab .session-quick-select {
+    max-width: 140px !important;
+    min-width: 80px !important;
+    font-size: 0.8rem;
+    padding: 0.35rem 0.4rem;
+  }
+  #sessions-tab #applySessionPermission { padding: 0.35rem 0.5rem; font-size: 0.8rem; }
+
+  /* Layout: chat-main + composer stacked naturally */
+  #sessions-tab .session-chat-layout,
+  #sessions-tab .session-chat-layout.single {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 0 0 auto !important;
+    min-height: 0;
+    height: auto !important;
+    overflow: visible !important;
+    gap: 0;
+  }
+
+  /* Timeline: natural height, scrollable, readable text */
+  #sessions-tab .session-chat-main {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 0 1 auto !important;
+    min-height: 0;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border-radius: 12px !important;
+    background: #05040a !important;
+    border: 1px solid #241a3b !important;
+    margin-bottom: 0.5rem;
+  }
+
+  #sessions-tab .chat-timeline,
+  .session-timeline {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+    min-height: 200px !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0.65rem !important;
+    overflow-y: auto !important;
+    max-height: 50vh !important;
+  }
+
+  /* Timeline cards: readable, full-width */
+  .timeline-card {
+    min-width: 0 !important;
+    width: 100% !important;
+    padding: 0.65rem 0.7rem !important;
+    border-radius: 10px !important;
+  }
+
+  .timeline-kind { font-size: 0.65rem !important; }
+  .timeline-time { font-size: 0.65rem !important; }
+  .timeline-title { font-size: 0.88rem !important; }
+  .timeline-summary, .timeline-message { font-size: 0.82rem !important; line-height: 1.45 !important; }
+  .timeline-fields { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .timeline-field-key { font-size: 0.62rem !important; }
+  .timeline-field-value { font-size: 0.75rem !important; }
+
+  /* Chat bubbles: readable width */
+  .chat-bubble { max-width: 88% !important; font-size: 0.85rem !important; }
+  .chat-message-row.user .chat-bubble { border-radius: 14px 14px 4px 14px !important; }
+  .chat-message-row.assistant .chat-bubble { border-radius: 14px 14px 14px 4px !important; }
+
+  /* Composer: full width at bottom */
+  #sessions-tab .session-composer.chatgpt-composer {
+    flex: 0 0 auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0.5rem 0 0 !important;
+    background: transparent !important;
+    margin-top: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  #sessions-tab .composer-input-shell {
+    border-radius: 16px !important;
+    border: 1px solid rgba(148,163,184,0.20) !important;
+    background: rgba(15,23,42,0.80) !important;
+  }
+
+  #sessions-tab .composer-controls.integrated.editor-like {
+    display: grid !important;
+    grid-template-columns: auto 1fr auto !important;
+    gap: 0.35rem !important;
+    padding: 0.4rem !important;
+  }
+
+  #sessions-tab .composer-icon-button.square,
+  #sessions-tab .composer-send-button.square {
+    padding: 0.5rem 0.65rem !important;
+    font-size: 1rem !important;
+  }
+
+  #sessions-tab .session-composer textarea#taskPrompt {
+    min-height: 44px !important;
+    font-size: 0.88rem !important;
+    padding: 0.55rem 0.75rem !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+  }
+
+  #sessions-tab select#taskModel,
+  #sessions-tab select#taskExecution {
+    font-size: 0.8rem !important;
+    padding: 0.4rem !important;
+    max-width: 100% !important;
+  }
+
+  /* Empty state */
+  .empty-timeline {
+    padding: 1.5rem 0.8rem !important;
+    font-size: 0.85rem !important;
+    text-align: center !important;
+  }
+
+  /* Sidebar hidden on mobile — use top dropdown instead */
+  #sessions-tab .integrated-session-head { display: flex !important; }
+}
+
+/* Delete buttons */
+.danger-button { color: #e05c5c !important; border-color: #e05c5c44 !important; }
+.danger-button:hover { background: #e05c5c22 !important; }
+.session-delete-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+}
+.session-delete-btn:hover { color: #e05c5c; background: #e05c5c22; }
+.session-sidebar-item { position: relative; }
+
+.wizard-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.8rem;
+}
+
+.wizard-progress .ghost-button {
+  min-width: 0;
+  padding: 0.35rem 0.7rem;
+}
+
+.wizard-progress .ghost-button.active {
+  border-color: var(--accent-color, #42be65);
+  color: var(--text-strong, #fff);
+  background: color-mix(in srgb, var(--accent-color, #42be65) 14%, transparent);
+}

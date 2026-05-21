@@ -1,0 +1,37 @@
+/* PAC v1.0.284 CSS split: Dashboard metric widgets, settings grids, and service-mode controls.
+   Source range from the former monolithic styles.css: lines 126-159. */
+
+/* v1.0.52: expandable build diagnostics in event rail and MCP status panel */
+.event-details { margin-top: .35rem; border-top: 1px solid #241a3b; padding-top: .35rem; }
+.event-details summary { cursor: pointer; color: #c8c1dc; font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.event-details pre { min-height: 0; max-height: 260px; margin: .35rem 0 0; font-size: .72rem; white-space: pre-wrap; }
+
+/* v1.0.52: dashboard metrics and session creation modal */
+.dashboard-metrics .hero.wide { grid-column: 1 / -1; }
+.stats-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:.65rem; margin:.85rem 0; }
+.stats-grid .metric { margin:0; width:100%; align-items:start; place-items:start; }
+.metric small { color:#8f86a8; font-size:.72rem; margin-top:.15rem; }
+.section-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; margin-bottom:.75rem; }
+.section-heading h2 { margin:0; }
+.section-heading p { margin:.2rem 0 0; }
+.session-list { display:grid; gap:.55rem; }
+.session-row .muted:last-child { font-size:.72rem; }
+.bar-chart { display:grid; gap:.55rem; }
+.bar-row { display:grid; grid-template-columns:110px minmax(0,1fr) 42px; gap:.55rem; align-items:center; font-size:.82rem; }
+.bar-track { height:12px; background:#090712; border:1px solid #241a3b; overflow:hidden; }
+.bar-track i { display:block; height:100%; background:linear-gradient(90deg,#15803d,#4ade80); }
+.spark-bars { height:180px; display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:.5rem; align-items:end; padding:.4rem 0; }
+.spark-col { height:100%; display:flex; flex-direction:column; justify-content:flex-end; align-items:stretch; gap:.35rem; }
+.spark-col i { min-height:8px; background:linear-gradient(180deg,#4ade80,#15803d); border:1px solid #166534; }
+.spark-col span { text-align:center; color:#8f86a8; font-size:.68rem; }
+.modal-backdrop { position:fixed; inset:0; z-index:100; display:grid; place-items:center; padding:1rem; background:rgba(3,2,8,.78); backdrop-filter:blur(6px); }
+.modal-backdrop[hidden] { display:none; }
+.modal-card { width:min(860px,96vw); max-height:92vh; overflow:auto; background:linear-gradient(180deg,#120d20,#08070d); border:1px solid var(--border); box-shadow:0 28px 90px rgba(0,0,0,.65); border-radius:var(--radius); padding:1rem; }
+@media(max-width:1100px){.stats-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.bar-row{grid-template-columns:90px minmax(0,1fr) 36px}}
+@media(max-width:720px){.stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.section-heading{flex-direction:column}.modal-card{width:100%}}
+.settings-cube-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;align-items:start}.setting-cube{min-height:220px}.setting-cube.wide{grid-column:1/-1}.compact-setting-card{min-height:0!important;max-height:none!important;align-self:start}.compact-kv div{grid-template-columns:130px 1fr}.compact-result{min-height:90px;max-height:220px}.button-link{display:inline-flex;align-items:center;border:1px solid #6d45d6;border-radius:var(--radius);padding:.6rem .85rem;background:#251747;color:#fff;font-weight:750;text-decoration:none}.button-link:hover{background:#372065;border-color:var(--accent-strong)}@media(max-width:1100px){.settings-cube-grid{grid-template-columns:1fr}}
+
+/* v1.0.52: Settings service-mode toggle */
+.segmented-control{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.85rem}
+.segmented-control button{flex:1 1 150px}
+

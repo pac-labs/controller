@@ -1,500 +1,195 @@
 {
-  "schema": "pac.changelog.v1",
-  "current_version": "1.0.99",
-  "entries": [
+  "releases": [
     {
-      "version": "1.0.49",
-      "title": "PAC v1.0.49",
+      "version": "1.0.284",
+      "date": "2026-05-21T22:00:00Z",
+      "summary": "Split the monolithic web stylesheet into ordered CSS modules while preserving the existing cascade through a compatibility loader.",
       "changes": [
-        "Downloads panel is passive: removed Download selected and Refresh controls.",
-        "Downloads now filter by binary source folder category and list available files grouped by detected version.",
-        "Kept Source Library build actions separate from Downloads."
-      ]
+        "Replaced pi_agent_platform/web/styles.css with a small import-only compatibility stylesheet.",
+        "Added ordered modules under pi_agent_platform/web/styles/ for foundation, dashboard, endpoints, sources, sessions, control-plane, source workbench, providers/admin, header/theme, light surfaces, release overlay, and mobile rules.",
+        "Kept the original cascade order by importing modules in the same source-range order as the former monolithic stylesheet.",
+        "Updated refactor and migration documentation with stylesheet ownership rules and the v1.0.284 CSS split checkpoint.",
+        "Reduced pi_agent_platform/web/styles.css from 5,119 lines to 19 lines; the largest new stylesheet module is 646 lines."
+      ],
+      "pressure_points": {
+        "pi_agent_platform/web/styles.css": {
+          "lines": 19,
+          "previous_lines": 5119,
+          "baseline_v1.0.266_lines": 5119
+        },
+        "pi_agent_platform/web/app.js": {
+          "lines": 969,
+          "previous_lines": 969,
+          "baseline_v1.0.266_lines": 9303
+        },
+        "pi_agent_platform/api/main.py": {
+          "lines": 3527,
+          "previous_lines": 3527,
+          "baseline_v1.0.266_lines": 7283
+        }
+      }
     },
     {
-      "version": "1.0.50",
-      "title": "PAC v1.0.50",
+      "version": "1.0.283",
+      "date": "2026-05-21T21:42:00Z",
+      "summary": "Completed the current safe web/app.js cleanup wave by extracting remaining frontend domains into classic-script modules.",
       "changes": [
-        "Fix local endpoint registration crash by adding the missing _safe_runner_slug helper.",
-        "Downloads panel now refreshes automatically when traversing Source Library folders.",
-        "Downloads category follows sources/binaries/<folder> when browsing binary source folders.",
-        "Binary artifact API now returns known binary source folders even before artifacts exist, so the UI can show an empty category instead of stale data."
-      ]
+        "Added web/app/events.js for global event rail, event normalization, event tones, and update confirmation overlay helpers.",
+        "Added web/app/workspaces_contexts.js for shared storage, IDE context, agent context, user workspace, and workspace template UI helpers.",
+        "Added web/app/profiles_config.js for profile/tool/provider/model configuration forms, model sync helpers, and runtime form helpers.",
+        "Added web/app/admin_updates.js for proxy route, PAC update/archive/diff/release, package upload, restart, MCP bridge, and admin update helpers.",
+        "Added web/app/marketplace.js, web/app/personal_settings.js, and web/app/composer_status.js for remaining marketplace, personal settings, and composer status helpers.",
+        "Updated web/index.html to load the new modules before the transitional app.js entrypoint.",
+        "Reduced pi_agent_platform/web/app.js from 3,596 lines to 969 lines while preserving the current classic-script/no-bundler runtime model."
+      ],
+      "pressure_points": {
+        "pi_agent_platform/web/app.js": {
+          "lines": 969,
+          "previous_lines": 3596,
+          "baseline_v1.0.266_lines": 9303
+        },
+        "pi_agent_platform/api/main.py": {
+          "lines": 3527,
+          "previous_lines": 3527,
+          "baseline_v1.0.266_lines": 7283
+        }
+      }
     },
     {
-      "version": "1.0.51",
-      "title": "PAC v1.0.51",
+      "version": "1.0.282",
+      "date": "2026-05-21T21:28:00Z",
+      "summary": "Split endpoint/dashboard/controller-runtime and auth/admin frontend helpers out of the monolithic web app script.",
       "changes": [
-        "Added an Install Pi harness action for endpoints when localhost/pi-agent-harness is missing.",
-        "Local endpoint harness install runs scripts/build-pi-container.sh and records stdout/stderr, exit code, image and re-check status in Events.",
-        "Remote endpoint harness install queues a host command so the endpoint can build the image locally.",
-        "Sessions page panels now contain long paths, commands and event output instead of widening the page."
-      ]
+        "Added web/app/endpoints.js for endpoint inventory, runner dashboard, endpoint command modal, service/TLS, controller harness, and endpoint connection UI helpers.",
+        "Added web/app/auth_admin.js for login/auth state, current-user chip, personal token helpers, user list rendering, and group/admin access UI helpers.",
+        "Updated web/index.html to load endpoints.js and auth_admin.js before the transitional app.js entrypoint.",
+        "Reduced pi_agent_platform/web/app.js from 4,951 lines to 3,596 lines while preserving the classic no-bundler script model."
+      ],
+      "pressure_points": {
+        "pi_agent_platform/web/app.js": {
+          "lines": 3596,
+          "previous_lines": 4951,
+          "baseline_v1.0.266_lines": 9303
+        },
+        "pi_agent_platform/api/main.py": {
+          "lines": 3527,
+          "previous_lines": 3527,
+          "baseline_v1.0.266_lines": 7283
+        }
+      }
     },
     {
-      "version": "1.0.52",
-      "title": "PAC v1.0.52",
+      "version": "1.0.281",
+      "date": "2026-05-21T21:14:00Z",
+      "summary": "Split session timeline, approval, composer, and session wizard frontend helpers out of the monolithic web app script.",
       "changes": [
-        "Endpoint capability chips now show available features in green, required missing features in red, and optional missing features in orange.",
-        "Local Pi harness install now runs as a tracked background operation and always emits a completed or failed event, including timeout/startup errors."
-      ]
+        "Added web/app/sessions.js for session timeline rendering, thinking/approval rows, assistant reply actions, session polling, composer/task helpers, session wizard helpers, container destination selection, prompt context insertion, and session git diff modal behavior.",
+        "Updated web/index.html to load sessions.js before the transitional app.js entrypoint.",
+        "Kept the classic-script global function model to preserve current browser runtime behavior without introducing a bundler.",
+        "Reduced pi_agent_platform/web/app.js from 6,721 lines to 4,951 lines."
+      ],
+      "pressure_points": {
+        "pi_agent_platform/web/app.js": {
+          "lines": 4951,
+          "previous_lines": 6721,
+          "baseline_v1.0.266_lines": 9303
+        },
+        "pi_agent_platform/api/main.py": {
+          "lines": 3527,
+          "previous_lines": 3527,
+          "baseline_v1.0.266_lines": 7283
+        }
+      }
     },
     {
-      "version": "1.0.53",
-      "title": "PAC v1.0.53",
+      "version": "1.0.280",
+      "date": "2026-05-21T21:05:00Z",
+      "summary": "Split source-library and source-coding frontend helpers out of the monolithic web app.js.",
       "changes": [
-        "Made endpoint feature status chips more compact so they read as chips instead of large labels.",
-        "Added stronger Pi harness local install pre-flight diagnostics for missing scripts, source folder, and container runtime availability.",
-        "Ensured Pi harness install events include a stage and actionable stderr/stdout data when the build fails."
-      ]
+        "Added web/app/sources.js for source tree, file tab, source build, binary artifact, feature-pack, marketplace, source context, source secret/variable, PAC RAM, and source coding UI helpers.",
+        "Updated web/index.html to load sources.js before the transitional app.js entrypoint.",
+        "Kept the classic-script global function model to preserve current browser runtime behavior without introducing a bundler.",
+        "Reduced pi_agent_platform/web/app.js from 8,172 lines to 6,721 lines."
+      ],
+      "pressure_points": {
+        "pi_agent_platform/web/app.js": {
+          "lines": 6721,
+          "previous_lines": 8172,
+          "baseline_v1.0.266_lines": 9303
+        },
+        "pi_agent_platform/api/main.py": {
+          "lines": 3527,
+          "previous_lines": 3527,
+          "baseline_v1.0.266_lines": 7283
+        }
+      }
     },
     {
-      "version": "1.0.55",
-      "title": "PAC v1.0.55",
+      "version": "1.0.279",
+      "date": "2026-05-21T20:47:44Z",
+      "summary": "Split provider and model catalog UI helpers out of the monolithic web app script.",
       "changes": [
-        "Added independent source/tool versions for binaries, containers and MCP sources.",
-        "Binary builds now use the selected source folder VERSION instead of the PAC controller version.",
-        "Downloads display the source folder version when artifact names do not contain a version.",
-        "Source tree folder rows expose source_version metadata for UI use.",
-        "Included endpoint embedded-runner source pack in the bundled source tree."
-      ]
+        "Added web/app/providers.js for provider/model availability helpers, provider health rendering, LM Studio actions, model draft helpers, recommendations, and live provider/model panels.",
+        "Updated web/index.html to load providers.js after provider presets and before the transitional app.js entrypoint.",
+        "Reduced pi_agent_platform/web/app.js from 8,829 lines to 8,172 lines while preserving the classic no-bundler script model."
+      ],
+      "pressure_points": {
+        "pi_agent_platform/web/app.js": {
+          "lines": 8172,
+          "previous_lines": 8829,
+          "baseline_v1.0.266_lines": 9303
+        },
+        "pi_agent_platform/api/main.py": {
+          "lines": 3527,
+          "previous_lines": 3527,
+          "baseline_v1.0.266_lines": 7283
+        }
+      }
     },
     {
-      "version": "1.0.56",
-      "title": "PAC v1.0.56",
+      "version": "1.0.278",
+      "date": "2026-05-21T20:45:00Z",
+      "summary": "Begin splitting the monolithic web app.js into behavior-preserving frontend helper modules.",
       "changes": [
-        "Added named endpoint tool execution bridge to pac-endpoint.",
-        "Added required agent endpoint tool discovery: ripgrep/rg, fd, jq, git, delta, bat/batcat, just.",
-        "Endpoint capabilities now report required/missing tools and bridge readiness.",
-        "Endpoint command API validates named tool availability before queueing where capability data is available.",
-        "Source/config defaults now treat the development tool package as the required endpoint agent tool set.",
-        "Fixed endpoint feature chips so configured-but-missing tools remain red instead of falsely green."
-      ]
+        "Added web/app/ui_helpers.js for shared HTML escaping helpers.",
+        "Added web/app/provider_presets.js for provider preset definitions and preset loading behavior.",
+        "Added web/app/session_commands.js for session slash-command parsing and help text.",
+        "Added web/app/setup_wizard.js for setup wizard rendering, step wiring, and save/complete behavior.",
+        "Updated web/index.html to load the helper scripts before the transitional app.js entrypoint.",
+        "Reduced pi_agent_platform/web/app.js from 9,303 lines to 8,829 lines."
+      ],
+      "pressure_points": {
+        "pi_agent_platform/web/app.js": {
+          "lines": 8829,
+          "previous_lines": 9303,
+          "baseline_v1.0.266_lines": 9303
+        },
+        "pi_agent_platform/api/main.py": {
+          "lines": 3527,
+          "previous_lines": 3527,
+          "baseline_v1.0.266_lines": 7283
+        }
+      }
     },
     {
-      "version": "1.0.57",
-      "title": "PAC v1.0.57",
+      "version": "1.0.277",
+      "date": "2026-05-21T20:34:40.776169Z",
+      "summary": "Split proxy, server configuration, package upload, service runtime, TLS, and Let's Encrypt routes out of api/main.py.",
       "changes": [
-        "Added individual binary delete controls in Downloads.",
-        "Added binary artifact prune action to keep only newest version per binary folder.",
-        "Removed Source Library download bundle button from the UI.",
-        "Downloads now expose binary artifact version metadata and retention-safe cleanup events."
-      ]
-    },
-    {
-      "version": "1.0.58",
-      "title": "PAC v1.0.58",
-      "changes": [
-        "Endpoint binaries can compile in the PAC server URL using PAC_COMPILED_SERVER_URL / PAC_BUILD_SERVER_URL.",
-        "Endpoint GPU is no longer shown as a missing feature chip; GPU remains hardware info only."
-      ]
-    },
-    {
-      "version": "1.0.59",
-      "title": "PAC v1.0.59",
-      "changes": [
-        "Added explicit endpoint/controller connection settings so endpoints can connect by IP when mDNS is unavailable.",
-        "Binary builds can now override the compiled PAC server URL per build request.",
-        "Settings UI includes a controller URL form and mDNS enable toggle.",
-        "Build output records the compiled server URL used for purpose-built binaries."
-      ]
-    },
-    {
-      "version": "1.0.60",
-      "title": "PAC v1.0.60",
-      "changes": [
-        "Fixed Windows-style PAC_URL=... command-line assignments for pac-endpoint, pac-agent, and zed MCP helper binaries.",
-        "Zed MCP helper now supports PAC_URL environment/config fallback, shorter HTTP timeout, and --check connectivity mode.",
-        "Zed MCP helper no longer appears to hang when run directly in a terminal; it prints usage and exits unless launched through stdio by Zed."
-      ]
-    },
-    {
-      "version": "1.0.61",
-      "title": "PAC v1.0.61",
-      "changes": [
-        "Fixed UI version display/update path.",
-        "Updated UI fallback version and cache-busted app.js reference.",
-        "Updated runtime fallback version constants so stale reads do not show old controller versions.",
-        "Patch package explicitly includes VERSION, VERSION_CURRENT.md, web index/app, runner, and API files."
-      ]
-    },
-    {
-      "version": "1.0.62",
-      "title": "PAC v1.0.62",
-      "changes": [
-        "Added online provider presets for OpenAI, OpenAI/Codex, Anthropic, MiniMax, Gemini, Groq, OpenRouter, DeepSeek, Mistral, LM Studio, Ollama, vLLM, and custom compatible providers.",
-        "Added provider type support for OpenAI-compatible and Anthropic-compatible model listing/testing paths.",
-        "Added Gemini model listing/testing path.",
-        "Provider modal can now load sane base URL/API key env defaults from a provider preset."
-      ]
-    },
-    {
-      "version": "1.0.63",
-      "title": "PAC v1.0.63",
-      "changes": [
-        "Added LM Studio native management API actions for load, unload and download.",
-        "Added LM Studio inspect and companion script generation from provider rows.",
-        "Added companion report endpoint for manually-run LM Studio host hardware reports.",
-        "LM Studio chat now uses streaming so active responses do not hit a fixed response timeout."
-      ]
-    },
-    {
-      "version": "1.0.64",
-      "title": "PAC v1.0.64",
-      "changes": [
-        "Replaced the plain preformatted Sessions timeline with structured event cards.",
-        "Added pac.timeline.v1 JSON card rendering for agent/tool/Zed timeline events.",
-        "Added POST /v1/sessions/{session_id}/events for integrations to append structured events.",
-        "Added pac_add_timeline_event to the Zed MCP helper.",
-        "Added documentation for the structured session timeline format."
-      ]
-    },
-    {
-      "version": "1.0.65",
-      "title": "PAC v1.0.65",
-      "changes": [
-        "Reworked Sessions timeline into a chat-style conversation view with thought/tool/system bubbles.",
-        "Removed JSON-first/cyberpunk session timeline presentation; structured events now render as readable message text with optional details.",
-        "Added a bottom session composer with message, command mode, command input, model selection, execution mode, and container image fields.",
-        "Added endpoint selection to session creation and marks sessions as endpoint-locked.",
-        "Backend now validates endpoint locking and refuses task submissions that try to run on a different endpoint."
-      ]
-    },
-    {
-      "version": "1.0.66",
-      "title": "PAC v1.0.66",
-      "changes": [
-        "v1.0.66 session UX update"
-      ]
-    },
-    {
-      "version": "1.0.67",
-      "title": "PAC v1.0.67",
-      "changes": [
-        "Groups consecutive internal thinking/tool activity into one Thinking bubble.",
-        "Suppresses noisy agent loop lifecycle entries from the visible chat timeline.",
-        "Keeps full internal details available in the Thinking details modal."
-      ]
-    },
-    {
-      "version": "1.0.68",
-      "title": "PAC v1.0.68",
-      "changes": [
-        "Sessions UI cleanup: modal-only thought details, stable user messages, no inline git diff, plus-button session creation."
-      ]
-    },
-    {
-      "version": "1.0.69",
-      "title": "PAC v1.0.69",
-      "changes": [
-        "Persist user messages as durable session events.",
-        "Show ChatGPT-style loading/thought line below user messages.",
-        "Assistant replies are selectable to inspect model, endpoint and task metadata.",
-        "Session live event stream now listens for user_message/task_queued events."
-      ]
-    },
-    {
-      "version": "1.0.70",
-      "title": "PAC v1.0.70",
-      "changes": [
-        "Session composer uses a ChatGPT-like integrated input surface.",
-        "Prompt field is empty by default and uses light grey guidance placeholder text.",
-        "Compact command/model/execution controls sit inside the composer area for editor parity."
-      ]
-    },
-    {
-      "version": "1.0.71",
-      "title": "PAC v1.0.71",
-      "changes": [
-        "Removed redundant dashboard endpoint and task status cards.",
-        "Integrated session composer controls into one editor-style panel with a compact context menu."
-      ]
-    },
-    {
-      "version": "1.0.72",
-      "title": "PAC v1.0.72",
-      "changes": [
-        "Integrated session selector into the Sessions chat header with a compact + create action.",
-        "Removed the visible sessions list panel from the Sessions page.",
-        "Added slash-command parsing so /rg, /git, /just, etc. are sent as endpoint commands without a separate command field.",
-        "Added a container destination modal that appears when container execution is selected."
-      ]
-    },
-    {
-      "version": "1.0.73",
-      "title": "PAC v1.0.73",
-      "changes": [
-        "Made the Sessions composer transparent/dark instead of white.",
-        "Tightened Sessions panel sizing to avoid slight overflow.",
-        "Show the agent profile in the session header, selector and status hint."
-      ]
-    },
-    {
-      "version": "1.0.74",
-      "title": "PAC v1.0.74",
-      "changes": [
-        "Added a session slash-command lookup table.",
-        "/command <tool> and direct /rg, /fd, /jq, /git, /delta, /bat, /bad and /just route to endpoint named-tool execution.",
-        "/compact and /subagent are represented as agent/controller skills instead of requiring endpoint binaries.",
-        "Added docs for slash command/plugin model."
-      ]
-    },
-    {
-      "version": "1.0.75",
-      "title": "PAC v1.0.75",
-      "changes": [
-        "Session thinking is now a light grey thought line with ChatGPT-like tool activity modal.",
-        "Only tool/command activity is shown in thinking details; lifecycle/model chatter is hidden.",
-        "Assistant results stay as chat replies, not separate event cards."
-      ]
-    },
-    {
-      "version": "1.0.76",
-      "title": "PAC v1.0.76",
-      "changes": [
-        "Redesigned Source library into a dark editor-like source workspace.",
-        "Kept source folders as a browseable tree while showing buildable binaries and containers with inline version pills and a right-side build icon.",
-        "Moved feature/platform/source update upload and preview controls into Settings -> Updates so update handling lives in one place.",
-        "Kept downloads/prune controls in the source workspace as the compiler output area."
-      ]
-    },
-    {
-      "version": "1.0.77",
-      "title": "PAC v1.0.77",
-      "changes": [
-        "Agent-enabled sessions now route every user turn through the session agent loop.",
-        "Slash commands and command input are passed to the agent as intent instead of bypassing the agent.",
-        "Session metadata records agent_enabled/execution_mode and reply details show routing context.",
-        "Direct model/runner execution remains possible only through explicit direct_model metadata."
-      ]
-    },
-    {
-      "version": "1.0.78",
-      "title": "PAC v1.0.78",
-      "changes": [
-        "Reworked Sources into a real editor-style two-pane workbench.",
-        "Removed redundant source category buttons and main Downloads side panel.",
-        "Added source tabs, dirty indicators, Save/Save all menu, context menu, create/rename/delete source entries.",
-        "Moved downloads into a top-bar modal with artifact delete/prune actions.",
-        "Fixed inline build buttons for buildable binary/container source folders."
-      ]
-    },
-    {
-      "version": "1.0.79",
-      "title": "PAC v1.0.79",
-      "changes": [
-        "Moved global Events into a bell-opened drawer instead of a permanent side pane.",
-        "Changed the top downloads action to a down-arrow download icon.",
-        "Tightened Source Library sizing so only the file tree and editor panes scroll.",
-        "Made the Source Library tree expand folders in place like a normal file manager."
-      ]
-    },
-    {
-      "version": "1.0.80",
-      "title": "PAC v1.0.80",
-      "changes": [
-        "Made Sessions and Source Library use the available viewport height without page-level scrolling.",
-        "Squared the Sessions surfaces and Source Library editor/tree controls for a less rounded editor feel.",
-        "Added a pin button to the Events drawer; clicking outside closes it only when unpinned."
-      ]
-    },
-    {
-      "version": "1.0.81",
-      "title": "PAC v1.0.81",
-      "changes": [
-        "Restored Source Library tree visibility after the full-height square layout changes.",
-        "Bumped browser cache key for app.js so the source tree renderer cannot be left on an older cached script.",
-        "Added a defensive top-level source fallback if the source API returns top_level without items during early initialization."
-      ]
-    },
-    {
-      "version": "1.0.82",
-      "title": "PAC v1.0.82",
-      "changes": [
-        "Update preview now recognizes PAC app full/patch zip packages as controller updates.",
-        "Applying a PAC app package from the Updates panel installs the app update and schedules restart instead of treating it as only source/binary folders.",
-        "Source-folder feature packs still preview/apply as additive source updates."
-      ]
-    },
-    {
-      "version": "1.0.83",
-      "title": "PAC v1.0.83",
-      "changes": [
-        "Restored Source Library tree data by normalizing the root cache key returned as \".\" to the UI root key.",
-        "Restored the bottom version footer while preserving full-height Sessions and Source Library layouts.",
-        "Updated UI cache/version strings to 1.0.83."
-      ]
-    },
-    {
-      "version": "1.0.84",
-      "title": "PAC v1.0.84",
-      "changes": [
-        "Increased Source Library nested tree indentation so expanded folders and files visually step inward like a normal file manager tree.",
-        "Kept the restored tree data, version footer, square/full-height source layout, and existing build/version badges."
-      ]
-    },
-    {
-      "version": "1.0.85",
-      "title": "PAC v1.0.85",
-      "changes": [
-        "Added theme-aware monochrome icon masks for Source Library toolbar and tree entries.",
-        "Kept PAC purple as the main brand accent and preserved the Source Library blue editor palette."
-      ]
-    },
-    {
-      "version": "1.0.86",
-      "title": "PAC v1.0.86",
-      "changes": [
-        "Split Providers, Profiles, and Workspaces into their own top-level tabs.",
-        "Kept Models focused on model configuration and model overview.",
-        "Preserved the existing provider/model/profile/workspace forms and IDs so existing API wiring continues to work."
-      ]
-    },
-    {
-      "version": "1.0.87",
-      "title": "PAC v1.0.87",
-      "changes": [
-        "Added LM Studio runtime controls in the Model view so model entries can save/load context and runtime options directly.",
-        "Added backend model-scoped LM Studio load/unload/inspect endpoints.",
-        "Repaired LM Studio companion script generation syntax."
-      ]
-    },
-    {
-      "version": "1.0.88",
-      "title": "PAC v1.0.88",
-      "changes": [
-        "Added a root PAC_CHANGELOG.json file so PAC update zips expose version-by-version changes before install.",
-        "Update preview now reads the changelog directly from PAC full/patch zips and shows the delta between the installed version and target version.",
-        "Removed the redundant Settings page self-update/package panel now that the unified Updates panel handles PAC app updates."
-      ]
-    },
-    {
-      "version": "1.0.89",
-      "title": "PAC v1.0.89",
-      "changes": [
-        "Changed the top-bar bell and download controls to theme-aware black/white SVG icons.",
-        "Kept purple as the PAC brand accent while avoiding purple tint on utility icons.",
-        "Kept PAC app updates on the restart/reload path and source/tool packs on the no-restart update path."
-      ]
-    },
-    {
-      "version": "1.0.90",
-      "title": "Movable data-backed workspaces",
-      "changes": [
-        "Replaced the top download and events icons with cleaner theme-aware monochrome masks.",
-        "Expanded Workspaces with placement, runtime/container, data zip, ephemeral and TTL fields.",
-        "Workspace save now preserves endpoint/default settings and validates endpoint and TTL input."
-      ]
-    },
-    {
-      "version": "1.0.91",
-      "title": "Controller harness defaults",
-      "changes": [
-        "Added a built-in PAC controller harness runner that represents the controller itself as an always-available local harness.",
-        "Added a managed controller harness session that uses the PAC platform source tree as its workspace when a default model/profile is configured.",
-        "Added Settings controls for harness defaults, converting the JSON-backed settings into editable form fields instead of requiring raw JSON edits."
-      ]
-    },
-    {
-      "version": "1.0.92",
-      "title": "pi.dev controller runtime terminology",
-      "changes": [
-        "Aligned PAC runtime wording so pi, agent and harness all mean pi.dev.",
-        "Reworked controller runtime settings and labels around controller pi.dev.",
-        "Added docs/pi-dev-runtime-terminology.md to keep future builds consistent.",
-        "Kept PAC-side integration wording focused on PAC wrappers/tooling."
-      ]
-    },
-    {
-      "version": "1.0.93",
-      "title": "PAC v1.0.93",
-      "changes": [
-        "Added the default main-pi-dev profile for the controller-local pi.dev runtime.",
-        "Added the agent-control workspace for the PAC controller application/source tree.",
-        "Settings defaults now point the controller pi.dev runtime at main-pi-dev and agent-control.",
-        "Added documentation for the main pi.dev profile and agent control workspace."
-      ]
-    },
-    {
-      "version": "1.0.94",
-      "title": "Local endpoint as required controller pi.dev",
-      "changes": [
-        "Merged the controller pi.dev runtime into the existing local-PAC endpoint instead of creating a second local endpoint.",
-        "Made the main server pi.dev runtime a required readiness condition for the controller session.",
-        "Updated endpoint enablement state to check both the pi.dev image and PAC wrapper prerequisites.",
-        "Updated Settings defaults so the controller pi.dev runner points at local-PAC.",
-        "Protected the required local-PAC endpoint from deletion."
-      ]
-    },
-    {
-      "version": "1.0.95",
-      "title": "PAC v1.0.95",
-      "date": "2026-05-05",
-      "changes": [
-        "Added controller pi.dev bootstrap path for local-PAC.",
-        "Builds and installs the PAC wrapper binary to ~/.pacp/bin when missing.",
-        "Installs/checks the local pi.dev container image when missing.",
-        "Main controller session now requires PAC wrapper plus pi.dev image.",
-        "Added Settings and Endpoint bootstrap actions plus health display.",
-        "Added controller pi.dev bootstrap documentation."
-      ]
-    },
-    {
-      "version": "1.0.96",
-      "title": "PAC v1.0.96",
-      "date": "2026-05-06",
-      "changes": [
-        "Added controller pi.dev runtime lifecycle supervision.",
-        "Starts and monitors the local PAC wrapper process for local-PAC.",
-        "Starts and checks a persistent pi.dev controller daemon container.",
-        "Binds local wrapper registration into local-PAC instead of creating a duplicate endpoint.",
-        "Controller session now requires wrapper process + pi.dev daemon to be running.",
-        "pi.dev container entrypoint supports daemon mode with heartbeat/status artifacts."
-      ]
-    },
-    {
-      "version": "1.0.97",
-      "title": "PAC v1.0.97 - GitHub controller/packages release seeding",
-      "changes": [
-        "Configured pac-labs/controller as the main controller repository release source.",
-        "Added pac-labs/packages seed workflow and generator for source-package repository mirroring.",
-        "Added pac-component.json metadata files for source components so titles, descriptions, maintainers and package data can be indexed.",
-        "Source Library API/UI now exposes component metadata in the tree view.",
-        "Release workflow now publishes full, patch, changelog, release manifest and package seed artifacts."
-      ]
-    },
-    {
-      "version": "1.0.98",
-      "title": "PAC v1.0.98 - diff pull-request rollout workflow",
-      "changes": [
-        "Added Apply PAC diff PR workflow for label-gated pull requests containing .pac/diffs/*.diff.",
-        "Added PAC diff validation script to reject binary patches, path traversal, env/secret files, and self-modification of the privileged apply workflow.",
-        "Release generation now emits PAC_UPDATE_DIFF-<version>.diff when Git history is available.",
-        "Added documentation for the diff PR handoff flow.",
-        "GitHub workflows now use the repository secret push_token for tag pushes, diff rollouts, and package repository synchronization.",
-        "Controller releases now also sync source/package folders into pac-labs/packages.",
-        "Package seed workflow now uses stable artifacts and push_token-based cross-repository checkout.",
-        "Diff rollout validation now checks stable release artifact names."
-      ]
-    },
-    {
-      "version": "github-managed",
-      "title": "Runtime/update consistency",
-      "changes": [
-        "Treat installed-but-not-running local pi.dev as starting instead of blocked.",
-        "Compare source modules by component hash/explicit component version, not repository release version.",
-        "Prefer GitHub-injected runtime version markers and environment variables for UI version display.",
-        "Fixed Apply PAC diff PR workflow so pull_request_target events resolve the PR number from the event payload instead of workflow inputs.",
-        "Manual workflow_dispatch runs now fail with a clear message when pr_number is missing instead of reporting PR 0.",
-        "Added an explicit pull_request_target guard to the rollout job condition so feature workflows and manual runs do not confuse the validation path."
-      ]
-    },
-    {
-      "version": "1.0.99",
-      "title": "PAC v1.0.99",
-      "changes": [
-        "PAC release artifact generated by GitHub Actions."
-      ]
+        "Added api/routes/proxy.py for proxy route management and reverse proxy forwarding endpoints.",
+        "Added api/routes/server_config.py for raw config updates and endpoint controller connection settings.",
+        "Added api/routes/package_upload.py for staged PAC package upload/apply routes.",
+        "Added api/routes/service_runtime.py for restart, service mode, TLS CA/certificate, and Let's Encrypt DNS-01 routes.",
+        "Removed duplicate root/app UI route declarations from api/main.py because static UI registration is already delegated to api/routes/ui.py.",
+        "Reduced pi_agent_platform/api/main.py from 3,923 lines to 3,527 lines."
+      ],
+      "pressure_points": {
+        "pi_agent_platform/api/main.py": {
+          "lines": 3527,
+          "previous_lines": 3923,
+          "baseline_v1.0.266_lines": 7283
+        }
+      }
     }
   ]
 }

@@ -1,5 +1,0 @@
-# web_search
-
-Source home for the `web_search` agent tool.
-
-Use this folder for prompts, helper code, runtime notes, and endpoint-side assets tied to this tool.

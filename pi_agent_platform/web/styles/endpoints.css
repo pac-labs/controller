@@ -1,0 +1,43 @@
+/* PAC v1.0.284 CSS split: Endpoint cards, hardware previews, pi.dev status panels, and update detail panels.
+   Source range from the former monolithic styles.css: lines 160-199. */
+
+/* v1.0.52: compact endpoint inventory and modal-driven creation */
+.compact-stats{margin:.5rem 0 .7rem}.endpoint-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:.85rem;margin-top:.8rem}.endpoint-card{background:linear-gradient(180deg,#100c1a,#090712);border:1px solid var(--border);border-radius:var(--radius);padding:.85rem;display:grid;gap:.65rem;box-shadow:0 8px 20px rgba(0,0,0,.22)}.endpoint-head{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem}.endpoint-head h3{margin:0;font-size:1rem}.small-text{font-size:.75rem}.endpoint-meta{display:flex;flex-wrap:wrap;gap:.35rem;color:var(--muted);font-size:.72rem}.endpoint-meta span{border:1px solid #241a3b;background:#0a0810;padding:.18rem .35rem}.hardware-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.45rem}.hardware-grid div{border:1px solid #241a3b;background:#08070d;padding:.5rem;min-width:0}.hardware-grid b{display:block;color:#ddd6fe;font-size:.68rem;text-transform:uppercase;letter-spacing:.08em}.hardware-grid span{display:block;color:#fff;font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hardware-grid small{display:block;color:var(--muted);font-size:.68rem}.endpoint-card details{border:1px solid #241a3b;background:#07060d;padding:.5rem}.endpoint-card summary{cursor:pointer;color:#4ade80}.endpoint-card pre{max-height:120px;margin:.4rem 0 0}.endpoint-state{display:flex;flex-wrap:wrap;gap:.35rem;min-height:1rem}.endpoint-actions{justify-content:flex-start;flex-wrap:wrap}.ok-pill{border-color:#166534;color:#bbf7d0;background:#07150d}.compact-output{max-height:180px}.modal-card .muted[id$="Status"]{align-self:center}
+@media(max-width:720px){.endpoint-grid{grid-template-columns:1fr}.hardware-grid{grid-template-columns:1fr}.section-heading{align-items:flex-start;flex-direction:column}}
+select[multiple]{min-height:9rem}.mini-button{padding:.2rem .45rem;margin-right:.4rem;font-size:.78rem}.events-fetch-error{position:sticky;top:0;z-index:1}label small.muted{font-weight:500;line-height:1.25}
+
+/* v1.0.52: keep long settings/model/endpoint content inside scrollable panes */
+.card, .setting-cube, .endpoint-card, .event-card, .modal-card { min-width:0; }
+.setting-cube { max-height: min(62vh, 620px); overflow:auto; scrollbar-color:#166534 #090712; }
+.setting-cube.wide { max-height: min(72vh, 760px); }
+#mcpBuildStatus, #zedMcpConfigLocal, #zedMcpConfigRemote, .inline-result, .compact-result { overflow:auto; overflow-wrap:anywhere; word-break:break-word; }
+#mcpBuildStatus pre, .event-details pre, .endpoint-card pre { white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; }
+#models .row, #profiles .row, #endpoints .row { min-width:0; overflow-wrap:anywhere; }
+@media(max-width:1250px){ .setting-cube, .setting-cube.wide { max-height:none; } }
+
+.setting-cube-flat{min-height:0}
+.pi-dev-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;align-items:start}
+.pi-dev-card{min-width:0;background:rgba(9,14,24,.48);border:1px solid rgba(79,110,153,.2);border-radius:12px;padding:1rem}
+.pi-dev-card-wide{grid-column:1 / -1}
+.pi-dev-card-head{display:flex;justify-content:space-between;gap:1rem;margin-bottom:.85rem}
+.pi-dev-card-head h2,.pi-dev-card-head h3{margin:0 0 .2rem}
+.pi-dev-status-banner{border:1px solid rgba(79,110,153,.2);border-radius:12px;padding:.9rem 1rem;background:rgba(15,23,42,.34);margin-bottom:.85rem}
+.pi-dev-status-banner.ok{border-color:rgba(34,197,94,.28);background:rgba(21,128,61,.08)}
+.pi-dev-status-banner.warn{border-color:rgba(245,158,11,.28);background:rgba(180,83,9,.08)}
+.pi-dev-status-kicker{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.pi-dev-status-title{font-size:1.05rem;font-weight:800;text-transform:capitalize;margin:.18rem 0}
+.pi-dev-status-copy{color:var(--muted);line-height:1.45}
+.pi-dev-notice{display:grid;gap:.3rem;border-radius:12px;padding:.8rem .95rem;margin-bottom:.85rem}
+.pi-dev-notice.critical{border:1px solid rgba(239,68,68,.24);background:rgba(127,29,29,.12);color:#fecaca}
+.pi-dev-kv-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem .85rem}
+.pi-dev-kv-grid div{display:grid;grid-template-columns:130px minmax(0,1fr);gap:.5rem;align-items:start}
+.pi-dev-kv-grid span{color:var(--muted);font-size:.8rem}
+.pi-dev-kv-grid code{overflow-wrap:anywhere;word-break:break-word}
+.pi-dev-action-row{margin-top:.9rem}
+.pi-dev-action-row[data-needs-attention="true"] button:first-child{border-color:#16a34a;background:#166534;color:#ecfdf5}
+.pi-dev-log-box{min-height:180px;max-height:260px}
+.updates-detail-copy{display:grid;gap:.45rem;line-height:1.5}
+.updates-detail-divider{height:1px;background:rgba(148,163,184,.18);margin:.75rem 0}
+.updates-detail-links a{word-break:break-all}
+@media(max-width:1100px){.pi-dev-grid,.pi-dev-kv-grid{grid-template-columns:1fr}.pi-dev-card-wide{grid-column:auto}.pi-dev-kv-grid div{grid-template-columns:1fr}}
+
