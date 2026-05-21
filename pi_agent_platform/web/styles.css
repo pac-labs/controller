@@ -1201,6 +1201,11 @@ body:not(.light) .compact-destination-controls select {
   margin:.08rem 0 .2rem .25rem;
 }
 .thought-line:hover { color:#e5e7eb; text-decoration:none; }
+.thought-line-row {
+  display:flex;
+  justify-content:flex-start;
+  align-items:flex-start;
+}
 .thought-tool-count {
   color:#71717a;
   font-size:.78rem;

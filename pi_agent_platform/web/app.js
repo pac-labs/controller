@@ -1112,11 +1112,11 @@ function updateSessionThinkingRow(group) {
   const approvalPending = thinkingGroupNeedsApproval(group);
   const taskId = event?.task_id || group.taskId || '';
   const planSteps = deriveThinkingPlanSteps(group);
-  group.row.className = `thought-card${group.closed ? ' complete' : ' live'}${approvalPending ? ' needs-approval' : ''}`;
+  group.row.className = 'thought-line-row';
   group.row.innerHTML = '';
   const main = document.createElement('button');
   main.type = 'button';
-  main.className = 'thought-card-main';
+  main.className = 'thought-line';
   main.innerHTML = `
     <span class="thought-icon-shell">${group.closed ? '<span class="thought-icon-done" aria-hidden="true">◧</span>' : '<span class="tiny-spinner square" aria-hidden="true"></span>'}</span>
     <span class="thought-copy">
@@ -1125,10 +1125,12 @@ function updateSessionThinkingRow(group) {
       <span class="thought-meta"><span>${escapeHtml(group.closed ? `Thought for ${duration}` : `Thinking for ${duration}`)}</span><span>${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}</span><span>${escapeHtml(approvalPending ? 'Awaiting approval' : group.closed ? 'Completed' : 'Thinking')}</span></span>
     </span>
     <span class="thought-open">Details</span>`;
+  const label = group.closed ? `Thought for ${duration}` : `Thinking for ${duration}`;
+  main.innerHTML = `${escapeHtml(label)} <span class="composer-thinking-chevron">›</span> ${escapeHtml(summary || (group.closed ? 'Done.' : 'Thinking'))}`;
   main.onclick = () => openSessionThinkingModal(group);
   main.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') openSessionThinkingModal(group); };
   group.row.appendChild(main);
-  if (planSteps.length) {
+  if (false && planSteps.length) {
     const plan = document.createElement('details');
     plan.className = 'thought-plan';
     if (!group.closed || approvalPending) plan.open = true;
@@ -1171,7 +1173,7 @@ function ensureSessionThinkingGroup(event) {
   if (!group || group.closed || (taskId && group.taskId !== taskId)) {
     const el = document.getElementById('events');
     const row = document.createElement('article');
-    row.className = 'thought-card live';
+    row.className = 'thought-line-row';
     if (el) el.appendChild(row);
     group = {events: [], startedAt: sessionEventDate(event), endedAt: null, row, closed: false, taskId};
   }
@@ -1760,7 +1762,7 @@ function addPendingRow(taskId) {
   let group = sessionThinkingGroups.get(taskId);
   if (!group) {
     const row = document.createElement('article');
-    row.className = 'thought-card live pending-only';
+    row.className = 'thought-line-row pending-only';
     group = {events: [], startedAt: new Date(), endedAt: null, row, closed: false, taskId, summary: 'Thinking...' };
     sessionThinkingGroups.set(taskId, group);
     row.onclick = () => openSessionThinkingModal(group);
@@ -8980,12 +8982,12 @@ function deriveComposerThinkingState(events) {
 function renderComposerThinkingStatus(state) {
     const el = document.getElementById('composerThinkingStatus');
     if (!el) return;
-    if (!state || (!state.active && !state.closed)) {
-        el.hidden = true;
-        el.innerHTML = '';
-        el.classList.remove('closed', 'active');
-        return;
-    }
+    el.hidden = true;
+    el.innerHTML = '';
+    el.classList.remove('closed', 'active');
+    el.onclick = null;
+    el.onkeydown = null;
+    return;
     const endAt = state.closed ? (state.endedAt || new Date().toISOString()) : new Date().toISOString();
     const duration = formatDurationMs(Math.max(0, (new Date(endAt).getTime() - new Date(state.startedAt || new Date().toISOString()).getTime())));
     const summary = state.summary || (state.closed ? 'Done.' : 'Thinking');
