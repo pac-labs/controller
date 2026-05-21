@@ -119,23 +119,56 @@
     <div id="sessionModal" class="modal-backdrop" hidden>
       <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="sessionModalTitle">
         <div class="section-heading"><div><h2 id="sessionModalTitle">Create session</h2><p class="muted">Pick a profile, workspace and optional overrides.</p></div><button id="closeSessionModal" class="ghost-button">Close</button></div>
-        <div class="form-grid">
-          <label>Name <input id="sessionName" value="web-session" /></label>
-          <label>Bootstrap mode <select id="sessionBootstrapMode"><option value="profile">profile / workspace</option><option value="source-context">source context</option></select></label>
-          <label>Agent context <select id="sessionAgentContext"><option value="">none</option></select><small class="muted">Reusable execution preset for workspace, runtime, profile, tools, and model routing.</small></label>
-          <label>Source context <select id="sessionSourceContext"><option value="">none</option></select><small class="muted">Use a PAC source context to prefill customer, endpoint, profile, and workspace defaults.</small></label>
-          <label>Profile <select id="agentProfile"></select></label>
-          <label>Workspace <select id="workspaceProfile"></select></label>
-          <label>Workspace mode <select id="sessionWorkspaceType"><option value="profile">saved workspace</option><option value="local">local path</option><option value="git">git repository</option></select></label>
-          <label>Local path <input id="sessionWorkspacePath" placeholder="optional; PAC creates one when empty" /></label>
-          <label>Git URL <input id="sessionWorkspaceUrl" placeholder="https://... or ssh://..." /></label>
-          <label>Git branch <input id="sessionWorkspaceBranch" placeholder="optional" /></label>
-          <label>Endpoint <select id="sessionEndpoint" required><option value="">select endpoint</option></select><small class="muted">A session stays locked to this endpoint.</small></label>
-          <label>Model override <select id="modelOverride"><option value="">profile default</option></select></label>
-          <label>Permission override <select id="permissionOverride"><option value="">profile default</option></select></label>
-          <label>Context <select id="contextMode"><option value="">profile default</option><option>low</option><option>medium</option><option>high</option><option>max</option></select></label>
+        <div class="wizard-stepper" id="sessionWizardStepper">
+          <span class="wizard-step active">Basics</span>
+          <span class="wizard-step">Source</span>
+          <span class="wizard-step">Runtime</span>
+          <span class="wizard-step">Review</span>
         </div>
-        <div class="button-row"><button id="createSession">Create session</button><span id="sessionCreateStatus" class="muted"></span></div>
+        <div class="session-wizard-pane active" data-session-step="0">
+          <div class="form-grid">
+            <label>Name <input id="sessionName" value="web-session" /></label>
+            <label>Bootstrap mode <select id="sessionBootstrapMode"><option value="profile">profile / workspace</option><option value="source-context">source context</option></select></label>
+            <label>Agent context <select id="sessionAgentContext"><option value="">none</option></select><small class="muted">Reusable execution preset for workspace, runtime, profile, tools, and model routing.</small></label>
+            <label>Profile <select id="agentProfile"></select></label>
+          </div>
+        </div>
+        <div class="session-wizard-pane" data-session-step="1" hidden>
+          <div class="form-grid">
+            <label>Source context <select id="sessionSourceContext"><option value="">none</option></select><small class="muted">Use a PAC source context to prefill customer, endpoint, profile, and workspace defaults.</small></label>
+            <label>Workspace <select id="workspaceProfile"></select></label>
+            <label>Workspace mode <select id="sessionWorkspaceType"><option value="profile">saved workspace</option><option value="local">local path</option><option value="git">git repository</option></select></label>
+            <label>Local path <input id="sessionWorkspacePath" placeholder="optional; PAC creates one when empty" /></label>
+            <label>Git URL <input id="sessionWorkspaceUrl" placeholder="https://... or ssh://..." /></label>
+            <label>Git branch <input id="sessionWorkspaceBranch" placeholder="optional" /></label>
+          </div>
+        </div>
+        <div class="session-wizard-pane" data-session-step="2" hidden>
+          <div class="form-grid">
+            <label>Endpoint <select id="sessionEndpoint" required><option value="">select endpoint</option></select><small class="muted">A session stays locked to this endpoint.</small></label>
+            <label>Permission override <select id="permissionOverride"><option value="">profile default</option></select></label>
+            <label>Context <select id="contextMode"><option value="">profile default</option><option>low</option><option>medium</option><option>high</option><option>max</option></select></label>
+            <label>Model override <select id="modelOverride"><option value="">profile default</option></select></label>
+          </div>
+        </div>
+        <div class="session-wizard-pane" data-session-step="3" hidden>
+          <div class="source-secret-audit">
+            <div><b>Name</b> <span id="sessionWizardReviewName">-</span></div>
+            <div><b>Agent context</b> <span id="sessionWizardReviewContext">-</span></div>
+            <div><b>Profile</b> <span id="sessionWizardReviewProfile">-</span></div>
+            <div><b>Workspace</b> <span id="sessionWizardReviewWorkspace">-</span></div>
+            <div><b>Endpoint</b> <span id="sessionWizardReviewEndpoint">-</span></div>
+            <div><b>Permissions</b> <span id="sessionWizardReviewPermission">-</span></div>
+            <div><b>Context mode</b> <span id="sessionWizardReviewMode">-</span></div>
+            <div><b>Model override</b> <span id="sessionWizardReviewModel">-</span></div>
+          </div>
+        </div>
+        <div class="button-row">
+          <button id="sessionWizardBack" class="ghost-button" type="button">Back</button>
+          <button id="sessionWizardNext" class="ghost-button" type="button">Next</button>
+          <button id="createSession">Create session</button>
+          <span id="sessionCreateStatus" class="muted"></span>
+        </div>
       </section>
     </div>
 

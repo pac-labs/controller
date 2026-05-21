@@ -624,6 +624,31 @@ pre#events, pre#diff { min-width: 0; width: 100%; overflow: auto; white-space: p
 .chat-details .timeline-card-body { margin-top:.5rem; }
 .session-composer { border-top:1px solid var(--border); padding:.75rem; background:rgba(0,0,0,.16); }
 .session-composer textarea { width:100%; resize:vertical; min-height:56px; border-radius:14px; }
+.wizard-stepper {
+  display: flex;
+  gap: .45rem;
+  flex-wrap: wrap;
+  margin: 0 0 .9rem;
+}
+.wizard-step {
+  padding: .28rem .62rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148,163,184,.2);
+  color: var(--muted);
+  font-size: .78rem;
+  font-weight: 700;
+}
+.wizard-step.active {
+  color: var(--text);
+  border-color: rgba(36,195,107,.42);
+  background: rgba(36,195,107,.08);
+}
+.session-wizard-pane {
+  display: block;
+}
+.session-wizard-pane[hidden] {
+  display: none;
+}
 .composer-controls { display:grid; grid-template-columns:minmax(135px,160px) minmax(180px,1fr) minmax(145px,180px) minmax(120px,145px) minmax(150px,1fr) auto; gap:.45rem; align-items:center; margin-top:.5rem; min-width:0; }
 .composer-controls input,
 .composer-controls select { min-width:0; }
