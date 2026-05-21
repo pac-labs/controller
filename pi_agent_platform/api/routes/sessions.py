@@ -73,6 +73,21 @@ def create_sessions_router(
     noisy_event_types: set[str],
 ) -> APIRouter:
     router = APIRouter()
+    _model_available = model_available
+    _session_resource_ref = session_resource_ref
+    _user_has_resource_access = user_has_resource_access
+    _require_resource_access = require_resource_access
+    _is_coding_session_metadata = is_coding_session_metadata
+    _preferred_endpoint_for_storage = preferred_endpoint_for_storage
+    _default_coding_endpoint_id = default_coding_endpoint_id
+    _default_coding_container_image = default_coding_container_image
+    _session_agent_enabled = session_agent_enabled
+    _runner_target_from_task = runner_target_from_task
+    _queue_task_on_runner = queue_task_on_runner
+    _agent_prompt_for_task = agent_prompt_for_task
+    _safe_workspace_path = safe_workspace_path
+    _noisy_event_types = noisy_event_types
+
     @router.get('/v1/sessions', response_model=list[Session])
     def list_sessions(_auth: Any = Depends(require_auth)) -> list[Session]:
         if _auth.is_admin or not _auth.user:
@@ -530,7 +545,7 @@ def create_sessions_router(
 
     @router.get('/v1/events/recent')
     def recent_events(limit: int = Query(default=80, ge=1, le=500), include_noisy: bool = False, _auth: None = Depends(require_auth)) -> list[Event]:
-        return store.list_recent_events(limit=limit, exclude_types=None if include_noisy else NOISY_EVENT_TYPES)
+        return store.list_recent_events(limit=limit, exclude_types=None if include_noisy else _noisy_event_types)
 
 
     @router.post('/v1/sessions/{session_id}/events', response_model=Event)
