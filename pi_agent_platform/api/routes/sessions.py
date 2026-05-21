@@ -71,6 +71,7 @@ def create_sessions_router(
     agent_prompt_for_task: Callable[[str, str | None, dict[str, Any]], str],
     safe_workspace_path: Callable[[Session, str], Path],
     noisy_event_types: set[str],
+    effective_context: Callable[[Any, str, str], dict[str, Any]],
 ) -> APIRouter:
     router = APIRouter()
     _model_available = model_available
@@ -87,6 +88,7 @@ def create_sessions_router(
     _agent_prompt_for_task = agent_prompt_for_task
     _safe_workspace_path = safe_workspace_path
     _noisy_event_types = noisy_event_types
+    _effective_context = effective_context
 
     @router.get('/v1/sessions', response_model=list[Session])
     def list_sessions(_auth: Any = Depends(require_auth)) -> list[Session]:
@@ -239,7 +241,7 @@ def create_sessions_router(
                     raise HTTPException(status_code=500, detail=result.stderr)
 
         store.add_session(session)
-        store.add_event(Event(session_id=session.id, type='session_created', message='Session created', data={'workspace_path': session.workspace_path, 'agent_profile': session.agent_profile, 'permission_profile': session.permission_profile, 'context_mode': session.context_mode, 'endpoint': session.metadata.get('preferred_endpoint'), 'endpoint_locked': session.metadata.get('endpoint_locked'), 'agent_enabled': session.metadata.get('agent_enabled', True), 'execution_mode': session.metadata.get('execution_mode', 'pi.dev'), 'effective_context': effective_context(config, session.model, agent_profile.context_profile if agent_profile else session.context_mode)}))
+        store.add_event(Event(session_id=session.id, type='session_created', message='Session created', data={'workspace_path': session.workspace_path, 'agent_profile': session.agent_profile, 'permission_profile': session.permission_profile, 'context_mode': session.context_mode, 'endpoint': session.metadata.get('preferred_endpoint'), 'endpoint_locked': session.metadata.get('endpoint_locked'), 'agent_enabled': session.metadata.get('agent_enabled', True), 'execution_mode': session.metadata.get('execution_mode', 'pi.dev'), 'effective_context': _effective_context(config, session.model, agent_profile.context_profile if agent_profile else session.context_mode)}))
         return session
 
 
@@ -773,7 +775,7 @@ def create_sessions_router(
 
 
     @router.delete('/v1/sessions/{session_id}')
-    def delete_session(session_id: str, remove_workspace: bool = False, _auth: None = Depends(require_auth)) -> dict[str, str]:
+    def delete_session(session_id: str, remove_workspace: bool = False, _auth: None = Depends(require_auth)) -> dict[str, Any]:
         session = store.get_session(session_id)
         if not session:
             raise HTTPException(status_code=404, detail='Session not found')

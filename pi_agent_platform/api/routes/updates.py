@@ -218,18 +218,46 @@ def create_updates_router(
     ) -> dict[str, Any]:
         meta = fetch_latest_release_metadata(pac_version)
         if not meta.get('ok'):
-            raise HTTPException(status_code=503, detail=meta.get('error') or 'The PAC release feed is unavailable')
+            message = meta.get('error') or 'The PAC release feed is unavailable'
+            store.add_event(Event(session_id='system', type='update_apply_blocked', message=f'PAC release apply blocked: {message}', data=meta))
+            return {
+                'ok': False,
+                'status': 'release_feed_unavailable',
+                'current_version': pac_version,
+                'latest_version': meta.get('latest_version'),
+                'message': message,
+            }
         if not meta.get('has_update'):
             return {'ok': False, 'current_version': pac_version, 'latest_version': meta.get('latest_version'), 'message': 'PAC is already up to date'}
         download_url = str(meta.get('download_url') or '').strip()
         if not download_url:
-            raise HTTPException(status_code=404, detail='Latest PAC release does not provide pac-full.zip')
+            message = 'Latest PAC release does not provide pac-full.zip'
+            store.add_event(Event(session_id='system', type='update_apply_blocked', message=message, data=meta))
+            return {
+                'ok': False,
+                'status': 'package_missing',
+                'current_version': pac_version,
+                'latest_version': meta.get('latest_version'),
+                'message': message,
+                'release_url': meta.get('release_url'),
+            }
         downloads_dir = pacp_path('updates', 'downloads')
         downloads_dir.mkdir(parents=True, exist_ok=True)
         target = downloads_dir / f"pac-full-{meta.get('latest_version') or 'latest'}.zip"
         download = download_release_package(download_url, target)
         if not download.get('ok'):
-            raise HTTPException(status_code=502, detail=f"Release download failed: {download.get('error')}")
+            message = f"Release download failed: {download.get('error')}"
+            store.add_event(Event(session_id='system', type='update_apply_blocked', message=message, data={'meta': meta, 'download': download}))
+            return {
+                'ok': False,
+                'status': 'download_failed',
+                'current_version': pac_version,
+                'latest_version': meta.get('latest_version'),
+                'message': message,
+                'release_url': meta.get('release_url'),
+                'download_url': download_url,
+                'download': download,
+            }
         result = apply_version_package_from_path(target, target.name, restart_after_update=restart_after_update)
         result.update({'ok': True, 'current_version': pac_version, 'latest_version': meta.get('latest_version'), 'release_url': meta.get('release_url'), 'download_url': download_url, 'download': download})
         if restart_after_update:

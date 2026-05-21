@@ -3446,7 +3446,7 @@ app.include_router(create_system_router(
 
 app.include_router(create_providers_router(
     require_auth=require_auth,
-    config=config,
+    get_config=lambda: config,
     save_config=save_config,
     store=store,
     model_available=_model_available,
@@ -3466,6 +3466,15 @@ app.include_router(create_providers_router(
     write_artifact=write_artifact,
     task_artifact_dir=task_artifact_dir,
     safe_artifact_path=safe_artifact_path,
+    ensure_controller_harness_session=_ensure_controller_harness_session,
+    pacp_path=pacp_path,
+    wrapper_process_state=_wrapper_process_state,
+    pi_dev_daemon_state=_pi_dev_daemon_state,
+    bootstrap_active=lambda: _BOOTSTRAP_ACTIVE,
+    start_controller_bootstrap=_start_controller_bootstrap,
+    ensure_controller_wrapper=_ensure_controller_wrapper,
+    restart_controller_wrapper=_restart_controller_wrapper,
+    refresh_local_runner_metadata=_refresh_local_runner_metadata,
 ))
 
 
@@ -3531,4 +3540,5 @@ app.include_router(create_sessions_router(
     agent_prompt_for_task=_agent_prompt_for_task,
     safe_workspace_path=safe_workspace_path,
     noisy_event_types=NOISY_EVENT_TYPES,
+    effective_context=effective_context,
 ))

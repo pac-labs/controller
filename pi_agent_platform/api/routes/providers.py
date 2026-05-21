@@ -14,7 +14,7 @@ from pi_agent_platform.core.models import Event
 def create_providers_router(
     *,
     require_auth: Any,
-    config: Any,
+    get_config: Any,
     save_config: Any,
     store: Any,
     model_available: Any,
@@ -34,6 +34,15 @@ def create_providers_router(
     write_artifact: Any,
     task_artifact_dir: Any,
     safe_artifact_path: Any,
+    ensure_controller_harness_session: Any,
+    pacp_path: Any,
+    wrapper_process_state: Any,
+    pi_dev_daemon_state: Any,
+    bootstrap_active: Any,
+    start_controller_bootstrap: Any,
+    ensure_controller_wrapper: Any,
+    restart_controller_wrapper: Any,
+    refresh_local_runner_metadata: Any,
 ) -> APIRouter:
     """Provider, model, profile, tool catalog, and artifact routes.
 
@@ -44,10 +53,21 @@ def create_providers_router(
     """
     router = APIRouter()
 
+    _get_config = get_config
     _model_available = model_available
+    _ensure_controller_harness_session = ensure_controller_harness_session
+    _pacp_path = pacp_path
+    _wrapper_process_state = wrapper_process_state
+    _pi_dev_daemon_state = pi_dev_daemon_state
+    _bootstrap_active = bootstrap_active
+    _start_controller_bootstrap = start_controller_bootstrap
+    _ensure_controller_wrapper = ensure_controller_wrapper
+    _restart_controller_wrapper = restart_controller_wrapper
+    _refresh_local_runner_metadata = refresh_local_runner_metadata
 
     @router.get('/v1/models')
     def list_models(_auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         result = {}
         for name, model in config.models.items():
             data = model.model_dump()
@@ -60,17 +80,19 @@ def create_providers_router(
 
     @router.get('/v1/providers')
     def list_providers(_auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         return provider_public(config)
 
 
     @router.get('/v1/providers/{provider_name}/models')
     def provider_models(provider_name: str, _auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         return list_provider_models(config, provider_name)
 
 
     @router.post('/v1/providers/{provider_name}/toggle')
     def provider_toggle(provider_name: str, payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict:
-        global config
+        config = _get_config()
         if provider_name not in config.providers:
             raise HTTPException(status_code=404, detail='Provider not found')
         enabled = bool(payload.get('enabled'))
@@ -95,7 +117,7 @@ def create_providers_router(
 
     @router.put('/v1/providers/{provider_name}')
     def provider_update(provider_name: str, payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict:
-        global config
+        config = _get_config()
         existing = config.providers.get(provider_name)
         data = dict(payload)
         if existing:
@@ -110,7 +132,7 @@ def create_providers_router(
 
     @router.delete('/v1/providers/{provider_name}')
     def provider_delete(provider_name: str, _auth: None = Depends(require_auth)) -> dict:
-        global config
+        config = _get_config()
         if provider_name not in config.providers:
             raise HTTPException(status_code=404, detail='Provider not found')
         del config.providers[provider_name]
@@ -124,12 +146,14 @@ def create_providers_router(
 
     @router.post('/v1/providers/{provider_name}/test')
     def provider_health(provider_name: str, _auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         return test_provider(config, provider_name)
 
 
 
     @router.get('/v1/providers/{provider_name}/lmstudio/inspect')
     def provider_lmstudio_inspect(provider_name: str, _auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         provider = config.providers.get(provider_name)
         if not provider:
             raise HTTPException(status_code=404, detail='Provider not found')
@@ -140,6 +164,7 @@ def create_providers_router(
 
     @router.get('/v1/providers/{provider_name}/lmstudio/companion-script')
     def provider_lmstudio_companion_script(provider_name: str, _auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         provider = config.providers.get(provider_name)
         if not provider:
             raise HTTPException(status_code=404, detail='Provider not found')
@@ -150,6 +175,7 @@ def create_providers_router(
 
     @router.post('/v1/providers/{provider_name}/lmstudio/companion-report')
     def provider_lmstudio_companion_report(provider_name: str, payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         provider = config.providers.get(provider_name)
         if not provider:
             raise HTTPException(status_code=404, detail='Provider not found')
@@ -164,6 +190,7 @@ def create_providers_router(
 
     @router.post('/v1/providers/{provider_name}/lmstudio/load')
     def provider_lmstudio_load(provider_name: str, payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         provider = config.providers.get(provider_name)
         if not provider:
             raise HTTPException(status_code=404, detail='Provider not found')
@@ -177,6 +204,7 @@ def create_providers_router(
 
     @router.post('/v1/providers/{provider_name}/lmstudio/unload')
     def provider_lmstudio_unload(provider_name: str, payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         provider = config.providers.get(provider_name)
         if not provider:
             raise HTTPException(status_code=404, detail='Provider not found')
@@ -190,6 +218,7 @@ def create_providers_router(
 
     @router.post('/v1/providers/{provider_name}/lmstudio/download')
     def provider_lmstudio_download(provider_name: str, payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         provider = config.providers.get(provider_name)
         if not provider:
             raise HTTPException(status_code=404, detail='Provider not found')
@@ -203,6 +232,7 @@ def create_providers_router(
 
     @router.get('/v1/models/{model_name}/card')
     def get_model_card(model_name: str, context_profile: str | None = None, _auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         if model_name not in config.models:
             raise HTTPException(status_code=404, detail='Model not found')
         card = model_card(config, model_name)
@@ -213,11 +243,13 @@ def create_providers_router(
 
     @router.post('/v1/models/{model_name}/test')
     def model_health(model_name: str, _auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         return test_model(config, model_name)
 
 
     @router.get('/v1/models/provider-status')
     def model_provider_status(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+        config = _get_config()
         from pi_agent_platform.core.providers import sync_model_context
         results = []
         for name in config.models:
@@ -239,7 +271,7 @@ def create_providers_router(
 
     @router.patch('/v1/models/{model_name}')
     def model_update_limits(model_name: str, payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict:
-        global config
+        config = _get_config()
         if model_name not in config.models:
             raise HTTPException(status_code=404, detail='Model not found')
         from pi_agent_platform.core.providers import update_model_limits
@@ -254,6 +286,7 @@ def create_providers_router(
 
     @router.get('/v1/models/{model_name}/lmstudio/inspect')
     def model_lmstudio_inspect(model_name: str, _auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         if model_name not in config.models:
             raise HTTPException(status_code=404, detail='Model not found')
         model = config.models[model_name]
@@ -270,6 +303,7 @@ def create_providers_router(
 
     @router.post('/v1/models/{model_name}/lmstudio/load')
     def model_lmstudio_load(model_name: str, payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         if model_name not in config.models:
             raise HTTPException(status_code=404, detail='Model not found')
         model = config.models[model_name]
@@ -288,6 +322,7 @@ def create_providers_router(
 
     @router.post('/v1/models/{model_name}/lmstudio/unload')
     def model_lmstudio_unload(model_name: str, payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         if model_name not in config.models:
             raise HTTPException(status_code=404, detail='Model not found')
         model = config.models[model_name]
@@ -304,11 +339,13 @@ def create_providers_router(
 
     @router.get('/v1/context-profiles')
     def list_context_profiles(_auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         return {name: cp.model_dump() for name, cp in config.context_profiles.items()}
 
 
     @router.get('/v1/models/{model_name}/effective-context')
     def get_effective_context(model_name: str, context_profile: str = 'medium', _auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         if model_name not in config.models:
             raise HTTPException(status_code=404, detail='Model not found')
         return effective_context(config, model_name, context_profile)
@@ -316,24 +353,29 @@ def create_providers_router(
 
     @router.get('/v1/tool-packages')
     def list_tool_packages(_auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         return {name: package.model_dump() for name, package in config.tool_packages.items()}
 
     @router.get('/v1/plugins')
     def list_plugins(_auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         return {name: plugin.model_dump() for name, plugin in config.plugins.items()}
 
     @router.get('/v1/tools')
     def list_tools(_auth: None = Depends(require_auth)) -> dict:
+        config = _get_config()
         return {name: tool.model_dump() for name, tool in config.tools.items()}
 
 
     @router.get('/v1/artifacts')
     def api_list_artifacts(session_id: str | None = None, task_id: str | None = None, _auth: None = Depends(require_auth)) -> list[dict[str, Any]]:
+        config = _get_config()
         return list_artifacts(config.server.data_dir, session_id, task_id)
 
 
     @router.put('/v1/artifacts/{session_id}/{task_id}/{name:path}')
     async def api_put_artifact(session_id: str, task_id: str, name: str, request: Request, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+        config = _get_config()
         data = await request.body()
         task_id_norm = None if task_id == 'session' else task_id
         meta = write_artifact(config.server.data_dir, session_id, task_id_norm, name, data)
@@ -343,6 +385,7 @@ def create_providers_router(
 
     @router.get('/v1/artifacts/{session_id}/{task_id}/{name:path}')
     def api_get_artifact(session_id: str, task_id: str, name: str, _auth: None = Depends(require_auth)):
+        config = _get_config()
         task_id_norm = None if task_id == 'session' else task_id
         base = task_artifact_dir(config.server.data_dir, session_id, task_id_norm)
         try:
@@ -365,7 +408,7 @@ def create_providers_router(
     @router.get('/v1/controller-harness/diagnostics')
     def controller_harness_diagnostics(_auth: None = Depends(require_auth)) -> dict[str, Any]:
         status = _ensure_controller_harness_session()
-        log_file = pacp_path('logs') / 'controller-pac-wrapper.log'
+        log_file = _pacp_path('logs') / 'controller-pac-wrapper.log'
         log_tail = ''
         if log_file.exists():
             try:
@@ -384,7 +427,7 @@ def create_providers_router(
 
     @router.post('/v1/controller-harness/bootstrap')
     def bootstrap_controller_harness(_auth: None = Depends(require_auth)) -> dict[str, Any]:
-        if _BOOTSTRAP_ACTIVE:
+        if _bootstrap_active():
             return {'status': 'running', 'message': 'Controller pi.dev bootstrap is already running. Progress is shown in Events.'}
         started = _start_controller_bootstrap(force=True)
         return {'status': 'running' if started else 'disabled', 'message': 'Controller pi.dev bootstrap started. Progress is shown in Events.' if started else 'Controller pi.dev is disabled in Settings.'}
@@ -392,6 +435,7 @@ def create_providers_router(
 
     @router.post('/v1/controller-harness/update-wrapper')
     def update_controller_wrapper(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+        config = _get_config()
         wrapper_result = _ensure_controller_wrapper(allow_build=True, force_rebuild=True)
         restart_result = _restart_controller_wrapper() if wrapper_result.get('ok') else {'ok': False, 'status': 'skipped', 'message': 'Wrapper restart skipped because build/install did not succeed.'}
         refreshed = _refresh_local_runner_metadata(emit_event=False)
@@ -412,7 +456,7 @@ def create_providers_router(
 
     @router.post('/v1/controller-harness/settings')
     def save_controller_harness_settings(payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict[str, Any]:
-        global config
+        config = _get_config()
         current = config.controller_harness.model_dump()
         allowed = set(current.keys())
         merged = {**current, **{k: v for k, v in payload.items() if k in allowed}}
@@ -431,7 +475,7 @@ def create_providers_router(
             raise HTTPException(status_code=400, detail=f"Unknown permission profile: {merged['permission_profile']}")
         config.controller_harness = type(config.controller_harness).model_validate(merged)
         save_config(config)
-        config = load_config()
+        config = _get_config()
         result = _ensure_controller_harness_session()
         store.add_event(Event(session_id='system', type='controller_harness_settings_saved', message='Controller pi.dev settings saved', data={'ok': result.get('ok'), 'message': result.get('message')}))
         return result
@@ -439,6 +483,7 @@ def create_providers_router(
 
     @router.get('/v1/profiles')
     def list_profiles(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+        config = _get_config()
         return {
             'agent_profiles': {name: p.model_dump() for name, p in config.agent_profiles.items()},
             'permission_profiles': {name: p.model_dump() for name, p in config.permission_profiles.items()},
@@ -447,6 +492,7 @@ def create_providers_router(
 
     @router.get('/v1/agent-profiles')
     def list_agent_profiles(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+        config = _get_config()
         profiles = {}
         for name, profile in config.agent_profiles.items():
             data = profile.model_dump()
@@ -464,6 +510,7 @@ def create_providers_router(
 
     @router.put('/v1/agent-profiles/{profile_name}')
     def upsert_agent_profile(profile_name: str, payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict[str, Any]:
+        config = _get_config()
         if not payload.get('model') or payload['model'] not in config.models:
             raise HTTPException(status_code=400, detail='Profile requires an existing configured model')
         planner_model = payload.get('planner_model')
@@ -493,7 +540,7 @@ def create_providers_router(
 
     @router.delete('/v1/agent-profiles/{profile_name}')
     def delete_agent_profile(profile_name: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
-        global config
+        config = _get_config()
         if profile_name not in config.agent_profiles:
             raise HTTPException(status_code=404, detail='Agent profile not found')
         if profile_name == MAIN_PI_DEV_PROFILE:
@@ -506,7 +553,7 @@ def create_providers_router(
 
     @router.delete('/v1/models/{model_name}')
     def delete_model(model_name: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
-        global config
+        config = _get_config()
         if model_name not in config.models:
             raise HTTPException(status_code=404, detail='Model not found')
         if getattr(config.models[model_name], 'read_only', False):
