@@ -80,6 +80,8 @@ from pi_agent_platform.core.letsencrypt_cert import (
 from pi_agent_platform.core.dns_providers import test_cloudflare_credentials
 from pi_agent_platform.core.config import LetsEncryptConfig
 
+NOISY_EVENT_TYPES = {'runner_heartbeat', 'endpoint_heartbeat', 'provider_heartbeat'}
+
 
 def _model_available(model_name: str) -> tuple[bool, str | None]:
     model = config.models.get(model_name)
@@ -1204,6 +1206,11 @@ def _require_no_source_builds(action: str) -> None:
         raise HTTPException(status_code=409, detail={'message': f'{action} is pending while a container or binary build is active.', 'blocked_by': blocker})
 
 
+def _set_source_build_active(payload: dict[str, Any] | None) -> None:
+    global _SOURCE_BUILD_ACTIVE
+    _SOURCE_BUILD_ACTIVE = payload
+
+
 def _local_ipv4_addresses(include_loopback: bool = False) -> list[str]:
     addresses: set[str] = {'127.0.0.1'} if include_loopback else set()
     try:
@@ -1397,12 +1404,12 @@ app.include_router(create_version_router(pac_version=PAC_VERSION, ui_build_info=
 app.include_router(create_mcp_router(
     require_auth=require_auth,
     pac_version=PAC_VERSION,
-    status_file=_mcp_status_file,
-    artifacts=_mcp_artifacts,
-    mcp_dir=_mcp_dir,
-    write_status=_mcp_write_status,
-    build_event=_mcp_build_event,
-    run_builder=_run_mcp_builder,
+    status_file=lambda: _mcp_status_file(),
+    artifacts=lambda: _mcp_artifacts(),
+    mcp_dir=lambda: _mcp_dir(),
+    write_status=lambda status, message, artifacts=None, logs=None: _mcp_write_status(status, message, artifacts, logs),
+    build_event=lambda build_id, event_type, message, **data: _mcp_build_event(build_id, event_type, message, **data),
+    run_builder=lambda runtime=None, build_id=None: _run_mcp_builder(runtime, build_id),
 ))
 register_ui_routes(app, render_index=_render_web_index, web_dir=_web_dir())
 
@@ -2486,7 +2493,7 @@ app.include_router(create_workspaces_router(
     can_use_agent_context=_can_use_agent_context,
     can_edit_agent_context=_can_edit_agent_context,
     is_pac_system_context=_is_pac_system_context,
-    app_dir=_app_dir,
+    app_dir=lambda: _app_dir(),
     agent_context_payload_to_item=_agent_context_payload_to_item,
     ensure_agent_context_session=_ensure_agent_context_session,
     storage_catalog=_storage_catalog,
