@@ -896,7 +896,9 @@ function isInternalSessionEvent(event) {
     t.includes('stdout') || t.includes('stderr') || t.includes('approval') ||
     t.includes('thinking') || t.includes('intent') || t.includes('routing') || t.includes('task_queued') || t.includes('task_started') ||
     t.includes('task_completed') || t.includes('task_failed') || t.includes('task_approved') ||
-    t.includes('task_rejected') || t.includes('subagent_started') || t.includes('context_compacted') ||
+    t.includes('task_rejected') || t.includes('task_resumed') || t.includes('subagent_started') ||
+    t.includes('context_compacted') || t.includes('checkpoint') || t.includes('batch_result') ||
+    t.includes('model_response_empty') || t.includes('tool_call_parse_failed') || t.includes('action_narration_rejected') ||
     t.includes('model_response') || t.includes('agent_plan') || t.includes('workspace_indexed') ||
     t.includes('web_search') || t.includes('web_fetch') || t.includes('artifact_saved');
 }
@@ -916,7 +918,9 @@ function sessionLifecycleEventIsNoise(event) {
   const msg = String(event?.message || '').toLowerCase();
   return t === 'agent_loop_started' || t === 'agent_stop' || t === 'agent_thinking' ||
     t === 'model_response' || t === 'task_queued' || t === 'task_started' ||
-    t === 'task_completed' || t === 'context_compacted' || t === 'full_control_enabled' ||
+    t === 'task_completed' || t === 'context_compacted' || t === 'checkpoint_saved' ||
+    t === 'batch_result' || t === 'model_response_empty' || t === 'tool_call_parse_failed' ||
+    t === 'action_narration_rejected' || t === 'full_control_enabled' ||
     msg === 'agent loop started' || msg === 'agent stopped';
 }
 function sessionThinkingLine(event, block) {
@@ -946,6 +950,12 @@ function sessionThinkingSummary(event, block) {
   if (type.includes('task_completed')) return '';
   if (type.includes('agent_thinking')) return '';
   if (type.includes('workspace_indexed')) return '';
+  if (type.includes('checkpoint')) return '';
+  if (type.includes('batch_result')) return '';
+  if (type.includes('context_compacted')) return '';
+  if (type.includes('model_response_empty')) return '';
+  if (type.includes('tool_call_parse_failed')) return '';
+  if (type.includes('action_narration_rejected')) return '';
   if (type.includes('agent_plan')) return String(data.summary || event?.message || 'Plan ready').trim();
   if (type.includes('model_response')) return '';
   if (type.includes('tool_call')) {
