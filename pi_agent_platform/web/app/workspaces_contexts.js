@@ -520,8 +520,20 @@ function renderSessionSidebar(sessions = window.__pacSessions || []) {
       if (!confirm(`Delete session '${s.name || s.id}'?`)) return;
       const r = await api(`/v1/sessions/${s.id}`, {method:'DELETE', body: JSON.stringify({remove_workspace: false})});
       if (r?.ok) {
-        if (selectedSession?.id === s.id) switchSession(null);
-        renderSessionSidebar();
+        if (selectedSession?.id === s.id) {
+          selectedSession = null;
+          activeSessionTaskId = null;
+          resetSessionTimelineState?.();
+          const timeline = document.getElementById('sessionTimeline');
+          if (timeline) timeline.innerHTML = '<div class="muted">Select a session from the sidebar to inspect its timeline.</div>';
+          const title = document.getElementById('sessionTitle');
+          if (title) title.textContent = 'Select a session';
+          const lockEl = document.getElementById('sessionEndpointLock');
+          if (lockEl) lockEl.textContent = '';
+          const summaryEl = document.getElementById('selectedSession');
+          if (summaryEl) summaryEl.innerHTML = '';
+        }
+        await loadSessions().catch(()=>{});
       } else {
         alert(r?.error || 'Delete failed');
       }
@@ -530,177 +542,6 @@ function renderSessionSidebar(sessions = window.__pacSessions || []) {
     item.onclick = () => { switchToTab('sessions-tab'); selectSession(s.id); };
     list.appendChild(item);
   });
-}
-
-function applyAgentContextFieldLocks(item) {
-  const system = isProtectedAgentContext(item);
-  const disableIds = [
-    'agentContextName',
-    'agentContextDescription',
-    'agentContextKind',
-    'agentContextWorkspace',
-    'agentContextTemplate',
-    'agentContextControllerWorkdir',
-    'agentContextSharedStorage',
-    'agentContextStorageSubpath',
-    'agentContextStorageMountPath',
-    'agentContextEndpoint',
-    'agentContextContainerImage',
-    'agentContextRequiresContainer',
-    'agentContextProfile',
-    'agentContextPermission',
-    'agentContextUseGroups',
-    'agentContextEditorGroups',
-  ];
-  disableIds.forEach((id) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    if ('disabled' in el) el.disabled = system;
-    if ('readOnly' in el && id === 'agentContextControllerWorkdir') el.readOnly = system;
-  });
-  const deleteBtn = document.getElementById('deleteAgentContext');
-  if (deleteBtn) deleteBtn.hidden = system || !item?.id;
-}
-
-function renderAgentContexts() {
-  const listEl = document.getElementById('agentContexts');
-  const selectEl = document.getElementById('agentContextSelect');
-  const sessionSelect = document.getElementById('sessionAgentContext');
-  const composerSelect = document.getElementById('composerAgentContext');
-  const ideSelect = document.getElementById('ideContextSelect');
-  const workspaceSelect = document.getElementById('agentContextWorkspace');
-  const templateSelect = document.getElementById('agentContextTemplate');
-  const storageSelect = document.getElementById('agentContextSharedStorage');
-  const endpointSelect = document.getElementById('agentContextEndpoint');
-  const profileSelect = document.getElementById('agentContextProfile');
-  const permissionSelect = document.getElementById('agentContextPermission');
-  const executorSelect = document.getElementById('agentContextExecutorModel');
-  const plannerSelect = document.getElementById('agentContextPlannerModel');
-  const reviewerSelect = document.getElementById('agentContextReviewerModel');
-  const retrievalSelect = document.getElementById('agentContextRetrievalModel');
-  const toolsSelect = document.getElementById('agentContextTools');
-  const groupsSelect = document.getElementById('agentContextUseGroups');
-  const editorsSelect = document.getElementById('agentContextEditorGroups');
-  const contexts = ideContexts().slice().sort((a, b) => {
-    const aRank = isProtectedAgentContext(a) ? 0 : (a?.pinned ? 1 : 2);
-    const bRank = isProtectedAgentContext(b) ? 0 : (b?.pinned ? 1 : 2);
-    if (aRank !== bRank) return aRank - bRank;
-    return String(a?.name || '').localeCompare(String(b?.name || ''));
-  });
-  const contextOptions = contexts.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
-  if (selectEl && selectedIdeContextId && contexts.some((item) => item.id === selectedIdeContextId)) selectEl.value = selectedIdeContextId;
-  if (sessionSelect) sessionSelect.innerHTML = `<option value="">none</option>${contextOptions}`;
-  if (composerSelect) {
-    composerSelect.innerHTML = `<option value="">agent context</option>${contextOptions}`;
-    composerSelect.value = selectedSessionContextId() || (!selectedSession ? (selectedIdeContextId || '') : '');
-  }
-  if (ideSelect) {
-    ideSelect.innerHTML = `<option value="">Select context</option>${contextOptions}`;
-    if (selectedIdeContextId && contexts.some((item) => item.id === selectedIdeContextId)) ideSelect.value = selectedIdeContextId;
-  }
-  if (workspaceSelect) workspaceSelect.innerHTML = `<option value="">none</option>` + ideWorkspaces().map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
-  if (templateSelect) templateSelect.innerHTML = `<option value="">none</option>` + workspaceTemplates.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
-  if (storageSelect) storageSelect.innerHTML = `<option value="">none</option>` + (sharedStorages || []).map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
-  if (endpointSelect) {
-    endpointSelect.innerHTML = `<option value="">auto</option>`;
-    (window.__pacEndpoints || []).forEach((runner) => opt(endpointSelect, runner.id, `${runner.name || runner.id} (${runner.status || 'unknown'})`));
-  }
-  const fillModelSelect = (el, empty='default') => {
-    if (!el) return;
-    el.innerHTML = `<option value="">${escapeHtml(empty)}</option>`;
-    Object.keys(config.models || {}).forEach((name) => opt(el, name));
-  };
-  if (profileSelect) {
-    profileSelect.innerHTML = '<option value="">default</option>';
-    Object.entries(config.agent_profiles || {}).forEach(([name]) => opt(profileSelect, name));
-  }
-  if (permissionSelect) {
-    permissionSelect.innerHTML = '<option value="">default</option>';
-    Object.keys(config.permission_profiles || {}).forEach((name) => opt(permissionSelect, name));
-  }
-  fillModelSelect(executorSelect, 'default');
-  fillModelSelect(plannerSelect, 'none');
-  fillModelSelect(reviewerSelect, 'none');
-  fillModelSelect(retrievalSelect, 'none');
-  if (toolsSelect) {
-    toolsSelect.innerHTML = '';
-    Object.keys(config.tools || {}).forEach((name) => opt(toolsSelect, name));
-  }
-  const groups = window.__pacGroups || [];
-  const fillGroupSelect = (el) => {
-    if (!el) return;
-    el.innerHTML = '';
-    groups.forEach((group) => opt(el, group.id, group.name || group.id));
-  };
-  fillGroupSelect(groupsSelect);
-  fillGroupSelect(editorsSelect);
-  if (listEl) {
-    listEl.innerHTML = contexts.map((item) => {
-      const workspace = contextWorkspaceLabel(item);
-      const runtime = contextRuntimeLabel(item);
-      const models = [
-        item.executor_model ? 'executor' : '',
-        item.planner_model ? 'planner' : '',
-        item.reviewer_model ? 'reviewer' : '',
-        item.retrieval_model ? 'retrieval' : '',
-      ].filter(Boolean);
-      const badges = [
-        isProtectedAgentContext(item) ? '<span class="agent-context-chip system">system</span>' : '',
-        item.pinned ? '<span class="agent-context-chip">pinned</span>' : '',
-        `<span class="agent-context-chip">${escapeHtml(item.kind || 'coding')}</span>`,
-      ].filter(Boolean).join('');
-      return `<article class="agent-context-card clickable-row ${item.id === selectedIdeContextId ? 'selected' : ''}" data-agent-context="${escapeHtml(item.id)}">
-        <div class="agent-context-card-head">
-          <div><h3>${escapeHtml(item.name)}</h3><div class="muted small-text">${escapeHtml(item.description || (isProtectedAgentContext(item) ? 'Built-in PAC product maintenance context.' : 'Reusable execution preset.'))}</div></div>
-          <div class="agent-context-card-badges">${badges}</div>
-        </div>
-        <div class="agent-context-stat-grid">
-          <div><small>workspace</small><b>${escapeHtml(workspace)}</b></div>
-          <div><small>runtime</small><b>${escapeHtml(runtime)}</b></div>
-          <div><small>profile</small><b>${escapeHtml(item.agent_profile || 'default')}</b></div>
-          <div><small>permission</small><b>${escapeHtml(item.permission_profile || 'default')}</b></div>
-          <div><small>executor</small><b>${escapeHtml(item.executor_model || '-')}</b></div>
-          <div><small>support</small><b>${escapeHtml(models.filter((role) => role !== 'executor').join(', ') || '-')}</b></div>
-        </div>
-        <div class="agent-context-card-footer">
-          <span class="muted small-text">tools ${(item.tools || []).length || 0}</span>
-          <span class="muted small-text">${isProtectedAgentContext(item) ? 'admin-only' : `${(item.use_groups || []).length || 0} use group(s)`}</span>
-        </div>
-        <div class="workspace-card-actions">
-          <button type="button" data-context-open="${escapeHtml(item.id)}">Open session</button>
-          <button type="button" class="ghost-button" data-context-edit="${escapeHtml(item.id)}">Edit</button>
-          ${isProtectedAgentContext(item) ? '' : `<button type="button" class="ghost-button" data-context-delete="${escapeHtml(item.id)}">Delete</button>`}
-        </div>
-      </article>`;
-    }).join('') || '<div class="muted">No agent contexts yet. Use + to create one, then select it in Sessions or IDE.</div>';
-    listEl.querySelectorAll('[data-agent-context]').forEach((row) => {
-      row.onclick = (ev) => {
-        if (ev.target.closest('button')) return;
-        fillAgentContextForm(row.getAttribute('data-agent-context') || '');
-      };
-    });
-    listEl.querySelectorAll('[data-context-edit]').forEach((button) => {
-      button.onclick = (ev) => {
-        ev.stopPropagation();
-        openAgentContextWizard(button.getAttribute('data-context-edit') || '');
-      };
-    });
-    listEl.querySelectorAll('[data-context-open]').forEach((button) => {
-      button.onclick = async (ev) => {
-        ev.stopPropagation();
-        fillAgentContextForm(button.getAttribute('data-context-open') || '');
-        await openAgentContextSessionFromForm();
-      };
-    });
-    listEl.querySelectorAll('[data-context-delete]').forEach((button) => {
-      button.onclick = async (ev) => {
-        ev.stopPropagation();
-        fillAgentContextForm(button.getAttribute('data-context-delete') || '');
-        await deleteAgentContextFromForm();
-      };
-    });
-  }
-  renderAgentContextUsageCard(contexts.find((item) => item.id === selectedIdeContextId) || null);
 }
 
 function renderWorkspaces() {
@@ -874,34 +715,6 @@ function workspaceValue(id) { return document.getElementById(id)?.value?.trim() 
 
 function workspaceChecked(id) { return !!document.getElementById(id)?.checked; }
 
-function renderWorkspaces() {
-  const el = document.getElementById('workspaces');
-  if (!el) return;
-  el.innerHTML = '';
-  for (const [name,w] of Object.entries(config.workspaces || {})) {
-    const lifecycle = w.ephemeral ? `ephemeral${w.ttl_hours ? `, ${w.ttl_hours}h TTL` : ''}` : 'persistent';
-    const placement = w.endpoint_id || w.endpoint_selector || 'select at runtime';
-    const data = w.data_bundle_url || w.data_bundle_path || 'none';
-    const row = document.createElement('div'); row.className = 'workspace-card clickable-row';
-    row.innerHTML = `<div class="workspace-card-title"><b>${escapeHtml(name)}</b><span>${escapeHtml(lifecycle)}</span></div>
-      <div class="workspace-card-grid">
-        <div><small>type</small><b>${escapeHtml(w.type || 'local')}</b></div>
-        <div><small>runtime</small><b>${escapeHtml(w.runtime || 'any')}</b></div>
-        <div><small>placement</small><b>${escapeHtml(placement)}</b></div>
-        <div><small>profile</small><b>${escapeHtml(w.default_agent_profile || '-')}</b></div>
-      </div>
-      <code>${escapeHtml(w.description || '')}${w.description ? '\n' : ''}path: ${escapeHtml(w.path || '-')}
-url: ${escapeHtml(w.url || '-')}
-branch: ${escapeHtml(w.branch || '-')}
-container: ${escapeHtml(w.container_image || '-')}
-data zip: ${escapeHtml(data)}
-data path: ${escapeHtml(w.data_mount_path || '-')}
-default: ${w.is_default ? 'yes' : 'no'}</code>`;
-    row.onclick = () => fillWorkspaceForm(name);
-    el.appendChild(row);
-  }
-}
-
 function fillWorkspaceForm(name) {
   const w = config.workspaces?.[name]; if (!w) return;
   workspaceName.value = name;
@@ -963,4 +776,3 @@ async function deleteWorkspaceFromForm() {
   await loadConfig();
   showInline('workspaceFormResult', `Deleted workspace ${name}`);
 }
-
