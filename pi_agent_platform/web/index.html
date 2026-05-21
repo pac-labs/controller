@@ -106,6 +106,7 @@
   <div class="composer-input-shell"><textarea id="taskPrompt" rows="1" placeholder="Message the agent, or start with / to run a command…"></textarea></div>
   <div class="composer-controls integrated editor-like compact-destination-controls">
     <div class="context-menu-wrap"><button id="composerAddContext" class="composer-icon-button square" type="button" title="Add context" aria-label="Add context">+</button><div id="composerContextMenu" class="composer-context-menu" hidden><b>Context</b><button type="button">▱ Files & Directories</button><button type="button">⌘ Symbols</button><button type="button">◌ Threads</button><button type="button">▣ Rules</button><button type="button">▧ Image</button><button type="button">Ⅰ Selection</button><button type="button">⌁ Branch Diff</button><button type="button" onclick="alert(slashCommandHelpText())">/ Slash commands</button></div></div>
+    <select id="composerAgentContext" title="Agent context"><option value="">agent context</option></select>
     <select id="taskModel" title="Model"><option value="">session model</option></select>
     <input id="taskExecution" hidden value="pi_container" />
     <button id="runTask" class="composer-send-button square" title="Send" aria-label="Send" data-mode="send">➤</button>
@@ -298,44 +299,9 @@
     <section id="contexts-tab" class="tab-panel">
       <div class="split-admin-layout">
         <section class="card split-main workspace-manager">
-          <h2>Agent contexts</h2>
-          <p class="muted">Agent contexts are the reusable execution presets users actually select. They bind together workspace target, runtime placement, profile, model roles, tools, and access policy.</p>
-          <section class="source-sidecard">
-            <div class="section-heading compact-heading"><div><h3>Context definition</h3><p class="muted">Use these for coding, controller maintenance, research, or operational workflows.</p></div></div>
-            <div class="form-grid compact-form workspace-form">
-              <label>Context <select id="agentContextSelect"><option value="">New context</option></select></label>
-              <label>Name <input id="agentContextName" placeholder="csharp-coder" /></label>
-              <label>Kind <select id="agentContextKind"><option value="coding">coding</option><option value="controller">controller</option><option value="research">research</option><option value="operations">operations</option></select></label>
-              <label>Workspace <select id="agentContextWorkspace"><option value="">none</option></select></label>
-              <label>Workspace template <select id="agentContextTemplate"><option value="">none</option></select></label>
-              <label>Controller workdir <input id="agentContextControllerWorkdir" placeholder="/home/dorbian/.pacp/app" /></label>
-              <label>Shared storage <select id="agentContextSharedStorage"><option value="">none</option></select></label>
-              <label>Storage subpath <input id="agentContextStorageSubpath" placeholder="repos/customer-a" /></label>
-              <label>Storage mount path <input id="agentContextStorageMountPath" placeholder="/workspace" /></label>
-              <label>Endpoint <select id="agentContextEndpoint"><option value="">auto</option></select></label>
-              <label>Container image <input id="agentContextContainerImage" placeholder="localhost/dotnet-dev:latest" /></label>
-              <label>Agent profile <select id="agentContextProfile"><option value="">default</option></select></label>
-              <label>Permission profile <select id="agentContextPermission"><option value="">default</option></select></label>
-              <label>Executor model <select id="agentContextExecutorModel"><option value="">default</option></select></label>
-              <label>Planner model <select id="agentContextPlannerModel"><option value="">none</option></select></label>
-              <label>Reviewer model <select id="agentContextReviewerModel"><option value="">none</option></select></label>
-              <label>Retrieval model <select id="agentContextRetrievalModel"><option value="">none</option></select></label>
-              <label>Tools <select id="agentContextTools" multiple size="7"></select></label>
-              <label>Use groups <select id="agentContextUseGroups" multiple size="5"></select></label>
-              <label>Edit groups <select id="agentContextEditorGroups" multiple size="5"></select></label>
-              <label>Context mode <select id="agentContextMode"><option value="">default</option><option>low</option><option>medium</option><option>high</option><option>max</option></select></label>
-              <label class="checkbox-line"><input id="agentContextRequiresContainer" type="checkbox" checked /> Require container runtime</label>
-              <label class="checkbox-line"><input id="agentContextPinned" type="checkbox" /> Pin in selectors</label>
-            </div>
-            <label>Description <input id="agentContextDescription" placeholder="Workspace-backed coding agent with planner and container runtime." /></label>
-            <div class="button-row">
-              <button id="saveAgentContext">Save context</button>
-              <button id="deleteAgentContext" class="ghost-button">Delete</button>
-              <button id="openAgentContextSession" class="ghost-button">Open session</button>
-            </div>
-            <div id="agentContextFormResult" class="inline-result"></div>
-            <div id="agentContexts" class="workspace-list"></div>
-          </section>
+          <div class="section-heading"><div><h2>Agent contexts</h2><p class="muted">Reusable execution presets users select in Sessions and IDE. Each context binds workspace target, runtime placement, profile, model roles, tools, and access policy.</p></div><button id="openAgentContextWizard" class="session-plus-button" title="Add context" aria-label="Add context">+</button></div>
+          <div id="agentContextFormResult" class="inline-result"></div>
+          <div id="agentContexts" class="workspace-card-grid-list"></div>
         </section>
         <aside class="split-side">
           <section class="card side-panel">
@@ -345,6 +311,62 @@
         </aside>
       </div>
     </section>
+
+    <div id="agentContextWizardModal" class="modal-backdrop" hidden>
+      <section class="modal-card wide-modal" role="dialog" aria-modal="true" aria-labelledby="agentContextWizardTitle">
+        <div class="section-heading"><div><h2 id="agentContextWizardTitle">Agent context</h2><p class="muted">Create or refine one reusable execution preset at a time.</p></div><button id="closeAgentContextWizard" class="ghost-button">Close</button></div>
+        <input id="agentContextSelect" hidden value="" />
+        <div id="agentContextWizardProgress" class="wizard-progress"></div>
+        <section id="agentContextStepBasics" class="agent-context-step">
+          <div class="form-grid compact-form workspace-form">
+            <label>Name <input id="agentContextName" placeholder="csharp-coder" /></label>
+            <label>Kind <select id="agentContextKind"><option value="coding">coding</option><option value="controller">controller</option><option value="research">research</option><option value="operations">operations</option></select></label>
+            <label>Context mode <select id="agentContextMode"><option value="">default</option><option>low</option><option>medium</option><option>high</option><option>max</option></select></label>
+            <label class="checkbox-line"><input id="agentContextPinned" type="checkbox" /> Pin in selectors</label>
+          </div>
+          <label>Description <input id="agentContextDescription" placeholder="Workspace-backed coding agent with planner and container runtime." /></label>
+        </section>
+        <section id="agentContextStepRuntime" class="agent-context-step" hidden>
+          <div class="form-grid compact-form workspace-form">
+            <label>Workspace <select id="agentContextWorkspace"><option value="">none</option></select></label>
+            <label>Workspace template <select id="agentContextTemplate"><option value="">none</option></select></label>
+            <label>Controller workdir <input id="agentContextControllerWorkdir" placeholder="/home/dorbian/.pacp/app" /></label>
+            <label>Shared storage <select id="agentContextSharedStorage"><option value="">none</option></select></label>
+            <label>Storage subpath <input id="agentContextStorageSubpath" placeholder="repos/customer-a" /></label>
+            <label>Storage mount path <input id="agentContextStorageMountPath" placeholder="/workspace" /></label>
+            <label>Endpoint <select id="agentContextEndpoint"><option value="">auto</option></select></label>
+            <label>Container image <input id="agentContextContainerImage" placeholder="localhost/dotnet-dev:latest" /></label>
+            <label class="checkbox-line"><input id="agentContextRequiresContainer" type="checkbox" checked /> Require container runtime</label>
+          </div>
+        </section>
+        <section id="agentContextStepBehavior" class="agent-context-step" hidden>
+          <div class="form-grid compact-form workspace-form">
+            <label>Agent profile <select id="agentContextProfile"><option value="">default</option></select></label>
+            <label>Permission profile <select id="agentContextPermission"><option value="">default</option></select></label>
+            <label>Executor model <select id="agentContextExecutorModel"><option value="">default</option></select></label>
+            <label>Planner model <select id="agentContextPlannerModel"><option value="">none</option></select></label>
+            <label>Reviewer model <select id="agentContextReviewerModel"><option value="">none</option></select></label>
+            <label>Retrieval model <select id="agentContextRetrievalModel"><option value="">none</option></select></label>
+            <label>Tools <select id="agentContextTools" multiple size="8"></select></label>
+          </div>
+        </section>
+        <section id="agentContextStepAccess" class="agent-context-step" hidden>
+          <div class="form-grid compact-form workspace-form">
+            <label>Use groups <select id="agentContextUseGroups" multiple size="6"></select></label>
+            <label>Edit groups <select id="agentContextEditorGroups" multiple size="6"></select></label>
+          </div>
+          <div class="button-row">
+            <button id="deleteAgentContext" class="ghost-button">Delete</button>
+            <button id="openAgentContextSession" class="ghost-button">Open session</button>
+          </div>
+        </section>
+        <div class="button-row">
+          <button id="agentContextWizardBack" class="ghost-button">Back</button>
+          <button id="agentContextWizardNext" class="ghost-button">Next</button>
+          <button id="saveAgentContext">Save context</button>
+        </div>
+      </section>
+    </div>
 
     <section id="workspaces-tab" class="tab-panel">
       <div class="split-admin-layout">

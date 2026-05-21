@@ -2043,6 +2043,7 @@ def _public_agent_context(item: AgentContext) -> dict[str, Any]:
     workspace = store.get_user_workspace(item.workspace_id) if item.workspace_id else None
     template = _workspace_template_catalog().get(str(item.workspace_template_id or '').strip()) if item.workspace_template_id else None
     storage = store.get_shared_storage(item.shared_storage_id) if item.shared_storage_id else None
+    metadata = item.metadata or {}
     return {
         'id': item.id,
         'owner_id': item.owner_id,
@@ -2075,7 +2076,12 @@ def _public_agent_context(item: AgentContext) -> dict[str, Any]:
         'editor_groups': list(item.editor_groups or []),
         'last_session_id': item.last_session_id,
         'pinned': bool(item.pinned),
-        'metadata': item.metadata or {},
+        'metadata': metadata,
+        'builtin': bool(metadata.get('builtin_kind')),
+        'builtin_kind': metadata.get('builtin_kind'),
+        'system_context': bool(metadata.get('system_context')),
+        'admin_only': bool(metadata.get('admin_only')),
+        'protected': metadata.get('builtin_kind') == 'pac_admin_base',
         'created_at': item.created_at.isoformat(),
         'updated_at': item.updated_at.isoformat(),
     }
@@ -2103,9 +2109,23 @@ def _can_edit_agent_context(item: AgentContext, auth: CurrentUser) -> bool:
     return bool(set(auth.user.groups or []) & set(item.editor_groups or []))
 
 
+def _is_pac_system_context(item: AgentContext | None) -> bool:
+    return bool(item and (item.metadata or {}).get('builtin_kind') == 'pac_admin_base')
+
+
 def _agent_context_payload_to_item(existing: AgentContext | None, payload: AgentContextPayload, auth: CurrentUser) -> AgentContext:
     owner_id, owner_username = (existing.owner_id, existing.owner_username) if existing else _context_visibility_owner_ids(auth)
     base = existing or AgentContext(owner_id=owner_id, owner_username=owner_username, name=payload.name.strip())
+    if _is_pac_system_context(existing):
+        payload.workspace_id = None
+        payload.workspace_template_id = None
+        payload.shared_storage_id = None
+        payload.storage_subpath = None
+        payload.storage_mount_path = None
+        payload.controller_workdir = str(_app_dir())
+        payload.kind = 'controller'
+        payload.requires_container = False
+        payload.name = DEFAULT_ADMIN_CONTEXT_NAME
     base.owner_id = owner_id
     base.owner_username = owner_username
     base.name = payload.name.strip()
@@ -2426,7 +2446,12 @@ def _ensure_default_admin_context(user: User) -> AgentContext:
         'name': DEFAULT_ADMIN_CONTEXT_NAME,
         'description': 'Built-in PAC system administration context for controller maintenance and direct PAC code/config work.',
         'kind': 'controller',
+        'workspace_id': None,
+        'workspace_template_id': None,
         'controller_workdir': str(_app_dir()),
+        'shared_storage_id': None,
+        'storage_subpath': None,
+        'storage_mount_path': None,
         'endpoint_id': config.controller_harness.runner_id or 'local-PAC',
         'container_image': None,
         'requires_container': False,
@@ -2889,6 +2914,16 @@ def update_agent_context(context_id: str, payload: AgentContextPayload, _auth: C
         raise HTTPException(status_code=404, detail='Agent context not found')
     if not _can_edit_agent_context(item, _auth):
         raise HTTPException(status_code=403, detail='Agent context not editable')
+    if _is_pac_system_context(item):
+        payload.workspace_id = None
+        payload.workspace_template_id = None
+        payload.shared_storage_id = None
+        payload.storage_subpath = None
+        payload.storage_mount_path = None
+        payload.kind = 'controller'
+        payload.controller_workdir = str(_app_dir())
+        payload.requires_container = False
+        payload.name = DEFAULT_ADMIN_CONTEXT_NAME
     conflict = store.find_agent_context_by_name(item.owner_id, payload.name.strip())
     if conflict and conflict.id != item.id:
         raise HTTPException(status_code=409, detail='An agent context with that name already exists')
@@ -2905,6 +2940,8 @@ def delete_agent_context(context_id: str, _auth: CurrentUser = Depends(require_a
         raise HTTPException(status_code=404, detail='Agent context not found')
     if not _can_edit_agent_context(item, _auth):
         raise HTTPException(status_code=403, detail='Agent context not editable')
+    if _is_pac_system_context(item):
+        raise HTTPException(status_code=403, detail='PAC system context cannot be deleted')
     store.delete_agent_context(context_id)
     store.add_event(Event(session_id='system', type='agent_context_deleted', message=f'Agent context deleted: {item.name}', data={'context_id': item.id, 'owner': item.owner_username}))
     return {'ok': True, 'deleted': context_id}

@@ -68,6 +68,7 @@ let sessionPoll = null;
 let activeSessionTaskId = null;
 let setupStatus = null;
 let setupWizardStepIndex = 0;
+let agentContextWizardStepIndex = 0;
 let setupWizardSteps = [];
 let sessionSlashCommands = [];
 let pacThemeMode = 'system';
@@ -3034,32 +3035,85 @@ async function deleteSharedStorageFromForm() {
 function ideContexts() {
   return (agentContexts || []).slice().sort((a, b) => {
     if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+    if (!!a.system_context !== !!b.system_context) return a.system_context ? -1 : 1;
     return String(a.name || '').localeCompare(String(b.name || ''));
   });
+}
+
+const AGENT_CONTEXT_WIZARD_STEPS = [
+  {id: 'agentContextStepBasics', label: 'Basics'},
+  {id: 'agentContextStepRuntime', label: 'Runtime'},
+  {id: 'agentContextStepBehavior', label: 'Behavior'},
+  {id: 'agentContextStepAccess', label: 'Access'},
+];
+
+function isProtectedAgentContext(item) {
+  return !!(item?.protected || item?.system_context || item?.metadata?.system_context || item?.metadata?.builtin_kind === 'pac_admin_base');
+}
+
+function selectedSessionContextId() {
+  return String(selectedSession?.metadata?.agent_context_id || '').trim();
+}
+
+function contextWorkspaceLabel(item) {
+  return item?.workspace?.name || item?.workspace_template?.name || item?.controller_workdir || 'none';
+}
+
+function contextRuntimeLabel(item) {
+  if (!item) return 'auto';
+  if (item.controller_workdir) return item.endpoint_id || 'controller';
+  return item.endpoint_id || item.endpoint_selector || 'auto';
+}
+
+function renderAgentContextUsageCard(item) {
+  const usageEl = document.getElementById('agentContextUsage');
+  if (!usageEl) return;
+  if (!item) {
+    usageEl.innerHTML = '<div class="muted small-text">Pick a context in Sessions or IDE to launch work with the right workspace, profile, tools, and models.</div>';
+    return;
+  }
+  const groups = (item.use_groups || []).length ? item.use_groups.join(', ') : 'all allowed users';
+  usageEl.innerHTML = `<div class="source-sidecard">
+    <div class="section-heading compact-heading"><div><h3>${escapeHtml(item.name)}</h3><p class="muted">${escapeHtml(item.description || 'No description yet.')}</p></div></div>
+    <div class="workspace-card-grid">
+      <div><small>kind</small><b>${escapeHtml(item.kind || 'coding')}</b></div>
+      <div><small>workspace</small><b>${escapeHtml(contextWorkspaceLabel(item))}</b></div>
+      <div><small>runtime</small><b>${escapeHtml(contextRuntimeLabel(item))}</b></div>
+      <div><small>profile</small><b>${escapeHtml(item.agent_profile || 'default')}</b></div>
+      <div><small>executor</small><b>${escapeHtml(item.executor_model || '-')}</b></div>
+      <div><small>groups</small><b>${escapeHtml(groups)}</b></div>
+    </div>
+  </div>`;
 }
 
 function applyIdeContextSelection(contextId = '') {
   const item = ideContexts().find((context) => context.id === contextId);
   selectedIdeContextId = item?.id || '';
   if (item?.workspace_id) selectedIdeWorkspaceId = item.workspace_id;
-  if (!item) return;
+  if (!item) {
+    renderAgentContextUsageCard(null);
+    return;
+  }
   const set = (fieldId, value='') => {
     const el = document.getElementById(fieldId);
     if (el) el.value = value ?? '';
   };
   set('sessionAgentContext', item.id);
+  set('composerAgentContext', item.id);
   set('agentProfile', item.agent_profile || '');
   set('workspaceProfile', item.workspace?.workspace_profile || item.workspace_template?.workspace_profile || '');
   set('sessionEndpoint', item.endpoint_id || '');
   set('modelOverride', item.executor_model || '');
   set('permissionOverride', item.permission_profile || '');
   set('contextMode', item.context_mode || '');
+  renderAgentContextUsageCard(item);
 }
 
 function renderAgentContexts() {
   const listEl = document.getElementById('agentContexts');
   const selectEl = document.getElementById('agentContextSelect');
   const sessionSelect = document.getElementById('sessionAgentContext');
+  const composerSelect = document.getElementById('composerAgentContext');
   const ideSelect = document.getElementById('ideContextSelect');
   const workspaceSelect = document.getElementById('agentContextWorkspace');
   const templateSelect = document.getElementById('agentContextTemplate');
@@ -3077,10 +3131,13 @@ function renderAgentContexts() {
   const contexts = ideContexts();
   const contextOptions = contexts.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');
   if (selectEl) {
-    selectEl.innerHTML = `<option value="">New context</option>${contextOptions}`;
     if (selectedIdeContextId && contexts.some((item) => item.id === selectedIdeContextId)) selectEl.value = selectedIdeContextId;
   }
   if (sessionSelect) sessionSelect.innerHTML = `<option value="">none</option>${contextOptions}`;
+  if (composerSelect) {
+    composerSelect.innerHTML = `<option value="">agent context</option>${contextOptions}`;
+    composerSelect.value = selectedSessionContextId() || (!selectedSession ? (selectedIdeContextId || '') : '');
+  }
   if (ideSelect) {
     ideSelect.innerHTML = `<option value="">Select context</option>${contextOptions}`;
     if (selectedIdeContextId && contexts.some((item) => item.id === selectedIdeContextId)) ideSelect.value = selectedIdeContextId;
@@ -3129,12 +3186,17 @@ function renderAgentContexts() {
   fillGroupSelect(editorsSelect);
   if (listEl) {
     listEl.innerHTML = contexts.map((item) => {
-      const workspace = item.workspace?.name || item.workspace_template?.name || item.controller_workdir || 'none';
-      const runtime = item.endpoint_id || item.endpoint_selector || 'auto';
+      const workspace = contextWorkspaceLabel(item);
+      const runtime = contextRuntimeLabel(item);
       const storage = item.shared_storage?.name || storageNameById(item.shared_storage_id);
       const models = [item.executor_model, item.planner_model, item.reviewer_model, item.retrieval_model].filter(Boolean).length;
+      const badges = [
+        item.system_context ? '<span>system</span>' : '',
+        item.pinned ? '<span>pinned</span>' : '',
+        `<span>${escapeHtml(item.kind || 'coding')}</span>`,
+      ].filter(Boolean).join('');
       return `<div class="workspace-card clickable-row ${item.id === selectedIdeContextId ? 'selected' : ''}" data-agent-context="${escapeHtml(item.id)}">
-        <div class="workspace-card-title"><b>${escapeHtml(item.name)}</b><span>${item.pinned ? 'pinned' : escapeHtml(item.kind || 'coding')}</span></div>
+        <div class="workspace-card-title"><b>${escapeHtml(item.name)}</b><div class="workspace-card-badges">${badges}</div></div>
         <div class="workspace-card-grid">
           <div><small>workspace</small><b>${escapeHtml(workspace)}</b></div>
           <div><small>storage</small><b>${escapeHtml(storage || '-')}</b></div>
@@ -3143,12 +3205,41 @@ function renderAgentContexts() {
           <div><small>models</small><b>${escapeHtml(String(models || 1))}</b></div>
         </div>
         <code>${escapeHtml(item.description || '')}${item.description ? '\n' : ''}executor: ${escapeHtml(item.executor_model || '-')}\nplanner: ${escapeHtml(item.planner_model || '-')}\nstorage path: ${escapeHtml(item.storage_subpath || '-')}\ntools: ${escapeHtml((item.tools || []).join(', ') || '-')}</code>
+        <div class="workspace-card-actions">
+          <button type="button" data-context-open="${escapeHtml(item.id)}">Open session</button>
+          <button type="button" class="ghost-button" data-context-edit="${escapeHtml(item.id)}">Edit</button>
+          ${isProtectedAgentContext(item) ? '' : `<button type="button" class="ghost-button" data-context-delete="${escapeHtml(item.id)}">Delete</button>`}
+        </div>
       </div>`;
-    }).join('') || '<div class="muted">No agent contexts yet. Create one here and select it in Sessions or IDE.</div>';
+    }).join('') || '<div class="muted">No agent contexts yet. Use + to create one, then select it in Sessions or IDE.</div>';
     listEl.querySelectorAll('[data-agent-context]').forEach((row) => {
-      row.onclick = () => fillAgentContextForm(row.getAttribute('data-agent-context') || '');
+      row.onclick = (ev) => {
+        if (ev.target.closest('button')) return;
+        fillAgentContextForm(row.getAttribute('data-agent-context') || '');
+      };
+    });
+    listEl.querySelectorAll('[data-context-edit]').forEach((button) => {
+      button.onclick = (ev) => {
+        ev.stopPropagation();
+        openAgentContextWizard(button.getAttribute('data-context-edit') || '');
+      };
+    });
+    listEl.querySelectorAll('[data-context-open]').forEach((button) => {
+      button.onclick = async (ev) => {
+        ev.stopPropagation();
+        fillAgentContextForm(button.getAttribute('data-context-open') || '');
+        await openAgentContextSessionFromForm();
+      };
+    });
+    listEl.querySelectorAll('[data-context-delete]').forEach((button) => {
+      button.onclick = async (ev) => {
+        ev.stopPropagation();
+        fillAgentContextForm(button.getAttribute('data-context-delete') || '');
+        await deleteAgentContextFromForm();
+      };
     });
   }
+  renderAgentContextUsageCard(contexts.find((item) => item.id === selectedIdeContextId) || null);
 }
 
 function fillAgentContextForm(id='') {
@@ -3183,8 +3274,22 @@ function fillAgentContextForm(id='') {
   setSelectedMultiValues('agentContextUseGroups', item?.use_groups || []);
   setSelectedMultiValues('agentContextEditorGroups', item?.editor_groups || []);
   applyIdeContextSelection(item?.id || '');
+  applyAgentContextFieldLocks(item || null);
   renderIdeWorkspaceSelectors();
   updateSourceCodingPanel();
+}
+
+function applyAgentContextFieldLocks(item) {
+  const system = isProtectedAgentContext(item);
+  ['agentContextName', 'agentContextKind', 'agentContextWorkspace', 'agentContextTemplate', 'agentContextControllerWorkdir', 'agentContextSharedStorage', 'agentContextStorageSubpath', 'agentContextStorageMountPath', 'agentContextRequiresContainer'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.type === 'checkbox') el.disabled = system;
+    else if (id === 'agentContextControllerWorkdir') el.readOnly = system;
+    else el.disabled = system;
+  });
+  const deleteBtn = document.getElementById('deleteAgentContext');
+  if (deleteBtn) deleteBtn.hidden = system || !item?.id;
 }
 
 function agentContextFormPayload() {
@@ -3228,6 +3333,7 @@ async function saveAgentContextFromForm() {
   fillAgentContextForm(selectedIdeContextId || '');
   renderAgentContexts();
   showInline('agentContextFormResult', `Saved context ${payload.name}`);
+  closeAgentContextWizard();
 }
 
 async function deleteAgentContextFromForm() {
@@ -3240,6 +3346,7 @@ async function deleteAgentContextFromForm() {
   fillAgentContextForm('');
   renderAgentContexts();
   showInline('agentContextFormResult', 'Context deleted');
+  closeAgentContextWizard();
 }
 
 async function openAgentContextSessionFromForm() {
@@ -3254,6 +3361,46 @@ async function openAgentContextSessionFromForm() {
   await loadSessions();
   switchToTab('sessions-tab');
   if (ensured.session?.id) await selectSession(ensured.session.id);
+}
+
+function renderAgentContextWizardProgress() {
+  const progressEl = document.getElementById('agentContextWizardProgress');
+  if (!progressEl) return;
+  progressEl.innerHTML = AGENT_CONTEXT_WIZARD_STEPS.map((step, index) => `<button type="button" class="ghost-button ${index === agentContextWizardStepIndex ? 'active' : ''}" data-agent-context-step="${index}">${escapeHtml(step.label)}</button>`).join('');
+  progressEl.querySelectorAll('[data-agent-context-step]').forEach((button) => {
+    button.onclick = () => {
+      agentContextWizardStepIndex = Number(button.getAttribute('data-agent-context-step') || 0);
+      renderAgentContextWizard();
+    };
+  });
+}
+
+function renderAgentContextWizard() {
+  renderAgentContextWizardProgress();
+  AGENT_CONTEXT_WIZARD_STEPS.forEach((step, index) => {
+    const el = document.getElementById(step.id);
+    if (el) el.hidden = index !== agentContextWizardStepIndex;
+  });
+  const existingId = document.getElementById('agentContextSelect')?.value || '';
+  const saveBtn = document.getElementById('saveAgentContext');
+  const nextBtn = document.getElementById('agentContextWizardNext');
+  const backBtn = document.getElementById('agentContextWizardBack');
+  if (saveBtn) saveBtn.textContent = existingId ? 'Save changes' : 'Create context';
+  if (nextBtn) nextBtn.hidden = agentContextWizardStepIndex >= AGENT_CONTEXT_WIZARD_STEPS.length - 1;
+  if (backBtn) backBtn.disabled = agentContextWizardStepIndex <= 0;
+}
+
+function openAgentContextWizard(id = '') {
+  fillAgentContextForm(id);
+  agentContextWizardStepIndex = 0;
+  renderAgentContextWizard();
+  const modal = document.getElementById('agentContextWizardModal');
+  if (modal) modal.hidden = false;
+}
+
+function closeAgentContextWizard() {
+  const modal = document.getElementById('agentContextWizardModal');
+  if (modal) modal.hidden = true;
 }
 
 function renderWorkspaces() {
@@ -6507,7 +6654,8 @@ async function loadWorkspaceCatalogs() {
   }
   if (selectedIdeContextId && !agentContexts.some((item) => item.id === selectedIdeContextId)) selectedIdeContextId = '';
   if (!selectedIdeContextId && agentContexts.length) {
-    selectedIdeContextId = (agentContexts.find((item) => item.pinned) || agentContexts[0]).id;
+    const defaultContexts = agentContexts.filter((item) => !isProtectedAgentContext(item));
+    selectedIdeContextId = ((defaultContexts.find((item) => item.pinned) || defaultContexts[0]) || (agentContexts.find((item) => item.pinned) || agentContexts[0])).id;
   }
 }
 
@@ -6560,6 +6708,8 @@ async function loadSessions() {
     renderProfileUsagePanel();
     renderWorkspaceActivityPanel();
     renderSessionSidebar([]);
+    const composerContext = document.getElementById('composerAgentContext');
+    if (composerContext) composerContext.value = selectedIdeContextId || '';
     renderIdeWorkspaceSelectors();
     updateSourceCodingPanel();
     return;
@@ -6590,9 +6740,11 @@ async function selectSession(id) {
   sessionHydrationToken += 1;
   selectedSession = await api(`/v1/sessions/${id}`);
   const preferredEndpoint = selectedSession.metadata?.preferred_endpoint || '';
+  const currentContextId = selectedSessionContextId();
   const endpointName = (window.__pacEndpoints || []).find(e => e.id === preferredEndpoint)?.name || preferredEndpoint || 'PAC/local';
   document.getElementById('selectedSession').innerHTML = `<span class="session-lock-dot"></span><span>Profile: ${escapeHtml(selectedSession.agent_profile || 'default')}</span><span>Permissions: ${escapeHtml(selectedSession.permission_profile || '-')}</span><span>Endpoint: ${escapeHtml(endpointName)}</span><span>Mode: ${escapeHtml(selectedSession.metadata?.execution_mode || (selectedSession.metadata?.agent_enabled === false ? 'direct model' : 'pi.dev'))}</span><span>Model: ${escapeHtml(selectedSession.model || '')}</span><span>${escapeHtml(selectedSession.workspace_path || '')}</span>`;
   if (document.getElementById('sessionTopSelect')) sessionTopSelect.value = selectedSession.id;
+  if (document.getElementById('composerAgentContext')) composerAgentContext.value = currentContextId || '';
   if (document.getElementById('taskRunner')) taskRunner.value = preferredEndpoint || '';
   if (document.getElementById('sessionEndpointLock')) sessionEndpointLock.textContent = `Profile: ${selectedSession.agent_profile || 'default'} · permissions: ${selectedSession.permission_profile || '-'} · endpoint: ${endpointName} · model: ${selectedSession.model || 'session default'}`;
   syncSessionPermissionQuick();
@@ -7100,13 +7252,19 @@ document.getElementById('createSession').onclick=async()=>{
   }
 };
 async function sendSessionComposer(){
-  if(!selectedSession) return alert('select a session first');
   const rawPrompt = (taskPrompt.value || '').trim();
   if(!rawPrompt) return;
   if (isHelpSlashCommand(rawPrompt)) {
     alert(slashCommandHelpText());
     return;
   }
+  const contextId = (document.getElementById('composerAgentContext')?.value || '').trim();
+  if (contextId && (!selectedSession || selectedSessionContextId() !== contextId)) {
+    const ensured = await api(`/v1/agent-contexts/${encodeURIComponent(contextId)}/session`, {method:'POST'});
+    await loadSessions();
+    if (ensured.session?.id) await selectSession(ensured.session.id);
+  }
+  if(!selectedSession) return alert('Select a session or choose an agent context first.');
   const metadata={};
   const runnerChoice = selectedSession.metadata?.preferred_endpoint || taskRunner.value || '';
   if(runnerChoice){
@@ -7440,6 +7598,14 @@ if (document.getElementById('agentContextSelect')) agentContextSelect.onchange =
 if (document.getElementById('saveAgentContext')) saveAgentContext.onclick = () => saveAgentContextFromForm().catch(e=>paneError('Saving agent context failed', e.message));
 if (document.getElementById('deleteAgentContext')) deleteAgentContext.onclick = () => deleteAgentContextFromForm().catch(e=>paneError('Deleting agent context failed', e.message));
 if (document.getElementById('openAgentContextSession')) openAgentContextSession.onclick = () => openAgentContextSessionFromForm().catch(e=>paneError('Opening agent context session failed', e.message));
+const openAgentContextWizardBtn = document.getElementById('openAgentContextWizard');
+if (openAgentContextWizardBtn) openAgentContextWizardBtn.onclick = () => openAgentContextWizard('');
+const closeAgentContextWizardBtn = document.getElementById('closeAgentContextWizard');
+if (closeAgentContextWizardBtn) closeAgentContextWizardBtn.onclick = () => closeAgentContextWizard();
+const agentContextWizardBackBtn = document.getElementById('agentContextWizardBack');
+if (agentContextWizardBackBtn) agentContextWizardBackBtn.onclick = () => { agentContextWizardStepIndex = Math.max(0, agentContextWizardStepIndex - 1); renderAgentContextWizard(); };
+const agentContextWizardNextBtn = document.getElementById('agentContextWizardNext');
+if (agentContextWizardNextBtn) agentContextWizardNextBtn.onclick = () => { agentContextWizardStepIndex = Math.min(AGENT_CONTEXT_WIZARD_STEPS.length - 1, agentContextWizardStepIndex + 1); renderAgentContextWizard(); };
 if (document.getElementById('sharedStorageSelect')) sharedStorageSelect.onchange = () => fillSharedStorageForm(sharedStorageSelect.value || '');
 if (document.getElementById('saveSharedStorage')) saveSharedStorage.onclick = () => saveSharedStorageFromForm().catch(e=>paneError('Saving shared storage failed', e.message));
 if (document.getElementById('deleteSharedStorage')) deleteSharedStorage.onclick = () => deleteSharedStorageFromForm().catch(e=>paneError('Deleting shared storage failed', e.message));
@@ -7900,6 +8066,11 @@ if (sessionBootstrapModeSelect) sessionBootstrapModeSelect.onchange = () => appl
 const sessionAgentContextSelect = document.getElementById('sessionAgentContext');
 if (sessionAgentContextSelect) sessionAgentContextSelect.onchange = () => {
   const id = sessionAgentContextSelect.value || '';
+  if (id) applyIdeContextSelection(id);
+};
+const composerAgentContextSelect = document.getElementById('composerAgentContext');
+if (composerAgentContextSelect) composerAgentContextSelect.onchange = () => {
+  const id = composerAgentContextSelect.value || '';
   if (id) applyIdeContextSelection(id);
 };
 const sessionSourceContextSelect = document.getElementById('sessionSourceContext');
