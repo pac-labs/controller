@@ -770,6 +770,23 @@ pre#events, pre#diff { min-width: 0; width: 100%; overflow: auto; white-space: p
   color:#8ea1b9;
   font-size:.78rem;
 }
+.composer-thinking-plan{
+  display:flex;
+  flex-direction:column;
+  gap:.22rem;
+  margin-top:.38rem;
+}
+.composer-thinking-plan-step{
+  display:flex;
+  align-items:flex-start;
+  gap:.4rem;
+  color:#dbe5f3;
+  font-size:.82rem;
+}
+.composer-thinking-plan-index{
+  color:#8ea1b9;
+  min-width:1.1rem;
+}
 .composer-reply-actions{
   display:flex;
   align-items:center;

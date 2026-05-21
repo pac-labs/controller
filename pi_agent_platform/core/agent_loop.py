@@ -26,10 +26,12 @@ from .context_manager import (
     message_tokens,
     truncate_middle,
 )
+from .agent_plans import generate_plan
 from .runtime import command_policy, ensure_workspace
 from .store import store
 from .web_tools import fetch_page_text, search_web_text, as_json_text
 from .artifacts import write_artifact, list_artifacts
+from .printing_press import run_printing_press
 from .workspace_index import build_workspace_index
 from .workspace_lessons import save_lesson, load_lessons, search_lessons, get_project_memory
 from .background_jobs import start_job
@@ -60,6 +62,7 @@ Tool call:
 {"type":"tool_call","tool":"remote_memory","input":{"mode":"search","query":"git author email","kind":"user","limit":5}}
 {"type":"tool_call","tool":"save_artifact","input":{"name":"notes/result.txt","content":"..."}}
 {"type":"tool_call","tool":"list_artifacts","input":{}}
+{"type":"tool_call","tool":"printing_press","input":{"path":".","mode":"optimize"}}
 {"type":"tool_call","tool":"slash_command","input":{"command":"/rg TODO src"}}
 
 Rules:
@@ -93,6 +96,8 @@ def _summarize_tool_intent(tool: str, inp: dict[str, Any]) -> str:
         return f"Writing {inp.get('path') or 'file'}"
     if tool == "workspace_manifest":
         return "Scanning workspace structure"
+    if tool == "printing_press":
+        return f"Running Printing Press on {inp.get('path') or 'workspace'}"
     if tool == "batch_analyze_text":
         return f"Analyzing text: {str(inp.get('instruction') or 'batch analysis')[:120]}"
     if tool == "batch_analyze_file":
@@ -1111,6 +1116,11 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
             return "DENIED: shell tool is not enabled for this session", False
         return await _run_shell(session, task, str(inp.get("command") or ""), config)
 
+    if tool == "printing_press":
+        if "printing_press" not in allowed:
+            return "DENIED: printing_press tool is not enabled for this session", False
+        return await run_printing_press(inp, session.workspace_path)
+
     if tool == "slash_command":
         parsed = parse_session_slash_command(str(inp.get("command") or ""))
         if not parsed:
@@ -1721,6 +1731,9 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
 
 async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Task:
     ensure_workspace(session)
+    if session.metadata.get("agent_enabled") and "printing_press" in config.tools and "printing_press" not in (session.tools or []):
+        session.tools = [*(session.tools or []), "printing_press"]
+        store.add_session(session)
     task.metadata["agent_loop"] = True
     task.status = TaskStatus.running
     session.status = SessionStatus.running
@@ -1729,12 +1742,12 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
 
     agent = config.agent_profiles.get(session.agent_profile or "")
     context_name = (agent.context_profile if agent and agent.context_profile else session.context_mode)
-    decision_model = task.metadata.get('model') or (agent.planner_model if agent and agent.planner_model else session.model)
-    decision_context_name = agent.planner_context_profile if agent and agent.planner_context_profile else context_name
-    ctx = effective_context(config, decision_model, decision_context_name)
-    budget = get_context_budget(config, decision_model, decision_context_name)
+    planning_model = task.metadata.get('model') or (agent.planner_model if agent and agent.planner_model else session.model)
+    decision_model = task.metadata.get('model') or session.model
+    ctx = effective_context(config, decision_model, context_name)
+    budget = get_context_budget(config, decision_model, context_name)
     full_control = session.permission_profile == "full-control"
-    store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_loop_started", message="Agent loop started", data={"model": session.model, "decision_model": decision_model, "planner_model": agent.planner_model if agent else None, "permission_profile": session.permission_profile, "full_control": full_control, "effective_context": ctx, "endpoint_id": task.metadata.get("runner_id"), "endpoint_locked": task.metadata.get("endpoint_locked"), "agent_enabled": task.metadata.get("agent_enabled", True), "requested_command": task.metadata.get("requested_command"), "routing": task.metadata.get("routing", "agent")}))
+    store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_loop_started", message="Agent loop started", data={"model": session.model, "decision_model": decision_model, "planning_model": planning_model, "planner_model": agent.planner_model if agent else None, "permission_profile": session.permission_profile, "full_control": full_control, "effective_context": ctx, "endpoint_id": task.metadata.get("runner_id"), "endpoint_locked": task.metadata.get("endpoint_locked"), "agent_enabled": task.metadata.get("agent_enabled", True), "requested_command": task.metadata.get("requested_command"), "routing": task.metadata.get("routing", "agent")}))
     if full_control:
         store.add_event(Event(session_id=session.id, task_id=task.id, type="full_control_enabled", message="FULL CONTROL MODE ENABLED: approvals are bypassed, but every tool action is logged."))
 
@@ -1764,6 +1777,34 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
         messages.append({"role": "system", "content": memory_brief})
     messages.extend(_session_history_messages(session, current_task_id=task.id, max_messages=12))
     messages.append({"role": "user", "content": "Current user request (answer this now; earlier conversation is context only):\n" + task.prompt})
+
+    if task.metadata.get("always_plan", True) and not task.metadata.get("plan_generated"):
+        plan = await generate_plan(
+            config,
+            model=planning_model,
+            prompt=task.prompt,
+            extra_context=[controller_guidance or "", controller_context or "", index_briefing or ""],
+        )
+        task.metadata["plan_generated"] = True
+        task.metadata["current_plan"] = plan
+        store.add_task(task)
+        store.add_event(
+            Event(
+                session_id=session.id,
+                task_id=task.id,
+                type="agent_plan",
+                message=plan.get("summary") or "Plan ready",
+                data={"summary": plan.get("summary"), "steps": plan.get("steps") or [], "model": planning_model},
+            )
+        )
+        if task.metadata.get("plan_only"):
+            task.status = TaskStatus.completed
+            task.output = json.dumps(plan, indent=2)
+            store.add_task(task)
+            store.add_event(Event(session_id=session.id, task_id=task.id, type="result", message=task.output[-4000:], data={"role": "assistant", "model": planning_model, "endpoint_id": task.metadata.get("runner_id"), "agent_profile": session.agent_profile, "permission_profile": session.permission_profile}))
+            session.status = SessionStatus.created
+            store.add_session(session)
+            return task
 
     pending = task.metadata.pop("pending_tool", None)
     if pending:

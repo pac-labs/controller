@@ -897,7 +897,7 @@ function isInternalSessionEvent(event) {
     t.includes('thinking') || t.includes('intent') || t.includes('routing') || t.includes('task_queued') || t.includes('task_started') ||
     t.includes('task_completed') || t.includes('task_failed') || t.includes('task_approved') ||
     t.includes('task_rejected') || t.includes('subagent_started') || t.includes('context_compacted') ||
-    t.includes('model_response') ||
+    t.includes('model_response') || t.includes('agent_plan') || t.includes('workspace_indexed') ||
     t.includes('web_search') || t.includes('web_fetch') || t.includes('artifact_saved');
 }
 function sessionEventDetailsText(event, block) {
@@ -945,6 +945,8 @@ function sessionThinkingSummary(event, block) {
   if (type.includes('task_failed')) return event?.message || 'Task failed';
   if (type.includes('task_completed')) return '';
   if (type.includes('agent_thinking')) return '';
+  if (type.includes('workspace_indexed')) return '';
+  if (type.includes('agent_plan')) return String(data.summary || event?.message || 'Plan ready').trim();
   if (type.includes('model_response')) return '';
   if (type.includes('tool_call')) {
     if (data.command) return `Running ${data.command}`;
@@ -1058,7 +1060,7 @@ function deriveThinkingPlanSteps(group) {
   const rows = Array.isArray(group?.events) ? group.events : [];
   const relevant = rows.filter((item) => {
     const t = String(item?.event?.type || '').toLowerCase();
-    return t.includes('agent_intent') || t.includes('tool_call') || t.includes('approval_required') || t.includes('task_completed') || t.includes('task_failed');
+    return t.includes('agent_plan') || t.includes('agent_intent') || t.includes('tool_call') || t.includes('approval_required') || t.includes('task_completed') || t.includes('task_failed');
   });
   const steps = [];
   for (const item of relevant) {
@@ -1067,7 +1069,13 @@ function deriveThinkingPlanSteps(group) {
     const type = String(event.type || '').toLowerCase();
     let label = '';
     let status = 'done';
-    if (type.includes('approval_required')) {
+    if (type.includes('agent_plan') && Array.isArray(data.steps)) {
+      data.steps.forEach((step, index) => {
+        const text = String(step || '').trim();
+        if (text) steps.push({label: text, status: index === 0 && !group?.closed ? 'running' : 'done', time: event.created_at || ''});
+      });
+      continue;
+    } else if (type.includes('approval_required')) {
       label = sessionThinkingSummary(event, item?.block);
       status = 'attention';
     } else if (type.includes('tool_call')) {
@@ -1537,29 +1545,6 @@ function ensureSessionWorkspaceChrome() {
     dirInput.dataset.bound = '1';
   }
 }
-function renderSessionSidebar(sessions = window.__pacSessions || []) {
-  const list = document.getElementById('sessionSidebarList');
-  if (!list) return;
-  if (!sessions.length) {
-    list.innerHTML = '<div class="muted">No sessions yet.</div>';
-    return;
-  }
-  list.innerHTML = '';
-  sessions.slice().reverse().forEach((s) => {
-    const item = document.createElement('button');
-    item.type = 'button';
-    item.className = `session-sidebar-item${selectedSession?.id === s.id ? ' active' : ''}`;
-    item.innerHTML = `<strong>${escapeHtml(s.name || s.id)}</strong><div class="session-sidebar-meta">${escapeHtml(s.agent_profile || '-')} · ${escapeHtml(s.model || '-')} · ${escapeHtml(s.permission_profile || '-')}</div><div class="session-sidebar-meta">${escapeHtml(s.workspace_path || '')}</div>`;
-    const del = document.createElement('button');
-    del.className = 'session-delete-btn';
-    del.title = 'Delete session';
-    del.textContent = '×';
-    del.onclick = async ev => { ev.stopPropagation(); ev.preventDefault(); if (!confirm('Delete session \'' + (s.name || s.id) + '\'?')) return; const r = await api(`/v1/sessions/${s.id}`, {method:'DELETE', body: JSON.stringify({remove_workspace: false})}); if (r?.ok) { if (selectedSession?.id === s.id) switchSession(null); renderSessionSidebar(); } else alert(r?.error || 'Delete failed'); };
-    item.appendChild(del);
-    item.onclick = () => { switchToTab('sessions-tab'); selectSession(s.id); };
-    list.appendChild(item);
-  });
-}
 function sessionTimelineNearBottom(el, threshold = 88) {
   if (!el) return true;
   return (el.scrollHeight - el.scrollTop - el.clientHeight) <= threshold;
@@ -1581,87 +1566,6 @@ function bindSessionTimelineScroll() {
   el.addEventListener('scroll', () => updateSessionAutoScrollState());
   el.dataset.autoscrollBound = '1';
   updateSessionAutoScrollState();
-}
-function renderComposerThinkingStatus(state) {
-  const el = document.getElementById('composerThinkingStatus');
-  if (!el) return;
-  if (!state || !state.active) {
-    el.hidden = true;
-    el.innerHTML = '';
-    return;
-  }
-  const duration = formatDurationMs(Math.max(0, (Date.now() - new Date(state.startedAt || new Date().toISOString()).getTime())));
-  const toolCount = Number(state.toolCount || 0);
-  el.hidden = false;
-  el.innerHTML = `<span class="tiny-spinner square" aria-hidden="true"></span><span class="composer-thinking-copy"><span class="composer-thinking-text">${escapeHtml(state.summary || 'Thinking')}</span><span class="composer-thinking-meta">Thinking for ${escapeHtml(duration)}${toolCount ? ` · ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}` : ''}${state.approvalPending ? ' · awaiting approval' : ''}</span></span>`;
-}
-function deriveComposerThinkingState(events) {
-  const rows = Array.isArray(events) ? events : [];
-  const byTask = new Map();
-  rows.forEach((event) => {
-    const taskId = String(event?.task_id || '').trim();
-    if (!taskId) return;
-    if (!byTask.has(taskId)) byTask.set(taskId, []);
-    byTask.get(taskId).push(event);
-  });
-  const preferredTaskId = activeSessionTaskId && byTask.has(activeSessionTaskId) ? activeSessionTaskId : Array.from(byTask.keys()).at(-1);
-  if (!preferredTaskId) return null;
-  const taskEvents = byTask.get(preferredTaskId) || [];
-  const closed = taskEvents.some((event) => {
-    const type = String(event?.type || '').toLowerCase();
-    return type.includes('result') || type.includes('task_completed') || type.includes('task_failed');
-  });
-  if (closed) return null;
-  const internal = taskEvents.filter((event) => isInternalSessionEvent(event));
-  if (!internal.length) return {active: true, summary: 'Thinking about your latest request', startedAt: taskEvents[0]?.created_at, toolCount: 0, approvalPending: false};
-  let summary = '';
-  let approvalPending = false;
-  let toolCount = 0;
-  let step = null;
-  let tokensUsed = null;
-  let tokensBudget = null;
-  for (const event of internal) {
-    const type = String(event?.type || '').toLowerCase();
-    if (type.includes('tool_call')) toolCount += 1;
-    if (type.includes('approval_required')) approvalPending = true;
-    if (type.includes('agent_thinking')) {
-      const msg = String(event?.message || '');
-      const stepMatch = msg.match(/Agent step\s+(\d+)/i);
-      const tokensMatch = msg.match(/\(~(\d+)\/(\d+)\s+input tokens/i);
-      if (stepMatch) step = Number(stepMatch[1]);
-      if (tokensMatch) {
-        tokensUsed = Number(tokensMatch[1]);
-        tokensBudget = Number(tokensMatch[2]);
-      }
-    }
-    const next = sessionThinkingSummary(event, normalizeTimelineBlock(event));
-    if (next) summary = next;
-    else if (!summary && type.includes('tool_result')) summary = String(event?.message || '').trim();
-  }
-  return {
-    active: true,
-    summary: summary || 'Thinking about your latest request',
-    startedAt: internal[0]?.created_at || taskEvents[0]?.created_at,
-    toolCount,
-    approvalPending,
-    step,
-    tokensUsed,
-    tokensBudget,
-  };
-}
-function renderComposerThinkingStatus(state) {
-  const el = document.getElementById('composerThinkingStatus');
-  if (!el) return;
-  if (!state || !state.active) {
-    el.hidden = true;
-    el.innerHTML = '';
-    return;
-  }
-  const duration = formatDurationMs(Math.max(0, (Date.now() - new Date(state.startedAt || new Date().toISOString()).getTime())));
-  const toolCount = Number(state.toolCount || 0);
-  const stepText = state.step ? ` · step ${escapeHtml(String(state.step))}` : '';
-  el.hidden = false;
-  el.innerHTML = `<span class="tiny-spinner square" aria-hidden="true"></span><span class="composer-thinking-copy"><span class="composer-thinking-text">${escapeHtml(state.summary || 'Thinking')}</span><span class="composer-thinking-meta">Thinking for ${escapeHtml(duration)}${stepText}${toolCount ? ` · ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}` : ''}${state.approvalPending ? ' · awaiting approval' : ''}</span></span>`;
 }
 function resetSessionTimelineState() {
   sessionThinkingGroups = new Map();
@@ -7073,54 +6977,6 @@ async function selectSession(id) {
   selectedSession = await api(`/v1/sessions/${id}`);
   const preferredEndpoint = selectedSession.metadata?.preferred_endpoint || '';
   const currentContextId = selectedSessionContextId();
-  const endpointName = (window.__pacEndpoints || []).find(e => e.id === preferredEndpoint)?.name || preferredEndpoint || 'PAC/local';
-  document.getElementById('selectedSession').innerHTML = `<span class="session-lock-dot"></span><span>Profile: ${escapeHtml(selectedSession.agent_profile || 'default')}</span><span>Permissions: ${escapeHtml(selectedSession.permission_profile || '-')}</span><span>Endpoint: ${escapeHtml(endpointName)}</span><span>Mode: ${escapeHtml(selectedSession.metadata?.execution_mode || (selectedSession.metadata?.agent_enabled === false ? 'direct model' : 'pi.dev'))}</span><span>Model: ${escapeHtml(selectedSession.model || '')}</span><span>${escapeHtml(selectedSession.workspace_path || '')}</span>`;
-  if (document.getElementById('sessionTopSelect')) sessionTopSelect.value = selectedSession.id;
-  if (document.getElementById('composerAgentContext')) composerAgentContext.value = currentContextId || '';
-  if (document.getElementById('taskRunner')) taskRunner.value = preferredEndpoint || '';
-  if (document.getElementById('sessionEndpointLock')) sessionEndpointLock.textContent = `Profile: ${selectedSession.agent_profile || 'default'} · permissions: ${selectedSession.permission_profile || '-'} · endpoint: ${endpointName} · model: ${selectedSession.model || 'session default'}`;
-  syncSessionPermissionQuick();
-  const timeline = document.getElementById('events');
-  if (timeline) timeline.innerHTML = '<div class="empty-timeline">Waiting for session events.</div>';
-  renderComposerThinkingStatus(null);
-  resetSessionTimelineState();
-  renderSessionSidebar(window.__pacSessions || []);
-  updateSourceCodingPanel();
-  try {
-    const snapshot = await api(`/v1/sessions/${id}/events/snapshot?latest=true&limit=220`);
-    renderSessionSnapshotFast(snapshot, id);
-  } catch (_) {
-    suppressSessionAutoScroll = false;
-  }
-  if (source) {
-    source.close();
-    source = null;
-  }
-  if (authStatus?.enabled) {
-    startSessionPolling(id);
-    pollSessionEvents(id).catch(()=>{});
-  } else {
-    // EventSource cannot set auth headers, so auth-enabled deployments should use polling.
-    source = new EventSource(`/v1/sessions/${id}/events`);
-    source.onerror = () => {
-      if (source) {
-        source.close();
-        source = null;
-      }
-      startSessionPolling(id);
-    };
-    source.onmessage = e => { try { appendEvent('message', JSON.parse(e.data)); } catch { appendEvent('message', e.data); } };
-    ['user_message','agent_routing','agent_intent','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','final','full_control_enabled','subagent_started'].forEach(t => source.addEventListener(t, e => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
-    stopSessionPolling();
-  }
-  await refreshSessionRunButton().catch(()=>{});
-}
-async function selectSession(id) {
-  ensureSessionWorkspaceChrome();
-  sessionHydrationToken += 1;
-  selectedSession = await api(`/v1/sessions/${id}`);
-  const preferredEndpoint = selectedSession.metadata?.preferred_endpoint || '';
-  const currentContextId = selectedSessionContextId();
   renderSelectedSessionSummary(selectedSession);
   if (document.getElementById('sessionTopSelect')) sessionTopSelect.value = selectedSession.id;
   if (document.getElementById('composerAgentContext')) composerAgentContext.value = currentContextId || '';
@@ -7155,7 +7011,7 @@ async function selectSession(id) {
       startSessionPolling(id);
     };
     source.onmessage = (e) => { try { appendEvent('message', JSON.parse(e.data)); } catch { appendEvent('message', e.data); } };
-    ['user_message','agent_routing','agent_intent','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','final','full_control_enabled','subagent_started'].forEach((t) => source.addEventListener(t, (e) => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
+    ['user_message','agent_routing','agent_intent','agent_plan','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','final','full_control_enabled','subagent_started'].forEach((t) => source.addEventListener(t, (e) => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
     stopSessionPolling();
   }
   await refreshSessionRunButton().catch(()=>{});
@@ -7676,16 +7532,7 @@ async function createSessionTask(sessionId, rawPrompt, metadata = {}) {
       data: {role:'user', model: metadata.model || selectedSession?.model, endpoint_id: metadata.runner_id || selectedSession?.metadata?.preferred_endpoint, command:'', execution_mode: metadata.execution_mode, stored:true, pi_dev_enabled:selectedSession?.metadata?.agent_enabled !== false, routing:'pi.dev'}
     };
     renderSessionTimelineEvent(localEvent);
-    renderComposerThinkingStatus({active:true, summary:'Thinking about your latest request', startedAt: localEvent.created_at, toolCount:0, approvalPending:false});
-    renderSessionTimelineEvent({
-      id: `local_thinking_${created.id}`,
-      session_id: sessionId,
-      task_id: created.id,
-      type: 'agent_thinking',
-      message: 'Thinking about your latest request',
-      created_at: created.created_at || new Date().toISOString(),
-      data: {role:'assistant', step: 0, local: true}
-    });
+    renderComposerThinkingStatus({active:true, summary:'Planning the work', startedAt: localEvent.created_at, toolCount:0, approvalPending:false, planSteps: []});
     pollSessionEvents(sessionId).catch(()=>{});
   }
 }
@@ -9324,14 +9171,18 @@ function deriveComposerThinkingState(events) {
     if (!preferredTaskId) return null;
     const taskEvents = byTask.get(preferredTaskId) || [];
     const internal = taskEvents.filter((event) => isInternalSessionEvent(event) || looksLikeInternalResultMessage(event, timelineText(event, normalizeTimelineBlock(event))));
-    if (!internal.length) return {active: true, summary: 'Thinking about your latest request', startedAt: taskEvents[0]?.created_at, toolCount: 0, approvalPending: false};
+    if (!internal.length) return {active: true, summary: 'Thinking about your latest request', startedAt: taskEvents[0]?.created_at, toolCount: 0, approvalPending: false, planSteps: []};
     let summary = '';
     let approvalPending = false;
     let toolCount = 0;
+    let planSteps = [];
     for (const event of internal) {
         const type = String(event?.type || '').toLowerCase();
         if (type.includes('tool_call')) toolCount += 1;
         if (type.includes('approval_required')) approvalPending = true;
+        if (type.includes('agent_plan') && Array.isArray(event?.data?.steps)) {
+            planSteps = event.data.steps.map((step) => String(step || '').trim()).filter(Boolean).slice(0, 6);
+        }
         const next = sessionThinkingSummary(event, normalizeTimelineBlock(event));
         if (next) summary = next;
         else if (!summary && (type.includes('tool_result') || type.includes('result'))) summary = String(event?.message || '').trim();
@@ -9342,27 +9193,32 @@ function deriveComposerThinkingState(events) {
         startedAt: internal[0]?.created_at || taskEvents[0]?.created_at,
         toolCount,
         approvalPending,
+        planSteps,
     };
 }
 
 function renderComposerThinkingStatus(state) {
     const el = document.getElementById('composerThinkingStatus');
     if (!el) return;
-    el.hidden = true;
-    el.innerHTML = '';
-    el.classList.remove('closed', 'active');
-    el.onclick = null;
-    el.onkeydown = null;
-    return;
+    if (!state || (!state.active && !state.closed)) {
+        el.hidden = true;
+        el.innerHTML = '';
+        el.classList.remove('closed', 'active');
+        el.onclick = null;
+        el.onkeydown = null;
+        return;
+    }
     const endAt = state.closed ? (state.endedAt || new Date().toISOString()) : new Date().toISOString();
     const duration = formatDurationMs(Math.max(0, (new Date(endAt).getTime() - new Date(state.startedAt || new Date().toISOString()).getTime())));
     const summary = state.summary || (state.closed ? 'Done.' : 'Thinking');
     const meta = state.approvalPending ? '<span class="composer-thinking-meta">Awaiting approval</span>' : '';
+    const steps = Array.isArray(state.planSteps) ? state.planSteps.filter(Boolean) : [];
+    const plan = steps.length ? `<div class="composer-thinking-plan">${steps.map((step, index) => `<div class="composer-thinking-plan-step"><span class="composer-thinking-plan-index">${index + 1}.</span><span>${escapeHtml(step)}</span></div>`).join('')}</div>` : '';
     el.hidden = false;
     el.classList.toggle('closed', !!state.closed);
     el.classList.toggle('active', !state.closed);
     const opener = state.onOpen ? ' role="button" tabindex="0"' : '';
-    el.innerHTML = `<span class="composer-thinking-entry"${opener}><span class="composer-thinking-heading">${escapeHtml(state.closed ? `Thought for ${duration}` : `Thinking for ${duration}`)} <span class="composer-thinking-chevron">›</span></span><span class="composer-thinking-summary">${escapeHtml(summary)}</span>${meta}</span>`;
+    el.innerHTML = `<span class="composer-thinking-entry"${opener}><span class="composer-thinking-heading">${escapeHtml(state.closed ? `Thought for ${duration}` : `Thinking for ${duration}`)} <span class="composer-thinking-chevron">›</span></span><span class="composer-thinking-summary">${escapeHtml(summary)}</span>${meta}${plan}</span>`;
     if (state.onOpen) {
         const open = () => state.onOpen();
         el.onclick = open;
@@ -9397,6 +9253,7 @@ function refreshComposerThinkingStatusForTask(taskId='') {
         state.summary = group.summary || state.summary || (group.closed ? 'Done.' : 'Thinking');
         state.toolCount = thinkingGroupToolCount(group);
         state.approvalPending = thinkingGroupNeedsApproval(group);
+        state.planSteps = deriveThinkingPlanSteps(group).map((step) => step.label).filter(Boolean).slice(0, 6);
         state.onOpen = () => openSessionThinkingModal(group);
         renderComposerThinkingStatus(state);
         return;

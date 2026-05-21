@@ -58,6 +58,17 @@ SESSION_SLASH_COMMANDS: dict[str, dict[str, str]] = {
         "label": "/just <recipe>",
         "description": "Run a just recipe in the session workspace.",
     },
+    "press": {
+        "kind": "tool",
+        "tool": "printing_press",
+        "label": "/press [args or path]",
+        "description": "Run the Printing Press CLI in the session workspace.",
+    },
+    "plan": {
+        "kind": "session",
+        "label": "/plan <request>",
+        "description": "Generate a PAC execution plan for the current request before acting.",
+    },
     "compact": {
         "kind": "session",
         "label": "/compact",
@@ -109,6 +120,14 @@ def parse_session_slash_command(raw: str) -> dict[str, Any] | None:
             "verb": verb,
             "prompt": "Compact session context",
             "metadata": {"slash_command": "compact", "context_action": "compact"},
+        }
+    if spec["kind"] == "session" and verb == "plan":
+        instruction = " ".join(parts).strip()
+        return {
+            "kind": "plan",
+            "verb": verb,
+            "prompt": instruction or "Plan the current request",
+            "metadata": {"slash_command": "plan", "always_plan": True, "plan_only": True},
         }
     if spec["kind"] == "pi.dev" and verb == "subagent":
         instruction = " ".join(parts).strip()

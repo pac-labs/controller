@@ -4950,6 +4950,8 @@ def create_session(payload: SessionCreate, _auth: CurrentUser = Depends(require_
         payload.metadata['endpoint_locked'] = True
 
     selected_tools = payload.tools or (agent_profile.tools if agent_profile else [])
+    if payload.metadata.get('agent_enabled') and 'printing_press' in config.tools and 'printing_press' not in selected_tools:
+        selected_tools = [*selected_tools, 'printing_press']
     unknown_tools = [t for t in selected_tools if t not in config.tools]
     if unknown_tools:
         raise HTTPException(status_code=400, detail=f'Unknown tools: {unknown_tools}')
@@ -5096,6 +5098,7 @@ async def create_task(session_id: str, payload: TaskCreate, background_tasks: Ba
             metadata['execution_mode'] = 'host'
         elif parsed_slash['kind'] == 'subagent':
             metadata['execution_mode'] = metadata.get('execution_mode') or 'pi_container'
+    metadata.setdefault('always_plan', True)
 
     if _is_coding_session_metadata(session.metadata):
         metadata['coding_session'] = True

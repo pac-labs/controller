@@ -182,6 +182,7 @@ AGENT_CONTROL_WORKSPACE = "agent-control"
 MODEL_NOT_SELECTED = "__pac_model_not_selected__"
 CODING_SESSION_PERMISSION_PROFILE = "coding-session"
 MAIN_PI_DEV_PROFILE_TOOLS = [
+    "printing_press",
     "shell",
     "shell_bg",
     "shell_bg_result",
@@ -566,12 +567,23 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             description="Read PAC RAM profile, user, and workspace memory from the controller during an agent run.",
         )
         changed = True
+    if "printing_press" not in cfg.tools:
+        cfg.tools["printing_press"] = ToolConfig(
+            enabled=True,
+            description="Run the Printing Press CLI for optimization, formatting, or content preparation work inside the workspace.",
+            binaries=["printing-press", "printing_press", "printingpress", "press"],
+            install_hint="Install the Printing Press CLI and make sure one of its binary names is available on PATH.",
+        )
+        changed = True
     main_profile = cfg.agent_profiles.get(MAIN_PI_DEV_PROFILE)
     if main_profile and "consult_model" in cfg.tools and "consult_model" not in (main_profile.tools or []):
         main_profile.tools = [*(main_profile.tools or []), "consult_model"]
         changed = True
     if main_profile and "remote_memory" in cfg.tools and "remote_memory" not in (main_profile.tools or []):
         main_profile.tools = [*(main_profile.tools or []), "remote_memory"]
+        changed = True
+    if main_profile and "printing_press" in cfg.tools and "printing_press" not in (main_profile.tools or []):
+        main_profile.tools = [*(main_profile.tools or []), "printing_press"]
         changed = True
     if changed:
         config_path.write_text(yaml.safe_dump(cfg.model_dump(mode="json", exclude_none=True), sort_keys=False), encoding="utf-8")
