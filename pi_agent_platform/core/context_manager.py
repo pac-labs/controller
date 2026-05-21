@@ -46,6 +46,46 @@ def get_context_budget(config: AppConfig, model_name: str, context_profile: str 
     )
 
 
+def _model_chunking_overrides(config: AppConfig, model_name: str | None) -> tuple[float | None, int | None]:
+    model = (config.models or {}).get(model_name or "")
+    if not model:
+        return None, None
+    chunking = (model.extra or {}).get("chunking") or {}
+    fraction = chunking.get("direct_read_fraction")
+    minimum_chunk_tokens = chunking.get("minimum_chunk_tokens")
+    try:
+        fraction_value = float(fraction) if fraction is not None else None
+    except (TypeError, ValueError):
+        fraction_value = None
+    try:
+        token_value = int(minimum_chunk_tokens) if minimum_chunk_tokens is not None else None
+    except (TypeError, ValueError):
+        token_value = None
+    return fraction_value, token_value
+
+
+def should_chunk_text(
+    config: AppConfig,
+    model_name: str,
+    context_profile: str | None,
+    text: str,
+    *,
+    max_fraction_of_input: float = 0.55,
+) -> tuple[bool, int]:
+    budget = get_context_budget(config, model_name, context_profile)
+    model_fraction, model_minimum_chunk_tokens = _model_chunking_overrides(config, model_name)
+    direct_read_fraction = model_fraction if model_fraction is not None else max_fraction_of_input
+    minimum_chunk_tokens = max(600, model_minimum_chunk_tokens or 1200)
+    usable_tokens = max(
+        minimum_chunk_tokens,
+        min(
+            budget.file_context_tokens,
+            int(budget.input_budget_tokens * max(0.2, min(direct_read_fraction, 0.9))),
+        ),
+    )
+    return estimate_tokens(text) > usable_tokens, usable_tokens
+
+
 def truncate_middle(text: str, max_tokens: int) -> str:
     if estimate_tokens(text) <= max_tokens:
         return text

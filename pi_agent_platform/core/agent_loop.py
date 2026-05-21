@@ -24,6 +24,7 @@ from .context_manager import (
     file_manifest,
     get_context_budget,
     message_tokens,
+    should_chunk_text,
     truncate_middle,
 )
 from .agent_plans import generate_plan
@@ -73,7 +74,7 @@ Rules:
 - Do not narrate future actions like "I will now search" or "I am going to run...". If a tool should run, return a tool_call immediately.
 - Do not print tool-call markup or pseudo-code examples in the final answer. Execute the tool call instead.
 - If approval is needed, ask for that approval directly and briefly instead of saying the action has already started.
-- For small-context models, prefer workspace_manifest, read_file_chunk, web_fetch max_chars, and batch_analyze_file over loading many large files at once.
+- Prefer read_file for normal source files. Use read_file_chunk or batch_analyze_file only when a file is too large for the current effective context budget.
 - Use web_search before web_fetch when you do not know the exact URL.
 - Use consult_model when you want a second opinion from another configured PAC model or want to fan out a planning question to multiple models.
 - Use remote_memory when profile/user/workspace memory may contain relevant prior preferences, customer context, or durable notes.
@@ -858,6 +859,12 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
         if not target.is_file():
             return f"File not found: {path}", False
         text = target.read_text(errors="replace")
+        should_chunk, suggested_tokens = should_chunk_text(config, session.model, session.context_mode, text)
+        if not should_chunk:
+            result = json.dumps({"path": path, "chunk_index": 0, "chunk_count": 1, "start": 0, "end": len(text), "content": text}, indent=2)
+            store.add_event(Event(session_id=session.id, task_id=task.id, type="tool_result", message=f"read {path}", data={"tool": "read_file", "path": path, "chars": len(text), "promoted_from": "read_file_chunk"}))
+            return result[:22000], False
+        chunk_tokens = max(chunk_tokens, suggested_tokens)
         chunks = chunk_text(text, max_tokens=chunk_tokens)
         if chunk_index < 0 or chunk_index >= len(chunks):
             return json.dumps({"path": path, "chunk_count": len(chunks), "error": "chunk_index out of range"}), False
@@ -1070,6 +1077,8 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
         instruction = str(inp.get("instruction") or "Summarize this text")
         text = str(inp.get("text") or "")
         chunk_tokens = int(inp.get("chunk_tokens") or 1200)
+        should_chunk, suggested_tokens = should_chunk_text(config, session.model, session.context_mode, text)
+        chunk_tokens = max(chunk_tokens, suggested_tokens)
         result = batch_reduce_text(config, session.model, instruction, text, chunk_tokens=chunk_tokens)
         store.add_event(Event(session_id=session.id, task_id=task.id, type="batch_result", message=f"Batched analysis completed over {result['chunk_count']} chunks", data={"chunk_count": result["chunk_count"]}))
         return json.dumps({"chunk_count": result["chunk_count"], "summary": result["summary"]}, indent=2), False
@@ -1084,6 +1093,8 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
         if not target.is_file():
             return f"File not found: {path}", False
         text = target.read_text(errors="replace")
+        should_chunk, suggested_tokens = should_chunk_text(config, session.model, session.context_mode, text)
+        chunk_tokens = max(chunk_tokens, suggested_tokens)
         result = batch_reduce_text(config, session.model, instruction, text, chunk_tokens=chunk_tokens)
         store.add_event(Event(session_id=session.id, task_id=task.id, type="batch_result", message=f"Batched file analysis completed for {path} over {result['chunk_count']} chunks", data={"path": path, "chunk_count": result["chunk_count"]}))
         return json.dumps({"path": path, "chunk_count": result["chunk_count"], "summary": result["summary"]}, indent=2), False
@@ -1910,7 +1921,21 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                 store.add_event(Event(session_id=session.id, task_id=task.id, type="context_compacted", message=f"Compacted context from ~{current_tokens} tokens to ~{message_tokens(messages)} tokens", data={"before_tokens": current_tokens, "after_tokens": message_tokens(messages), "budget_tokens": budget.budget_tokens}))
 
         remaining_seconds = max(0, int(deadline - time.monotonic()))
-        store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_thinking", message=f"Agent step {step} (~{message_tokens(messages)}/{budget.input_budget_tokens} input tokens, ~{remaining_seconds}s left)"))
+        if step == 1 or step % 10 == 0:
+            store.add_event(
+                Event(
+                    session_id=session.id,
+                    task_id=task.id,
+                    type="agent_thinking",
+                    message="Thinking",
+                    data={
+                        "step": step,
+                        "input_tokens": message_tokens(messages),
+                        "input_budget_tokens": budget.input_budget_tokens,
+                        "remaining_seconds": remaining_seconds,
+                    },
+                )
+            )
         try:
             raw = await asyncio.to_thread(chat_complete, config, decision_model, messages, max_tokens=min(ctx["reserve_output_tokens"], 4096))
         except Exception as exc:

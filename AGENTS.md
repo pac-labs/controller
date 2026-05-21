@@ -57,3 +57,12 @@ Do not wait for a "big rewrite" before improving structure. Clean up incremental
 ## Planning Reference
 
 Use [docs/codebase-migration-plan.md](docs/codebase-migration-plan.md) as the current migration roadmap for bringing the repository into this structure.
+
+## Remote Development Preference
+
+When PAC is running on a reachable host during development:
+
+1. Prefer end-to-end verification against the real host, not only local syntax checks.
+2. Use `ssh` and PAC HTTP APIs directly for runtime validation.
+3. If `pacctl` is available locally, prefer it for PAC-native smoke tests and operational inspection instead of inventing ad hoc request flows.
+4. When changing session, model, endpoint, provider, or workspace behavior, verify the live host path after the code change whenever feasible.

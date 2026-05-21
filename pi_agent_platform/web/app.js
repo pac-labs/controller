@@ -2521,16 +2521,7 @@ async function renderLiveModels() {
   });
   live.querySelectorAll('button[data-add-live-model]').forEach(btn => {
     btn.onclick = async () => {
-      openModelModal();
-      const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = btn.dataset.provider;
-      const providerSelect = document.getElementById('modelProvider'); if (providerSelect) providerSelect.value = btn.dataset.provider;
-      modelId.value = btn.dataset.model;
-      const modelFunction = document.getElementById('modelFunction');
-      if (modelFunction) modelFunction.value = inferModelFunction(btn.dataset.provider, btn.dataset.model);
-      modelName.value = btn.dataset.key || providerModelKey(btn.dataset.provider, btn.dataset.model, modelFunction?.value || 'general');
-      modelName.dataset.auto = 'true';
-      modelRunsOn.value = '';
-      setModalStatus('modelModalStatus', 'Review and save this model.');
+      openModelDraft(btn.dataset.provider, btn.dataset.model);
     };
   });
 }
@@ -2576,6 +2567,8 @@ function openModelDraft(providerName, modelId) {
   modelName.value = providerModelKey(providerName, modelId, modelFunction?.value || 'general') || sanitizeModelKeySegment(modelId);
   modelName.dataset.auto = 'true';
   modelRunsOn.value = '';
+  fillModelChunkingFields({});
+  refreshModelProviderCandidates(providerName).catch(()=>{});
   setModalStatus('modelModalStatus', 'Review and save this model.');
 }
 function groupedSessionsBy(field) {
@@ -3952,7 +3945,11 @@ function openModelModal(name='') {
     const modelFunction = document.getElementById('modelFunction'); if (modelFunction) modelFunction.value='general';
     modelName.dataset.auto = 'true';
     modelSupportsChat.checked=true; modelSupportsTools.checked=false; modelSupportsVision.checked=false; modelSupportsJson.checked=false; modelSupportsStreaming.checked=true; modelReasoning.value='none'; modelInputPrice.value=''; modelOutputPrice.value=''; fillLmStudioRuntimeFields({});
-    const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = modelProvider.options[0]?.value || '';
+    fillModelChunkingFields({});
+    const defaultProvider = modelProvider?.options?.[0]?.value || '';
+    if (modelProvider) modelProvider.value = defaultProvider;
+    const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = defaultProvider;
+    refreshModelProviderCandidates(defaultProvider).catch(()=>{});
   }
   updateLmStudioModelControls();
   setModalStatus('modelModalStatus');
@@ -4219,11 +4216,33 @@ function fillModelForm(name) {
   modelInputPrice.value=m.input_price_per_million ?? '';
   modelOutputPrice.value=m.output_price_per_million ?? '';
   fillLmStudioRuntimeFields(m.extra?.lmstudio_runtime || {});
+  fillModelChunkingFields(m.extra || {});
+  refreshModelProviderCandidates(m.provider || '').catch(()=>{});
   updateLmStudioModelControls();
 }
 
 function currentModelProvider() {
   return config.providers?.[modelProvider?.value || ''] || null;
+}
+async function refreshModelProviderCandidates(providerName) {
+  const list = document.getElementById('modelProviderModelOptions');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!providerName) return;
+  try {
+    const result = await api(`/v1/providers/${encodeURIComponent(providerName)}/models`);
+    const models = result?.models || [];
+    models.forEach((item) => {
+      const id = item?.id || item?.name || item?.model;
+      if (!id) return;
+      const option = document.createElement('option');
+      option.value = id;
+      option.label = modelSummaryLine(item);
+      list.appendChild(option);
+    });
+  } catch (_) {
+    // Leave the field usable even if live provider model listing fails.
+  }
 }
 function updateLmStudioModelControls() {
   const box = document.getElementById('lmStudioModelControls');
@@ -4248,6 +4267,11 @@ function fillLmStudioRuntimeFields(runtime) {
   if (document.getElementById('lmModelKvGpu')) lmModelKvGpu.checked = r.offload_kv_cache_to_gpu !== false;
   if (document.getElementById('lmModelEchoLoadConfig')) lmModelEchoLoadConfig.checked = r.echo_load_config !== false;
 }
+function fillModelChunkingFields(extra) {
+  const chunking = extra?.chunking || {};
+  if (document.getElementById('modelDirectReadFraction')) modelDirectReadFraction.value = chunking.direct_read_fraction ?? '';
+  if (document.getElementById('modelMinimumChunkTokens')) modelMinimumChunkTokens.value = chunking.minimum_chunk_tokens ?? '';
+}
 function collectLmStudioRuntimeFields() {
   const runtime = {
     context_length: numberOrNull(document.getElementById('lmModelContextLength')?.value),
@@ -4262,6 +4286,14 @@ function collectLmStudioRuntimeFields() {
   };
   Object.keys(runtime).forEach(k => { if (runtime[k] === null) delete runtime[k]; });
   return runtime;
+}
+function collectModelChunkingFields() {
+  const chunking = {};
+  const directReadFraction = numberOrNull(document.getElementById('modelDirectReadFraction')?.value);
+  const minimumChunkTokens = numberOrNull(document.getElementById('modelMinimumChunkTokens')?.value);
+  if (directReadFraction !== null) chunking.direct_read_fraction = directReadFraction;
+  if (minimumChunkTokens !== null) chunking.minimum_chunk_tokens = minimumChunkTokens;
+  return Object.keys(chunking).length ? chunking : null;
 }
 function fillToolForm(name) {
   const t = config.tools?.[name]; if (!t) return;
@@ -7743,7 +7775,7 @@ if (document.getElementById('saveProvider')) saveProvider.onclick=()=>saveProvid
 if (document.getElementById('connectProviderForm')) connectProviderForm.onclick=()=>connectProviderFromForm().catch(e=>paneError('Provider connect failed', e.message));
 if (document.getElementById('saveModel')) saveModel.onclick=()=>saveModelFromForm().catch(e=>paneError('Model save failed', e.message));
 if (document.getElementById('testModelForm')) testModelForm.onclick=()=>testModelFromForm().catch(e=>paneError('Model test failed', e.message));
-if (document.getElementById('modelProvider')) modelProvider.onchange=()=>{ updateLmStudioModelControls(); syncSuggestedModelKey(true); };
+if (document.getElementById('modelProvider')) modelProvider.onchange=()=>{ const providerName = modelProvider.value || ''; const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = providerName; updateLmStudioModelControls(); syncSuggestedModelKey(true); refreshModelProviderCandidates(providerName).catch(()=>{}); };
 if (document.getElementById('modelId')) modelId.oninput = () => syncSuggestedModelKey();
 if (document.getElementById('modelFunction')) document.getElementById('modelFunction').onchange = () => syncSuggestedModelKey(true);
 if (document.getElementById('modelName')) modelName.oninput = () => { modelName.dataset.auto = 'false'; };
@@ -8047,6 +8079,7 @@ async function saveModelFromForm() {
   if (!modelProvider.value) return alert('Provider is required');
   const duplicate = findConfiguredModelByProviderModel(modelProvider.value, modelId.value.trim() || modelName.value.trim(), modelName.value.trim());
   if (duplicate) return alert(`This provider model is already configured as '${duplicate[0]}'. Edit that entry instead of creating a duplicate.`);
+  const chunking = collectModelChunkingFields();
   config.models = config.models || {};
   config.models[modelName.value.trim()] = {
     provider: modelProvider.value,
@@ -8067,6 +8100,7 @@ async function saveModelFromForm() {
     extra: {
       ...(currentModelProvider()?.type === 'lmstudio' ? {lmstudio_runtime: collectLmStudioRuntimeFields()} : {}),
       function: document.getElementById('modelFunction')?.value || 'general',
+      ...(chunking ? {chunking} : {}),
     },
   };
   const savedName = modelName.value.trim();
@@ -8529,10 +8563,7 @@ function renderMarketplaceModalDetail(detail=null) {
   if (configureBtn) configureBtn.onclick = () => {
     const preferred = preferredMarketplaceProvider(detail);
     closeMarketplaceModal();
-    openModelModal();
-    if (preferred && modelProvider) modelProvider.value = preferred;
-    if (modelId) modelId.value = detail.model_id || '';
-    if (modelName) modelName.value = String(detail.model_id || '').replace(/[^a-zA-Z0-9_.-]+/g,'-').toLowerCase();
+    openModelDraft(preferred, detail.model_id || '');
     setModalStatus('modelModalStatus', 'Marketplace model copied into the PAC model form.');
   };
   const downloadBtn = document.getElementById('downloadMarketplaceModel');
