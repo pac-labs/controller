@@ -968,7 +968,7 @@ function updateSourceCodingPanel() {
   refreshSourceCodingActivity().catch(()=>{});
 }
 function sourceCodingLatestAssistantText(snapshot = {}) {
-  const events = Array.isArray(snapshot.items) ? snapshot.items.slice() : [];
+  const events = normalizeSourceCodingSnapshot(snapshot);
   const candidates = events.filter((event) => {
     const t = String(event?.type || '').toLowerCase();
     return t === 'result' || t === 'final' || t.includes('assistant_message');
@@ -980,7 +980,7 @@ function sourceCodingLatestAssistantText(snapshot = {}) {
   return '';
 }
 function sourceCodingLatestTask(snapshot = {}) {
-  const events = Array.isArray(snapshot.items) ? snapshot.items.slice() : [];
+  const events = normalizeSourceCodingSnapshot(snapshot);
   const tasks = new Map();
   for (const event of events) {
     const taskId = String(event?.task_id || '').trim();
@@ -995,6 +995,14 @@ function sourceCodingLatestTask(snapshot = {}) {
     if (ts > item.latestAt) item.latestAt = ts;
   }
   return Array.from(tasks.values()).sort((a, b) => b.latestAt - a.latestAt)[0] || null;
+}
+function normalizeSourceCodingSnapshot(snapshot = {}) {
+  if (Array.isArray(snapshot)) return snapshot.slice();
+  if (Array.isArray(snapshot.items)) return snapshot.items.slice();
+  return [];
+}
+function isSelectedSessionSourceCodingSession() {
+  return !!(sourceCodingSessionId && selectedSession?.id && selectedSession.id === sourceCodingSessionId);
 }
 function renderSourceCodingActivityFromSnapshot(snapshot = {}) {
   const liveEl = document.getElementById('sourceCodingLiveStatus');
@@ -1033,16 +1041,18 @@ function renderSourceCodingActivityFromSnapshot(snapshot = {}) {
 }
 async function refreshSourceCodingActivity() {
   if (!sourceCodingSessionId) {
-    renderSourceCodingActivityFromSnapshot({items: []});
+    renderSourceCodingActivityFromSnapshot([]);
     return;
   }
+  if (isSelectedSessionSourceCodingSession()) return;
   const snapshot = await api(`/v1/sessions/${encodeURIComponent(sourceCodingSessionId)}/events/snapshot?latest=true&limit=80`);
-  renderSourceCodingActivityFromSnapshot(snapshot || {});
+  renderSourceCodingActivityFromSnapshot(snapshot || []);
 }
 function startSourceCodingPoll() {
   stopSourceCodingPoll();
   sourceCodingPoll = setInterval(() => {
     if (!sourceCodingSessionId) return;
+    if (isSelectedSessionSourceCodingSession()) return;
     refreshSourceCodingActivity().catch(()=>{});
   }, 2000);
 }

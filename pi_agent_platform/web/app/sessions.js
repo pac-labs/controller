@@ -947,6 +947,10 @@ function renderSessionApprovalRow(event) {
 function syncSessionPermissionQuick() {
   const select = document.getElementById('sessionPermissionQuick');
   const button = document.getElementById('applySessionPermission');
+  const usageButton = document.getElementById('downloadSessionUsage');
+  const diagButton = document.getElementById('downloadSessionDiagnostics');
+  if (usageButton) usageButton.disabled = !selectedSession?.id;
+  if (diagButton) diagButton.disabled = !selectedSession?.id;
   if (!select || !button) return;
   const profiles = Object.keys(config?.permission_profiles || {});
   select.innerHTML = '';
@@ -1310,6 +1314,10 @@ function renderSessionTimelineEvent(event, options = {}) {
 function syncSessionPermissionQuick() {
   const select = document.getElementById('sessionPermissionQuick');
   const button = document.getElementById('applySessionPermission');
+  const usageButton = document.getElementById('downloadSessionUsage');
+  const diagButton = document.getElementById('downloadSessionDiagnostics');
+  if (usageButton) usageButton.disabled = !selectedSession?.id;
+  if (diagButton) diagButton.disabled = !selectedSession?.id;
   if (!select || !button) return;
   const profiles = Object.keys(config?.permission_profiles || {});
   select.innerHTML = '';
@@ -1945,6 +1953,38 @@ if (taskPromptInput) {
 }
 const taskCommandInput = document.getElementById('taskCommand');
 if (taskCommandInput) taskCommandInput.addEventListener('keydown', (ev) => { if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') { ev.preventDefault(); sendSessionComposer().catch(e=>alert(e.message)); } });
+
+const downloadSessionUsageBtn = document.getElementById('downloadSessionUsage');
+if (downloadSessionUsageBtn) downloadSessionUsageBtn.onclick = downloadSelectedSessionUsage;
+const downloadSessionDiagnosticsBtn = document.getElementById('downloadSessionDiagnostics');
+if (downloadSessionDiagnosticsBtn) downloadSessionDiagnosticsBtn.onclick = downloadSelectedSessionDiagnostics;
+
+
+async function downloadSelectedSessionUsage() {
+  if (!selectedSession?.id) return;
+  const usage = await api(`/v1/sessions/${encodeURIComponent(selectedSession.id)}/model-usage?since_hours=2160&limit=10000`);
+  const blob = new Blob([JSON.stringify(usage, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `pac-model-usage-${selectedSession.id}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+
+function downloadSelectedSessionDiagnostics() {
+  if (!selectedSession?.id) return;
+  const url = `/v1/sessions/${encodeURIComponent(selectedSession.id)}/diagnostics.zip?include_events=1000&full=false&include_workspace_state=true`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `pac-diagnostics-${selectedSession.id}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
 
 async function openGitDiffModal(){
   if(!selectedSession) return;

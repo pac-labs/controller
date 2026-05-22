@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Query
 
 
 AuthDependency = Callable[..., Any]
@@ -13,6 +13,8 @@ ConfigPayloadProvider = Callable[[Any | None], dict[str, Any]]
 NoArgDictProvider = Callable[[], dict[str, Any]]
 NoArgListProvider = Callable[[], list[Any]]
 RunnerAuthProvider = Callable[[str | None, str | None, str | None], Any]
+from pi_agent_platform.core.model_metrics import model_metrics
+
 
 NOISY_EVENT_TYPES = {'runner_heartbeat', 'endpoint_heartbeat', 'provider_heartbeat'}
 
@@ -106,10 +108,20 @@ def create_system_router(
             'session_status': session_status,
             'events_by_day': [{'date': key, 'count': events_by_day[key]} for key in day_keys],
             'top_event_types': sorted(event_types.items(), key=lambda item: item[1], reverse=True)[:8],
+            'model_usage': model_metrics.summarize_usage(since_hours=24, limit=10000),
             'component_health': component_health,
             'alerts': alerts,
             'alert_counts': alert_counts,
         }
+
+    @router.get('/v1/model-usage')
+    def model_usage_summary(
+        since_hours: int = Query(default=24, ge=1, le=24 * 90),
+        limit: int = Query(default=10000, ge=1, le=10000),
+        _auth: Any = Depends(require_auth),
+    ) -> dict[str, Any]:
+        return model_metrics.summarize_usage(since_hours=since_hours, limit=limit)
+
 
     @router.get('/v1/config')
     def get_config(_auth: Any = Depends(require_auth)) -> dict[str, Any]:

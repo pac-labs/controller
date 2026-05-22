@@ -29,7 +29,7 @@ class AgentEvents:
                 task_id=self.task.id,
                 type=event_type,
                 message=message,
-                data=data,
+                data=data or {},
             )
         )
 

@@ -58,6 +58,8 @@ async def generate_plan(
     prompt: str,
     extra_context: list[str] | None = None,
     max_tokens: int = 700,
+    session_id: str | None = None,
+    task_id: str | None = None,
 ) -> dict[str, Any]:
     messages = [{"role": "system", "content": PLAN_PROMPT}]
     if extra_context:
@@ -67,7 +69,14 @@ async def generate_plan(
                 messages.append({"role": "system", "content": text})
     messages.append({"role": "user", "content": str(prompt or "").strip() or "Plan the current request."})
     try:
-        raw = await asyncio.to_thread(chat_complete, config, model, messages, max_tokens=max_tokens)
+        raw = await asyncio.to_thread(
+            chat_complete,
+            config,
+            model,
+            messages,
+            max_tokens=max_tokens,
+            telemetry={"session_id": session_id, "task_id": task_id, "call_type": "plan"},
+        )
     except Exception:
         return fallback_plan(prompt)
     try:

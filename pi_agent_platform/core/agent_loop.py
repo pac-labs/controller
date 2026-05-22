@@ -92,6 +92,8 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                 model=planning_model,
                 prompt=task.prompt,
                 extra_context=[controller_guidance or "", controller_context or "", index_briefing or ""],
+                session_id=session.id,
+                task_id=task.id,
             )
         except Exception as exc:
             task = await lifecycle.fail(f"Planning model call failed: {exc}", messages=messages)
@@ -165,7 +167,14 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                 remaining_seconds=remaining_seconds,
             )
         try:
-            raw = await asyncio.to_thread(chat_complete, config, decision_model, messages, max_tokens=min(ctx["reserve_output_tokens"], 4096))
+            raw = await asyncio.to_thread(
+                chat_complete,
+                config,
+                decision_model,
+                messages,
+                max_tokens=min(ctx["reserve_output_tokens"], 4096),
+                telemetry={"session_id": session.id, "task_id": task.id, "call_type": "decision", "step": step},
+            )
         except Exception as exc:
             task = await lifecycle.fail(
                 f"Model call failed: {exc}",

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from pi_agent_platform.core.config import CODING_SESSION_PERMISSION_PROFILE
@@ -22,6 +22,8 @@ from pi_agent_platform.core.session_commands import parse_session_slash_command,
 from pi_agent_platform.core.subagents import spawn_pi_dev_subagent
 from pi_agent_platform.core.shared_storage import controller_storage_path, shared_storage_binding
 from pi_agent_platform.core.profiles import can_use_profile, profile_context_name
+from pi_agent_platform.core.diagnostics_bundle import build_session_diagnostics, build_session_diagnostics_zip
+from pi_agent_platform.core.model_metrics import model_metrics
 
 
 create_session_for_internal_use: Callable[..., Session] | None = None
@@ -635,6 +637,74 @@ def create_sessions_router(
         if not isinstance(payload, dict):
             payload = {}
         return {'tool': tool, 'input': payload}
+
+
+    @router.get('/v1/sessions/{session_id}/model-usage')
+    def get_session_model_usage(
+        session_id: str,
+        since_hours: int = Query(default=168, ge=1, le=24 * 90),
+        limit: int = Query(default=1000, ge=1, le=10000),
+        _auth: Any = Depends(require_auth),
+    ) -> dict[str, Any]:
+        session = store.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail='Session not found')
+        resource_type, resource_id = _session_resource_ref(session)
+        _require_resource_access(_auth, resource_type, resource_id, 'read', reason='Read session model usage metrics')
+        summary = model_metrics.summarize_usage(session_id=session_id, since_hours=since_hours, limit=limit)
+        return summary
+
+
+    @router.get('/v1/sessions/{session_id}/diagnostics')
+    def get_session_diagnostics(
+        session_id: str,
+        include_events: int = Query(default=1000, ge=1, le=10000),
+        full: bool = Query(default=False),
+        include_workspace_state: bool = Query(default=True),
+        _auth: Any = Depends(require_auth),
+    ) -> dict[str, Any]:
+        session = store.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail='Session not found')
+        resource_type, resource_id = _session_resource_ref(session)
+        _require_resource_access(_auth, resource_type, resource_id, 'read', reason='Download session diagnostics')
+        return build_session_diagnostics(
+            store=store,
+            config=config,
+            session=session,
+            include_events=include_events,
+            include_full=full,
+            include_workspace_state=include_workspace_state,
+        )
+
+
+    @router.get('/v1/sessions/{session_id}/diagnostics.zip')
+    def download_session_diagnostics(
+        session_id: str,
+        include_events: int = Query(default=1000, ge=1, le=10000),
+        full: bool = Query(default=False),
+        include_workspace_state: bool = Query(default=True),
+        _auth: Any = Depends(require_auth),
+    ) -> Response:
+        session = store.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail='Session not found')
+        resource_type, resource_id = _session_resource_ref(session)
+        _require_resource_access(_auth, resource_type, resource_id, 'read', reason='Download session diagnostics')
+        bundle = build_session_diagnostics_zip(
+            store=store,
+            config=config,
+            session=session,
+            include_events=include_events,
+            include_full=full,
+            include_workspace_state=include_workspace_state,
+        )
+        filename = f'pac-diagnostics-{session.id}.zip'
+        return Response(
+            content=bundle,
+            media_type='application/zip',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+        )
 
 
     @router.get('/v1/sessions/{session_id}/events')

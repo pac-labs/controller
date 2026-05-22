@@ -63,7 +63,14 @@ async def try_execute_model_consult_tool(
 
         async def _consult(target_model: str) -> dict[str, Any]:
             try:
-                response = await asyncio.to_thread(chat_complete, config, target_model, consult_messages, max_tokens=max_tokens)
+                response = await asyncio.to_thread(
+                    chat_complete,
+                    config,
+                    target_model,
+                    consult_messages,
+                    max_tokens=max_tokens,
+                    telemetry={"session_id": session.id, "task_id": task.id, "call_type": "consult", "metadata": {"requested_by": "consult_model"}},
+                )
                 return {"model": target_model, "ok": True, "response": response}
             except Exception as exc:
                 return {"model": target_model, "ok": False, "error": str(exc)}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from datetime import datetime, timezone
 from typing import Any
 from urllib.error import URLError, HTTPError
@@ -9,6 +10,7 @@ from urllib.request import Request, urlopen
 import json
 
 from .config import AppConfig, ModelConfig, ProviderConfig, ContextProfile
+from .model_metrics import estimate_messages_tokens, estimate_text_tokens, model_metrics
 
 
 def _provider_for_model(config: AppConfig, model_name: str) -> tuple[ModelConfig, ProviderConfig | None]:
@@ -484,46 +486,167 @@ def update_model_limits(config: AppConfig, model_name: str, context_window: int 
 
 
 
-def chat_complete(config: AppConfig, model_name: str, messages: list[dict[str, str]], max_tokens: int | None = None) -> str:
+def _usage_from_openai_response(body: Any) -> dict[str, int | None]:
+    if not isinstance(body, dict):
+        return {"prompt_tokens": None, "completion_tokens": None, "total_tokens": None}
+    usage = body.get("usage") if isinstance(body.get("usage"), dict) else {}
+    prompt = usage.get("prompt_tokens") or usage.get("input_tokens")
+    completion = usage.get("completion_tokens") or usage.get("output_tokens")
+    total = usage.get("total_tokens")
+    return {
+        "prompt_tokens": int(prompt) if prompt is not None else None,
+        "completion_tokens": int(completion) if completion is not None else None,
+        "total_tokens": int(total) if total is not None else None,
+    }
+
+
+def _usage_from_ollama_response(body: Any) -> dict[str, int | None]:
+    if not isinstance(body, dict):
+        return {"prompt_tokens": None, "completion_tokens": None, "total_tokens": None}
+    prompt = body.get("prompt_eval_count")
+    completion = body.get("eval_count")
+    total = (int(prompt or 0) + int(completion or 0)) if prompt is not None or completion is not None else None
+    return {
+        "prompt_tokens": int(prompt) if prompt is not None else None,
+        "completion_tokens": int(completion) if completion is not None else None,
+        "total_tokens": total,
+    }
+
+
+def _record_chat_metric(
+    *,
+    telemetry: dict[str, Any] | None,
+    model_name: str,
+    provider: ProviderConfig,
+    provider_name: str | None,
+    provider_model: str,
+    endpoint: str | None,
+    messages: list[dict[str, str]],
+    response_text: str | None,
+    max_tokens: int | None,
+    duration_ms: int,
+    success: bool,
+    usage: dict[str, int | None] | None = None,
+    error: str | None = None,
+) -> None:
+    try:
+        usage = usage or {}
+        prompt_est = estimate_messages_tokens(messages)
+        completion_est = estimate_text_tokens(response_text or "")
+        total_est = prompt_est + completion_est
+        metadata = dict((telemetry or {}).get("metadata") or {})
+        if (telemetry or {}).get("step") is not None:
+            metadata["step"] = (telemetry or {}).get("step")
+        model_metrics.record(
+            {
+                "session_id": (telemetry or {}).get("session_id"),
+                "task_id": (telemetry or {}).get("task_id"),
+                "call_type": (telemetry or {}).get("call_type") or "chat",
+                "model_name": model_name,
+                "provider_name": provider_name,
+                "provider_type": provider.type,
+                "provider_model": provider_model,
+                "endpoint": endpoint,
+                "prompt_tokens": usage.get("prompt_tokens"),
+                "completion_tokens": usage.get("completion_tokens"),
+                "total_tokens": usage.get("total_tokens"),
+                "prompt_tokens_estimated": prompt_est,
+                "completion_tokens_estimated": completion_est,
+                "total_tokens_estimated": total_est,
+                "max_tokens": max_tokens,
+                "duration_ms": duration_ms,
+                "success": success,
+                "error": error,
+                "metadata": metadata,
+            }
+        )
+    except Exception:
+        # Metrics must never break model execution.
+        pass
+
+
+def chat_complete(
+    config: AppConfig,
+    model_name: str,
+    messages: list[dict[str, str]],
+    max_tokens: int | None = None,
+    telemetry: dict[str, Any] | None = None,
+) -> str:
     """Small synchronous chat abstraction for Stage 8 agent loop.
 
     Supports OpenAI-compatible providers including LM Studio and vLLM, plus Ollama.
+    Records lightweight token/call metrics without storing prompts or completions.
     """
     if model_name not in config.models:
         raise ValueError(f"unknown model: {model_name}")
     model, provider = _provider_for_model(config, model_name)
     if not provider:
         raise ValueError(f"unknown provider: {model.provider}")
+    provider_name = model.provider
+    provider_model = model.model or model_name
     max_tokens = max_tokens or model.max_output_tokens
-    if provider.type in {"openai", "openai-codex", "openai-compatible", "lmstudio", "vllm", "groq", "openrouter", "deepseek", "mistral"}:
-        base = normalize_provider_base_url(provider, model)
-        if not base:
-            raise ValueError("provider has no base_url")
-        payload = {
-            "model": model.model or model_name,
-            "messages": messages,
-            "max_tokens": min(max_tokens, model.max_output_tokens),
-            "temperature": model.extra.get("temperature", 0.2),
-            "stream": provider.type == "lmstudio",
-        }
-        if provider.type == "lmstudio":
-            ok, body = _stream_openai_chat(f"{base}/chat/completions", provider, payload)
-        else:
-            ok, body = _json_request(f"{base}/chat/completions", provider, payload)
-        if not ok:
-            raise RuntimeError(body)
-        if isinstance(body, str):
-            return body
-        try:
-            return body["choices"][0]["message"]["content"] or ""
-        except Exception:
-            raise RuntimeError(f"unexpected chat response: {body}")
-    if provider.type == "ollama":
-        base = (model.endpoint or provider.base_url or "http://localhost:11434").rstrip("/")
-        prompt = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in messages) + "\nASSISTANT:"
-        payload = {"model": model.model or model_name, "prompt": prompt, "stream": False, "options": {"num_predict": min(max_tokens, model.max_output_tokens)}}
-        ok, body = _json_request(f"{base}/api/generate", provider, payload)
-        if not ok:
-            raise RuntimeError(body)
-        return body.get("response", "")
-    raise ValueError(f"provider type not supported for chat_complete: {provider.type}")
+    started = time.monotonic()
+    endpoint: str | None = None
+    metric_recorded = False
+    try:
+        if provider.type in {"openai", "openai-codex", "openai-compatible", "lmstudio", "vllm", "groq", "openrouter", "deepseek", "mistral"}:
+            base = normalize_provider_base_url(provider, model)
+            if not base:
+                raise ValueError("provider has no base_url")
+            endpoint = f"{base}/chat/completions"
+            payload = {
+                "model": provider_model,
+                "messages": messages,
+                "max_tokens": min(max_tokens, model.max_output_tokens),
+                "temperature": model.extra.get("temperature", 0.2),
+                "stream": provider.type == "lmstudio",
+            }
+            if provider.type == "lmstudio":
+                ok, body = _stream_openai_chat(endpoint, provider, payload)
+            else:
+                ok, body = _json_request(endpoint, provider, payload)
+            if not ok:
+                duration_ms = int((time.monotonic() - started) * 1000)
+                _record_chat_metric(telemetry=telemetry, model_name=model_name, provider=provider, provider_name=provider_name, provider_model=provider_model, endpoint=endpoint, messages=messages, response_text="", max_tokens=max_tokens, duration_ms=duration_ms, success=False, error=str(body))
+                metric_recorded = True
+                raise RuntimeError(body)
+            if isinstance(body, str):
+                response_text = body
+                usage = {}
+            else:
+                try:
+                    response_text = body["choices"][0]["message"]["content"] or ""
+                except Exception:
+                    duration_ms = int((time.monotonic() - started) * 1000)
+                    _record_chat_metric(telemetry=telemetry, model_name=model_name, provider=provider, provider_name=provider_name, provider_model=provider_model, endpoint=endpoint, messages=messages, response_text="", max_tokens=max_tokens, duration_ms=duration_ms, success=False, error=f"unexpected chat response: {body}")
+                    metric_recorded = True
+                    raise RuntimeError(f"unexpected chat response: {body}")
+                usage = _usage_from_openai_response(body)
+            duration_ms = int((time.monotonic() - started) * 1000)
+            _record_chat_metric(telemetry=telemetry, model_name=model_name, provider=provider, provider_name=provider_name, provider_model=provider_model, endpoint=endpoint, messages=messages, response_text=response_text, max_tokens=max_tokens, duration_ms=duration_ms, success=True, usage=usage)
+            metric_recorded = True
+            return response_text
+        if provider.type == "ollama":
+            base = (model.endpoint or provider.base_url or "http://localhost:11434").rstrip("/")
+            endpoint = f"{base}/api/generate"
+            prompt = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in messages) + "\nASSISTANT:"
+            payload = {"model": provider_model, "prompt": prompt, "stream": False, "options": {"num_predict": min(max_tokens, model.max_output_tokens)}}
+            ok, body = _json_request(endpoint, provider, payload)
+            if not ok:
+                duration_ms = int((time.monotonic() - started) * 1000)
+                _record_chat_metric(telemetry=telemetry, model_name=model_name, provider=provider, provider_name=provider_name, provider_model=provider_model, endpoint=endpoint, messages=messages, response_text="", max_tokens=max_tokens, duration_ms=duration_ms, success=False, error=str(body))
+                metric_recorded = True
+                raise RuntimeError(body)
+            response_text = body.get("response", "") if isinstance(body, dict) else ""
+            duration_ms = int((time.monotonic() - started) * 1000)
+            _record_chat_metric(telemetry=telemetry, model_name=model_name, provider=provider, provider_name=provider_name, provider_model=provider_model, endpoint=endpoint, messages=messages, response_text=response_text, max_tokens=max_tokens, duration_ms=duration_ms, success=True, usage=_usage_from_ollama_response(body))
+            metric_recorded = True
+            return response_text
+        raise ValueError(f"provider type not supported for chat_complete: {provider.type}")
+    except Exception as exc:
+        # Branches above record provider/API failures before raising. This fallback
+        # captures validation errors and unsupported provider types.
+        if not metric_recorded:
+            duration_ms = int((time.monotonic() - started) * 1000)
+            _record_chat_metric(telemetry=telemetry, model_name=model_name, provider=provider, provider_name=provider_name, provider_model=provider_model, endpoint=endpoint, messages=messages, response_text="", max_tokens=max_tokens, duration_ms=duration_ms, success=False, error=str(exc))
+        raise
