@@ -1,6 +1,6 @@
 [project]
 name = "pi-agent-platform"
-version = "1.0.105"
+version = "1.0.286"
 description = "Remote agent PAC with provider registry, context profiles, sessions, approvals, remote runners, host/container execution, real agent loop, web UI, VS Code scaffold and MCP bridge"
 requires-python = ">=3.9"
 dependencies = [

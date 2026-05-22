@@ -1,6 +1,18 @@
 {
   "releases": [
     {
+      "version": "1.0.286",
+      "date": "2026-05-22T10:45:00Z",
+      "summary": "Separated PAC release automation into manual main releases, approved PR releases, and safe diff PR expansion.",
+      "changes": [
+        "Replaced conflicting diff-release workflows with a diff expansion workflow that turns .pac/diffs input files into normal source changes before review.",
+        "Added an approved pull request release workflow that verifies PR readiness, merges approved PRs into main, and dispatches the main release workflow.",
+        "Updated the main release workflow so GitHub owns version resolution, release metadata commits, tag creation, release assets, and package sync.",
+        "Added diff validation and application helpers that support both git-style patches and diff -ruN pac_orig/pac_work patches while stripping release-owned metadata.",
+        "Documented the three supported release paths and clarified that VERSION, changelog, manifest, and pyproject versioning are owned by GitHub release automation."
+      ]
+    },
+    {
       "version": "1.0.285",
       "date": "2026-05-22T09:15:00Z",
       "summary": "Refactored profiles into behavior/context/access presets with card-based management and server-side group restrictions.",
@@ -203,5 +215,6 @@
         }
       }
     }
-  ]
+  ],
+  "current_version": "1.0.286"
 }

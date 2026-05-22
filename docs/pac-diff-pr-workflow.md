@@ -1,49 +1,56 @@
 # PAC diff pull-request workflow
 
-PAC supports a small patch-based handoff flow for changes produced outside GitHub.
+PAC supports a patch-based handoff flow for changes produced outside GitHub,
+such as patches created by the PAC webUI or ChatGPT.
 
-## Repository flow
+## Recommended flow
 
-1. Create a branch from `main`.
-2. Add exactly one git-style patch file under:
-
-   ```text
-   .pac/diffs/<short-name>.diff
-   ```
-
-3. Open a pull request to `main`.
-4. Add the label:
+1. Download the latest PAC source `.diff`.
+2. Run the local submit helper to place it in a PR as:
 
    ```text
-   pac-apply-diff
+   .pac/diffs/vX.Y.Z.diff
    ```
 
-5. The `Apply PAC diff PR` workflow checks out `main`, reads only the supplied diff from the PR branch, validates it, applies it to `main`, runs lightweight validation, and pushes the result to `main`.
+3. Open the PR to `main`.
+4. The **PAC expand diff pull request** workflow validates and expands the diff
+   into normal source changes on the PR branch.
+5. Review the expanded source changes.
+6. Approve the PR.
+7. The approved-PR release workflow merges the PR and triggers the main release
+   workflow.
 
-## Why this exists
+## Why expansion happens before approval
 
-This lets ChatGPT or another PAC assistant provide a normal `.diff` artifact after a build. The user can place that diff in a PR without manually applying every changed file.
+The diff file is only an input artifact. Reviewers should approve normal source
+changes, not a hidden patch blob. Expanding the diff into source changes makes
+GitHub review, checks, and release notes easier to understand.
 
-## Safety model
+## Accepted diff formats
 
-The workflow uses `pull_request_target`, so it is intentionally conservative:
+The validator accepts:
 
-- the PR author must be an owner, member, or collaborator;
-- the PR must carry the `pac-apply-diff` label unless run manually;
-- exactly one `.diff` or `.patch` file may be supplied under `.pac/diffs/`;
-- binary patches are rejected;
-- path traversal is rejected;
-- secret-like env files are rejected;
-- the workflow cannot update itself through `.github/workflows/apply-diff-pr.yml`.
+- git-style patches from `git diff`;
+- `diff -ruN` patches with `pac_orig/` and `pac_work/` prefixes.
 
-The workflow does not execute code from the PR branch. It only reads the diff file and applies it to a fresh checkout of `main`.
+Binary patches and generated assets are rejected.
 
-## Diff artifact naming
+## Versioning
 
-PAC release builds also generate:
+The filename version is used only as workflow input context. GitHub release tags
+are authoritative. The release workflow resolves the actual next version from
+the latest `vX.Y.Z` tag unless an operator explicitly supplies a version in the
+manual release workflow.
 
-```text
-PAC_UPDATE_DIFF-<version>.diff
-```
+## Release-owned files
 
-That file is suitable for placing under `.pac/diffs/` in a PR.
+Diff expansion strips release-owned metadata hunks by default:
+
+- `VERSION`
+- `VERSION_CURRENT.md`
+- `MANIFEST.json`
+- `PAC_CHANGELOG.json`
+- `pyproject.toml`
+
+These files are regenerated or updated by the release workflow so local patch
+versions do not conflict with GitHub tags.

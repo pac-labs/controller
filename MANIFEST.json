@@ -1,7 +1,37 @@
 {
-  "version": "1.0.284",
-  "generated_at": "2026-05-21T22:00:00Z",
+  "version": "1.0.286",
+  "generated_at": "2026-05-22T10:45:00Z",
   "files": [
+    {
+      "path": ".github/workflows/pac-expand-diff-pr.yml",
+      "size": 4449,
+      "sha256": "a7a06d5086ce93ff047e930f0a3a8b5971fb1bcd97c09972f52c1d29ccc4adeb"
+    },
+    {
+      "path": ".github/workflows/pac-pr-approved-release.yml",
+      "size": 2610,
+      "sha256": "01f3da9f3045d097b58afbd41ebed9bb862c47bee8c147f267bf4b0982e0563a"
+    },
+    {
+      "path": ".github/workflows/pac-release.yml",
+      "size": 5018,
+      "sha256": "3136b0f76b1d11d22f79393b6b5d9f4c245a5686d10ebb84e3de6981d747c281"
+    },
+    {
+      "path": ".github/workflows/seed-packages.yml",
+      "size": 2000,
+      "sha256": "fac2188fe767a4d29d6c709db6e08b24d7dc9a9b6c248e2eae18da212e6009c4"
+    },
+    {
+      "path": ".gitignore",
+      "size": 19,
+      "sha256": "862263fa1f46c20f0d1e4dac5ffcc75abd55c08211b2c3864c5f8764b9d87793"
+    },
+    {
+      "path": "AGENTS.md",
+      "size": 2820,
+      "sha256": "dd972049d50809d0a836dc9c35fad3b7e68d2bea1e6ce570b5cff895b0802f62"
+    },
     {
       "path": "FEATURE_PACK.md",
       "size": 166,
@@ -9,13 +39,13 @@
     },
     {
       "path": "MANIFEST.json",
-      "size": 38554,
-      "sha256": "e9dc91c33c8f664e50bbc545137bab1a5ab7af8de2e22831c0bb61a53fa9c528"
+      "size": 41284,
+      "sha256": "2565463e183e48064dc2c98f3848e88f6dd7627852aeddd0585b5fc219d4dacf"
     },
     {
       "path": "PAC_CHANGELOG.json",
-      "size": 9755,
-      "sha256": "863ca234bf99267ba42c952cb7f18027da18698605e2974104c59bbd49ee4625"
+      "size": 11782,
+      "sha256": "74a3fd00620f150b6c829f30d7302c4d09b82728ff840d4b91e0428fedee352f"
     },
     {
       "path": "README.md",
@@ -25,12 +55,12 @@
     {
       "path": "VERSION",
       "size": 8,
-      "sha256": "8399ce343cde8d49f939abba959050cecd9d076ba567d80b73590cb4ab088862"
+      "sha256": "281674ac8dd784556a1284d9d4e6a4e636ee08407770bafaa9d2752b785f81ed"
     },
     {
       "path": "VERSION_CURRENT.md",
-      "size": 8,
-      "sha256": "8399ce343cde8d49f939abba959050cecd9d076ba567d80b73590cb4ab088862"
+      "size": 40,
+      "sha256": "ac37ef0f3fbff2de3a7f6918ce0bd0f399d31b8927835ee389f04e7cd58a2999"
     },
     {
       "path": "binaries/README.md",
@@ -73,41 +103,6 @@
       "sha256": "fe74eebc77654bedf7922a26d4fa8c118af1ed8f816c597469b53e4cb0078db1"
     },
     {
-      "path": "binaries/pac-endpoint-runner/Containerfile",
-      "size": 149,
-      "sha256": "e08d6c7384428c2e31458e77dbf5bab3e2636bd5e4cfa3eeae21f8bd1060356e"
-    },
-    {
-      "path": "binaries/pac-endpoint-runner/README.md",
-      "size": 590,
-      "sha256": "1e73d9ba4cb35895d525a80509eef5de58172c9b4a8557eb001673bec0a5666f"
-    },
-    {
-      "path": "binaries/pac-endpoint-runner/VERSION",
-      "size": 8,
-      "sha256": "4c4b70f4acbb39869e8f6ade82d5a0f7017f8a6a5a3d16c4cf563266aed7df44"
-    },
-    {
-      "path": "binaries/pac-endpoint-runner/build-binaries.sh",
-      "size": 1642,
-      "sha256": "219e91dbf414e208a3640eee5162bfb0a238c18d08deed4a35c73e2eefbe36aa"
-    },
-    {
-      "path": "binaries/pac-endpoint-runner/go.mod",
-      "size": 29,
-      "sha256": "8f194f665af10a7d776c335d02eaf59378c135de083717bcd3ec87e36da6094a"
-    },
-    {
-      "path": "binaries/pac-endpoint-runner/main.go",
-      "size": 10536,
-      "sha256": "cd678c65d7ff70176d90fbad89ec913630fe848b20a506fb392c2324f2ae4d1a"
-    },
-    {
-      "path": "binaries/pac-endpoint-runner/pac-component.json",
-      "size": 388,
-      "sha256": "35506399df389a4d14fa718fab47f5fb789a66b706925b9ce28cc4d9f2b1cf7b"
-    },
-    {
       "path": "binaries/pac-endpoint/Containerfile",
       "size": 149,
       "sha256": "e08d6c7384428c2e31458e77dbf5bab3e2636bd5e4cfa3eeae21f8bd1060356e"
@@ -141,6 +136,41 @@
       "path": "binaries/pac-endpoint/pac-component.json",
       "size": 387,
       "sha256": "2604408f998067044d97e7c4f4f1bc23504aed5161b87139394fb190801ab3dd"
+    },
+    {
+      "path": "binaries/pac-endpoint-runner/Containerfile",
+      "size": 149,
+      "sha256": "e08d6c7384428c2e31458e77dbf5bab3e2636bd5e4cfa3eeae21f8bd1060356e"
+    },
+    {
+      "path": "binaries/pac-endpoint-runner/README.md",
+      "size": 590,
+      "sha256": "1e73d9ba4cb35895d525a80509eef5de58172c9b4a8557eb001673bec0a5666f"
+    },
+    {
+      "path": "binaries/pac-endpoint-runner/VERSION",
+      "size": 8,
+      "sha256": "4c4b70f4acbb39869e8f6ade82d5a0f7017f8a6a5a3d16c4cf563266aed7df44"
+    },
+    {
+      "path": "binaries/pac-endpoint-runner/build-binaries.sh",
+      "size": 1642,
+      "sha256": "219e91dbf414e208a3640eee5162bfb0a238c18d08deed4a35c73e2eefbe36aa"
+    },
+    {
+      "path": "binaries/pac-endpoint-runner/go.mod",
+      "size": 29,
+      "sha256": "8f194f665af10a7d776c335d02eaf59378c135de083717bcd3ec87e36da6094a"
+    },
+    {
+      "path": "binaries/pac-endpoint-runner/main.go",
+      "size": 10536,
+      "sha256": "cd678c65d7ff70176d90fbad89ec913630fe848b20a506fb392c2324f2ae4d1a"
+    },
+    {
+      "path": "binaries/pac-endpoint-runner/pac-component.json",
+      "size": 388,
+      "sha256": "35506399df389a4d14fa718fab47f5fb789a66b706925b9ce28cc4d9f2b1cf7b"
     },
     {
       "path": "binaries/pacctl/Containerfile",
@@ -423,11 +453,6 @@
       "sha256": "db7ff94ed1f09134fe0707a6e57ca1d867d7b9ead39d88f4dc08f77f7fa7bbeb"
     },
     {
-      "path": "docs-zed-mcp-example.json",
-      "size": 417,
-      "sha256": "8a7131812734ddd95a709fe89bdebc009e229fb92564ffe441af615e27176ed2"
-    },
-    {
       "path": "docs/PAC_IDE_Session_Architecture_v0.1.adoc",
       "size": 5538,
       "sha256": "259f9b3550c75ec8d9333bc783a1a86293d56919e74a6829b8092ee47a57af0c"
@@ -484,8 +509,8 @@
     },
     {
       "path": "docs/github-release-workflow.md",
-      "size": 1215,
-      "sha256": "e9f9428e20fe99597dbba12f7a7dc9290111720e571908a73756c843cf268658"
+      "size": 3251,
+      "sha256": "7e490fc6d8db45e5d2c32c08310117fa6aecf5dbd5a455bb98eb44d03f093e0e"
     },
     {
       "path": "docs/main-pi-dev-profile-and-agent-control-workspace.md",
@@ -504,8 +529,8 @@
     },
     {
       "path": "docs/pac-diff-pr-workflow.md",
-      "size": 1537,
-      "sha256": "944193a41bd819a03ebb961290bc7b7568468b3bf4ffa65f664ede6923831825"
+      "size": 1690,
+      "sha256": "5838a3af39b3789668ca5cbf1fafab5f753df95ea5e0442d8ce32d34bd7fedf5"
     },
     {
       "path": "docs/pi-dev-runtime-terminology.md",
@@ -531,6 +556,11 @@
       "path": "docs/zed-configuration.md",
       "size": 2269,
       "sha256": "7df712ac24fc746308d90ed8059cc0cbede8bdfc6e74fe67ee7da25a50bcd5b0"
+    },
+    {
+      "path": "docs-zed-mcp-example.json",
+      "size": 417,
+      "sha256": "8a7131812734ddd95a709fe89bdebc009e229fb92564ffe441af615e27176ed2"
     },
     {
       "path": "install.sh",
@@ -569,8 +599,8 @@
     },
     {
       "path": "pi_agent_platform/api/main.py",
-      "size": 169955,
-      "sha256": "f4d4b45f8302b50f893c096a528c183fe0c24d4144f805ac441e467d11c49273"
+      "size": 172014,
+      "sha256": "42cbc379088052801a95fccb1dae1cd72d50d8deb3e88cfcf0a49b3bf75b1d6a"
     },
     {
       "path": "pi_agent_platform/api/routes/__init__.py",
@@ -603,9 +633,14 @@
       "sha256": "ca81e8e49629a38d910b3f2cfabc5a50c2add44d4ce25fa238d4d0580f52b7e5"
     },
     {
+      "path": "pi_agent_platform/api/routes/profiles.py",
+      "size": 7220,
+      "sha256": "16cb6e327b506a13880564f0d78f974a02f776534a3f3a7573fb9fd56b345fcf"
+    },
+    {
       "path": "pi_agent_platform/api/routes/providers.py",
-      "size": 29048,
-      "sha256": "82eff52d4fea1555d3d50644d13c11dd6543fc9b05f0b1e2092830b0aa338b53"
+      "size": 26720,
+      "sha256": "aea27692c59e86183c2dda5f92ca42d07c5a6c392f8bb86ee61c6bcfc9940157"
     },
     {
       "path": "pi_agent_platform/api/routes/proxy.py",
@@ -624,8 +659,8 @@
     },
     {
       "path": "pi_agent_platform/api/routes/sessions.py",
-      "size": 44592,
-      "sha256": "4a9c86c873f84e7b991645c9a080b72a03635506283567a07d16cb93e4ad1a34"
+      "size": 46344,
+      "sha256": "2f26c967c5d36283bc62e39ed9170e2ab14bb6a2db0207012b3afb489f70dfd8"
     },
     {
       "path": "pi_agent_platform/api/routes/sources.py",
@@ -634,8 +669,8 @@
     },
     {
       "path": "pi_agent_platform/api/routes/system.py",
-      "size": 6694,
-      "sha256": "9d93e4e2a9c02de29f5b56933ddfafcc1e08cd1fccb9f415bb3a67fbe9b1ad0f"
+      "size": 6766,
+      "sha256": "c86a6f97b3c84039ccd96d2a1d63d352a0bbce15c95b1d8d5bdc15fbfd13ecc4"
     },
     {
       "path": "pi_agent_platform/api/routes/ui.py",
@@ -644,8 +679,8 @@
     },
     {
       "path": "pi_agent_platform/api/routes/updates.py",
-      "size": 12707,
-      "sha256": "4830af5daec15cdbf75913027497b30af4d4992c0164b94e8438feabe8df9543"
+      "size": 13975,
+      "sha256": "f74ff7305bb9e132f82700a903dace1c8c58f72173da5f008cda18b69c7c98a1"
     },
     {
       "path": "pi_agent_platform/api/routes/version.py",
@@ -654,8 +689,8 @@
     },
     {
       "path": "pi_agent_platform/api/routes/workspaces.py",
-      "size": 20827,
-      "sha256": "c4c428f9799ee41c093542cc207a5fdbe2e5262f37a14722b820d4f28e007081"
+      "size": 21790,
+      "sha256": "3d56b81feaacbaaa3e6505ffeece58fede42af56076084b7588d71f5d804b201"
     },
     {
       "path": "pi_agent_platform/core/__init__.py",
@@ -669,8 +704,8 @@
     },
     {
       "path": "pi_agent_platform/core/agent_loop.py",
-      "size": 112523,
-      "sha256": "5b244de0f05e7f141bf5314f898d5b880b80d4185b0f98b081e7df088e623112"
+      "size": 112588,
+      "sha256": "3b898da736f9f729a177d1df52abfdd439c1851fa14618ada45dc8b131695aeb"
     },
     {
       "path": "pi_agent_platform/core/agent_plans.py",
@@ -704,8 +739,8 @@
     },
     {
       "path": "pi_agent_platform/core/config.py",
-      "size": 25712,
-      "sha256": "61fd2a1ae8a8633a2d91583c38d93386a6ddf4900a812894356057a1304e7733"
+      "size": 25898,
+      "sha256": "8399ece8b4e2758efe728caa461f625c6183239d732a03748fc6635c20c6570c"
     },
     {
       "path": "pi_agent_platform/core/context_manager.py",
@@ -751,6 +786,11 @@
       "path": "pi_agent_platform/core/printing_press.py",
       "size": 2032,
       "sha256": "a8668651b10e09e4051d9034323ff220891b1788e5f13d4b69885b908b7ee976"
+    },
+    {
+      "path": "pi_agent_platform/core/profiles.py",
+      "size": 3615,
+      "sha256": "90db73ab2b5c8bcaa7770526729116506d51b4b28748b500147e728ddf621606"
     },
     {
       "path": "pi_agent_platform/core/providers.py",
@@ -848,19 +888,14 @@
       "sha256": "b1fe3377836f8427c517eae0753afcb00281cb8f1ce723f7b563bce04439a7f9"
     },
     {
-      "path": "pi_agent_platform/web/app.js",
-      "size": 54793,
-      "sha256": "7721c10f7a1882acea6e630c5d83ee8ef57e424a18f374309ff58c2b32c71124"
-    },
-    {
       "path": "pi_agent_platform/web/app/admin_updates.js",
       "size": 32516,
       "sha256": "319fc04e1b5177de6abeed3907468a0a2205d1fdcda024e103220c74f0b0cfe2"
     },
     {
       "path": "pi_agent_platform/web/app/auth_admin.js",
-      "size": 18747,
-      "sha256": "f392a4d6a2348b638a6d752b5aed23b912f2661ad417337ace9b81c52aa6d77e"
+      "size": 24553,
+      "sha256": "1e2c3a18bea1f7678ac0545850153bce8aff82956f8a0499a91eaefc00600f20"
     },
     {
       "path": "pi_agent_platform/web/app/composer_status.js",
@@ -869,8 +904,8 @@
     },
     {
       "path": "pi_agent_platform/web/app/endpoints.js",
-      "size": 60035,
-      "sha256": "75681e6acb4c825f4251973a73b802e3c581dc6996dd40e1359b993aceb5725f"
+      "size": 57438,
+      "sha256": "584c095a082dbbb5627d8dc147c19bdb0aeca59507cd5fbf86967125471c5a59"
     },
     {
       "path": "pi_agent_platform/web/app/events.js",
@@ -889,8 +924,13 @@
     },
     {
       "path": "pi_agent_platform/web/app/profiles_config.js",
-      "size": 32287,
-      "sha256": "433d009119263c4864f3ba26a43d74e693b6e105c3f20cd40a8e6e1eba766136"
+      "size": 28465,
+      "sha256": "fcac5f75c2ff5dd3fe51e5e0a53f92a4495004de0c224ed93d3eda921ae82f9b"
+    },
+    {
+      "path": "pi_agent_platform/web/app/profiles_page.js",
+      "size": 10859,
+      "sha256": "263bd6f99639c3bc82fd69f0e74ac9a45985beafddefbc4b7bde854f5921d013"
     },
     {
       "path": "pi_agent_platform/web/app/provider_presets.js",
@@ -899,8 +939,8 @@
     },
     {
       "path": "pi_agent_platform/web/app/providers.js",
-      "size": 41843,
-      "sha256": "fbb88082687f957185466cd69134cf00e23b888ab4848a8f30517ae55a3ffc63"
+      "size": 42113,
+      "sha256": "9c75defa41e622b8251d4e70e4553a53bbdef04c30636122df42fc3645b442f9"
     },
     {
       "path": "pi_agent_platform/web/app/session_commands.js",
@@ -909,8 +949,8 @@
     },
     {
       "path": "pi_agent_platform/web/app/sessions.js",
-      "size": 91833,
-      "sha256": "a9e8cbd5791406d1621b17b03bb1fb8d9b0617ea72c3e858cd6a6cde6577c74e"
+      "size": 91661,
+      "sha256": "49477f5b6e22ef442dadc121ca5a0a6aab810076c2f4ab045f38bf9a4897fa9d"
     },
     {
       "path": "pi_agent_platform/web/app/setup_wizard.js",
@@ -919,8 +959,8 @@
     },
     {
       "path": "pi_agent_platform/web/app/sources.js",
-      "size": 79631,
-      "sha256": "0f2af35491d8f4342d652b63e82b7fec9137e06351ea59c3b39055e9f77af074"
+      "size": 79535,
+      "sha256": "a379442870cc0881b80d2aa0b9e764ba638d1066bce0ab5c718237410085a23b"
     },
     {
       "path": "pi_agent_platform/web/app/ui_helpers.js",
@@ -929,8 +969,13 @@
     },
     {
       "path": "pi_agent_platform/web/app/workspaces_contexts.js",
-      "size": 54153,
-      "sha256": "bad383c37a39d92533495e6502100262c31939c96d8a6ab07d33c5def6ab76b0"
+      "size": 43810,
+      "sha256": "d3ccd2d03096def0e20dc4366f83557bf7c9083a55bdc6e758d4c9279922e702"
+    },
+    {
+      "path": "pi_agent_platform/web/app.js",
+      "size": 54672,
+      "sha256": "2fbd9ac969d6e97ac15d4977c1308a14e7960820518d4b3d6eae180ad15c8b70"
     },
     {
       "path": "pi_agent_platform/web/assets/banner.png",
@@ -1044,18 +1089,13 @@
     },
     {
       "path": "pi_agent_platform/web/index.html",
-      "size": 93418,
-      "sha256": "26b1960af9940d535acfa06c8027f6a1ab66349144a1abd2a628f7acd1f665d4"
-    },
-    {
-      "path": "pi_agent_platform/web/styles.css",
-      "size": 904,
-      "sha256": "79cda9349b347f163695d23f4bd2207d1231f34f1f74988796c940fdadad4d70"
+      "size": 96024,
+      "sha256": "1f48e11cd6b7bc304ed5a30a70ccb75b25c84fdd9ce249162220bd8d15c36e7e"
     },
     {
       "path": "pi_agent_platform/web/styles/admin-components.css",
-      "size": 8642,
-      "sha256": "5bca6136deea328ba79a43363474c75d6a976fa23ca7b7bd40b53a4c0de6cc8b"
+      "size": 12777,
+      "sha256": "ca6e4af8b7ec846ca4167de5d66c3bf3298e5bf101ee340d1b8a6cc7dbf69d1e"
     },
     {
       "path": "pi_agent_platform/web/styles/control-plane.css",
@@ -1128,14 +1168,24 @@
       "sha256": "25d3a358ddeabb4b73cb813febf88a337389d8bc7be71cfa5e6e59f3e51db458"
     },
     {
+      "path": "pi_agent_platform/web/styles.css",
+      "size": 904,
+      "sha256": "79cda9349b347f163695d23f4bd2207d1231f34f1f74988796c940fdadad4d70"
+    },
+    {
       "path": "pyproject.toml",
       "size": 622,
-      "sha256": "e514f1828a4c237644ec22b29d8a9c757d039d938dfa47c8aed3694a47482073"
+      "sha256": "df6ca4b9c564daef2102307ec39d0dbd7d28e380bcf2c4513162bff6dd0c60b7"
     },
     {
       "path": "requirements.txt",
       "size": 177,
       "sha256": "5fa998baffb33076a8525288ebb0ce11f54ecaab9b5c43188a848bc2e1e110ae"
+    },
+    {
+      "path": "scripts/apply-pac-diff.py",
+      "size": 3922,
+      "sha256": "63e5320db5258b28e56af172628d27e0e2a393243c92b18722371911c5f51ee0"
     },
     {
       "path": "scripts/build-mcp-bridge.sh",
@@ -1194,8 +1244,8 @@
     },
     {
       "path": "scripts/validate-pac-diff.py",
-      "size": 2821,
-      "sha256": "85407f46dfc8570bca6876d5cf2b65587c5fa861c8c0928270024ffeba66d745"
+      "size": 4447,
+      "sha256": "d04cb89e89aaaf754ed3076cc7d19498a7faa026470f53d7e82105b564b196ed"
     },
     {
       "path": "scripts/validate-package.sh",

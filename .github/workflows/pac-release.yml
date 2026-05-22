@@ -1,4 +1,4 @@
-name: PAC release
+name: PAC release current main
 
 on:
   workflow_dispatch:
@@ -12,36 +12,27 @@ on:
         required: false
         default: true
         type: boolean
-  push:
-    branches:
-      - main
-    paths:
-      - PAC_CHANGELOG.json
-      - pi_agent_platform/**
-      - scripts/**
-      - containers/**
-      - binaries/**
-      - mcp/**
-      - deploy/**
-      - config/**
-      - pyproject.toml
-      - requirements.txt
-      - .github/workflows/**
 
 permissions:
   contents: write
 
+concurrency:
+  group: pac-release-main
+  cancel-in-progress: false
+
 jobs:
-  release:
+  release-main:
+    name: Release current main
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout main
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
           token: ${{ secrets.push_token || github.token }}
 
-      - name: Resolve GitHub release version
+      - name: Resolve release version
         id: version
         shell: bash
         run: |
@@ -53,7 +44,8 @@ jobs:
             latest="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 || true)"
             if [ -z "$latest" ]; then
               base="$(tr -d '[:space:]' < VERSION 2>/dev/null || echo '1.0.0')"
-              version="$base"
+              IFS=. read -r major minor patch <<< "$base"
+              version="${major}.${minor}.$((patch + 1))"
             else
               IFS=. read -r major minor patch <<< "${latest#v}"
               version="${major}.${minor}.$((patch + 1))"
@@ -63,26 +55,54 @@ jobs:
             echo "Invalid PAC version: $version" >&2
             exit 1
           fi
-          echo "$version" > VERSION
-          echo "$version" > VERSION_CURRENT.md
+          tag="v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists." >&2
+            exit 1
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Write release version markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          version='${{ steps.version.outputs.version }}'
+          printf '%s\n' "$version" > VERSION
+          printf '# PAC Version\n\nCurrent release: %s\n' "$version" > VERSION_CURRENT.md
 
       - name: Generate release artifacts
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/generate-pac-release.py --version "${{ steps.version.outputs.version }}"
+          python3 scripts/generate-pac-release.py --version '${{ steps.version.outputs.version }}'
           unzip -t dist/pac-full.zip
           unzip -t dist/pac-patch.zip
           unzip -t dist/pac-packages-seed.zip
 
-      - name: Create tag
-        if: ${{ github.event_name == 'push' || inputs.create_tag != false }}
+      - name: Commit release metadata to main
         shell: bash
         run: |
           set -euo pipefail
-          tag="${{ steps.version.outputs.tag }}"
+          git config user.name "pac-sync[bot]"
+          git config user.email "pac-sync[bot]@users.noreply.github.com"
+          git add VERSION VERSION_CURRENT.md PAC_CHANGELOG.json
+          if git diff --cached --quiet; then
+            echo "No release metadata changes to commit."
+          else
+            git commit -m "Release ${{ steps.version.outputs.tag }}"
+            git push origin HEAD:main
+          fi
+
+      - name: Create tag
+        if: ${{ inputs.create_tag != false }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag='${{ steps.version.outputs.tag }}'
+          git fetch origin main --tags
+          git checkout main
+          git pull --ff-only origin main
           if git rev-parse "$tag" >/dev/null 2>&1; then
             echo "Tag $tag already exists."
           else
@@ -117,7 +137,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/generate-package-repo.py --source . --out packages --version "${{ steps.version.outputs.version }}"
+          python3 scripts/generate-package-repo.py --source . --out packages --version '${{ steps.version.outputs.version }}'
           cd packages
           if git diff --quiet -- .; then
             echo "No package changes to publish."
