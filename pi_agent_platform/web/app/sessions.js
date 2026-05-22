@@ -1,5 +1,7 @@
 // Session, timeline, approval, composer, and session-file UI helpers extracted from app.js.
 
+let composerAttachedItems = [];
+
 function slashCommandHelpText() {
   const commands = (sessionSlashCommands && sessionSlashCommands.length) ? sessionSlashCommands : Object.values(SESSION_SLASH_COMMANDS);
   return commands.map(c => `${c.label} - ${c.description}`).join('\n');
@@ -886,12 +888,13 @@ function ensureSessionWorkspaceChrome() {
   const controls = document.querySelector('#sessions-tab .composer-controls.integrated.editor-like');
   const permissionSelect = document.getElementById('sessionPermissionQuick');
   const permissionApply = document.getElementById('applySessionPermission');
-  if (controls && permissionSelect && permissionApply && permissionSelect.parentElement !== controls) {
-    const runTask = document.getElementById('runTask');
-    controls.insertBefore(permissionSelect, runTask || null);
-    controls.insertBefore(permissionApply, runTask || null);
+  const composerLeftActions = document.querySelector('#sessions-tab .composer-left-actions');
+  if (controls && permissionSelect && permissionApply && composerLeftActions && permissionSelect.parentElement !== composerLeftActions) {
+    composerLeftActions.appendChild(permissionSelect);
+    composerLeftActions.appendChild(permissionApply);
     permissionSelect.title = 'Permissions';
-    permissionApply.classList.add('mini-apply-button');
+    permissionSelect.classList.add('composer-permission-select');
+    permissionApply.classList.add('mini-apply-button', 'composer-mini-button');
   }
   if (!document.getElementById('composerFileInput')) {
     const input = document.createElement('input');
@@ -983,6 +986,7 @@ function refreshComposerThinkingStatusForTask(taskId='') {
     return;
   }
   renderComposerThinkingStatus(null);
+  updateComposerChrome();
 }
 
 function renderSessionSnapshotFast(snapshot, sessionId) {
@@ -1023,6 +1027,7 @@ async function applySessionPermissionProfile() {
   document.getElementById('selectedSession').innerHTML = `<span class="session-lock-dot"></span><span>Profile: ${escapeHtml(selectedSession.agent_profile || 'default')}</span><span>Permissions: ${escapeHtml(selectedSession.permission_profile || '-')}</span><span>Endpoint: ${escapeHtml(endpointName)}</span><span>Mode: ${escapeHtml(selectedSession.metadata?.execution_mode || (selectedSession.metadata?.agent_enabled === false ? 'direct model' : 'pi.dev'))}</span><span>Model: ${escapeHtml(selectedSession.model || '')}</span><span>${escapeHtml(selectedSession.workspace_path || '')}</span>`;
   if (document.getElementById('sessionEndpointLock')) sessionEndpointLock.textContent = `Profile: ${selectedSession.agent_profile || 'default'} · permissions: ${selectedSession.permission_profile || '-'} · endpoint: ${endpointName} · model: ${selectedSession.model || 'session default'}`;
   syncSessionPermissionQuick();
+  updateComposerChrome();
   renderSessionSidebar(window.__pacSessions || []);
   emitUiEvent('session_permission_profile_changed', `Session permissions changed to ${next}`, {session_id: selectedSession.id, permission_profile: next});
 }
@@ -1223,6 +1228,7 @@ async function applySessionPermissionProfile() {
   selectedSession = updated;
   renderSelectedSessionSummary(selectedSession);
   syncSessionPermissionQuick();
+  updateComposerChrome();
   renderSessionSidebar(window.__pacSessions || []);
   emitUiEvent('session_permission_profile_changed', `Session permissions changed to ${next}`, {session_id: selectedSession.id, permission_profile: next});
 }
@@ -1300,6 +1306,7 @@ async function loadSessions() {
     if (dashboard) dashboard.innerHTML = '<div class="muted">No sessions yet. Create one from the Sessions page.</div>';
     if (picker) picker.innerHTML = '<option value="">No sessions yet</option>';
     syncSessionPermissionQuick();
+  updateComposerChrome();
     refreshSessionRunButton().catch(()=>{});
     renderModelActiveSessionsPanel();
     renderProfileUsagePanel();
@@ -1344,9 +1351,11 @@ async function selectSession(id) {
   if (document.getElementById('composerAgentContext')) composerAgentContext.value = currentContextId || '';
   if (document.getElementById('taskRunner')) taskRunner.value = preferredEndpoint || '';
   syncSessionPermissionQuick();
+  updateComposerChrome();
   const timeline = document.getElementById('events');
   if (timeline) timeline.innerHTML = '<div class="empty-timeline">Waiting for session events.</div>';
   renderComposerThinkingStatus(null);
+  updateComposerChrome();
   resetSessionTimelineState();
   renderSessionSidebar(window.__pacSessions || []);
   updateSourceCodingPanel();
@@ -1536,6 +1545,8 @@ async function sendSessionComposer(){
   if (document.getElementById('taskModel')?.value) metadata.model = taskModel.value;
   taskPrompt.value='';
   taskCommand.value='';
+  composerAttachedItems = [];
+  renderComposerAttachmentTray();
   autosizeSessionPrompt();
   await createSessionTask(selectedSession.id, rawPrompt, metadata);
 }
@@ -1612,7 +1623,11 @@ function openContainerDestinationModal() {
 
 function closeContainerDestinationModal() { const modal = document.getElementById('containerDestinationModal'); if (modal) modal.hidden = true; }
 const taskExecutionSelect = document.getElementById('taskExecution');
-if (taskExecutionSelect) taskExecutionSelect.onchange = () => { if (taskExecutionSelect.value === 'container') openContainerDestinationModal(); };
+if (taskExecutionSelect) taskExecutionSelect.onchange = () => { if (taskExecutionSelect.value === 'container') openContainerDestinationModal(); updateComposerChrome(); };
+const composerDestinationBtn = document.getElementById('composerDestinationButton');
+if (composerDestinationBtn) composerDestinationBtn.onclick = openContainerDestinationModal;
+const composerSlashHelpBtn = document.getElementById('composerSlashHelp');
+if (composerSlashHelpBtn) composerSlashHelpBtn.onclick = () => alert(slashCommandHelpText());
 const closeContainerDestinationBtn = document.getElementById('closeContainerDestinationModal');
 if (closeContainerDestinationBtn) closeContainerDestinationBtn.onclick = closeContainerDestinationModal;
 const saveContainerDestinationBtn = document.getElementById('saveContainerDestination');
@@ -1623,30 +1638,110 @@ if (saveContainerDestinationBtn) saveContainerDestinationBtn.onclick = () => {
   if (document.getElementById('taskExecution')) taskExecution.value = 'container';
   const hint = document.getElementById('sessionEndpointLock');
   if (hint) hint.textContent = `${hint.textContent.split(' · container:')[0]} · container: ${image}`;
+  rememberComposerAttachment(`container: ${image}`, 'runtime');
+  updateComposerChrome();
   closeContainerDestinationModal();
 };
 const clearContainerDestinationBtn = document.getElementById('clearContainerDestination');
 if (clearContainerDestinationBtn) clearContainerDestinationBtn.onclick = () => {
   if (document.getElementById('taskImage')) taskImage.value = '';
   if (document.getElementById('taskExecution')) taskExecution.value = 'host';
+  updateComposerChrome();
   closeContainerDestinationModal();
 };
 const runTaskBtn = document.getElementById('runTask');
+
+function composerSetText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function composerEndpointLabel() {
+  if (!selectedSession) return 'not selected';
+  const endpointId = selectedSession.metadata?.preferred_endpoint || '';
+  if (!endpointId) return 'not locked';
+  const endpoint = (window.__pacEndpoints || []).find((item) => item.id === endpointId || item.name === endpointId);
+  return endpoint?.name || endpointId;
+}
+
+function composerContextLabel() {
+  const contextId = selectedSessionContextId?.() || document.getElementById('composerAgentContext')?.value || '';
+  if (!contextId) return selectedSession ? 'session' : 'none';
+  const contexts = window.__pacAgentContexts || [];
+  const context = contexts.find((item) => item.id === contextId || item.name === contextId);
+  return context?.name || contextId;
+}
+
+function updateComposerChrome() {
+  const prompt = document.getElementById('taskPrompt');
+  const runButton = document.getElementById('runTask');
+  const hasPrompt = !!String(prompt?.value || '').trim();
+  const stopping = runButton?.dataset.mode === 'stop';
+  const mode = selectedSession?.metadata?.composer_intent || (hasPrompt ? 'Composing' : 'Chat');
+  composerSetText('composerModePill', stopping ? 'Running task' : mode);
+  composerSetText('composerContextPill', `Context: ${composerContextLabel()}`);
+  composerSetText('composerModelPill', `Model: ${document.getElementById('taskModel')?.value || selectedSession?.model || 'session default'}`);
+  composerSetText('composerEndpointPill', `Endpoint: ${composerEndpointLabel()}`);
+  const status = document.getElementById('composerFooterStatus');
+  if (status) {
+    if (!selectedSession) status.textContent = 'Select or create a session to start.';
+    else if (stopping) status.textContent = 'Task is running. Stop is available.';
+    else if (hasPrompt) status.textContent = 'Ready to send.';
+    else status.textContent = 'Ready. Add context or type a message.';
+  }
+  if (runButton && !stopping) runButton.disabled = !hasPrompt;
+}
+
+function renderComposerAttachmentTray() {
+  const tray = document.getElementById('composerAttachmentTray');
+  if (!tray) return;
+  tray.innerHTML = '';
+  tray.hidden = composerAttachedItems.length === 0;
+  composerAttachedItems.slice(-10).forEach((item, index) => {
+    const chip = document.createElement('span');
+    chip.className = 'composer-attachment-chip';
+    const label = document.createElement('span');
+    label.textContent = item.label;
+    chip.appendChild(label);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.title = 'Remove attachment marker';
+    remove.textContent = '×';
+    remove.onclick = () => {
+      composerAttachedItems.splice(index, 1);
+      renderComposerAttachmentTray();
+      updateComposerChrome();
+    };
+    chip.appendChild(remove);
+    tray.appendChild(chip);
+  });
+}
+
+function rememberComposerAttachment(label, kind='context') {
+  composerAttachedItems.push({label, kind, addedAt: new Date().toISOString()});
+  renderComposerAttachmentTray();
+  updateComposerChrome();
+}
 
 function autosizeSessionPrompt() {
   const el = document.getElementById('taskPrompt');
   if (!el) return;
   el.style.height = 'auto';
-  el.style.height = Math.min(160, Math.max(28, el.scrollHeight)) + 'px';
+  el.style.height = Math.min(220, Math.max(56, el.scrollHeight)) + 'px';
+  updateComposerChrome();
 }
 
 function appendPromptContextBlock(label, content) {
   const prompt = document.getElementById('taskPrompt');
   if (!prompt) return;
-  const block = `\n[${label}]\n${content}\n`;
+  const block = `
+[${label}]
+${content}
+`;
   prompt.value = `${prompt.value || ''}${block}`.trimStart();
   autosizeSessionPrompt();
   prompt.focus();
+  rememberComposerAttachment(label, 'context');
 }
 
 function handleComposerContextAction(action) {
@@ -1710,6 +1805,7 @@ async function appendSelectedFilesToPrompt(files, label='Attached files') {
     }
   }
   appendPromptContextBlock(label, summaries.join('\n\n'));
+  Array.from(files).slice(0, 8).forEach((file) => rememberComposerAttachment(`${file.name}${file.type?.startsWith('image/') ? ' · image' : ''}`, file.type?.startsWith('image/') ? 'image' : 'file'));
 }
 
 if (runTaskBtn) runTaskBtn.onclick = async () => {
@@ -1736,6 +1832,7 @@ if (taskPromptInput) {
     }
   });
   autosizeSessionPrompt();
+  updateComposerChrome();
 }
 const taskCommandInput = document.getElementById('taskCommand');
 if (taskCommandInput) taskCommandInput.addEventListener('keydown', (ev) => { if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') { ev.preventDefault(); sendSessionComposer().catch(e=>alert(e.message)); } });
@@ -1839,4 +1936,5 @@ function refreshComposerThinkingStatusForTask(taskId='') {
         return;
     }
     renderComposerThinkingStatus(null);
+  updateComposerChrome();
 }

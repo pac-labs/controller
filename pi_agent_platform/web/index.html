@@ -103,13 +103,32 @@
     <section id="sessions-tab" class="tab-panel sessions-workspace">
       <section class="card wide session-chat-card"><div class="session-chat-head integrated-session-head"><div class="session-picker-wrap"><select id="sessionTopSelect" class="session-top-select" title="Select session"><option value="">Select session</option></select><button id="openSessionModal" class="session-plus-button" title="New session" aria-label="New session">+</button></div><div class="session-session-meta"><div id="selectedSession" class="muted session-lock-summary">No session selected.</div><div class="session-quick-controls"><label class="session-quick-label" for="sessionPermissionQuick">Permissions</label><select id="sessionPermissionQuick" class="session-quick-select" disabled><option value="">No session</option></select><button id="applySessionPermission" class="ghost-button" type="button" disabled>Apply</button></div></div></div><div class="session-chat-layout single"><div class="session-chat-main"><div id="events" class="session-timeline chat-timeline" aria-live="polite"></div><div class="session-composer chatgpt-composer">
   <div id="composerThinkingStatus" class="composer-thinking-status" hidden></div>
-  <div class="composer-input-shell"><textarea id="taskPrompt" rows="1" placeholder="Message the agent, or start with / to run a command…"></textarea></div>
-  <div class="composer-controls integrated editor-like compact-destination-controls">
-    <div class="context-menu-wrap"><button id="composerAddContext" class="composer-icon-button square" type="button" title="Add context" aria-label="Add context">+</button><div id="composerContextMenu" class="composer-context-menu" hidden><b>Context</b><button type="button">▱ Files & Directories</button><button type="button">⌘ Symbols</button><button type="button">◌ Threads</button><button type="button">▣ Rules</button><button type="button">▧ Image</button><button type="button">Ⅰ Selection</button><button type="button">⌁ Branch Diff</button><button type="button" onclick="alert(slashCommandHelpText())">/ Slash commands</button></div></div>
-    <select id="composerAgentContext" title="Agent context" hidden><option value="">agent context</option></select>
-    <select id="taskModel" title="Model" hidden><option value="">session model</option></select>
-    <input id="taskExecution" hidden value="pi_container" />
-    <button id="runTask" class="composer-send-button square" title="Send" aria-label="Send" data-mode="send">➤</button>
+  <div class="composer-panel" role="group" aria-label="Session message composer">
+    <div class="composer-context-strip" aria-label="Current session context">
+      <span id="composerModePill" class="composer-pill strong">Chat</span>
+      <span id="composerContextPill" class="composer-pill">Context: session</span>
+      <span id="composerModelPill" class="composer-pill">Model: session default</span>
+      <span id="composerEndpointPill" class="composer-pill">Endpoint: not selected</span>
+    </div>
+    <div id="composerAttachmentTray" class="composer-attachment-tray" hidden></div>
+    <div class="composer-input-shell">
+      <textarea id="taskPrompt" rows="1" placeholder="Ask PAC anything, or type / for commands…" aria-label="Message PAC"></textarea>
+    </div>
+    <div class="composer-controls integrated editor-like compact-destination-controls">
+      <div class="composer-left-actions">
+        <div class="context-menu-wrap"><button id="composerAddContext" class="composer-icon-button square composer-round-action" type="button" title="Add context, files, image, rules, or slash commands" aria-label="Add context">+</button><div id="composerContextMenu" class="composer-context-menu" hidden><b>Add to this message</b><button type="button" data-context-action="files">▱ Attach files</button><button type="button" data-context-action="directories">▤ Attach directory</button><button type="button" data-context-action="image">▧ Attach image</button><button type="button" data-context-action="symbols">⌘ Ask PAC to inspect symbols</button><button type="button" data-context-action="threads">◌ Include thread context</button><button type="button" data-context-action="rules">▣ Use project rules</button><button type="button" data-context-action="selection">Ⅰ Current selection</button><button type="button" data-context-action="branch_diff">⌁ Branch diff</button><button type="button" data-context-action="slash_help">/ Slash commands</button></div></div>
+        <button id="composerSlashHelp" class="composer-mini-button" type="button" title="Show slash commands">/</button>
+        <button id="composerDestinationButton" class="composer-mini-button" type="button" title="Choose container destination">Runtime</button>
+      </div>
+      <div class="composer-footer-status" id="composerFooterStatus">Ready</div>
+      <div class="composer-right-actions">
+        <span class="composer-shortcut-hint" id="composerShortcutHint">Enter to send · Shift+Enter newline</span>
+        <button id="runTask" class="composer-send-button square composer-send-round" title="Send" aria-label="Send" data-mode="send">➤</button>
+      </div>
+      <select id="composerAgentContext" title="Agent context" hidden><option value="">agent context</option></select>
+      <select id="taskModel" title="Model" hidden><option value="">session model</option></select>
+      <input id="taskExecution" hidden value="pi_container" />
+    </div>
   </div>
   <input id="taskCommand" hidden value="" />
   <input id="taskImage" hidden placeholder="Container image" />

@@ -1,6 +1,18 @@
 {
   "releases": [
     {
+      "version": "1.0.287",
+      "date": "2026-05-22T11:20:00Z",
+      "summary": "Refined the session composer into a conversational PAC composer with context pills, attachment chips, and clearer send/runtime controls.",
+      "changes": [
+        "Replaced the command-bar style session composer with a rounded conversational panel modeled around message entry, context state, runtime controls, and a clear send button.",
+        "Added live composer pills for mode, agent context, selected model, and endpoint so users can see what PAC will use before sending.",
+        "Added an attachment/context tray with removable chips for files, images, runtime choices, and inserted context instructions.",
+        "Moved slash help, add-context, runtime destination, permission quick controls, and send actions into a compact composer action row.",
+        "Updated composer autosizing and status text so the input feels more like a chat composer while preserving existing slash commands and session routing."
+      ]
+    },
+    {
       "version": "1.0.286",
       "date": "2026-05-22T10:45:00Z",
       "summary": "Separated PAC release automation into manual main releases, approved PR releases, and safe diff PR expansion.",
@@ -216,5 +228,5 @@
       }
     }
   ],
-  "current_version": "1.0.286"
+  "current_version": "1.0.287"
 }
