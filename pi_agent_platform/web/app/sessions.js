@@ -441,16 +441,41 @@ function toolActivityBody(item) {
   return lines.join('\n').trim();
 }
 
+
+function isSessionIntentEvent(event) {
+  const t = String(event?.type || '').toLowerCase();
+  return t.includes('agent_intent') || t.includes('agent_routing') || t.includes('model_request_config') || t.includes('approval_required') || t.includes('task_failed');
+}
+
+function sessionIntentSummary(event, block) {
+  const data = event?.data && typeof event.data === 'object' ? event.data : {};
+  const type = String(event?.type || '').toLowerCase();
+  if (type.includes('approval_required')) return sessionThinkingSummary(event, block);
+  if (type.includes('task_failed')) return event?.message || 'Task failed';
+  if (type.includes('model_request_config')) return 'Asking the model';
+  if (type.includes('agent_routing')) return event?.message || 'Routing the request';
+  if (type.includes('agent_intent')) return sessionThinkingSummary(event, block) || event?.message || 'Working on the request';
+  return '';
+}
+
+function taskStartEventForThinking(event) {
+  const t = String(event?.type || '').toLowerCase();
+  return t.includes('model_request_config') || t.includes('agent_loop_started') || t.includes('task_started') || t.includes('task_queued') || t.includes('agent_routing') || t.includes('agent_intent');
+}
+
+function taskFinishedEventForThinking(event) {
+  const t = String(event?.type || '').toLowerCase();
+  return t.includes('task_completed') || t.includes('task_failed') || t === 'result' || t === 'final' || t.includes('assistant_message');
+}
+
 function sessionThinkingDetailsHtml(events) {
   const rows = (events || []).filter(item => item?.event && isInternalSessionEvent(item.event));
-  if (!rows.length) return '<div class="tool-activity-empty">No tool activity was recorded for this answer.</div>';
-  return `<div class="tool-activity-list">${rows.map((item) => {
-    const title = escapeHtml(toolActivityTitle(item));
-    const time = escapeHtml(formatEventTime(item.event?.created_at));
-    const body = escapeHtml(toolActivityBody(item));
-    const status = item.event?.data?.exit_code != null ? `exit ${escapeHtml(String(item.event.data.exit_code))}` : prettyEventType(item.event?.type);
-    return `<details class="tool-activity-item"><summary><span class="tool-activity-icon">⌁</span><span class="tool-activity-title">${title}</span><span class="tool-activity-status">${escapeHtml(status)}</span><span class="tool-activity-time">${time}</span></summary>${body ? `<pre>${body}</pre>` : ''}</details>`;
-  }).join('')}</div>`;
+  if (!rows.length) return '<div class="tool-activity-empty">No internal activity was recorded for this answer.</div>';
+  const first = rows[0]?.event;
+  const last = rows[rows.length - 1]?.event;
+  const start = formatEventTime(first?.created_at);
+  const end = formatEventTime(last?.created_at);
+  return `<div class="tool-activity-empty">Detailed model responses, tool output, stdout, stderr, and raw diagnostics are kept in the full session log. This thought bubble only tracks the active intent and timing for the conversation history.</div><div class="tool-activity-list"><div class="tool-activity-item"><summary><span class="tool-activity-icon">⌁</span><span class="tool-activity-title">Internal events recorded</span><span class="tool-activity-status">${rows.length}</span><span class="tool-activity-time">${escapeHtml(start)} → ${escapeHtml(end)}</span></summary></div></div>`;
 }
 
 function openSessionThinkingModal(group) {
@@ -494,49 +519,18 @@ function thinkingGroupNeedsApproval(group) {
 
 function deriveThinkingPlanSteps(group) {
   const rows = Array.isArray(group?.events) ? group.events : [];
-  const relevant = rows.filter((item) => {
-    const t = String(item?.event?.type || '').toLowerCase();
-    return t.includes('agent_plan') || t.includes('agent_intent') || t.includes('tool_call') || t.includes('approval_required') || t.includes('task_completed') || t.includes('task_failed');
-  });
-  const steps = [];
-  for (const item of relevant) {
-    const event = item?.event || {};
-    const data = event.data && typeof event.data === 'object' ? event.data : {};
-    const type = String(event.type || '').toLowerCase();
-    let label = '';
-    let status = 'done';
-    if (type.includes('agent_plan') && Array.isArray(data.steps)) {
-      data.steps.forEach((step, index) => {
-        const text = String(step || '').trim();
-        if (text) steps.push({label: text, status: index === 0 && !group?.closed ? 'running' : 'done', time: event.created_at || ''});
-      });
-      continue;
-    } else if (type.includes('approval_required')) {
-      label = sessionThinkingSummary(event, item?.block);
-      status = 'attention';
-    } else if (type.includes('tool_call')) {
-      label = data.tool ? `Run ${data.tool}` : (event.message || 'Run tool');
-    } else if (type.includes('agent_intent')) {
-      label = event.message || 'Interpret task';
-      status = 'running';
-    } else if (type.includes('task_failed')) {
-      label = event.message || 'Task failed';
-      status = 'failed';
-    } else if (type.includes('task_completed')) {
-      label = 'Complete response';
-    }
-    label = String(label || '').trim();
-    if (!label) continue;
-    const previous = steps[steps.length - 1];
-    if (previous && previous.label === label && previous.status === status) continue;
-    steps.push({label, status, time: event.created_at || ''});
+  const intents = rows
+    .filter((item) => isSessionIntentEvent(item?.event))
+    .map((item) => ({label: sessionIntentSummary(item.event, item.block), time: item.event?.created_at || ''}))
+    .filter((item) => item.label);
+  if (!intents.length && group?.summary) return [{label: group.summary, status: group.closed ? 'done' : 'running', time: ''}];
+  const deduped = [];
+  for (const item of intents) {
+    const previous = deduped[deduped.length - 1];
+    if (previous?.label === item.label) continue;
+    deduped.push({label: item.label, status: group?.closed ? 'done' : 'running', time: item.time});
   }
-  if (!steps.length && group?.summary) steps.push({label: group.summary, status: group.closed ? 'done' : 'running', time: ''});
-  if (steps.length) {
-    const last = steps[steps.length - 1];
-    if (!group?.closed && last.status === 'done') last.status = thinkingGroupNeedsApproval(group) ? 'attention' : 'running';
-  }
-  return steps.slice(-6);
+  return deduped.slice(-3);
 }
 
 async function resolveSessionApproval(taskId, approved) {
@@ -552,45 +546,30 @@ async function resolveSessionApproval(taskId, approved) {
 
 function updateSessionThinkingRow(group) {
   if (!group?.row) return;
-  const event = group.lastEvent || group.events?.[group.events.length - 1]?.event;
-  const summary = group.summary || sessionThinkingSummary(event, null);
-  const duration = formatDurationMs(((group.endedAt || new Date()).getTime()) - (group.startedAt || new Date()).getTime());
-  const toolCount = thinkingGroupToolCount(group);
+  const event = group.lastIntentEvent || group.lastEvent || group.events?.[group.events.length - 1]?.event;
+  const summary = group.summary || sessionIntentSummary(event, null) || (group.closed ? 'Completed' : 'Working');
+  const endAt = group.endedAt || new Date();
+  const startAt = group.startedAt || sessionEventDate(event) || new Date();
+  const duration = formatDurationMs(endAt.getTime() - startAt.getTime());
   const approvalPending = thinkingGroupNeedsApproval(group);
   const taskId = event?.task_id || group.taskId || '';
-  const planSteps = deriveThinkingPlanSteps(group);
-  group.row.className = 'thought-line-row';
+  group.row.className = 'chat-message-row assistant thought-history-row';
   group.row.innerHTML = '';
-  const main = document.createElement('button');
-  main.type = 'button';
-  main.className = 'thought-line';
-  main.innerHTML = `
-    <span class="thought-icon-shell">${group.closed ? '<span class="thought-icon-done" aria-hidden="true">◧</span>' : '<span class="tiny-spinner square" aria-hidden="true"></span>'}</span>
-    <span class="thought-copy">
-      <span class="thought-kicker">${escapeHtml(group.closed ? 'Thought' : 'Current task')}</span>
-      <span class="thought-summary">${escapeHtml(summary)}</span>
-      <span class="thought-meta"><span>${escapeHtml(group.closed ? `Thought for ${duration}` : `Thinking for ${duration}`)}</span><span>${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}</span><span>${escapeHtml(approvalPending ? 'Awaiting approval' : group.closed ? 'Completed' : 'Thinking')}</span></span>
-    </span>
-    <span class="thought-open">Details</span>`;
-  const label = group.closed ? `Thought for ${duration}` : `Thinking for ${duration}`;
-  main.innerHTML = `${escapeHtml(label)} <span class="composer-thinking-chevron">›</span> ${escapeHtml(summary || (group.closed ? 'Done.' : 'Thinking'))}`;
-  main.onclick = () => openSessionThinkingModal(group);
-  main.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') openSessionThinkingModal(group); };
-  group.row.appendChild(main);
-  if (false && planSteps.length) {
-    const plan = document.createElement('details');
-    plan.className = 'thought-plan';
-    if (!group.closed || approvalPending) plan.open = true;
-    plan.innerHTML = `
-      <summary class="thought-plan-summary">
-        <span class="thought-plan-title">Plan</span>
-        <span class="thought-plan-count">${planSteps.length} ${planSteps.length === 1 ? 'task' : 'tasks'}</span>
-      </summary>
-      <div class="thought-plan-list">
-        ${planSteps.map((step, index) => `<div class="thought-plan-item ${escapeHtml(step.status)}"><span class="thought-plan-bullet">${index + 1}</span><span class="thought-plan-label">${escapeHtml(step.label)}</span><span class="thought-plan-state">${escapeHtml(step.status === 'running' ? 'Active' : step.status === 'attention' ? 'Needs approval' : step.status === 'failed' ? 'Failed' : 'Done')}</span></div>`).join('')}
-      </div>`;
-    group.row.appendChild(plan);
+  const bubble = document.createElement('div');
+  bubble.className = `chat-bubble thought-history-bubble ${group.closed ? 'closed' : 'active'}`;
+  bubble.innerHTML = `
+    <button type="button" class="thought-history-main" aria-label="Open thought details" title="Open thought details">
+      <span class="thought-history-dot">${group.closed ? '✓' : '<span class="tiny-spinner square" aria-hidden="true"></span>'}</span>
+      <span class="thought-history-intent">${escapeHtml(summary)}</span>
+      <span class="composer-thinking-chevron">›</span>
+    </button>
+    ${approvalPending ? '<div class="thought-history-note">Awaiting approval</div>' : ''}`;
+  const main = bubble.querySelector('.thought-history-main');
+  if (main) {
+    main.onclick = () => openSessionThinkingModal(group);
+    main.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openSessionThinkingModal(group); } };
   }
+  group.row.appendChild(bubble);
   if (approvalPending && taskId) {
     const actions = document.createElement('div');
     actions.className = 'thought-actions';
@@ -611,7 +590,7 @@ function updateSessionThinkingRow(group) {
       await resolveSessionApproval(taskId, false);
     };
     actions.append(approve, reject);
-    group.row.appendChild(actions);
+    bubble.appendChild(actions);
   }
 }
 
@@ -621,10 +600,11 @@ function ensureSessionThinkingGroup(event) {
   if (!group || group.closed || (taskId && group.taskId !== taskId)) {
     const el = document.getElementById('events');
     const row = document.createElement('article');
-    row.className = 'thought-line-row';
+    row.className = 'chat-message-row assistant thought-history-row';
     if (el) el.appendChild(row);
-    group = {events: [], startedAt: sessionEventDate(event), endedAt: null, row, closed: false, taskId};
+    group = {events: [], startedAt: taskStartEventForThinking(event) ? sessionEventDate(event) : null, endedAt: null, row, closed: false, taskId, summary: ''};
   }
+  if (!group.startedAt && taskStartEventForThinking(event)) group.startedAt = sessionEventDate(event);
   if (!group.startedAt) group.startedAt = sessionEventDate(event);
   if (!group.taskId && taskId) group.taskId = taskId;
   if (taskId) sessionThinkingGroups.set(taskId, group);
@@ -638,7 +618,6 @@ function flushSessionThinkingGroup(endEvent) {
   if (!group.events.length && endEvent) {
     group.events.push({event: endEvent, block: normalizeTimelineBlock(endEvent)});
     group.lastEvent = endEvent;
-    group.summary = sessionThinkingSummary(endEvent, null);
   }
   if (!group.events.length) return;
   group.closed = true;
@@ -982,7 +961,16 @@ function getThinkingGroup(taskId) {
 function refreshComposerThinkingStatusForTask(taskId='') {
   const group = getThinkingGroup(taskId);
   if (group && Array.isArray(group.events) && group.events.length && !group.closed) {
-    renderComposerThinkingStatus(deriveComposerThinkingState(group.events.map(item => item?.event).filter(Boolean)));
+    const state = deriveComposerThinkingState(group.events.map(item => item?.event).filter(Boolean)) || {};
+    state.closed = false;
+    state.active = true;
+    state.startedAt = group.startedAt || state.startedAt;
+    state.summary = group.summary || state.summary || 'Working on the request';
+    state.toolCount = thinkingGroupToolCount(group);
+    state.approvalPending = thinkingGroupNeedsApproval(group);
+    state.planSteps = [];
+    state.onOpen = () => openSessionThinkingModal(group);
+    renderComposerThinkingStatus(state);
     return;
   }
   renderComposerThinkingStatus(null);
@@ -1068,20 +1056,11 @@ function stopSessionPolling() {
 }
 
 function addPendingRow(taskId) {
-  const el = document.getElementById('events');
-  if (!el || !taskId) return;
-  let group = sessionThinkingGroups.get(taskId);
-  if (!group) {
-    const row = document.createElement('article');
-    row.className = 'thought-line-row pending-only';
-    group = {events: [], startedAt: new Date(), endedAt: null, row, closed: false, taskId, summary: 'Thinking...' };
-    sessionThinkingGroups.set(taskId, group);
-    row.onclick = () => openSessionThinkingModal(group);
-    el.appendChild(row);
-  }
-  sessionPendingRows.set(taskId, group.row);
-  updateSessionThinkingRow(group);
-  scrollSessionToBottom();
+  // The visible thinking timer starts when PAC begins processing/model work,
+  // not when the user submits the message. Keep pending state internal until
+  // a task/runtime event arrives.
+  if (!taskId) return;
+  sessionPendingRows.delete(taskId);
 }
 
 function renderSessionTimelineEvent(event, options = {}) {
@@ -1115,8 +1094,13 @@ function renderSessionTimelineEvent(event, options = {}) {
     const group = ensureSessionThinkingGroup(event);
     group.events.push({event, block});
     group.lastEvent = event;
-    const nextSummary = sessionThinkingSummary(event, block);
-    if (nextSummary) group.summary = nextSummary;
+    if (isSessionIntentEvent(event)) {
+      const nextSummary = sessionIntentSummary(event, block);
+      if (nextSummary) {
+        group.summary = nextSummary;
+        group.lastIntentEvent = event;
+      }
+    }
     updateSessionThinkingRow(group);
     refreshComposerThinkingStatusForTask(group.taskId);
     if (typeLower.includes('approval_required')) renderSessionApprovalRow(event);
@@ -1135,18 +1119,20 @@ function renderSessionTimelineEvent(event, options = {}) {
   row.className = `chat-message-row ${role}`;
   const bubble = document.createElement('div');
   bubble.className = `chat-bubble ${eventTone(event.type)}`;
-  const meta = document.createElement('div');
-  meta.className = 'chat-bubble-meta';
-  const label = role === 'user' ? 'You' : role === 'error' ? 'Error' : role === 'system' ? 'System' : 'Agent';
-  meta.innerHTML = `<span>${escapeHtml(label)}</span><span>${escapeHtml(formatEventTime(event.created_at))}</span>`;
-  bubble.appendChild(meta);
+  if (role !== 'assistant') {
+    const meta = document.createElement('div');
+    meta.className = 'chat-bubble-meta';
+    const label = role === 'user' ? 'You' : role === 'error' ? 'Error' : role === 'system' ? 'System' : 'Agent';
+    meta.innerHTML = `<span>${escapeHtml(label)}</span><span>${escapeHtml(formatEventTime(event.created_at))}</span>`;
+    bubble.appendChild(meta);
+  }
   if (!text && role === 'assistant' && !block) return;
   if (text) appendChatText(bubble, role, text);
   if (role === 'assistant') {
     bubble.classList.add('copyable-reply');
     updateLatestAssistantReply(event, text);
   }
-  if (role === 'user' && event.task_id) addPendingRow(event.task_id);
+  if (false && role === 'user' && event.task_id) addPendingRow(event.task_id);
   if (role === 'assistant' || (block && (block.fields || block.meta || block.links))) {
     const more = document.createElement('button');
     more.type = 'button';
@@ -1920,21 +1906,20 @@ function resetSessionTimelineState() {
 }
 
 function refreshComposerThinkingStatusForTask(taskId='') {
-    const group = getThinkingGroup(taskId);
-    if (group && Array.isArray(group.events) && group.events.length) {
-        const state = deriveComposerThinkingState(group.events.map(item => item?.event).filter(Boolean)) || {};
-        state.closed = !!group.closed;
-        state.active = !group.closed;
-        state.startedAt = group.startedAt || state.startedAt;
-        state.endedAt = group.endedAt || null;
-        state.summary = group.summary || state.summary || (group.closed ? 'Done.' : 'Thinking');
-        state.toolCount = thinkingGroupToolCount(group);
-        state.approvalPending = thinkingGroupNeedsApproval(group);
-        state.planSteps = deriveThinkingPlanSteps(group).map((step) => step.label).filter(Boolean).slice(0, 6);
-        state.onOpen = () => openSessionThinkingModal(group);
-        renderComposerThinkingStatus(state);
-        return;
-    }
-    renderComposerThinkingStatus(null);
+  const group = getThinkingGroup(taskId);
+  if (group && Array.isArray(group.events) && group.events.length && !group.closed) {
+    const state = deriveComposerThinkingState(group.events.map(item => item?.event).filter(Boolean)) || {};
+    state.closed = false;
+    state.active = true;
+    state.startedAt = group.startedAt || state.startedAt;
+    state.summary = group.summary || state.summary || 'Working on the request';
+    state.toolCount = thinkingGroupToolCount(group);
+    state.approvalPending = thinkingGroupNeedsApproval(group);
+    state.planSteps = [];
+    state.onOpen = () => openSessionThinkingModal(group);
+    renderComposerThinkingStatus(state);
+    return;
+  }
+  renderComposerThinkingStatus(null);
   updateComposerChrome();
 }

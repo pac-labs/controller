@@ -863,3 +863,83 @@ body:not(.light) .compact-destination-controls select {
   .composer-left-actions { flex-wrap:wrap; }
   .composer-mini-button#composerDestinationButton { display:none; }
 }
+
+/* v1.0.289: Conversation-history thought rows track intent/timing only. */
+.thought-history-row {
+  justify-content: flex-start;
+}
+.thought-history-bubble {
+  max-width: min(760px, 82%);
+  border-color: rgba(148,163,184,.18);
+  background: rgba(31,41,55,.78);
+}
+.thought-history-bubble.active {
+  border-color: rgba(36,195,107,.34);
+}
+.thought-history-main {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  border: 0;
+  background: transparent;
+  color: #e5e7eb;
+  padding: .18rem 0 0;
+  text-align: left;
+  cursor: pointer;
+}
+.thought-history-main:hover .thought-history-intent {
+  text-decoration: underline;
+}
+.thought-history-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1rem;
+  color: #24c36b;
+}
+.thought-history-intent {
+  flex: 1;
+  min-width: 0;
+  font-weight: 650;
+}
+.thought-history-note {
+  margin-top: .35rem;
+  color: #facc15;
+  font-size: .8rem;
+}
+
+/* v1.0.290: Thought/intent rows are compact status lines in the conversation. */
+.thought-history-row {
+  justify-content: flex-start;
+}
+.thought-history-bubble,
+.thought-history-bubble.active {
+  max-width: min(760px, 82%);
+  border: 0;
+  border-radius: 0;
+  padding: .2rem .25rem;
+  background: transparent;
+  box-shadow: none;
+}
+.thought-history-main {
+  width: auto;
+  max-width: 100%;
+  padding: .15rem 0;
+  color: var(--muted);
+  font-size: .88rem;
+}
+.thought-history-main:hover .thought-history-intent {
+  color: var(--text);
+  text-decoration: none;
+}
+.thought-history-dot {
+  color: #24c36b;
+}
+.thought-history-intent {
+  font-weight: 650;
+}
+.thought-history-note {
+  margin-left: 1.6rem;
+  font-size: .78rem;
+}

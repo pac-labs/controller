@@ -23,10 +23,12 @@ function deriveComposerThinkingState(events) {
         const type = String(event?.type || '').toLowerCase();
         if (type.includes('tool_call')) toolCount += 1;
         if (type.includes('approval_required')) approvalPending = true;
-        if (type.includes('agent_plan') && Array.isArray(event?.data?.steps)) {
-            planSteps = event.data.steps.map((step) => String(step || '').trim()).filter(Boolean).slice(0, 6);
+        if (type.includes('agent_intent') || type.includes('agent_routing') || type.includes('model_request_config') || type.includes('approval_required')) {
+            planSteps = [];
         }
-        const next = sessionThinkingSummary(event, normalizeTimelineBlock(event));
+        const next = typeof sessionIntentSummary === 'function' && (type.includes('agent_intent') || type.includes('agent_routing') || type.includes('model_request_config') || type.includes('approval_required'))
+            ? sessionIntentSummary(event, normalizeTimelineBlock(event))
+            : sessionThinkingSummary(event, normalizeTimelineBlock(event));
         if (next) summary = next;
         else if (!summary && (type.includes('tool_result') || type.includes('result'))) summary = String(event?.message || '').trim();
     }
@@ -55,8 +57,7 @@ function renderComposerThinkingStatus(state) {
     const duration = formatDurationMs(Math.max(0, (new Date(endAt).getTime() - new Date(state.startedAt || new Date().toISOString()).getTime())));
     const summary = state.summary || (state.closed ? 'Done.' : 'Thinking');
     const meta = state.approvalPending ? '<span class="composer-thinking-meta">Awaiting approval</span>' : '';
-    const steps = Array.isArray(state.planSteps) ? state.planSteps.filter(Boolean) : [];
-    const plan = steps.length ? `<div class="composer-thinking-plan">${steps.map((step, index) => `<div class="composer-thinking-plan-step"><span class="composer-thinking-plan-index">${index + 1}.</span><span>${escapeHtml(step)}</span></div>`).join('')}</div>` : '';
+    const plan = '';
     el.hidden = false;
     el.classList.toggle('closed', !!state.closed);
     el.classList.toggle('active', !state.closed);
