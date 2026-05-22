@@ -41,6 +41,7 @@ def create_system_router(
     setup_status: NoArgDictProvider,
     slash_help_text: Callable[[], str],
     require_admin_or_runner: RunnerAuthProvider,
+    require_resource_access: Callable[[Any, str, str, str], None],
 ) -> APIRouter:
     """System/status routes that read controller state but do not mutate it.
 
@@ -56,6 +57,7 @@ def create_system_router(
 
     @router.get('/v1/metrics/summary')
     def metrics_summary(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        require_resource_access(_auth, 'diagnostics', 'summary', 'read')
         refresh_local_runner_metadata(emit_event=False)
         sessions = list_sessions()
         tasks = list_tasks()
@@ -120,11 +122,13 @@ def create_system_router(
         limit: int = Query(default=10000, ge=1, le=10000),
         _auth: Any = Depends(require_auth),
     ) -> dict[str, Any]:
+        require_resource_access(_auth, 'diagnostics', 'model-usage', 'read')
         return model_metrics.summarize_usage(since_hours=since_hours, limit=limit)
 
 
     @router.get('/v1/config')
     def get_config(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        require_resource_access(_auth, 'system', 'config', 'read')
         return config_payload(_auth)
 
     @router.get('/v1/ide/config')
@@ -154,6 +158,7 @@ def create_system_router(
 
     @router.get('/v1/setup/status')
     def get_setup_status(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        require_resource_access(_auth, 'system', 'setup', 'read')
         return setup_status()
 
     return router

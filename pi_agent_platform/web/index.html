@@ -928,77 +928,76 @@
       <div id="settings-users" class="settings-panel" style="display:none">
         <div class="settings-panel-inner settings-panel-single">
           <div class="settings-main admin-settings-main">
-            <section class="card setting-cube compact-setting-card wide">
+            <section class="card setting-cube compact-setting-card wide directory-hero-card">
               <div class="admin-summary-grid">
                 <div>
-                  <h2>PAC home</h2>
-                  <div id="pacpInfo" class="kv compact-kv"></div>
-                  <p class="muted">Override with <code>PACP_HOME=/path/to/.pacp</code>. Default is <code>~/.pacp</code>.</p>
+                  <h2>Directory &amp; Access</h2>
+                  <p class="muted">Manage PAC identities as a directory: people, groups, service accounts, endpoints, providers, credentials, and effective platform access.</p>
                 </div>
                 <div>
                   <h2>Auth</h2>
-                  <p class="muted">Bearer-backed session tokens, admin scaffolding, and usage governance.</p>
+                  <p class="muted">Credentials answer <b>who are you</b>. Directory groups answer <b>what are you allowed to do</b>.</p>
                   <div id="authInfo" class="kv compact-kv"></div>
                 </div>
               </div>
             </section>
             <section class="card setting-cube compact-setting-card wide">
-              <div class="admin-directory-grid">
-                <section class="admin-pane">
+              <div class="directory-access-layout">
+                <aside class="admin-pane directory-sidebar-pane">
                   <div class="admin-pane-head">
                     <div>
                       <h2>Directory</h2>
-                      <p class="muted">Browse users and groups in one place, similar to an LDAP directory tree.</p>
+                      <p class="muted">People, nested groups, service accounts, endpoints, providers, and credentials.</p>
                     </div>
                     <button id="refreshDirectoryBtn" class="ghost-button">Refresh</button>
                   </div>
+                  <input id="directorySearch" class="directory-search" placeholder="Search directory…" />
                   <div id="authDirectoryTree" class="admin-list-shell directory-tree-shell"><div class="muted small-text">No directory entries loaded.</div></div>
-                </section>
-                <section class="admin-pane admin-form-pane">
+                </aside>
+                <section class="admin-pane admin-form-pane directory-detail-pane">
                   <div class="admin-pane-head">
                     <div>
-                      <h2>Details</h2>
-                      <p class="muted">Select a user or group on the left to edit membership, grants, and usage permissions.</p>
+                      <h2 id="directoryDetailTitle">Details</h2>
+                      <p id="directoryDetailSubtitle" class="muted">Select a directory object to inspect membership, credentials, and effective access.</p>
                     </div>
                   </div>
-                  <div id="authDirectoryDetail" class="directory-detail-shell"><div class="muted small-text">Select a user or group from the directory tree.</div></div>
+                  <div id="authDirectoryDetail" class="directory-detail-shell"><div class="muted small-text">Select an item from the directory tree.</div></div>
                 </section>
               </div>
             </section>
             <section class="card setting-cube compact-setting-card wide">
-              <div class="admin-management-grid">
+              <div class="admin-management-grid directory-create-grid">
                 <section class="admin-pane">
-                  <div class="admin-pane-head">
-                    <div>
-                      <h2>Create user</h2>
-                      <p class="muted">Seed platform users directly and attach them to the right usage groups.</p>
-                    </div>
-                  </div>
+                  <div class="admin-pane-head"><div><h2>Add person</h2><p class="muted">Create an interactive user. Add membership from a group detail panel.</p></div></div>
                   <div class="form-grid compact-form">
                     <label>Username <input id="newUsername" placeholder="developer" /></label>
                     <label>Display name <input id="newDisplayName" placeholder="Developer" /></label>
                     <label>Password <input id="newUserPassword" type="password" placeholder="min 8 characters" /></label>
                     <label>Role <select id="newUserRole"><option value="user">user</option><option value="admin">admin</option><option value="readonly">readonly</option></select></label>
-                    <label class="admin-form-wide">Groups <input id="newUserGroups" placeholder="admin,docs,coders" /></label>
                   </div>
                   <div class="button-row"><button id="createUserBtn">Create user</button></div>
                   <pre id="usersResult" class="inline-result compact-result"></pre>
                 </section>
-                <section class="admin-pane admin-form-pane">
-                  <div class="admin-pane-head">
-                    <div>
-                      <h2>Create group</h2>
-                      <p class="muted">Use grants for coarse resource access and bind the group to contexts for real usage permissions.</p>
-                    </div>
-                  </div>
+                <section class="admin-pane">
+                  <div class="admin-pane-head"><div><h2>Add group</h2><p class="muted">Groups can contain users, service accounts, endpoints, providers, and other groups.</p></div></div>
                   <div class="form-grid compact-form">
-                    <label>Group id <input id="newGroupId" placeholder="coders" /></label>
-                    <label>Name <input id="newGroupName" placeholder="Coding team" /></label>
-                    <label class="admin-form-wide">Description <input id="newGroupDescription" placeholder="Workspace and context access for coding sessions" /></label>
-                    <label class="admin-form-wide">Grants <input id="newGroupGrants" placeholder="workspace:*:write, source_context:*:write, session:*:write" /></label>
+                    <label>Group id <input id="newGroupId" placeholder="platform-users" /></label>
+                    <label>Name <input id="newGroupName" placeholder="Platform users" /></label>
+                    <label class="admin-form-wide">Description <input id="newGroupDescription" placeholder="People allowed to use PAC platform resources" /></label>
+                    <label class="admin-form-wide">Advanced grants <input id="newGroupGrants" placeholder="profile:*:use, workspace:*:read, session:*:write" /></label>
                   </div>
                   <div class="button-row"><button id="createGroupBtn">Create group</button></div>
                   <pre id="groupsResult" class="inline-result compact-result"></pre>
+                </section>
+                <section class="admin-pane">
+                  <div class="admin-pane-head"><div><h2>Add service account</h2><p class="muted">Use for endpoints, providers, automation, and integrations that should not log in interactively.</p></div></div>
+                  <div class="form-grid compact-form">
+                    <label>Principal id <input id="newServiceAccountId" placeholder="svc-builder-01" /></label>
+                    <label>Name <input id="newServiceAccountName" placeholder="Builder service account" /></label>
+                    <label class="admin-form-wide">Description <input id="newServiceAccountDescription" placeholder="Used by a build endpoint or provider integration" /></label>
+                  </div>
+                  <div class="button-row"><button id="createServiceAccountBtn">Create service account</button></div>
+                  <pre id="serviceAccountsResult" class="inline-result compact-result"></pre>
                 </section>
               </div>
             </section>
@@ -1223,6 +1222,7 @@
   <script src="/ui/app/sessions.js"></script>
   <script src="/ui/app/endpoints.js"></script>
   <script src="/ui/app/auth_admin.js"></script>
+  <script src="/ui/app/directory_access.js"></script>
   <script src="/ui/app/events.js"></script>
   <script src="/ui/app/workspaces_contexts.js"></script>
   <script src="/ui/app/profiles_config.js"></script>

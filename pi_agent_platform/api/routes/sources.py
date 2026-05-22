@@ -485,7 +485,7 @@ def create_sources_router(
     def list_secrets(_auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
         try:
             items = secret_store.list()
-            if _auth.is_admin or not _auth.user:
+            if _auth.is_admin:
                 return {'secrets': items}
             filtered = [item for item in items if user_has_resource_access(_auth, 'secret', f"secret:{item.get('id')}", 'read')]
             return {'secrets': filtered}
@@ -497,7 +497,7 @@ def create_sources_router(
     def list_secret_audit(limit: int = 20, _auth: CurrentUser = Depends(require_auth)) -> dict[str, Any]:
         try:
             items = secret_store.audit_tail(max(1, min(limit, 200)))
-            if _auth.is_admin or not _auth.user:
+            if _auth.is_admin:
                 return {'items': items}
             filtered = [item for item in items if user_has_resource_access(_auth, 'secret', f"secret:{item.get('secret_id')}", 'read')]
             return {'items': filtered}

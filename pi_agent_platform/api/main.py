@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import fnmatch
 import hashlib
 import json
 import os
@@ -56,7 +55,7 @@ from pi_agent_platform.api.routes.workspaces import (
     create_workspaces_router,
 )
 from pi_agent_platform.core.platform_home import ensure_pacp_layout, pacp_path
-from pi_agent_platform.core.models import AccessRequest, AccessRequestStatus, AgentContext, Event, Group, ResourceGrant, Session, SessionCreate, Task, TaskCreate, TaskStatus, SessionStatus, Runner, RunnerCreateRequest, RunnerRegisterRequest, RunnerHeartbeat, RunnerStatus, RunnerJobCreate, RunnerJob, RunnerJobStatus, RunnerJobUpdate, RunnerJobLog, RunnerExecutionMode, User, UserWorkspace, WorkspaceSpec
+from pi_agent_platform.core.models import AccessRequest, AccessRequestStatus, AgentContext, DirectoryMember, DirectoryPrincipal, Event, Group, ResourceGrant, Session, SessionCreate, Task, TaskCreate, TaskStatus, SessionStatus, Runner, RunnerCreateRequest, RunnerRegisterRequest, RunnerHeartbeat, RunnerStatus, RunnerJobCreate, RunnerJob, RunnerJobStatus, RunnerJobUpdate, RunnerJobLog, RunnerExecutionMode, User, UserWorkspace, WorkspaceSpec
 from pi_agent_platform.core.runtime import git_diff, git_status, run_shell_task
 from pi_agent_platform.core.agent_loop import run_agent_loop, execute_tool
 from pi_agent_platform.core.session_commands import list_session_slash_commands, parse_session_slash_command, slash_help_text
@@ -81,6 +80,20 @@ from pi_agent_platform.core.letsencrypt_cert import (
 from pi_agent_platform.core.dns_providers import test_cloudflare_credentials
 from pi_agent_platform.core.config import LetsEncryptConfig
 from pi_agent_platform.core.profiles import can_use_profile, public_profile_payload, profile_context_name
+from pi_agent_platform.core.directory import (
+    PAC_ADMIN_GROUP_ID,
+    add_member_to_group,
+    build_directory_tree,
+    ensure_pac_admin_group,
+    explain_principal_membership,
+    migrate_legacy_user_groups,
+    normalize_group_id,
+    remove_member_from_group,
+    resolve_effective_group_ids,
+)
+from pi_agent_platform.core.access_control import can as access_can, effective_grants, explain_access, grant_to_principal, is_system_admin, require as access_require, resource_match
+from pi_agent_platform.core.credentials import credential_expired, hash_token_secret, normalize_certificate_fingerprint, new_token_credential
+from pi_agent_platform.core.directory_identities import sync_directory_identities
 
 NOISY_EVENT_TYPES = {'runner_heartbeat', 'endpoint_heartbeat', 'provider_heartbeat'}
 
@@ -471,8 +484,8 @@ def _platform_alerts(runners: list[Runner] | None = None) -> list[dict[str, Any]
 def _visible_agent_profiles(auth: Any | None = None) -> dict[str, Any]:
     profiles: dict[str, Any] = {}
     for name, profile in config.agent_profiles.items():
-        if auth is None or can_use_profile(profile, auth) or getattr(auth, 'is_admin', False):
-            profiles[name] = public_profile_payload(name, profile, auth or type('Anon', (), {'is_admin': True, 'user': None})())
+        if auth is None or can_use_profile(profile, auth, store=store, profile_name=name) or getattr(auth, 'is_admin', False):
+            profiles[name] = public_profile_payload(name, profile, auth or type('Anon', (), {'is_admin': True, 'user': None})(), store=store)
     return profiles
 
 
@@ -1339,6 +1352,12 @@ def _startup_services() -> None:
     plugin_info = _ensure_platform_plugin_sources()
     if plugin_info.get('created'):
         store.add_event(Event(session_id='system', type='platform_plugin_sources_initialized', message='Platform plugin sources prepared', data=plugin_info))
+    try:
+        sync_result = sync_directory_identities(store, runners=store.list_runners(), providers=config.providers)
+        if sync_result.get('endpoints') or sync_result.get('providers'):
+            store.add_event(Event(session_id='system', type='directory_identities_synced', message='Directory identities synchronized for endpoints and providers', data=sync_result))
+    except Exception as exc:
+        store.add_event(Event(session_id='system', type='directory_identity_sync_failed', message=f'Directory identity synchronization failed: {exc}', data={'error': str(exc)}))
     _start_mdns_advertiser()
 
 
@@ -1349,9 +1368,24 @@ def _shutdown_services() -> None:
 
 
 class CurrentUser:
-    def __init__(self, user: User | None = None, is_admin: bool = False):
+    def __init__(self, user: User | None = None, is_admin: bool = False, principal_id: str | None = None, principal_kind: str | None = None, credential_id: str | None = None):
         self.user = user
         self.is_admin = is_admin
+        self._principal_id = principal_id
+        self.principal_kind = principal_kind or ('user' if user else 'controller')
+        self.credential_id = credential_id
+
+    @property
+    def principal_id(self) -> str:
+        if self._principal_id:
+            return self._principal_id
+        return self.user.id if self.user else 'controller'
+
+    @property
+    def group_ids(self) -> set[str]:
+        if self.principal_id == 'controller':
+            return set()
+        return resolve_effective_group_ids(store, self.principal_id, self.principal_kind or 'user')
 
 
 def _bearer_token(authorization: str | None) -> str | None:
@@ -1359,6 +1393,42 @@ def _bearer_token(authorization: str | None) -> str | None:
     if scheme.lower() != 'bearer' or not token:
         return None
     return token
+
+
+def _principal_auth_from_directory_token(token: str) -> CurrentUser | None:
+    secret_hash = hash_token_secret(token)
+    credential = store.get_directory_credential_by_secret_hash(secret_hash)
+    if not credential or credential_expired(credential):
+        return None
+    user = store.get_user(credential.principal_id)
+    if user:
+        store.touch_directory_credential(credential.id)
+        return CurrentUser(user, is_system_admin(store, user), principal_id=user.id, principal_kind='user', credential_id=credential.id)
+    principal = store.get_directory_principal(credential.principal_id)
+    if principal and principal.status == 'active':
+        store.touch_directory_credential(credential.id)
+        is_admin_principal = PAC_ADMIN_GROUP_ID in resolve_effective_group_ids(store, principal.id, principal.kind)
+        return CurrentUser(None, is_admin_principal, principal_id=principal.id, principal_kind=principal.kind, credential_id=credential.id)
+    return None
+
+
+def _principal_auth_from_certificate_fingerprint(fingerprint: str | None) -> CurrentUser | None:
+    normalized = normalize_certificate_fingerprint(fingerprint or '')
+    if not normalized:
+        return None
+    credential = store.get_directory_credential_by_fingerprint(normalized)
+    if not credential or credential_expired(credential):
+        return None
+    user = store.get_user(credential.principal_id)
+    if user:
+        store.touch_directory_credential(credential.id)
+        return CurrentUser(user, is_system_admin(store, user), principal_id=user.id, principal_kind='user', credential_id=credential.id)
+    principal = store.get_directory_principal(credential.principal_id)
+    if principal and principal.status == 'active':
+        store.touch_directory_credential(credential.id)
+        is_admin_principal = PAC_ADMIN_GROUP_ID in resolve_effective_group_ids(store, principal.id, principal.kind)
+        return CurrentUser(None, is_admin_principal, principal_id=principal.id, principal_kind=principal.kind, credential_id=credential.id)
+    return None
 
 
 def _admin_auth_valid(authorization: str | None) -> bool:
@@ -1373,14 +1443,21 @@ def _admin_auth_valid(authorization: str | None) -> bool:
     if config.auth.mode == 'dev-token':
         return token == config.auth.dev_token
     if config.auth.mode == 'user-password':
-        user = store.get_user_by_token(token)
-        return bool(user and user.role == 'admin')
+        principal_auth = _principal_auth_from_directory_token(token)
+        return bool(principal_auth and principal_auth.is_admin)
     return False
 
 
-def _get_user_from_auth(authorization: str | None = Header(default=None)) -> CurrentUser:
+def _get_user_from_auth(
+    authorization: str | None = Header(default=None),
+    x_pac_client_cert_fingerprint: str | None = Header(default=None),
+    x_ssl_client_fingerprint: str | None = Header(default=None),
+) -> CurrentUser:
     if not config.auth.enabled:
         return CurrentUser(None, True)
+    cert_auth = _principal_auth_from_certificate_fingerprint(x_pac_client_cert_fingerprint or x_ssl_client_fingerprint)
+    if cert_auth:
+        return cert_auth
     token = _bearer_token(authorization)
     if not token:
         raise HTTPException(status_code=401, detail='Missing authorization header')
@@ -1392,9 +1469,9 @@ def _get_user_from_auth(authorization: str | None = Header(default=None)) -> Cur
             return CurrentUser(None, True)
         raise HTTPException(status_code=401, detail='Invalid bearer token')
     if config.auth.mode == 'user-password':
-        user = store.get_user_by_token(token)
-        if user:
-            return CurrentUser(user, user.role == 'admin')
+        principal_auth = _principal_auth_from_directory_token(token)
+        if principal_auth:
+            return principal_auth
         raise HTTPException(status_code=401, detail='Invalid or expired token')
     raise HTTPException(status_code=501, detail='OIDC auth mode is configured but not implemented in this starter')
 
@@ -1995,21 +2072,13 @@ def _context_visibility_owner_ids(auth: CurrentUser) -> tuple[str, str]:
 
 
 def _can_use_agent_context(item: AgentContext, auth: CurrentUser) -> bool:
-    if auth.is_admin or not auth.user:
-        return True
-    if item.owner_id == auth.user.id:
-        return True
-    group_ids = set(auth.user.groups or [])
-    allowed = set(item.use_groups or []) | set(item.editor_groups or [])
-    return bool(group_ids & allowed)
+    allowed = {normalize_group_id(item_id) for item_id in (item.use_groups or [])} | {normalize_group_id(item_id) for item_id in (item.editor_groups or [])}
+    return access_can(store, auth, 'agent_context', item.id, 'use', owner_id=item.owner_id, allowed_groups=allowed)
 
 
 def _can_edit_agent_context(item: AgentContext, auth: CurrentUser) -> bool:
-    if auth.is_admin or not auth.user:
-        return True
-    if item.owner_id == auth.user.id:
-        return True
-    return bool(set(auth.user.groups or []) & set(item.editor_groups or []))
+    allowed = {normalize_group_id(item_id) for item_id in (item.editor_groups or [])}
+    return access_can(store, auth, 'agent_context', item.id, 'write', owner_id=item.owner_id, allowed_groups=allowed)
 
 
 def _is_pac_system_context(item: AgentContext | None) -> bool:
@@ -2193,43 +2262,9 @@ def _shared_storage_payload_to_item(existing: SharedStorage | None, payload: Sha
     return base
 
 
-def _resource_grants_from_user(user: User | None) -> list[ResourceGrant]:
-    if not user or not isinstance(user.metadata, dict):
-        return []
-    raw = user.metadata.get('resource_grants')
-    if not isinstance(raw, list):
-        return []
-    grants: list[ResourceGrant] = []
-    for item in raw:
-        try:
-            grants.append(ResourceGrant.model_validate(item))
-        except Exception:
-            continue
-    return grants
-
-
-def _resource_match(rule: ResourceGrant, resource_type: str, resource_id: str, access: str) -> bool:
-    if rule.resource_type != resource_type:
-        return False
-    if rule.access == 'read' and access == 'write':
-        return False
-    return fnmatch.fnmatch(resource_id, rule.pattern)
-
 
 def _user_has_resource_access(auth: CurrentUser, resource_type: str, resource_id: str, access: str = 'read') -> bool:
-    if auth.is_admin or not auth.user:
-        return True
-    for grant in _resource_grants_from_user(auth.user):
-        if _resource_match(grant, resource_type, resource_id, access):
-            return True
-    group_ids = set(auth.user.groups or [])
-    for group in store.list_groups():
-        if group.id not in group_ids:
-            continue
-        for grant in group.grants:
-            if _resource_match(grant, resource_type, resource_id, access):
-                return True
-    return False
+    return access_can(store, auth, resource_type, resource_id, access)
 
 
 def _ensure_access_request(auth: CurrentUser, resource_type: str, resource_id: str, access: str = 'read', reason: str | None = None, session_id: str = 'system') -> AccessRequest:
@@ -2257,9 +2292,16 @@ def _ensure_access_request(auth: CurrentUser, resource_type: str, resource_id: s
     return request
 
 
+
+def _can_resource_access(auth: CurrentUser, resource_type: str, resource_id: str, access: str = 'read', **kwargs: Any) -> bool:
+    return access_can(store, auth, resource_type, resource_id, access, **kwargs)
+
 def _require_resource_access(auth: CurrentUser, resource_type: str, resource_id: str, access: str = 'read', reason: str | None = None, session_id: str = 'system') -> None:
-    if _user_has_resource_access(auth, resource_type, resource_id, access):
+    try:
+        access_require(store, auth, resource_type, resource_id, access)
         return
+    except PermissionError:
+        pass
     req = _ensure_access_request(auth, resource_type, resource_id, access, reason=reason, session_id=session_id)
     raise HTTPException(status_code=403, detail=f'Access denied. Request queued: {req.id}')
 
@@ -2334,7 +2376,7 @@ def _default_coding_container_image(workspace: WorkspaceSpec, metadata: dict[str
     return 'localhost/python-dev:latest'
 
 
-DEFAULT_ADMIN_GROUP_ID = 'admin'
+DEFAULT_ADMIN_GROUP_ID = PAC_ADMIN_GROUP_ID
 DEFAULT_ADMIN_CONTEXT_NAME = 'PAC/core'
 DEFAULT_ADMIN_WORKSPACE_LABEL = 'PAC'
 
@@ -2366,22 +2408,28 @@ def _find_pac_system_context() -> AgentContext | None:
 
 
 def _ensure_default_admin_group() -> Group:
-    existing = store.get_group(DEFAULT_ADMIN_GROUP_ID)
-    if existing:
-        return existing
-    group = _default_admin_group()
-    store.add_group(group)
+    group = ensure_pac_admin_group(store)
+    desired = _default_admin_group()
+    changed = False
+    if group.grants != desired.grants:
+        group.grants = desired.grants
+        changed = True
+    if group.name != 'PAC Admins':
+        group.name = 'PAC Admins'
+        changed = True
+    if changed:
+        store.add_group(group)
     return group
 
 
 def _ensure_admin_user_group_membership(user: User) -> User:
     if user.role != 'admin':
         return user
-    groups = list(user.groups or [])
-    if DEFAULT_ADMIN_GROUP_ID in groups:
-        return user
-    user.groups = groups + [DEFAULT_ADMIN_GROUP_ID]
-    store.add_user(user)
+    _ensure_default_admin_group()
+    group = store.get_group(DEFAULT_ADMIN_GROUP_ID)
+    if group and not any(member.kind == 'user' and member.id == user.id for member in (group.members or [])):
+        group.members.append(DirectoryMember(kind='user', id=user.id))
+        store.add_group(group)
     return user
 
 
@@ -2472,6 +2520,25 @@ def _ensure_default_admin_context(user: User) -> AgentContext:
     return item
 
 
+
+def _normalize_directory_group_references() -> None:
+    for context in store.list_agent_contexts():
+        use_groups = [normalize_group_id(item) for item in (context.use_groups or []) if str(item).strip()]
+        editor_groups = [normalize_group_id(item) for item in (context.editor_groups or []) if str(item).strip()]
+        if use_groups != list(context.use_groups or []) or editor_groups != list(context.editor_groups or []):
+            context.use_groups = use_groups
+            context.editor_groups = editor_groups
+            store.add_agent_context(context)
+    changed = False
+    for profile in config.agent_profiles.values():
+        current = list(getattr(profile, 'allowed_groups', []) or [])
+        normalized = [normalize_group_id(item) for item in current if str(item).strip()]
+        if normalized != current:
+            profile.allowed_groups = normalized
+            changed = True
+    if changed:
+        save_config(config)
+
 def _ensure_auth_admin_scaffolding() -> None:
     if config.auth.mode != 'user-password':
         return
@@ -2479,6 +2546,9 @@ def _ensure_auth_admin_scaffolding() -> None:
     if not admins:
         return
     _ensure_default_admin_group()
+    migrate_legacy_user_groups(store)
+    _normalize_directory_group_references()
+    sync_directory_identities(store, runners=store.list_runners(), providers=config.providers)
     for admin_user in admins:
         admin_user = _ensure_admin_user_group_membership(admin_user)
         _ensure_default_admin_context(admin_user)
@@ -2490,8 +2560,6 @@ app.include_router(create_auth_router(
     config=config,
     store=store,
     ensure_auth_admin_scaffolding=_ensure_auth_admin_scaffolding,
-    resource_grants_from_user=_resource_grants_from_user,
-    resource_match=_resource_match,
 ))
 
 app.include_router(create_workspaces_router(
@@ -2510,6 +2578,7 @@ app.include_router(create_workspaces_router(
     public_agent_context=_public_agent_context,
     can_use_agent_context=_can_use_agent_context,
     can_edit_agent_context=_can_edit_agent_context,
+    can_resource_access=_can_resource_access,
     is_pac_system_context=_is_pac_system_context,
     app_dir=lambda: _app_dir(),
     agent_context_payload_to_item=_agent_context_payload_to_item,
@@ -2790,19 +2859,32 @@ def _binary_artifact_meta(project: str, target: str, prefer_version: str | None 
 
 
 def _mint_endpoint_onboarding_token(current: CurrentUser, ttl_hours: int) -> tuple[str, str | None, str]:
-    if config.auth.enabled and config.auth.mode == 'dev-token' and config.auth.dev_token:
-        expires = (datetime.utcnow() + timedelta(hours=max(1, ttl_hours))).isoformat()
-        return str(config.auth.dev_token), expires, 'controller-dev-token'
+    ttl = max(1, int(ttl_hours or 24))
     if config.auth.enabled and config.auth.mode == 'user-password':
-        token = uuid.uuid4().hex + uuid.uuid4().hex
-        expires = (datetime.utcnow() + timedelta(hours=max(1, ttl_hours))).isoformat()
-        user_id = current.user.id if current.user else 'admin'
-        store.add_user_token(token, user_id, expires)
-        store.add_event(Event(session_id='system', type='endpoint_onboarding_token_created', message=f'Endpoint onboarding token minted for: {current.user.username if current.user else "admin"}', data={'username': current.user.username if current.user else 'admin', 'ttl_hours': ttl_hours}))
-        return token, expires, 'temporary-user-token'
+        principal_id = f'endpoint-onboarding-{uuid.uuid4().hex[:12]}'
+        principal = DirectoryPrincipal(
+            id=principal_id,
+            kind='service_account',
+            name='Endpoint onboarding token',
+            display_name='Endpoint onboarding token',
+            description='Temporary service account used to download and register a PAC endpoint.',
+            source='pac',
+            system_managed=True,
+            metadata={'purpose': 'endpoint_onboarding', 'created_by': current.principal_id, 'ttl_hours': ttl},
+        )
+        store.add_directory_principal(principal)
+        grant_to_principal(store, 'service_account', principal_id, ResourceGrant(resource_type='endpoint', pattern='*', access='execute'))
+        grant_to_principal(store, 'service_account', principal_id, ResourceGrant(resource_type='source_context', pattern='*', access='read'))
+        credential, token = new_token_credential(principal_id, name='Endpoint onboarding token', ttl_hours=ttl, kind='api_token', metadata={'purpose': 'endpoint_onboarding', 'created_by': current.principal_id})
+        store.add_directory_credential(credential)
+        store.add_event(Event(session_id='system', type='endpoint_onboarding_token_created', message='Endpoint onboarding directory token minted', data={'principal_id': principal_id, 'ttl_hours': ttl, 'credential_id': credential.id}))
+        return token, credential.expires_at.isoformat() if credential.expires_at else None, 'directory-service-account-token'
+    if config.auth.enabled and config.auth.mode == 'dev-token' and config.auth.dev_token:
+        expires = (datetime.utcnow() + timedelta(hours=ttl)).isoformat()
+        return str(config.auth.dev_token), expires, 'controller-dev-token'
     token = _controller_auth_token()
     if token:
-        expires = (datetime.utcnow() + timedelta(hours=max(1, ttl_hours))).isoformat()
+        expires = (datetime.utcnow() + timedelta(hours=ttl)).isoformat()
         return token, expires, 'controller-service-token'
     raise HTTPException(status_code=400, detail='No controller token is available for endpoint onboarding')
 
@@ -3459,6 +3541,7 @@ app.include_router(create_system_router(
     setup_status=_setup_status,
     slash_help_text=slash_help_text,
     require_admin_or_runner=_require_admin_or_runner,
+    require_resource_access=_require_resource_access,
 ))
 
 
@@ -3493,6 +3576,7 @@ app.include_router(create_providers_router(
     ensure_controller_wrapper=_ensure_controller_wrapper,
     restart_controller_wrapper=_restart_controller_wrapper,
     refresh_local_runner_metadata=_refresh_local_runner_metadata,
+    require_resource_access=_require_resource_access,
 ))
 
 app.include_router(create_profiles_router(
@@ -3544,6 +3628,7 @@ app.include_router(create_endpoints_router(
     node_install_command=_node_install_command,
     install_pi_harness_command=_install_pi_harness_command,
     local_pi_harness_install_worker=_local_pi_harness_install_worker,
+    require_resource_access=_require_resource_access,
 ))
 
 

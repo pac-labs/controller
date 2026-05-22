@@ -622,7 +622,7 @@ async function loadWorkspaceCatalogs() {
     api('/v1/workspace-templates').catch(() => ({templates: []})),
     api('/v1/my-workspaces').catch(() => ({items: []})),
     api('/v1/agent-contexts').catch(() => ({items: []})),
-    api('/v1/groups').catch(() => []),
+    api('/v1/directory/groups').catch(() => []),
     api('/v1/shared-storages').catch(() => ({items: []})),
   ]);
   workspaceTemplates = Array.isArray(templateData?.templates) ? templateData.templates : [];

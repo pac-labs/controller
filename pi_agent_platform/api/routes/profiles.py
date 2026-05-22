@@ -60,9 +60,9 @@ def create_profiles_router(
     def list_profiles(auth: Any = Depends(require_auth)) -> dict[str, Any]:
         config = get_config()
         profiles = {
-            name: public_profile_payload(name, profile, auth)
+            name: public_profile_payload(name, profile, auth, store=store)
             for name, profile in config.agent_profiles.items()
-            if can_use_profile(profile, auth) or getattr(auth, "is_admin", False)
+            if can_use_profile(profile, auth, store=store, profile_name=name) or getattr(auth, "is_admin", False)
         }
         return {
             "agent_profiles": profiles,
@@ -74,17 +74,17 @@ def create_profiles_router(
     def list_agent_profiles(auth: Any = Depends(require_auth)) -> dict[str, Any]:
         config = get_config()
         return {
-            name: public_profile_payload(name, profile, auth)
+            name: public_profile_payload(name, profile, auth, store=store)
             for name, profile in config.agent_profiles.items()
-            if can_use_profile(profile, auth) or getattr(auth, "is_admin", False)
+            if can_use_profile(profile, auth, store=store, profile_name=name) or getattr(auth, "is_admin", False)
         }
 
     @router.get("/v1/agent-profiles/{profile_name}")
     def get_agent_profile(profile_name: str, auth: Any = Depends(require_auth)) -> dict[str, Any]:
         profile = _profile_or_404(profile_name)
-        if not can_use_profile(profile, auth) and not getattr(auth, "is_admin", False):
+        if not can_use_profile(profile, auth, store=store, profile_name=profile_name) and not getattr(auth, "is_admin", False):
             raise HTTPException(status_code=403, detail="You are not allowed to use this profile")
-        return public_profile_payload(profile_name, profile, auth)
+        return public_profile_payload(profile_name, profile, auth, store=store)
 
     @router.put("/v1/agent-profiles/{profile_name}")
     def upsert_agent_profile(profile_name: str, payload: dict[str, Any], auth: Any = Depends(require_auth)) -> dict[str, Any]:
@@ -102,7 +102,7 @@ def create_profiles_router(
                 data={"profile": profile_name, "allowed_groups": list(profile.allowed_groups or [])},
             )
         )
-        return public_profile_payload(profile_name, profile, auth)
+        return public_profile_payload(profile_name, profile, auth, store=store)
 
     @router.post("/v1/agent-profiles/{profile_name}/duplicate")
     def duplicate_agent_profile(profile_name: str, payload: dict[str, Any] | None = None, auth: Any = Depends(require_auth)) -> dict[str, Any]:

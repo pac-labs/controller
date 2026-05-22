@@ -15,7 +15,7 @@ async function ensureProfileGroupsLoaded() {
     profileEditorState.groups = [];
     return [];
   }
-  profileEditorState.groups = await api('/v1/groups');
+  profileEditorState.groups = await api('/v1/directory/groups');
   return profileEditorState.groups;
 }
 

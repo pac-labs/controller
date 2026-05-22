@@ -231,7 +231,6 @@ class User(BaseModel):
     password_hash: str | None = None
     display_name: str | None = None
     role: Literal["admin", "user", "readonly"] = "user"
-    groups: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -267,19 +266,74 @@ class User(BaseModel):
         self.password_hash = salt.hex() + "::" + hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 200000).hex()
 
 
+class DirectoryPrincipal(BaseModel):
+    id: str
+    kind: Literal["user", "group", "service_account", "endpoint", "provider", "certificate_identity"] = "user"
+    name: str
+    display_name: str | None = None
+    description: str | None = None
+    status: Literal["active", "disabled", "locked"] = "active"
+    source: Literal["local", "pac", "ldap", "oidc", "external"] = "local"
+    system_managed: bool = False
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def touch(self) -> None:
+        self.updated_at = now_utc()
+
+
 class ResourceGrant(BaseModel):
-    resource_type: Literal["workspace", "source_context", "secret", "session"] = "workspace"
+    resource_type: Literal[
+        "workspace",
+        "source_context",
+        "secret",
+        "session",
+        "profile",
+        "agent_context",
+        "endpoint",
+        "provider",
+        "model",
+        "plugin",
+        "tool_package",
+        "shared_storage",
+        "diagnostics",
+        "system",
+    ] = "workspace"
     pattern: str
-    access: Literal["read", "write"] = "read"
+    access: Literal["read", "write", "use", "execute", "manage"] = "read"
+
+
+class DirectoryMember(BaseModel):
+    kind: Literal["user", "group", "service_account", "endpoint", "provider", "certificate_identity"] = "user"
+    id: str
+
+
+class DirectoryCredential(BaseModel):
+    id: str = Field(default_factory=lambda: f"cred_{uuid4().hex[:12]}")
+    principal_id: str
+    kind: Literal["password", "api_token", "certificate", "endpoint_token", "provider_token"] = "api_token"
+    name: str
+    status: Literal["active", "revoked", "expired"] = "active"
+    secret_hash: str | None = None
+    fingerprint: str | None = None
+    created_at: datetime = Field(default_factory=now_utc)
+    expires_at: datetime | None = None
+    last_used_at: datetime | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class Group(BaseModel):
     id: str
     name: str
     description: str | None = None
+    members: list[DirectoryMember] = Field(default_factory=list)
     grants: list[ResourceGrant] = Field(default_factory=list)
+    source: Literal["local", "pac", "ldap", "oidc", "external"] = "local"
+    system_managed: bool = False
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     def touch(self) -> None:
         self.updated_at = now_utc()

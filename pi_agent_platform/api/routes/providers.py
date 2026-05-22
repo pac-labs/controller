@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from pi_agent_platform.core.config import ProviderConfig
+from pi_agent_platform.core.directory_identities import ensure_provider_principal, retire_provider_principal
 from pi_agent_platform.core.models import Event
 
 
@@ -43,6 +44,7 @@ def create_providers_router(
     ensure_controller_wrapper: Any,
     restart_controller_wrapper: Any,
     refresh_local_runner_metadata: Any,
+    require_resource_access: Any,
 ) -> APIRouter:
     """Provider, model, profile, tool catalog, and artifact routes.
 
@@ -66,7 +68,8 @@ def create_providers_router(
     _refresh_local_runner_metadata = refresh_local_runner_metadata
 
     @router.get('/v1/models')
-    def list_models(_auth: None = Depends(require_auth)) -> dict:
+    def list_models(_auth: Any = Depends(require_auth)) -> dict:
+        require_resource_access(_auth, 'model', '*', 'read')
         config = _get_config()
         result = {}
         for name, model in config.models.items():
@@ -79,19 +82,22 @@ def create_providers_router(
 
 
     @router.get('/v1/providers')
-    def list_providers(_auth: None = Depends(require_auth)) -> dict:
+    def list_providers(_auth: Any = Depends(require_auth)) -> dict:
+        require_resource_access(_auth, 'provider', '*', 'read')
         config = _get_config()
         return provider_public(config)
 
 
     @router.get('/v1/providers/{provider_name}/models')
-    def provider_models(provider_name: str, _auth: None = Depends(require_auth)) -> dict:
+    def provider_models(provider_name: str, _auth: Any = Depends(require_auth)) -> dict:
+        require_resource_access(_auth, 'provider', provider_name, 'read')
         config = _get_config()
         return list_provider_models(config, provider_name)
 
 
     @router.post('/v1/providers/{provider_name}/toggle')
-    def provider_toggle(provider_name: str, payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict:
+    def provider_toggle(provider_name: str, payload: dict[str, Any], _auth: Any = Depends(require_auth)) -> dict:
+        require_resource_access(_auth, 'provider', provider_name, 'manage')
         config = _get_config()
         if provider_name not in config.providers:
             raise HTTPException(status_code=404, detail='Provider not found')
@@ -103,6 +109,7 @@ def create_providers_router(
             provider.status = 'disabled'
             provider.last_error = None
             save_config(config)
+            ensure_provider_principal(store, provider_name, provider)
             store.add_event(Event(session_id='system', type='provider_disabled', message=f'Provider disabled: {provider_name}'))
             return {'ok': True, 'enabled': False, 'status': provider.status, 'models': provider.cached_models}
         result = list_provider_models(config, provider_name, force=True)
@@ -111,12 +118,14 @@ def create_providers_router(
         provider.status = 'connected' if result.get('ok') else 'failed'
         provider.last_error = None if result.get('ok') else (result.get('error') or result.get('response', {}).get('error') if isinstance(result.get('response'), dict) else 'connection failed')
         save_config(config)
+        ensure_provider_principal(store, provider_name, provider)
         store.add_event(Event(session_id='system', type='provider_connected' if result.get('ok') else 'provider_failed', message=f'Provider {provider_name}: {provider.status}', data={'provider': provider_name, 'status': provider.status, 'models': len(provider.cached_models), 'synced_models': synced_models}))
         return {'ok': result.get('ok', False), 'enabled': True, 'status': provider.status, 'last_error': provider.last_error, 'endpoint': result.get('endpoint'), 'models': provider.cached_models, 'synced_models': synced_models, 'response': result.get('response')}
 
 
     @router.put('/v1/providers/{provider_name}')
-    def provider_update(provider_name: str, payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict:
+    def provider_update(provider_name: str, payload: dict[str, Any], _auth: Any = Depends(require_auth)) -> dict:
+        require_resource_access(_auth, 'provider', provider_name, 'manage')
         config = _get_config()
         existing = config.providers.get(provider_name)
         data = dict(payload)
@@ -126,16 +135,19 @@ def create_providers_router(
             data = merged
         config.providers[provider_name] = ProviderConfig.model_validate(data)
         save_config(config)
+        ensure_provider_principal(store, provider_name, config.providers[provider_name])
         store.add_event(Event(session_id='system', type='provider_updated', message=f'Provider updated: {provider_name}'))
         return provider_public(config)[provider_name]
 
 
     @router.delete('/v1/providers/{provider_name}')
-    def provider_delete(provider_name: str, _auth: None = Depends(require_auth)) -> dict:
+    def provider_delete(provider_name: str, _auth: Any = Depends(require_auth)) -> dict:
+        require_resource_access(_auth, 'provider', provider_name, 'manage')
         config = _get_config()
         if provider_name not in config.providers:
             raise HTTPException(status_code=404, detail='Provider not found')
         del config.providers[provider_name]
+        retire_provider_principal(store, provider_name)
         removed_models = [name for name, model in list(config.models.items()) if model.provider == provider_name]
         for name in removed_models:
             del config.models[name]
@@ -145,7 +157,8 @@ def create_providers_router(
 
 
     @router.post('/v1/providers/{provider_name}/test')
-    def provider_health(provider_name: str, _auth: None = Depends(require_auth)) -> dict:
+    def provider_health(provider_name: str, _auth: Any = Depends(require_auth)) -> dict:
+        require_resource_access(_auth, 'provider', provider_name, 'read')
         config = _get_config()
         return test_provider(config, provider_name)
 
@@ -231,7 +244,8 @@ def create_providers_router(
 
 
     @router.get('/v1/models/{model_name}/card')
-    def get_model_card(model_name: str, context_profile: str | None = None, _auth: None = Depends(require_auth)) -> dict:
+    def get_model_card(model_name: str, context_profile: str | None = None, _auth: Any = Depends(require_auth)) -> dict:
+        require_resource_access(_auth, 'model', model_name, 'read')
         config = _get_config()
         if model_name not in config.models:
             raise HTTPException(status_code=404, detail='Model not found')
@@ -248,7 +262,8 @@ def create_providers_router(
 
 
     @router.get('/v1/models/provider-status')
-    def model_provider_status(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    def model_provider_status(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        require_resource_access(_auth, 'provider', '*', 'read')
         config = _get_config()
         from pi_agent_platform.core.providers import sync_model_context
         results = []
@@ -270,7 +285,8 @@ def create_providers_router(
 
 
     @router.patch('/v1/models/{model_name}')
-    def model_update_limits(model_name: str, payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict:
+    def model_update_limits(model_name: str, payload: dict[str, Any], _auth: Any = Depends(require_auth)) -> dict:
+        require_resource_access(_auth, 'model', model_name, 'manage')
         config = _get_config()
         if model_name not in config.models:
             raise HTTPException(status_code=404, detail='Model not found')
@@ -401,12 +417,14 @@ def create_providers_router(
 
 
     @router.get('/v1/controller-harness')
-    def controller_harness_status(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    def controller_harness_status(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        require_resource_access(_auth, 'system', 'controller-harness', 'read')
         return _ensure_controller_harness_session()
 
 
     @router.get('/v1/controller-harness/diagnostics')
-    def controller_harness_diagnostics(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    def controller_harness_diagnostics(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        require_resource_access(_auth, 'diagnostics', 'controller-harness', 'read')
         status = _ensure_controller_harness_session()
         log_file = _pacp_path('logs') / 'controller-pac-wrapper.log'
         log_tail = ''
@@ -482,7 +500,8 @@ def create_providers_router(
 
 
     @router.delete('/v1/models/{model_name}')
-    def delete_model(model_name: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    def delete_model(model_name: str, _auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        require_resource_access(_auth, 'model', model_name, 'manage')
         config = _get_config()
         if model_name not in config.models:
             raise HTTPException(status_code=404, detail='Model not found')

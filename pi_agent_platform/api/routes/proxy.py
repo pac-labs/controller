@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 
 from pi_agent_platform.core.config import AppConfig, ProxyRoute
+from pi_agent_platform.core.credentials import credential_expired, hash_token_secret
 from pi_agent_platform.core.models import Event
 
 
@@ -103,9 +104,11 @@ def create_proxy_router(
         token = bearer_token(auth_header)
         session_profile = None
         if token:
-            user = store.get_user_by_token(token)
-            if user:
-                session_profile = user.metadata.get('permission_profile') if user.metadata else None
+            credential = store.get_directory_credential_by_secret_hash(hash_token_secret(token)) if hasattr(store, 'get_directory_credential_by_secret_hash') else None
+            if credential and not credential_expired(credential):
+                user = store.get_user(credential.principal_id)
+                if user:
+                    session_profile = user.metadata.get('permission_profile') if user.metadata else None
         if route.allowed and session_profile and session_profile not in route.allowed:
             raise HTTPException(status_code=403, detail='Session permission profile not allowed for this route')
         target_url = route.target.rstrip('/') + '/' + path

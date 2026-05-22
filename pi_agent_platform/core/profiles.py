@@ -51,22 +51,35 @@ def profile_output_preferences(profile: Any) -> dict[str, Any]:
 
 
 def auth_group_ids(auth: Any) -> set[str]:
-    user = getattr(auth, "user", None)
-    if not user:
-        return set()
-    return {str(item).strip() for item in (getattr(user, "groups", None) or []) if str(item).strip()}
+    group_ids = getattr(auth, "group_ids", None)
+    if group_ids is not None:
+        value = group_ids() if callable(group_ids) else group_ids
+        return {str(item).strip() for item in (value or set()) if str(item).strip()}
+    return set()
 
 
-def can_use_profile(profile: Any, auth: Any) -> bool:
+def can_use_profile(profile: Any, auth: Any, *, store: Any | None = None, profile_name: str = "*") -> bool:
+    allowed = set(profile_allowed_groups(profile))
+    if store is not None:
+        from .access_control import can as access_can
+
+        return access_can(
+            store,
+            auth,
+            "profile",
+            profile_name or "*",
+            "use",
+            allowed_groups=allowed,
+            allow_unrestricted=not allowed,
+        )
     if getattr(auth, "is_admin", False) or not getattr(auth, "user", None):
         return True
-    allowed = set(profile_allowed_groups(profile))
     if not allowed:
         return True
     return bool(auth_group_ids(auth) & allowed)
 
 
-def public_profile_payload(name: str, profile: Any, auth: Any, *, include_legacy: bool = False) -> dict[str, Any]:
+def public_profile_payload(name: str, profile: Any, auth: Any, *, include_legacy: bool = False, store: Any | None = None) -> dict[str, Any]:
     data = {
         "name": name,
         "display_name": profile_display_name(name, profile),
@@ -80,7 +93,7 @@ def public_profile_payload(name: str, profile: Any, auth: Any, *, include_legacy
         "visibility": profile_visibility(profile),
         "max_agent_steps": getattr(profile, "max_agent_steps", None),
         "max_runtime_minutes": getattr(profile, "max_runtime_minutes", None),
-        "can_use": can_use_profile(profile, auth),
+        "can_use": can_use_profile(profile, auth, store=store, profile_name=name),
     }
     if include_legacy:
         data["model"] = getattr(profile, "model", None)

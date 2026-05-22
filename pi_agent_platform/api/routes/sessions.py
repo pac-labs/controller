@@ -95,7 +95,7 @@ def create_sessions_router(
 
     @router.get('/v1/sessions', response_model=list[Session])
     def list_sessions(_auth: Any = Depends(require_auth)) -> list[Session]:
-        if _auth.is_admin or not _auth.user:
+        if _auth.is_admin:
             return store.list_sessions()
         visible: list[Session] = []
         for session in store.list_sessions():
@@ -132,7 +132,7 @@ def create_sessions_router(
                 workspace.path = controller_storage_path(storage, w.storage_subpath) or workspace.path
             if not payload.agent_profile and w.default_agent_profile and w.default_agent_profile in config.agent_profiles:
                 default_profile = config.agent_profiles[w.default_agent_profile]
-                if not can_use_profile(default_profile, _auth):
+                if not can_use_profile(default_profile, _auth, store=store, profile_name=w.default_agent_profile):
                     raise HTTPException(
                         status_code=403,
                         detail=f'The workspace default profile "{w.default_agent_profile}" is restricted to groups you are not a member of. Select another profile or ask an administrator for access.',
@@ -163,7 +163,7 @@ def create_sessions_router(
         agent_profile = config.agent_profiles.get(payload.agent_profile) if payload.agent_profile else None
         if payload.agent_profile and not agent_profile:
             raise HTTPException(status_code=400, detail=f'Unknown agent profile: {payload.agent_profile}')
-        if agent_profile and not can_use_profile(agent_profile, _auth):
+        if agent_profile and not can_use_profile(agent_profile, _auth, store=store, profile_name=payload.agent_profile):
             raise HTTPException(status_code=403, detail=f'You are not allowed to use agent profile "{payload.agent_profile}"')
 
         selected_model = payload.model

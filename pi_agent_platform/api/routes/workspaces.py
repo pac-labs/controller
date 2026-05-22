@@ -97,6 +97,7 @@ def create_workspaces_router(
     public_agent_context: Callable[[Any], dict[str, Any]],
     can_use_agent_context: Callable[[Any, Any], bool],
     can_edit_agent_context: Callable[[Any, Any], bool],
+    can_resource_access: Callable[..., bool],
     is_pac_system_context: Callable[[Any], bool],
     app_dir: Callable[[], Any],
     agent_context_payload_to_item: Callable[[Any, AgentContextPayload, Any], Any],
@@ -116,6 +117,7 @@ def create_workspaces_router(
     _public_agent_context = public_agent_context
     _can_use_agent_context = can_use_agent_context
     _can_edit_agent_context = can_edit_agent_context
+    _can_resource_access = can_resource_access
     _is_pac_system_context = is_pac_system_context
     _app_dir = app_dir
     _agent_context_payload_to_item = agent_context_payload_to_item
@@ -156,7 +158,7 @@ def create_workspaces_router(
         if not item:
             raise HTTPException(status_code=404, detail='Workspace not found')
         owner_id, _ = _workspace_owner(_auth)
-        if item.owner_id != owner_id and not _auth.is_admin:
+        if not _can_resource_access(_auth, 'workspace', f'user:{item.id}', 'read', owner_id=item.owner_id):
             raise HTTPException(status_code=403, detail='Workspace not available')
         return {'workspace': _public_user_workspace(item)}
 
@@ -167,7 +169,7 @@ def create_workspaces_router(
         if not item:
             raise HTTPException(status_code=404, detail='Workspace not found')
         owner_id, _ = _workspace_owner(_auth)
-        if item.owner_id != owner_id and not _auth.is_admin:
+        if not _can_resource_access(_auth, 'workspace', f'user:{item.id}', 'write', owner_id=item.owner_id):
             raise HTTPException(status_code=403, detail='Workspace not available')
         conflict = store.find_user_workspace_by_name(item.owner_id, payload.name.strip())
         if conflict and conflict.id != item.id:
@@ -184,7 +186,7 @@ def create_workspaces_router(
         if not item:
             raise HTTPException(status_code=404, detail='Workspace not found')
         owner_id, _ = _workspace_owner(_auth)
-        if item.owner_id != owner_id and not _auth.is_admin:
+        if not _can_resource_access(_auth, 'workspace', f'user:{item.id}', 'manage', owner_id=item.owner_id):
             raise HTTPException(status_code=403, detail='Workspace not available')
         store.delete_user_workspace(workspace_id)
         store.add_event(Event(session_id='system', type='user_workspace_deleted', message=f'Workspace deleted: {item.name}', data={'workspace_id': item.id, 'owner': item.owner_username}))
@@ -197,7 +199,7 @@ def create_workspaces_router(
         if not item:
             raise HTTPException(status_code=404, detail='Workspace not found')
         owner_id, _ = _workspace_owner(_auth)
-        if item.owner_id != owner_id and not _auth.is_admin:
+        if not _can_resource_access(_auth, 'workspace', f'user:{item.id}', 'use', owner_id=item.owner_id):
             raise HTTPException(status_code=403, detail='Workspace not available')
         session = _ensure_user_workspace_session(item, _auth)
         return {'ok': True, 'workspace': _public_user_workspace(item), 'session': session.model_dump(mode='json')}

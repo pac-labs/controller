@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from pi_agent_platform.core.config import WorkspaceProfile
+from pi_agent_platform.core.directory_identities import ensure_endpoint_principal, retire_endpoint_principal
 from pi_agent_platform.core.models import (
     Event,
     Runner,
@@ -88,6 +89,7 @@ def create_endpoints_router(
     node_install_command: Any,
     install_pi_harness_command: Any,
     local_pi_harness_install_worker: Any,
+    require_resource_access: Any,
 ) -> APIRouter:
     """Endpoint and runner routes extracted from the controller bootstrap file."""
     router = APIRouter()
@@ -107,14 +109,16 @@ def create_endpoints_router(
 
     @router.get('/v1/runners', response_model=list[Runner])
     @router.get('/v1/endpoints', response_model=list[Runner])
-    def list_runners(_auth: None = Depends(require_auth)) -> list[Runner]:
+    def list_runners(_auth: Any = Depends(require_auth)) -> list[Runner]:
+        require_resource_access(_auth, 'endpoint', '*', 'read')
         _refresh_local_runner_metadata(emit_event=False)
         return store.list_runners()
 
 
     @router.post('/v1/runners', response_model=Runner)
     @router.post('/v1/endpoints', response_model=Runner)
-    def create_runner(payload: RunnerCreateRequest, _auth: None = Depends(require_auth)) -> Runner:
+    def create_runner(payload: RunnerCreateRequest, _auth: Any = Depends(require_auth)) -> Runner:
+        require_resource_access(_auth, 'endpoint', '*', 'manage')
         runner = Runner(
             name=payload.name,
             labels=payload.labels,
@@ -128,6 +132,7 @@ def create_endpoints_router(
         runner.metadata.setdefault('tool_packages', _packages_for_tools(runner.metadata.get('agent_tools', [])))
         runner = _normalise_endpoint_metadata(runner, payload.agent_enabled)
         store.add_runner(runner)
+        ensure_endpoint_principal(store, runner)
         store.add_event(Event(session_id='system', type='runner_created', message=f'Endpoint {runner.name} added', data={'runner_id': runner.id}))
         return runner
 
@@ -136,7 +141,8 @@ def create_endpoints_router(
 
     @router.put('/v1/runners/{runner_id}', response_model=Runner)
     @router.put('/v1/endpoints/{runner_id}', response_model=Runner)
-    def update_runner(runner_id: str, payload: RunnerCreateRequest, _auth: None = Depends(require_auth)) -> Runner:
+    def update_runner(runner_id: str, payload: RunnerCreateRequest, _auth: Any = Depends(require_auth)) -> Runner:
+        require_resource_access(_auth, 'endpoint', runner_id, 'manage')
         runner = store.get_runner(runner_id)
         if not runner:
             raise HTTPException(status_code=404, detail='Endpoint not found')
@@ -152,12 +158,14 @@ def create_endpoints_router(
         runner.metadata.setdefault('agent_runtime', _runtime_agent_state('remote-execution', 'waiting', 'Waiting for endpoint heartbeat.'))
         runner = _normalise_endpoint_metadata(runner, payload.agent_enabled)
         runner = store.add_runner(runner)
+        ensure_endpoint_principal(store, runner)
         store.add_event(Event(session_id='system', type='endpoint_updated', message=f'Endpoint updated: {runner.name}', data={'runner_id': runner.id, 'agent_tools': runner.metadata.get('agent_tools', [])}))
         return runner
 
     @router.post('/v1/runners/register', response_model=Runner)
     @router.post('/v1/endpoints/register', response_model=Runner)
-    def register_runner(payload: RunnerRegisterRequest, _auth: None = Depends(require_auth)) -> Runner:
+    def register_runner(payload: RunnerRegisterRequest, _auth: Any = Depends(require_auth)) -> Runner:
+        require_resource_access(_auth, 'endpoint', '*', 'execute')
         requested_name = str(payload.name or '').strip()
         is_local_wrapper = requested_name == 'local-PAC' or str(payload.endpoint or '') == 'pac-endpoint://local-PAC' or bool((payload.metadata or {}).get('controller_wrapper'))
         existing_local = store.get_runner('local-PAC') if is_local_wrapper else None
@@ -195,18 +203,21 @@ def create_endpoints_router(
         runner.metadata.setdefault('tool_packages', _packages_for_tools(runner.metadata.get('agent_tools', [])))
         runner = _normalise_endpoint_metadata(runner, payload.agent_enabled)
         store.add_runner(runner)
+        ensure_endpoint_principal(store, runner)
         store.add_event(Event(session_id='system', type='runner_registered', message=f'Endpoint {runner.name} registered', data={'runner_id': runner.id, 'labels': runner.labels, 'certificate_issued': bool(cert_result)}))
         return runner
 
 
     @router.get('/v1/runners/local/discover')
     @router.get('/v1/endpoints/local/discover')
-    def local_discover(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    def local_discover(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        require_resource_access(_auth, 'endpoint', 'local-PAC', 'read')
         return {'capabilities': discover_host(), 'containers': discover_containers()}
 
 
     @router.post('/v1/endpoints/onboarding-kit')
     def endpoint_onboarding_kit(payload: EndpointOnboardingRequest, _auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        require_resource_access(_auth, 'endpoint', '*', 'manage')
         public_url = str(config.server.public_url or '').strip().rstrip('/')
         if not public_url:
             raise HTTPException(status_code=400, detail='Controller public_url is not configured')
@@ -287,7 +298,8 @@ def create_endpoints_router(
 
     @router.post('/v1/runners/local', response_model=Runner)
     @router.post('/v1/endpoints/local', response_model=Runner)
-    def add_local_runner(_auth: None = Depends(require_auth)) -> Runner:
+    def add_local_runner(_auth: Any = Depends(require_auth)) -> Runner:
+        require_resource_access(_auth, 'endpoint', 'local-PAC', 'manage')
         """Add or refresh the PAC host as a first-class endpoint entry."""
         try:
             return _refresh_local_runner_metadata(emit_event=True)
@@ -298,7 +310,8 @@ def create_endpoints_router(
 
     @router.get('/v1/runners/{runner_id}', response_model=Runner)
     @router.get('/v1/endpoints/{runner_id}', response_model=Runner)
-    def get_runner(runner_id: str, _auth: None = Depends(require_auth)) -> Runner:
+    def get_runner(runner_id: str, _auth: Any = Depends(require_auth)) -> Runner:
+        require_resource_access(_auth, 'endpoint', runner_id, 'read')
         runner = store.get_runner(runner_id)
         if not runner:
             raise HTTPException(status_code=404, detail='Endpoint not found')
@@ -307,7 +320,8 @@ def create_endpoints_router(
 
     @router.post('/v1/runners/heartbeat', response_model=Runner)
     @router.post('/v1/endpoints/heartbeat', response_model=Runner)
-    def runner_heartbeat(payload: RunnerHeartbeat, _auth: None = Depends(require_auth)) -> Runner:
+    def runner_heartbeat(payload: RunnerHeartbeat, _auth: Any = Depends(require_auth)) -> Runner:
+        require_resource_access(_auth, 'endpoint', payload.runner_id, 'execute')
         runner = store.get_runner(payload.runner_id)
         if not runner:
             raise HTTPException(status_code=404, detail='Endpoint not found')
@@ -336,6 +350,7 @@ def create_endpoints_router(
         runner = _normalise_endpoint_metadata(runner, runner.metadata.get('agent_requested') or runner.metadata.get('agent_enabled', False))
         runner.last_seen_at = Event(session_id='system', type='noop', message='noop').created_at
         store.add_runner(runner)
+        ensure_endpoint_principal(store, runner)
         current_version = str(runner.metadata.get('runner_version') or runner.metadata.get('endpoint_version') or '')
         current_capability_signature = json.dumps(runner.capabilities or {}, sort_keys=True, default=str)
         heartbeat_changed = (
@@ -365,12 +380,14 @@ def create_endpoints_router(
 
     @router.delete('/v1/runners/{runner_id}')
     @router.delete('/v1/endpoints/{runner_id}')
-    def delete_runner(runner_id: str, _auth: None = Depends(require_auth)) -> dict[str, str]:
+    def delete_runner(runner_id: str, _auth: Any = Depends(require_auth)) -> dict[str, str]:
+        require_resource_access(_auth, 'endpoint', runner_id, 'manage')
         if runner_id == 'local-PAC':
             _refresh_local_runner_metadata(emit_event=False)
             raise HTTPException(status_code=400, detail='The local PAC endpoint is required by the controller pi.dev runtime and cannot be deleted.')
         if not store.delete_runner(runner_id):
             raise HTTPException(status_code=404, detail='Endpoint not found')
+        retire_endpoint_principal(store, runner_id)
         store.add_event(Event(session_id='system', type='runner_deleted', message=f'Endpoint {runner_id} deleted'))
         return {'status': 'deleted'}
 
@@ -396,7 +413,8 @@ def create_endpoints_router(
 
 
     @router.post('/v1/endpoints/{runner_id}/commands', response_model=RunnerJob)
-    def queue_endpoint_command(runner_id: str, payload: RunnerJobCreate, _auth: None = Depends(require_auth)) -> RunnerJob:
+    def queue_endpoint_command(runner_id: str, payload: RunnerJobCreate, _auth: Any = Depends(require_auth)) -> RunnerJob:
+        require_resource_access(_auth, 'endpoint', runner_id, 'execute')
         runner = store.get_runner(runner_id)
         if not runner:
             raise HTTPException(status_code=404, detail='Endpoint not found')
@@ -486,7 +504,8 @@ def create_endpoints_router(
 
     @router.post('/v1/endpoints/{runner_id}/maintenance', response_model=RunnerJob | dict[str, Any])
     @router.post('/v1/runners/{runner_id}/maintenance', response_model=RunnerJob | dict[str, Any])
-    def queue_endpoint_maintenance(runner_id: str, payload: EndpointMaintenanceRequest | None = None, _auth: None = Depends(require_auth)) -> RunnerJob | dict[str, Any]:
+    def queue_endpoint_maintenance(runner_id: str, payload: EndpointMaintenanceRequest | None = None, _auth: Any = Depends(require_auth)) -> RunnerJob | dict[str, Any]:
+        require_resource_access(_auth, 'endpoint', runner_id, 'manage')
         endpoint = store.get_runner(runner_id)
         if not endpoint:
             raise HTTPException(status_code=404, detail='Endpoint not found')
@@ -505,7 +524,8 @@ def create_endpoints_router(
 
 
     @router.post('/v1/endpoints/maintenance-all')
-    def queue_all_endpoint_maintenance(payload: EndpointMaintenanceRequest | None = None, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+    def queue_all_endpoint_maintenance(payload: EndpointMaintenanceRequest | None = None, _auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        require_resource_access(_auth, 'endpoint', '*', 'manage')
         req = payload or EndpointMaintenanceRequest()
         queued: list[dict[str, str]] = []
         completed_local: list[dict[str, Any]] = []
@@ -530,7 +550,8 @@ def create_endpoints_router(
 
     @router.post('/v1/endpoints/{runner_id}/update', response_model=RunnerJob)
     @router.post('/v1/runners/{runner_id}/update', response_model=RunnerJob)
-    def queue_endpoint_update(runner_id: str, payload: EndpointUpdateRequest | None = None, _auth: None = Depends(require_auth)) -> RunnerJob:
+    def queue_endpoint_update(runner_id: str, payload: EndpointUpdateRequest | None = None, _auth: Any = Depends(require_auth)) -> RunnerJob:
+        require_resource_access(_auth, 'endpoint', runner_id, 'manage')
         endpoint = store.get_runner(runner_id)
         if not endpoint:
             raise HTTPException(status_code=404, detail='Endpoint not found')
@@ -556,7 +577,8 @@ def create_endpoints_router(
         return job
 
     @router.post('/v1/endpoints/update-all')
-    def queue_all_endpoint_updates(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+    def queue_all_endpoint_updates(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        require_resource_access(_auth, 'endpoint', '*', 'manage')
         queued: list[dict[str, str]] = []
         skipped: list[dict[str, str]] = []
         for endpoint in store.list_runners():
@@ -581,12 +603,14 @@ def create_endpoints_router(
         return {'queued': queued, 'skipped': skipped, 'target_version': pac_version}
 
     @router.get('/v1/runner-jobs', response_model=list[RunnerJob])
-    def list_runner_jobs(runner_id: str | None = None, status: str | None = None, _auth: None = Depends(require_auth)) -> list[RunnerJob]:
+    def list_runner_jobs(runner_id: str | None = None, status: str | None = None, _auth: Any = Depends(require_auth)) -> list[RunnerJob]:
+        require_resource_access(_auth, 'endpoint', runner_id or '*', 'read')
         return store.list_runner_jobs(runner_id=runner_id, status=status)
 
 
     @router.post('/v1/runners/{runner_id}/jobs', response_model=RunnerJob)
-    def create_runner_job(runner_id: str, payload: RunnerJobCreate, _auth: None = Depends(require_auth)) -> RunnerJob:
+    def create_runner_job(runner_id: str, payload: RunnerJobCreate, _auth: Any = Depends(require_auth)) -> RunnerJob:
+        require_resource_access(_auth, 'endpoint', runner_id, 'execute')
         runner = store.get_runner(runner_id)
         if not runner:
             raise HTTPException(status_code=404, detail='Endpoint not found')
@@ -615,7 +639,8 @@ def create_endpoints_router(
 
     @router.get('/v1/runners/{runner_id}/jobs/next', response_model=RunnerJob | None)
     @router.get('/v1/endpoints/{runner_id}/jobs/next', response_model=RunnerJob | None)
-    def runner_next_job(runner_id: str, _auth: None = Depends(require_auth)) -> RunnerJob | None:
+    def runner_next_job(runner_id: str, _auth: Any = Depends(require_auth)) -> RunnerJob | None:
+        require_resource_access(_auth, 'endpoint', runner_id, 'execute')
         runner = store.get_runner(runner_id)
         if not runner:
             raise HTTPException(status_code=404, detail='Endpoint not found')

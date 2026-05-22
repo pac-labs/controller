@@ -6,7 +6,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Iterable
 
-from .models import AccessRequest, AgentContext, Event, Group, Session, Task, Runner, RunnerJob, RunnerJobStatus, User, UserWorkspace, now_utc
+from .models import AccessRequest, AgentContext, DirectoryCredential, DirectoryPrincipal, Event, Group, Session, Task, Runner, RunnerJob, RunnerJobStatus, User, UserWorkspace, now_utc
 from .shared_storage import SharedStorage
 from .config import ProxyRoute
 from .platform_home import pacp_path
@@ -39,6 +39,12 @@ class SQLiteStore:
             conn.execute('create table if not exists user_tokens (token text primary key, user_id text not null, expires_at text not null, created_at text not null)')
             conn.execute('create index if not exists idx_user_tokens_user on user_tokens(user_id, expires_at)')
             conn.execute('create table if not exists groups (id text primary key, payload text not null, updated_at text not null)')
+            conn.execute('create table if not exists directory_principals (id text primary key, kind text not null, payload text not null, updated_at text not null)')
+            conn.execute('create index if not exists idx_directory_principals_kind on directory_principals(kind, updated_at)')
+            conn.execute('create table if not exists directory_credentials (id text primary key, principal_id text not null, kind text not null, status text not null, secret_hash text, fingerprint text, payload text not null, updated_at text not null)')
+            conn.execute('create index if not exists idx_directory_credentials_principal on directory_credentials(principal_id, updated_at)')
+            conn.execute('create index if not exists idx_directory_credentials_secret_hash on directory_credentials(secret_hash)')
+            conn.execute('create index if not exists idx_directory_credentials_fingerprint on directory_credentials(fingerprint)')
             conn.execute('create table if not exists access_requests (id text primary key, user_id text not null, status text not null, payload text not null, updated_at text not null)')
             conn.execute('create index if not exists idx_access_requests_status on access_requests(status, updated_at)')
             conn.execute('create table if not exists user_workspaces (id text primary key, owner_id text not null, owner_username text not null, name text not null, payload text not null, updated_at text not null)')
@@ -229,9 +235,34 @@ class SQLiteStore:
             rows = conn.execute('select payload from users order by updated_at desc').fetchall()
         return [User.model_validate_json(r['payload']) for r in rows]
 
+    def list_raw_user_payloads(self) -> list[dict]:
+        """Return raw user JSON for destructive directory migrations.
+
+        User.groups and legacy metadata grants are intentionally no longer part
+        of the runtime User model. This helper lets startup migration import old
+        payload fields before add_user() rewrites the payload in the new shape.
+        """
+        with self._connect() as conn:
+            rows = conn.execute('select payload from users order by updated_at desc').fetchall()
+        items: list[dict] = []
+        for row in rows:
+            try:
+                payload = json.loads(row['payload'])
+            except Exception:
+                continue
+            if isinstance(payload, dict):
+                items.append(payload)
+        return items
+
+    def delete_legacy_user_tokens(self) -> int:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute('delete from user_tokens')
+        return cur.rowcount
+
     def delete_user(self, user_id: str) -> bool:
         with self._lock, self._connect() as conn:
             conn.execute('delete from user_tokens where user_id = ?', (user_id,))
+            conn.execute('delete from directory_credentials where principal_id = ?', (user_id,))
             cur = conn.execute('delete from users where id = ?', (user_id,))
         return cur.rowcount > 0
 
@@ -269,6 +300,77 @@ class SQLiteStore:
     def delete_user_token(self, token: str) -> None:
         with self._lock, self._connect() as conn:
             conn.execute('delete from user_tokens where token = ?', (token,))
+
+    def add_directory_principal(self, principal: DirectoryPrincipal) -> DirectoryPrincipal:
+        principal.touch()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'insert or replace into directory_principals(id, kind, payload, updated_at) values (?, ?, ?, ?)',
+                (principal.id, principal.kind, principal.model_dump_json(), principal.updated_at.isoformat()),
+            )
+        return principal
+
+    def get_directory_principal(self, principal_id: str) -> DirectoryPrincipal | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from directory_principals where id = ?', (principal_id,)).fetchone()
+        return DirectoryPrincipal.model_validate_json(row['payload']) if row else None
+
+    def list_directory_principals(self, kind: str | None = None) -> list[DirectoryPrincipal]:
+        with self._connect() as conn:
+            if kind:
+                rows = conn.execute('select payload from directory_principals where kind = ? order by updated_at desc', (kind,)).fetchall()
+            else:
+                rows = conn.execute('select payload from directory_principals order by kind asc, updated_at desc').fetchall()
+        return [DirectoryPrincipal.model_validate_json(r['payload']) for r in rows]
+
+    def delete_directory_principal(self, principal_id: str) -> bool:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute('delete from directory_principals where id = ?', (principal_id,))
+        return cur.rowcount > 0
+
+
+    def add_directory_credential(self, credential: DirectoryCredential) -> DirectoryCredential:
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'insert or replace into directory_credentials(id, principal_id, kind, status, secret_hash, fingerprint, payload, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?)',
+                (credential.id, credential.principal_id, credential.kind, credential.status, credential.secret_hash, credential.fingerprint, credential.model_dump_json(), now_utc().isoformat()),
+            )
+        return credential
+
+    def get_directory_credential(self, credential_id: str) -> DirectoryCredential | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from directory_credentials where id = ?', (credential_id,)).fetchone()
+        return DirectoryCredential.model_validate_json(row['payload']) if row else None
+
+    def get_directory_credential_by_secret_hash(self, secret_hash: str) -> DirectoryCredential | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from directory_credentials where secret_hash = ?', (secret_hash,)).fetchone()
+        return DirectoryCredential.model_validate_json(row['payload']) if row else None
+
+    def get_directory_credential_by_fingerprint(self, fingerprint: str) -> DirectoryCredential | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from directory_credentials where fingerprint = ?', (fingerprint,)).fetchone()
+        return DirectoryCredential.model_validate_json(row['payload']) if row else None
+
+    def list_directory_credentials(self, principal_id: str | None = None) -> list[DirectoryCredential]:
+        with self._connect() as conn:
+            if principal_id:
+                rows = conn.execute('select payload from directory_credentials where principal_id = ? order by updated_at desc', (principal_id,)).fetchall()
+            else:
+                rows = conn.execute('select payload from directory_credentials order by updated_at desc').fetchall()
+        return [DirectoryCredential.model_validate_json(r['payload']) for r in rows]
+
+    def delete_directory_credential(self, credential_id: str) -> bool:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute('delete from directory_credentials where id = ?', (credential_id,))
+        return cur.rowcount > 0
+
+    def touch_directory_credential(self, credential_id: str) -> None:
+        credential = self.get_directory_credential(credential_id)
+        if not credential:
+            return
+        credential.last_used_at = now_utc()
+        self.add_directory_credential(credential)
 
     def add_group(self, group: Group) -> Group:
         group.touch()

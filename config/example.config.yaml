@@ -286,7 +286,7 @@ agent_profiles:
 
 workspaces:
   agent-control:
-    description: Agent control workspace: the PAC controller application/source tree used by the main pi.dev runtime.
+    description: "Agent control workspace: the PAC controller application/source tree used by the main pi.dev runtime."
     type: local
     path: null
     default_agent_profile: main-pi-dev
