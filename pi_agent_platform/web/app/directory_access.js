@@ -26,6 +26,23 @@ const DIRECTORY_GRANT_PRESETS = [
   ['system:*:manage', 'Full PAC administration'],
 ];
 
+
+const DIRECTORY_GRANT_RESOURCE_TYPES = [
+  ['profile', 'Profile'],
+  ['workspace', 'Workspace'],
+  ['agent_context', 'Agent context'],
+  ['source_context', 'Source context'],
+  ['secret', 'Secret'],
+  ['session', 'Session'],
+  ['diagnostics', 'Diagnostics'],
+  ['model_usage', 'Model usage'],
+  ['endpoint', 'Endpoint'],
+  ['provider', 'Provider'],
+  ['system', 'System'],
+];
+
+const DIRECTORY_GRANT_ACTIONS = ['use', 'read', 'write', 'execute', 'create', 'manage'];
+
 const DIRECTORY_FOLDERS = [
   ['people', 'People', 'user', 'users'],
   ['groups', 'Groups', 'group', 'groups'],
@@ -58,6 +75,97 @@ function directoryFormatDate(value) {
   }
 }
 
+
+function parseDirectoryGrantSpec(value) {
+  const parts = String(value || '').split(':');
+  if (parts.length < 3) return null;
+  const resource_type = (parts.shift() || '').trim();
+  const access = (parts.pop() || '').trim();
+  const pattern = parts.join(':').trim() || '*';
+  if (!resource_type || !access) return null;
+  return {resource_type, pattern, access};
+}
+
+function directoryGrantSpec(grant) {
+  return `${grant?.resource_type || 'workspace'}:${grant?.pattern || '*'}:${grant?.access || 'read'}`;
+}
+
+function directoryGrantResourceOptions(selected = '') {
+  return DIRECTORY_GRANT_RESOURCE_TYPES.map(([value, label]) => `<option value="${escapeHtml(value)}" ${value === selected ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('');
+}
+
+function directoryGrantActionOptions(selected = '') {
+  return DIRECTORY_GRANT_ACTIONS.map((value) => `<option value="${escapeHtml(value)}" ${value === selected ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('');
+}
+
+function renderDirectoryGrantBuilder(grants = []) {
+  const rows = (grants || []).length ? grants : [];
+  return `<div class="directory-grant-builder">
+    <div class="directory-grant-builder-head">
+      <div><b>Access grants</b><p class="muted small-text">Pick what this group can use. Tokens only identify principals; these grants decide access.</p></div>
+      <div class="button-row compact-actions"><select class="directory-grant-preset"><option value="">Common grant…</option>${DIRECTORY_GRANT_PRESETS.map(([value,label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('')}</select><button class="ghost-button add-directory-grant" type="button">+ grant</button></div>
+    </div>
+    <div class="directory-grant-rows">
+      ${rows.map((grant) => renderDirectoryGrantRow(grant)).join('') || '<div class="muted small-text directory-no-grants">No grants yet.</div>'}
+    </div>
+  </div>`;
+}
+
+function renderDirectoryGrantRow(grant = {}) {
+  const resourceType = grant.resource_type || 'workspace';
+  const pattern = grant.pattern || '*';
+  const access = grant.access || 'read';
+  return `<div class="directory-grant-row" data-grant-row>
+    <select class="directory-grant-resource">${directoryGrantResourceOptions(resourceType)}</select>
+    <input class="directory-grant-pattern" value="${escapeHtml(pattern)}" placeholder="resource id or *" />
+    <select class="directory-grant-action">${directoryGrantActionOptions(access)}</select>
+    <button class="ghost-button remove-directory-grant" type="button" title="Remove grant">×</button>
+  </div>`;
+}
+
+function addDirectoryGrantRow(root, grant = {}) {
+  const rows = root.querySelector('.directory-grant-rows');
+  if (!rows) return;
+  rows.querySelector('.directory-no-grants')?.remove();
+  rows.insertAdjacentHTML('beforeend', renderDirectoryGrantRow(grant));
+  bindDirectoryGrantBuilder(root);
+}
+
+function readDirectoryGrantRows(root) {
+  return Array.from(root.querySelectorAll('[data-grant-row]')).map((row) => ({
+    resource_type: row.querySelector('.directory-grant-resource')?.value || 'workspace',
+    pattern: row.querySelector('.directory-grant-pattern')?.value.trim() || '*',
+    access: row.querySelector('.directory-grant-action')?.value || 'read',
+  })).filter((grant) => grant.resource_type && grant.pattern && grant.access);
+}
+
+function bindDirectoryGrantBuilder(root) {
+  root.querySelectorAll('.add-directory-grant').forEach((button) => {
+    if (button.dataset.bound === '1') return;
+    button.dataset.bound = '1';
+    button.addEventListener('click', () => addDirectoryGrantRow(button.closest('.directory-grant-builder') || root, {resource_type: 'workspace', pattern: '*', access: 'read'}));
+  });
+  root.querySelectorAll('.directory-grant-preset').forEach((select) => {
+    if (select.dataset.bound === '1') return;
+    select.dataset.bound = '1';
+    select.addEventListener('change', () => {
+      const grant = parseDirectoryGrantSpec(select.value || '');
+      if (grant) addDirectoryGrantRow(select.closest('.directory-grant-builder') || root, grant);
+      select.value = '';
+    });
+  });
+  root.querySelectorAll('.remove-directory-grant').forEach((button) => {
+    if (button.dataset.bound === '1') return;
+    button.dataset.bound = '1';
+    button.addEventListener('click', () => {
+      const builder = button.closest('.directory-grant-builder');
+      button.closest('[data-grant-row]')?.remove();
+      const rows = builder?.querySelector('.directory-grant-rows');
+      if (rows && !rows.querySelector('[data-grant-row]')) rows.innerHTML = '<div class="muted small-text directory-no-grants">No grants yet.</div>';
+    });
+  });
+}
+
 function directoryCreateMenuForFolder(folderId) {
   if (folderId === 'people') return 'addPersonMenu';
   if (folderId === 'groups') return 'addGroupMenu';
@@ -65,14 +173,54 @@ function directoryCreateMenuForFolder(folderId) {
   return '';
 }
 
+function directoryCreateTypeFromMenuId(menuId) {
+  if (menuId === 'addPersonMenu') return 'person';
+  if (menuId === 'addGroupMenu') return 'group';
+  if (menuId === 'addServiceAccountMenu') return 'service_account';
+  return 'person';
+}
+
+function directoryCreateTypeTitle(type) {
+  if (type === 'group') return 'Create group';
+  if (type === 'service_account') return 'Create service account';
+  return 'Create person';
+}
+
+function directoryCreateTypeSubtitle(type) {
+  if (type === 'group') return 'Create a group that can hold people, service accounts, endpoint identities, provider identities, certificate identities, and other groups.';
+  if (type === 'service_account') return 'Create a non-interactive identity for automation, endpoints, providers, or integration work.';
+  return 'Create an interactive user. Add group membership after creation from the group detail panel or by drag/drop.';
+}
+
+function setDirectoryCreateType(type) {
+  const selectedType = type || 'person';
+  const modal = document.getElementById('directoryCreateModal');
+  if (!modal) return;
+  modal.dataset.createType = selectedType;
+  const title = document.getElementById('directoryCreateModalTitle');
+  const subtitle = document.getElementById('directoryCreateModalSubtitle');
+  if (title) title.textContent = directoryCreateTypeTitle(selectedType);
+  if (subtitle) subtitle.textContent = directoryCreateTypeSubtitle(selectedType);
+  modal.querySelectorAll('[data-create-type]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.createType === selectedType);
+  });
+  modal.querySelectorAll('[data-create-panel]').forEach((panel) => {
+    panel.hidden = panel.dataset.createPanel !== selectedType;
+  });
+}
+
+function closeDirectoryCreateModal() {
+  const modal = document.getElementById('directoryCreateModal');
+  if (!modal) return;
+  modal.hidden = true;
+}
+
 function openDirectoryCreateMenu(menuId) {
-  if (!menuId) return;
-  document.querySelectorAll('.directory-add-menu').forEach((menu) => { menu.open = menu.id === menuId; });
-  const menu = document.getElementById(menuId);
-  if (menu) {
-    menu.open = true;
-    menu.scrollIntoView({block: 'nearest', behavior: 'smooth'});
-  }
+  const modal = document.getElementById('directoryCreateModal');
+  if (!modal) return;
+  setDirectoryCreateType(directoryCreateTypeFromMenuId(menuId));
+  modal.hidden = false;
+  modal.querySelector('input, select, textarea, button')?.focus?.();
 }
 
 function directoryKindLabel(kind) {
@@ -259,10 +407,11 @@ function renderDirectoryGroupDetail(group, detail, title, subtitle) {
   const options = ['user','group','service_account','endpoint','provider','certificate_identity'].map((kind) => directoryItemsForKind(kind).filter((entry) => !(kind === 'group' && entry.id === group.id)).map((entry) => `<option value="${escapeHtml(kind)}:${escapeHtml(entry.id)}">${escapeHtml(kind)} · ${escapeHtml(directoryPrincipalLabel(entry))}</option>`).join('')).join('');
   detail.innerHTML = `<article class="directory-detail-card">
     <div class="directory-detail-head"><div><h3>${escapeHtml(directoryPrincipalLabel(group))}</h3><p class="muted">${escapeHtml(group.id)} · group</p></div><div class="admin-item-badges"><span class="admin-badge subtle">${members.length} members</span>${group.system_managed ? '<span class="admin-badge">system</span>' : ''}</div></div>
-    <div class="form-grid compact-form"><label>Name <input id="directoryGroupName" value="${escapeHtml(group.name || group.id)}" /></label><label>Description <input id="directoryGroupDescription" value="${escapeHtml(group.description || '')}" /></label><label class="admin-form-wide">Access grants <input id="directoryGroupGrants" value="${escapeHtml(serializeGroupGrants(group.grants || []))}" placeholder="profile:*:use, workspace:*:read" /></label><label>Common grant <select id="directoryGrantPreset"><option value="">Add a permission…</option>${DIRECTORY_GRANT_PRESETS.map(([value,label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('')}</select></label><p class="muted small-text admin-form-wide">Tokens only identify the principal. These directory grants decide what members can use.</p></div>
-    <div class="directory-tabs-grid"><section class="directory-group-drop-zone" data-drop-group-id="${escapeHtml(group.id)}"><h4>Members</h4><p class="muted small-text">Drop directory objects here, or onto this group in the tree, to add direct membership.</p><div class="directory-member-list">${members.length ? members.map((member) => `<span class="directory-member-pill" data-kind="${escapeHtml(member.kind)}" data-id="${escapeHtml(member.id)}"><span class="directory-kind-icon ${escapeHtml(member.kind)}" aria-hidden="true"></span>${escapeHtml(directoryMemberTitle(member))}<button class="link-button remove-directory-member" data-kind="${escapeHtml(member.kind)}" data-id="${escapeHtml(member.id)}" type="button">×</button></span>`).join('') : '<span class="muted small-text">No direct members.</span>'}</div><label class="admin-form-wide directory-add-member">Add member <select id="directoryMemberPicker"><option value="">Select a directory object…</option>${options}</select></label><button id="addDirectoryMemberBtn" class="ghost-button" type="button">Add member</button></section><section><h4>Access grants</h4>${formatGrantPills(group.grants || [])}</section></div>
+    <div class="form-grid compact-form"><label>Name <input id="directoryGroupName" value="${escapeHtml(group.name || group.id)}" /></label><label>Description <input id="directoryGroupDescription" value="${escapeHtml(group.description || '')}" /></label></div>
+    <div class="directory-tabs-grid"><section class="directory-group-drop-zone" data-drop-group-id="${escapeHtml(group.id)}"><h4>Members</h4><p class="muted small-text">Drop directory objects here, or onto this group in the tree, to add direct membership. Drag a member to the removal zone to remove direct membership.</p><div class="directory-member-list">${members.length ? members.map((member) => `<span class="directory-member-pill" data-kind="${escapeHtml(member.kind)}" data-id="${escapeHtml(member.id)}"><span class="directory-kind-icon ${escapeHtml(member.kind)}" aria-hidden="true"></span>${escapeHtml(directoryMemberTitle(member))}<button class="link-button remove-directory-member" data-kind="${escapeHtml(member.kind)}" data-id="${escapeHtml(member.id)}" type="button">×</button></span>`).join('') : '<span class="muted small-text">No direct members.</span>'}</div><label class="admin-form-wide directory-add-member">Add member <select id="directoryMemberPicker"><option value="">Select a directory object…</option>${options}</select></label><button id="addDirectoryMemberBtn" class="ghost-button" type="button">Add member</button><div class="directory-remove-drop-zone" data-remove-group-id="${escapeHtml(group.id)}">Drop a direct member here to remove it from this group.</div></section><section>${renderDirectoryGrantBuilder(group.grants || [])}</section></div>
     <div class="button-row"><button id="saveDirectoryGroupBtn" type="button">Save group</button><button id="deleteDirectoryGroupBtn" class="ghost-button" type="button">Delete group</button></div><pre id="directoryGroupsResult" class="inline-result compact-result"></pre>
   </article>`;
+  bindDirectoryGrantBuilder(detail);
   bindGroupDetailActions(detail, group);
   window.bindDirectoryDragDrop?.(detail);
 }
@@ -283,7 +432,7 @@ function bindGroupDetailActions(detail, group) {
   }));
   detail.querySelector('#saveDirectoryGroupBtn')?.addEventListener('click', async () => {
     const result = detail.querySelector('#directoryGroupsResult');
-    try { await api(`/v1/directory/groups/${encodeURIComponent(group.id)}`, {method: 'PUT', body: JSON.stringify({name: detail.querySelector('#directoryGroupName')?.value.trim() || group.id, description: detail.querySelector('#directoryGroupDescription')?.value.trim() || '', grants: parseGroupGrants(detail.querySelector('#directoryGroupGrants')?.value || '')})}); if (result) result.textContent = 'Saved group.'; await loadAuthDirectory(); } catch (error) { if (result) result.textContent = `Failed: ${error.message || String(error)}`; }
+    try { await api(`/v1/directory/groups/${encodeURIComponent(group.id)}`, {method: 'PUT', body: JSON.stringify({name: detail.querySelector('#directoryGroupName')?.value.trim() || group.id, description: detail.querySelector('#directoryGroupDescription')?.value.trim() || '', grants: readDirectoryGrantRows(detail)})}); if (result) result.textContent = 'Saved group.'; await loadAuthDirectory(); } catch (error) { if (result) result.textContent = `Failed: ${error.message || String(error)}`; }
   });
   detail.querySelector('#deleteDirectoryGroupBtn')?.addEventListener('click', async () => {
     if (!confirm(`Delete group ${group.id}?`)) return;
@@ -300,10 +449,67 @@ function renderCredentialRows(credentials, includePrincipal = true) {
 
 function renderCredentialCreateControls(item) {
   if (item.kind === 'group' || item.kind === 'credential') return '';
-  return `<div class="directory-credential-create"><label>Token name <input id="directoryTokenName" placeholder="Automation token" /></label><label>TTL hours <input id="directoryTokenTtl" type="number" min="1" max="8760" value="720" /></label><button id="createDirectoryTokenBtn" class="ghost-button" type="button">Generate token</button><label class="admin-form-wide">Certificate fingerprint or PEM <textarea id="directoryCertificateInput" rows="3" placeholder="sha256:... or PEM text"></textarea></label><button id="createDirectoryCertificateBtn" class="ghost-button" type="button">Register certificate</button></div>`;
+  return `<div class="directory-credential-create"><button class="ghost-button" data-open-credential-modal="token" type="button">+ Generate token</button><button class="ghost-button" data-open-credential-modal="certificate" type="button">+ Register certificate</button></div>`;
+}
+
+
+function closeDirectoryCredentialModal() {
+  document.getElementById('directoryCredentialModal')?.remove();
+}
+
+function openDirectoryCredentialModal(item, credentialType = 'token') {
+  closeDirectoryCredentialModal();
+  const isCertificate = credentialType === 'certificate';
+  const modal = document.createElement('div');
+  modal.id = 'directoryCredentialModal';
+  modal.className = 'modal-backdrop directory-modal-backdrop';
+  modal.innerHTML = `<section class="modal-card directory-create-modal" role="dialog" aria-modal="true" aria-labelledby="directoryCredentialModalTitle">
+    <div class="modal-head directory-modal-head"><div><p class="muted small-text directory-modal-kicker">Guided credential creation</p><h2 id="directoryCredentialModalTitle">${isCertificate ? 'Register certificate' : 'Generate token'}</h2><p class="muted">Credentials answer who this caller is. Directory membership decides what it can do.</p></div><button id="closeDirectoryCredentialModal" class="ghost-button" type="button">Close</button></div>
+    <div class="directory-wizard-steps" aria-label="Credential steps"><span class="active">1. Principal</span><span class="active">2. Credential</span><span>3. Review</span></div>
+    <div class="directory-detail-card subtle-card"><b>${escapeHtml(directoryPrincipalLabel(item))}</b><br><span class="muted small-text">${escapeHtml(item.kind)} · ${escapeHtml(item.id)}</span></div>
+    <div class="form-grid compact-form">
+      <label>Name <input id="directoryModalCredentialName" placeholder="${isCertificate ? 'Workstation certificate' : 'Automation token'}" /></label>
+      ${isCertificate ? '<label class="admin-form-wide">Certificate fingerprint or PEM <textarea id="directoryModalCertificateInput" rows="5" placeholder="sha256:... or PEM text"></textarea></label>' : '<label>TTL hours <input id="directoryModalTokenTtl" type="number" min="1" max="8760" value="720" /></label>'}
+    </div>
+    <p class="muted small-text">No permissions are stored on this credential. Add the principal to groups to change access.</p>
+    <div id="directoryCredentialModalResult" class="inline-result compact-result" hidden></div>
+    <div class="button-row"><button id="submitDirectoryCredentialModal" type="button">${isCertificate ? 'Register certificate' : 'Generate token'}</button><button id="cancelDirectoryCredentialModal" class="ghost-button" type="button">Cancel</button></div>
+  </section>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', (ev) => { if (ev.target === modal) closeDirectoryCredentialModal(); });
+  modal.querySelector('#closeDirectoryCredentialModal')?.addEventListener('click', closeDirectoryCredentialModal);
+  modal.querySelector('#cancelDirectoryCredentialModal')?.addEventListener('click', closeDirectoryCredentialModal);
+  modal.querySelector('#submitDirectoryCredentialModal')?.addEventListener('click', async () => {
+    const result = modal.querySelector('#directoryCredentialModalResult');
+    try {
+      if (isCertificate) {
+        const value = modal.querySelector('#directoryModalCertificateInput')?.value.trim() || '';
+        if (!value) throw new Error('Certificate fingerprint or PEM is required.');
+        const name = modal.querySelector('#directoryModalCredentialName')?.value.trim() || 'Certificate';
+        const payload = value.startsWith('sha256:') ? {fingerprint: value, name} : {certificate_pem: value, name};
+        await api(`/v1/directory/principals/${encodeURIComponent(item.id)}/certificates`, {method: 'POST', body: JSON.stringify(payload)});
+        if (result) { result.hidden = false; result.textContent = 'Certificate registered. Access still comes from directory membership.'; }
+        await loadAuthDirectory({preserveDetail: true});
+        closeDirectoryCredentialModal();
+      } else {
+        const payload = {name: modal.querySelector('#directoryModalCredentialName')?.value.trim() || 'Directory token', ttl_hours: Number(modal.querySelector('#directoryModalTokenTtl')?.value || 720)};
+        const response = await api(`/v1/directory/principals/${encodeURIComponent(item.id)}/tokens`, {method: 'POST', body: JSON.stringify(payload)});
+        if (result) { result.hidden = false; result.textContent = `Token shown once:\n${response.token || ''}\n\nSave it now. PAC stores only the hash.`; }
+        await loadAuthDirectory({preserveDetail: true});
+      }
+    } catch (error) {
+      if (result) { result.hidden = false; result.textContent = `Failed: ${error.message || String(error)}`; }
+    }
+  });
+  modal.querySelector('input, textarea, button')?.focus?.();
 }
 
 function bindCredentialActions(root, item) {
+  root.querySelectorAll('[data-open-credential-modal]').forEach((button) => {
+    if (button.dataset.bound === '1') return;
+    button.dataset.bound = '1';
+    button.addEventListener('click', () => openDirectoryCredentialModal(item, button.dataset.openCredentialModal || 'token'));
+  });
   root.querySelectorAll('.revoke-directory-credential').forEach((btn) => btn.addEventListener('click', async () => {
     if (!confirm('Revoke this credential?')) return;
     await api(`/v1/directory/credentials/${encodeURIComponent(btn.dataset.id || '')}`, {method: 'DELETE'});
@@ -389,6 +595,26 @@ function bindDirectoryAccessUi() {
   const createGroupButton = replaceDirectoryButton('createGroupBtn');
   const createServiceAccountButton = replaceDirectoryButton('createServiceAccountBtn');
   refreshButton?.addEventListener('click', () => loadAuthDirectory().catch((e) => paneError('Directory could not be refreshed', e.message || String(e))));
+  document.querySelectorAll('[data-open-add]').forEach((button) => {
+    button.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      openDirectoryCreateMenu(button.dataset.openAdd || 'addPersonMenu');
+    });
+  });
+  document.querySelectorAll('[data-create-type]').forEach((button) => {
+    button.addEventListener('click', () => setDirectoryCreateType(button.dataset.createType || 'person'));
+  });
+  document.getElementById('closeDirectoryCreateModal')?.addEventListener('click', closeDirectoryCreateModal);
+  document.getElementById('directoryCreateModal')?.addEventListener('click', (ev) => {
+    if (ev.target?.id === 'directoryCreateModal') closeDirectoryCreateModal();
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && !document.getElementById('directoryCreateModal')?.hidden) closeDirectoryCreateModal();
+  });
+  setDirectoryCreateType('person');
+  const newGrantBuilder = document.getElementById('newDirectoryGroupGrantBuilder');
+  if (newGrantBuilder) { newGrantBuilder.innerHTML = renderDirectoryGrantBuilder([]); bindDirectoryGrantBuilder(newGrantBuilder); }
   document.getElementById('directorySearch')?.addEventListener('input', (ev) => { directoryAccessState.search = ev.target.value || ''; renderAuthDirectoryTree(); });
   createUserButton?.addEventListener('click', async () => {
     const username = document.getElementById('newUsername')?.value.trim() || '';
@@ -401,7 +627,7 @@ function bindDirectoryAccessUi() {
       await api('/v1/directory/users', {method: 'POST', body: JSON.stringify({username, display_name, password, role})});
       ['newUsername', 'newDisplayName', 'newUserPassword'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
       if (result) result.textContent = `User created: ${username}`;
-      const personMenu = document.getElementById('addPersonMenu'); if (personMenu) personMenu.open = false;
+      closeDirectoryCreateModal();
       directoryAccessState.selectedKind = 'user'; directoryAccessState.selectedId = username;
       await fetchAuthStatus(); renderAuthInfo(); await loadAuthDirectory();
     } catch (error) { if (result) result.textContent = `Failed: ${error.message || String(error)}`; }
@@ -410,14 +636,17 @@ function bindDirectoryAccessUi() {
     const id = document.getElementById('newGroupId')?.value.trim() || '';
     const name = document.getElementById('newGroupName')?.value.trim() || id;
     const description = document.getElementById('newGroupDescription')?.value.trim() || '';
-    const grants = parseGroupGrants(document.getElementById('newGroupGrants')?.value || '');
+    const groupPanel = document.querySelector('[data-create-panel="group"]');
+    const grants = readDirectoryGrantRows(groupPanel || document);
     const result = document.getElementById('groupsResult');
     try {
       if (!id) throw new Error('Group id is required.');
       await api('/v1/directory/groups', {method: 'POST', body: JSON.stringify({id, name, description, grants})});
-      ['newGroupId', 'newGroupName', 'newGroupDescription', 'newGroupGrants'].forEach((inputId) => { const el = document.getElementById(inputId); if (el) el.value = ''; });
+      ['newGroupId', 'newGroupName', 'newGroupDescription'].forEach((inputId) => { const el = document.getElementById(inputId); if (el) el.value = ''; });
+      const newGrantBuilder = document.getElementById('newDirectoryGroupGrantBuilder');
+      if (newGrantBuilder) { newGrantBuilder.innerHTML = renderDirectoryGrantBuilder([]); bindDirectoryGrantBuilder(newGrantBuilder); }
       if (result) result.textContent = `Group created: ${id}`;
-      const groupMenu = document.getElementById('addGroupMenu'); if (groupMenu) groupMenu.open = false;
+      closeDirectoryCreateModal();
       directoryAccessState.selectedKind = 'group'; directoryAccessState.selectedId = id;
       await fetchAuthStatus(); renderAuthInfo(); await loadAuthDirectory();
     } catch (error) { if (result) result.textContent = `Failed: ${error.message || String(error)}`; }
@@ -432,7 +661,7 @@ function bindDirectoryAccessUi() {
       await api('/v1/directory/service-accounts', {method: 'POST', body: JSON.stringify({id, name, description})});
       ['newServiceAccountId','newServiceAccountName','newServiceAccountDescription'].forEach((inputId) => { const el = document.getElementById(inputId); if (el) el.value = ''; });
       if (result) result.textContent = `Service account created: ${id}`;
-      const serviceMenu = document.getElementById('addServiceAccountMenu'); if (serviceMenu) serviceMenu.open = false;
+      closeDirectoryCreateModal();
       directoryAccessState.selectedKind = 'service_account'; directoryAccessState.selectedId = id;
       await fetchAuthStatus(); renderAuthInfo(); await loadAuthDirectory();
     } catch (error) { if (result) result.textContent = `Failed: ${error.message || String(error)}`; }

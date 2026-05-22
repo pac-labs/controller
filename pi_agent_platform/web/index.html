@@ -22,7 +22,7 @@
       </div>
     <div class="top-actions">
       <button id="openDownloadsModal" class="top-icon-button monochrome-icon clean-download-icon" title="Downloads" aria-label="Downloads"><span aria-hidden="true"></span></button>
-      <button id="openEventsPanel" class="top-icon-button monochrome-icon clean-bell-icon" title="Events" aria-label="Events"><span aria-hidden="true"></span></button>
+      <button id="openEventsPanel" class="top-icon-button monochrome-icon clean-bell-icon notification-button" title="Events and notifications" aria-label="Events and notifications"><span aria-hidden="true"></span><b id="notificationBadge" class="notification-badge" hidden>0</b></button>
       <div class="theme-select-wrap">
         <select id="themeMode" aria-label="Theme mode">
           <option value="system">Theme: System</option>
@@ -84,19 +84,36 @@
   <div class="app-shell">
   <main class="content-area">
     <section id="dashboard" class="tab-panel active">
-      <div class="dashboard-grid dashboard-metrics">
-        <section class="card hero wide">
-          <div class="hero-title"><img class="hero-mark" src="/ui/assets/pac-icon-green-128.png" alt="" /><div><h2>Operations dashboard</h2><p class="eyebrow">Real activity • Sessions • Endpoints</p></div></div>
+      <div class="dashboard-private-head">
+        <div>
+          <h2>Operations dashboard</h2>
+          <p class="muted">Private widget layout with mandatory system status and selectable PAC topology views.</p>
+        </div>
+        <div class="dashboard-widget-picker-wrap">
+          <button id="dashboardWidgetPicker" class="ghost-button" type="button" aria-haspopup="menu" aria-expanded="false">Widgets</button>
+          <div id="dashboardWidgetMenu" class="dashboard-widget-menu" hidden></div>
+        </div>
+      </div>
+      <div class="dashboard-grid dashboard-metrics private-dashboard-grid">
+        <section class="card hero wide dashboard-widget" data-dashboard-widget="overview">
+          <div class="hero-title"><img class="hero-mark" src="/ui/assets/pac-icon-green-128.png" alt="" /><div><h2>Operations overview</h2><p class="eyebrow">Real activity • Sessions • Endpoints</p></div></div>
           <p class="muted">Current PAC state across sessions, endpoints, providers, controller runtime, and recent events.</p>
           <div id="dashboardStats" class="stats-grid"><div class="metric"><b>—</b><span>loading</span></div></div>
           <div class="button-row"><button id="dashboardNewSession">New session</button><button id="dashboardRefreshMetrics" class="ghost-button">Refresh metrics</button></div>
         </section>
-        <section class="card"><h2>Execution health</h2><div id="taskStatusChart" class="bar-chart muted">Loading execution health…</div></section>
-        <section class="card"><h2>Critical components</h2><div id="componentHealth" class="health-grid muted">Loading component health…</div></section>
-        <section class="card"><h2>Setup and updates</h2><div id="opsReadiness" class="health-grid muted">Loading setup state…</div></section>
-        <section class="card"><h2>Event activity</h2><div id="eventActivityChart" class="spark-chart muted">Loading event activity…</div></section>
-        <section class="card"><h2>System</h2><div class="status-strip"><span class="pac-loader" aria-label="active"></span><span class="muted">PAC active</span></div><div id="systemInfo" class="kv"></div></section>
-        <section class="card"><h2>Recent sessions</h2><div id="sessions"></div></section>
+        <section class="card wide dashboard-widget dashboard-topology-card" data-dashboard-widget="topology">
+          <div class="section-heading dashboard-map-heading"><div><h2>Connection map</h2><p class="muted">Models, providers, workspaces, endpoints, contexts, and profiles. Drag objects to arrange your private map.</p></div><div class="button-row compact-row"><button id="dashboardResetTopologyLayout" class="ghost-button" type="button">Reset layout</button><button id="dashboardRefreshTopology" class="ghost-button" type="button">Refresh map</button></div></div>
+          <div class="dashboard-map-layout">
+            <div id="dashboardTopologyMap" class="dashboard-topology-map muted">Loading connection map…</div>
+            <aside id="dashboardTopologyDetails" class="dashboard-topology-details"><h3>Select an object</h3><p class="muted small-text">Click a node to inspect how it connects to the rest of PAC.</p></aside>
+          </div>
+        </section>
+        <section class="card dashboard-widget" data-dashboard-widget="execution"><h2>Execution health</h2><div id="taskStatusChart" class="bar-chart muted">Loading execution health…</div></section>
+        <section class="card dashboard-widget" data-dashboard-widget="components"><h2>Critical components</h2><div id="componentHealth" class="health-grid muted">Loading component health…</div></section>
+        <section class="card dashboard-widget" data-dashboard-widget="readiness"><h2>Setup and updates</h2><div id="opsReadiness" class="health-grid muted">Loading setup state…</div></section>
+        <section class="card dashboard-widget" data-dashboard-widget="events"><h2>Event activity</h2><div id="eventActivityChart" class="spark-chart muted">Loading event activity…</div></section>
+        <section class="card dashboard-widget dashboard-widget-mandatory" data-dashboard-widget="system"><h2>System</h2><div class="status-strip"><span class="pac-loader" aria-label="active"></span><span class="muted">PAC active</span><span class="pill">mandatory</span></div><div id="systemInfo" class="kv"></div></section>
+        <section class="card dashboard-widget" data-dashboard-widget="sessions"><h2>Recent sessions</h2><div id="sessions"></div></section>
       </div>
     </section>
 
@@ -967,51 +984,72 @@
             <section class="card setting-cube compact-setting-card wide directory-create-strip">
               <div class="section-heading compact-heading">
                 <div>
-                  <h3>Add directory objects</h3>
-                  <p class="muted">Use the small add menus below. Group membership is added from a group detail panel or by drag/drop.</p>
+                  <h3>Create directory object</h3>
+                  <p class="muted">All creation uses a guided modal. Group membership is added from a group detail panel or by drag/drop.</p>
+                </div>
+                <div class="directory-add-actions compact-actions" aria-label="Create directory objects">
+                  <button class="directory-add-button" data-open-add="addPersonMenu" type="button"><span class="directory-plus-icon" aria-hidden="true">+</span><span>Person</span></button>
+                  <button class="directory-add-button" data-open-add="addGroupMenu" type="button"><span class="directory-plus-icon" aria-hidden="true">+</span><span>Group</span></button>
+                  <button class="directory-add-button" data-open-add="addServiceAccountMenu" type="button"><span class="directory-plus-icon" aria-hidden="true">+</span><span>Service account</span></button>
                 </div>
               </div>
-              <div class="directory-add-actions" aria-label="Add directory objects">
-                <details id="addPersonMenu" class="directory-add-menu">
-                  <summary><span class="directory-plus-icon" aria-hidden="true">+</span><span>Add person</span></summary>
-                  <div class="directory-add-body">
+            </section>
+            <div id="directoryCreateModal" class="modal-backdrop directory-modal-backdrop" hidden>
+              <section class="modal-card directory-create-modal" role="dialog" aria-modal="true" aria-labelledby="directoryCreateModalTitle">
+                <div class="modal-head directory-modal-head">
+                  <div>
+                    <p class="muted small-text directory-modal-kicker">Guided creation</p>
+                    <h2 id="directoryCreateModalTitle">Create directory object</h2>
+                    <p id="directoryCreateModalSubtitle" class="muted">Create people, groups, and service accounts through a guided flow.</p>
+                  </div>
+                  <button id="closeDirectoryCreateModal" class="ghost-button" type="button">Close</button>
+                </div>
+                <div class="directory-wizard-steps" aria-label="Creation steps">
+                  <span class="active">1. Choose</span>
+                  <span>2. Details</span>
+                  <span>3. Review</span>
+                </div>
+                <div class="directory-create-choice" aria-label="Object type">
+                  <button class="directory-create-type" data-create-type="person" type="button"><span class="directory-kind-icon user" aria-hidden="true"></span><b>Person</b><small>Interactive user with username and password.</small></button>
+                  <button class="directory-create-type" data-create-type="group" type="button"><span class="directory-kind-icon group" aria-hidden="true"></span><b>Group</b><small>Nested membership and access grants.</small></button>
+                  <button class="directory-create-type" data-create-type="service_account" type="button"><span class="directory-kind-icon service_account" aria-hidden="true"></span><b>Service account</b><small>Automation identity without interactive login.</small></button>
+                </div>
+                <div class="directory-create-form-shell">
+                  <div class="directory-create-form" data-create-panel="person">
                     <div class="form-grid compact-form">
                       <label>Username <input id="newUsername" placeholder="developer" /></label>
                       <label>Display name <input id="newDisplayName" placeholder="Developer" /></label>
                       <label>Password <input id="newUserPassword" type="password" placeholder="min 8 characters" /></label>
                       <label>Role <select id="newUserRole"><option value="user">user</option><option value="admin">admin</option><option value="readonly">readonly</option></select></label>
                     </div>
+                    <p class="muted small-text">Membership is assigned after creation from a group detail panel or by dragging this person onto a group.</p>
                     <div class="button-row"><button id="createUserBtn">Create person</button></div>
                     <pre id="usersResult" class="inline-result compact-result"></pre>
                   </div>
-                </details>
-                <details id="addGroupMenu" class="directory-add-menu">
-                  <summary><span class="directory-plus-icon" aria-hidden="true">+</span><span>Add group</span></summary>
-                  <div class="directory-add-body">
+                  <div class="directory-create-form" data-create-panel="group" hidden>
                     <div class="form-grid compact-form">
                       <label>Group id <input id="newGroupId" placeholder="platform-users" /></label>
                       <label>Name <input id="newGroupName" placeholder="Platform users" /></label>
                       <label class="admin-form-wide">Description <input id="newGroupDescription" placeholder="People allowed to use PAC platform resources" /></label>
-                      <label class="admin-form-wide">Advanced grants <input id="newGroupGrants" placeholder="profile:*:use, workspace:*:read, session:*:write" /></label>
+                      <div id="newDirectoryGroupGrantBuilder" class="admin-form-wide"></div>
                     </div>
+                    <p class="muted small-text">Groups can contain people, service accounts, endpoints, providers, and other groups. Cycle checks are enforced by the API.</p>
                     <div class="button-row"><button id="createGroupBtn">Create group</button></div>
                     <pre id="groupsResult" class="inline-result compact-result"></pre>
                   </div>
-                </details>
-                <details id="addServiceAccountMenu" class="directory-add-menu">
-                  <summary><span class="directory-plus-icon" aria-hidden="true">+</span><span>Add service account</span></summary>
-                  <div class="directory-add-body">
+                  <div class="directory-create-form" data-create-panel="service_account" hidden>
                     <div class="form-grid compact-form">
                       <label>Principal id <input id="newServiceAccountId" placeholder="svc-builder-01" /></label>
                       <label>Name <input id="newServiceAccountName" placeholder="Builder service account" /></label>
                       <label class="admin-form-wide">Description <input id="newServiceAccountDescription" placeholder="Used by a build endpoint or provider integration" /></label>
                     </div>
+                    <p class="muted small-text">Service accounts authenticate with tokens or certificates. Their access still comes from directory groups.</p>
                     <div class="button-row"><button id="createServiceAccountBtn">Create service account</button></div>
                     <pre id="serviceAccountsResult" class="inline-result compact-result"></pre>
                   </div>
-                </details>
-              </div>
-            </section>
+                </div>
+              </section>
+            </div>
           </div>
         </div>
       </div>
@@ -1172,18 +1210,23 @@
           <section class="card wide setting-cube">
             <h2>Proxy Routes</h2>
             <p class="muted">Expose services behind PAC as authenticated reverse proxy endpoints.</p>
+            <div class="button-row"><button id="openProxyRouteModal" class="session-plus-button" title="Create proxy route" aria-label="Create proxy route">+</button></div>
             <div id="proxyRoutesList" class="provider-grid"></div>
             <div id="proxyRouteFormResult" class="inline-result" hidden></div>
-            <details id="proxyRouteFormDetails" class="card inset-panel">
-              <summary>Add / Edit Proxy Route</summary>
-              <div style="padding:.75rem; display:grid; gap:.5rem; grid-template-columns: 1fr 1fr;">
-                <div><label class="small-text">Name</label><input id="proxyRouteName" class="source-input" placeholder="my-service" /></div>
-                <div><label class="small-text">Target URL</label><input id="proxyRouteTarget" class="source-input" placeholder="http://localhost:9000" /></div>
-                <div style="grid-column: 1/-1;"><label class="small-text">Description</label><input id="proxyRouteDescription" class="source-input" placeholder="Optional description" /></div>
-                <div style="grid-column: 1/-1;"><label class="small-text">Allowed Profiles (comma-separated, empty = all)</label><input id="proxyRouteAllowed" class="source-input" placeholder="ask-first" /></div>
-                <div class="button-row" style="grid-column: 1/-1; margin-top:.5rem"><button id="saveProxyRoute" class="primary-button">Save</button><button id="cancelProxyRoute" class="ghost-button">Cancel</button></div>
-              </div>
-            </details>
+            <div id="proxyRouteModal" class="modal-backdrop" hidden>
+              <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="proxyRouteModalTitle">
+                <div class="section-heading"><div><p class="muted small-text">Guided creation</p><h2 id="proxyRouteModalTitle">Create proxy route</h2><p class="muted">Expose a backend service through PAC with profile-aware access.</p></div><button id="closeProxyRouteModal" class="ghost-button">Close</button></div>
+                <div class="directory-wizard-steps" aria-label="Proxy route steps"><span class="active">1. Route</span><span class="active">2. Access</span><span>3. Review</span></div>
+                <div class="form-grid compact-form">
+                  <label>Name <input id="proxyRouteName" class="source-input" placeholder="my-service" /></label>
+                  <label>Target URL <input id="proxyRouteTarget" class="source-input" placeholder="http://localhost:9000" /></label>
+                  <label class="admin-form-wide">Description <input id="proxyRouteDescription" class="source-input" placeholder="Optional description" /></label>
+                  <label class="admin-form-wide">Allowed profiles <input id="proxyRouteAllowed" class="source-input" placeholder="ask-first, controller-coder" /></label>
+                </div>
+                <p class="muted small-text">Leave allowed profiles empty to allow all profiles. The route itself does not create a new identity or permission path.</p>
+                <div class="button-row"><button id="saveProxyRoute" class="primary-button">Save route</button><button id="cancelProxyRoute" class="ghost-button">Cancel</button></div>
+              </section>
+            </div>
           </section>
         </div>
       </div>
@@ -1198,6 +1241,7 @@
       </div>
       <div class="events-header-actions"><button id="pinEventsPanel" class="ghost-button events-pin-button" title="Keep events open" aria-pressed="false">📌</button><button id="clearEventPanel" class="ghost-button" title="Clear visible events">Clear</button><button id="closeEventsPanel" class="ghost-button" title="Close events">Close</button></div>
     </div>
+    <div id="notificationSummary" class="notification-summary" hidden></div>
     <div class="events-filter-row">
       <span class="event-chip active" data-event-filter="all">All</span>
       <span class="event-chip" data-event-filter="running">Running</span>
@@ -1240,6 +1284,7 @@
   <script src="/ui/app/setup_wizard.js"></script>
   <script src="/ui/app/sources.js"></script>
   <script src="/ui/app/sessions.js"></script>
+  <script src="/ui/app/dashboard_topology.js"></script>
   <script src="/ui/app/endpoints.js"></script>
   <script src="/ui/app/auth_admin.js"></script>
   <script src="/ui/app/directory_dragdrop.js"></script>

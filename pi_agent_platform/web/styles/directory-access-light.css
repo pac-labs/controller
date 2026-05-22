@@ -150,3 +150,73 @@ body[data-theme="light"] .directory-inline-add:focus-visible{
   border-color:rgba(22,163,74,.55);
   background:#dcfce7;
 }
+
+/* v1.0.325: Light-mode modal creation controls. */
+html[data-theme="light"] .directory-add-button,
+body[data-theme="light"] .directory-add-button{
+  border-color:rgba(22,101,52,.18);
+  background:#f8fafc;
+  color:#14532d;
+}
+html[data-theme="light"] .directory-add-button:hover,
+html[data-theme="light"] .directory-add-button:focus-visible,
+body[data-theme="light"] .directory-add-button:hover,
+body[data-theme="light"] .directory-add-button:focus-visible{
+  border-color:rgba(22,163,74,.55);
+  background:#ecfdf5;
+}
+html[data-theme="light"] .directory-modal-kicker,
+body[data-theme="light"] .directory-modal-kicker{
+  color:#15803d;
+}
+html[data-theme="light"] .directory-wizard-steps span,
+body[data-theme="light"] .directory-wizard-steps span{
+  border-color:rgba(22,101,52,.16);
+  color:#64748b;
+  background:#f8fafc;
+}
+html[data-theme="light"] .directory-wizard-steps span.active,
+html[data-theme="light"] .directory-wizard-steps span:nth-child(2),
+html[data-theme="light"] .directory-wizard-steps span:nth-child(3),
+body[data-theme="light"] .directory-wizard-steps span.active,
+body[data-theme="light"] .directory-wizard-steps span:nth-child(2),
+body[data-theme="light"] .directory-wizard-steps span:nth-child(3){
+  color:#14532d;
+  background:#ecfdf5;
+}
+html[data-theme="light"] .directory-create-type,
+body[data-theme="light"] .directory-create-type,
+html[data-theme="light"] .directory-create-form-shell,
+body[data-theme="light"] .directory-create-form-shell{
+  border-color:rgba(22,101,52,.14);
+  background:#f8fafc;
+  color:#0f172a;
+}
+html[data-theme="light"] .directory-create-type small,
+body[data-theme="light"] .directory-create-type small{
+  color:#64748b;
+}
+html[data-theme="light"] .directory-create-type.active,
+html[data-theme="light"] .directory-create-type:hover,
+html[data-theme="light"] .directory-create-type:focus-visible,
+body[data-theme="light"] .directory-create-type.active,
+body[data-theme="light"] .directory-create-type:hover,
+body[data-theme="light"] .directory-create-type:focus-visible{
+  border-color:rgba(22,163,74,.55);
+  background:#ecfdf5;
+}
+
+/* v1.0.326 guided create/access light theme refinements */
+body.theme-light .directory-grant-builder {
+  background: #f8fafc;
+  border-color: #d7e1ee;
+}
+body.theme-light .directory-remove-drop-zone {
+  background: #fff5f5;
+  border-color: #f3a3a3;
+  color: #6b2b2b;
+}
+body.theme-light .directory-remove-drop-zone.directory-drop-over {
+  background: #ffe4e4;
+  color: #4a1010;
+}

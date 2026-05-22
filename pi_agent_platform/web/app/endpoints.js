@@ -253,6 +253,7 @@ async function loadDashboardMetrics() {
     renderEventActivity(metrics.events_by_day);
     renderCriticalComponentHealth(metrics);
     renderOpsReadiness(metrics);
+    if (typeof loadNotificationSummary === 'function') loadNotificationSummary();
   } catch (e) {
     const el = document.getElementById('dashboardStats');
     if (el) el.innerHTML = `<div class="muted">Could not load metrics: ${escapeHtml(e.message)}</div>`;

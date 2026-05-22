@@ -960,6 +960,7 @@ async function init(){
   loadThemeMode();
   setupTabs();
   setupEventsRail();
+  if (typeof setupDashboardTopologyUi === 'function') setupDashboardTopologyUi();
   await loadVersion().catch(()=>{});
   const ready = await ensureAuthReady();
   renderHeaderAuthBox();
@@ -971,6 +972,8 @@ async function init(){
   await loadRunners();
   applySessionBootstrapMode();
   refreshDashboardMetricsOnStartup();
+  if (typeof loadDashboardTopology === 'function') await loadDashboardTopology().catch(()=>{});
+  if (typeof loadNotificationSummary === 'function') await loadNotificationSummary().catch(()=>{});
   await loadGlobalEvents(true);
   loadMcpBuildStatus().catch(()=>{});
   await loadBinaryFolderFilters().catch(()=>{});

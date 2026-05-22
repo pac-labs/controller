@@ -207,6 +207,7 @@ function setupEventsRail() {
     if (!rail) return;
     rail.hidden = false;
     requestAnimationFrame(() => rail.classList.add('open'));
+    if (typeof loadNotificationSummary === 'function') await loadNotificationSummary().catch(()=>{});
     await loadGlobalEvents(true).catch(()=>{});
   };
   const hideRail = () => {
@@ -241,6 +242,6 @@ function setupEventsRail() {
   });
   const clear = document.getElementById('clearEventPanel');
   if (clear) clear.onclick = () => { globalEventSeen = new Set(); const list=document.getElementById('globalEvents'); if(list) list.innerHTML='<div class="empty-events">Cleared visible events.</div>'; };
-  if (!globalEventPoll) globalEventPoll = setInterval(() => loadGlobalEvents(false).catch(()=>{}), 3500);
+  if (!globalEventPoll) globalEventPoll = setInterval(() => { loadGlobalEvents(false).catch(()=>{}); if (typeof loadNotificationSummary === 'function') loadNotificationSummary().catch(()=>{}); }, 3500);
 }
 

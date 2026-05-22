@@ -40,12 +40,12 @@ function renderProxyRoutes() {
 }
 
 function openProxyRouteForm(route) {
-  const details = document.getElementById('proxyRouteFormDetails');
+  const modal = document.getElementById('proxyRouteModal');
   const nameIn = document.getElementById('proxyRouteName');
   const targetIn = document.getElementById('proxyRouteTarget');
   const descIn = document.getElementById('proxyRouteDescription');
   const allowedIn = document.getElementById('proxyRouteAllowed');
-  if (!details || !nameIn) return;
+  if (!modal || !nameIn) return;
   if (route) {
     nameIn.value = route.name || '';
     nameIn.disabled = true;
@@ -59,7 +59,9 @@ function openProxyRouteForm(route) {
     descIn.value = '';
     allowedIn.value = '';
   }
-  details.open = true;
+  modal.hidden = false;
+  document.getElementById('proxyRouteModalTitle').textContent = route ? 'Edit proxy route' : 'Create proxy route';
+  nameIn.focus();
 }
 
 async function testProxyRoute(name) {
@@ -117,7 +119,8 @@ async function saveProxyRoute() {
       await api('/v1/proxy-routes', {method:'POST', body: JSON.stringify({name, target, description, allowed})});
       showInline('proxyRouteFormResult', 'Route created', 'ok');
     }
-    document.getElementById('proxyRouteFormDetails').open = false;
+    const modal = document.getElementById('proxyRouteModal');
+    if (modal) modal.hidden = true;
     await loadProxyRoutes();
   } catch(e) {
     showInline('proxyRouteFormResult', 'Error: ' + e.message, 'warn');
@@ -125,8 +128,8 @@ async function saveProxyRoute() {
 }
 
 function cancelProxyRoute() {
-  const details = document.getElementById('proxyRouteFormDetails');
-  if (details) details.open = false;
+  const modal = document.getElementById('proxyRouteModal');
+  if (modal) modal.hidden = true;
 }
 
 function renderFeaturePackPreview(result) {
@@ -599,3 +602,8 @@ async function refreshDashboardMetricsOnStartup() {
   }
 }
 
+
+
+document.getElementById('openProxyRouteModal')?.addEventListener('click', () => openProxyRouteForm(null));
+document.getElementById('closeProxyRouteModal')?.addEventListener('click', cancelProxyRoute);
+document.getElementById('proxyRouteModal')?.addEventListener('click', (event) => { if (event.target?.id === 'proxyRouteModal') cancelProxyRoute(); });

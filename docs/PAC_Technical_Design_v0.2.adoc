@@ -241,6 +241,7 @@ Typical PAC-backed IDE flow:
 - Secure communication
 - Visible orchestration across IDE, controller, endpoint, and container boundaries
 - Customer- and user-aware session bootstrapping
+- Guided creation flows: every UI mechanism that adds or creates a resource starts from a compact `+` action and opens a guided modal instead of exposing large inline forms
 
 == Constraints
 

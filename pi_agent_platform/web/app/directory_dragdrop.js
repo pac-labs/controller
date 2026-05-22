@@ -37,6 +37,10 @@ function directoryDropTargetGroupId(el) {
   return el?.closest?.('[data-drop-group-id]')?.dataset?.dropGroupId || '';
 }
 
+function directoryRemoveTargetGroupId(el) {
+  return el?.closest?.('[data-remove-group-id]')?.dataset?.removeGroupId || '';
+}
+
 function directorySetDragMessage(message, isError = false) {
   const target = document.getElementById('directoryDragDropStatus')
     || document.getElementById('directoryGroupsResult')
@@ -92,6 +96,7 @@ function directoryBindDropTarget(el) {
     el.classList.remove('directory-drop-over');
     if (!payload) return;
     event.preventDefault();
+    event.stopPropagation();
     if (payload.kind === 'group' && payload.id === groupId) {
       directorySetDragMessage('A group cannot be added to itself.', true);
       return;
@@ -110,10 +115,45 @@ function directoryBindDropTarget(el) {
   });
 }
 
+
+function directoryBindRemoveTarget(el) {
+  if (el.dataset.removeBound === '1') return;
+  const groupId = directoryRemoveTargetGroupId(el);
+  if (!groupId) return;
+  el.dataset.removeBound = '1';
+  el.addEventListener('dragover', (event) => {
+    const payload = directoryReadDragPayload(event);
+    if (!payload) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'move';
+    el.classList.add('directory-drop-over');
+  });
+  el.addEventListener('dragleave', (event) => {
+    if (!el.contains(event.relatedTarget)) el.classList.remove('directory-drop-over');
+  });
+  el.addEventListener('drop', async (event) => {
+    const payload = directoryReadDragPayload(event);
+    el.classList.remove('directory-drop-over');
+    if (!payload) return;
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      await api(`/v1/directory/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(payload.kind)}/${encodeURIComponent(payload.id)}`, {method: 'DELETE'});
+      directorySetDragMessage(`Removed ${payload.kind}:${payload.id} from ${groupId}.`);
+      if (typeof selectAuthDirectoryNode === 'function') selectAuthDirectoryNode('group', groupId);
+      if (typeof loadAuthDirectory === 'function') await loadAuthDirectory({preserveDetail: true});
+    } catch (error) {
+      directorySetDragMessage(`Could not remove member: ${error.message || String(error)}`, true);
+    }
+  });
+}
+
 function bindDirectoryDragDrop(root = document) {
   root.querySelectorAll('.directory-node[data-kind], .directory-object-row[data-kind], .directory-member-pill[data-kind]')
     .forEach(directoryBindDraggable);
   root.querySelectorAll('[data-drop-group-id]').forEach(directoryBindDropTarget);
+  root.querySelectorAll('[data-remove-group-id]').forEach(directoryBindRemoveTarget);
 }
 
 window.bindDirectoryDragDrop = bindDirectoryDragDrop;
