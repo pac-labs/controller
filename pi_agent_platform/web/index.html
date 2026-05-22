@@ -865,18 +865,31 @@
               </div>
             </section>
             <section class="card setting-cube compact-setting-card wide">
-              <div class="admin-management-grid">
+              <div class="admin-directory-grid">
                 <section class="admin-pane">
                   <div class="admin-pane-head">
                     <div>
-                      <h2>Users</h2>
-                      <p class="muted">Manage PAC users, roles, and group membership without leaving this page.</p>
+                      <h2>Directory</h2>
+                      <p class="muted">Browse users and groups in one place, similar to an LDAP directory tree.</p>
                     </div>
-                    <button id="refreshUsersBtn" class="ghost-button">Refresh</button>
+                    <button id="refreshDirectoryBtn" class="ghost-button">Refresh</button>
                   </div>
-                  <div id="usersList" class="stacked-output admin-list-shell"><div class="muted small-text">No users loaded.</div></div>
+                  <div id="authDirectoryTree" class="admin-list-shell directory-tree-shell"><div class="muted small-text">No directory entries loaded.</div></div>
                 </section>
                 <section class="admin-pane admin-form-pane">
+                  <div class="admin-pane-head">
+                    <div>
+                      <h2>Details</h2>
+                      <p class="muted">Select a user or group on the left to edit membership, grants, and usage permissions.</p>
+                    </div>
+                  </div>
+                  <div id="authDirectoryDetail" class="directory-detail-shell"><div class="muted small-text">Select a user or group from the directory tree.</div></div>
+                </section>
+              </div>
+            </section>
+            <section class="card setting-cube compact-setting-card wide">
+              <div class="admin-management-grid">
+                <section class="admin-pane">
                   <div class="admin-pane-head">
                     <div>
                       <h2>Create user</h2>
@@ -892,20 +905,6 @@
                   </div>
                   <div class="button-row"><button id="createUserBtn">Create user</button></div>
                   <pre id="usersResult" class="inline-result compact-result"></pre>
-                </section>
-              </div>
-            </section>
-            <section class="card setting-cube compact-setting-card wide">
-              <div class="admin-management-grid">
-                <section class="admin-pane">
-                  <div class="admin-pane-head">
-                    <div>
-                      <h2>Groups</h2>
-                      <p class="muted">Define who may use, edit, and administer agent contexts, workspaces, and other PAC resources.</p>
-                    </div>
-                    <button id="refreshGroupsBtn" class="ghost-button">Refresh</button>
-                  </div>
-                  <div id="groupsList" class="stacked-output admin-list-shell"><div class="muted small-text">No groups loaded.</div></div>
                 </section>
                 <section class="admin-pane admin-form-pane">
                   <div class="admin-pane-head">

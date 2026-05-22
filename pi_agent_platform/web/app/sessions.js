@@ -1472,7 +1472,6 @@ document.addEventListener('click', (ev) => {
     chip.closest('.user-menu-wrap')?.classList.remove('open');
   }
 });
-document.getElementById('refreshUsersBtn')?.addEventListener('click', () => loadUsersList().catch((e)=>paneError('Users could not be refreshed', e.message || String(e))));
 if (document.getElementById('dismissSetupWizard')) document.getElementById('dismissSetupWizard').onclick = () => hideSetupWizard();
 if (document.getElementById('setupWizardBack')) document.getElementById('setupWizardBack').onclick = () => { setupWizardStepIndex = Math.max(0, setupWizardStepIndex - 1); renderSetupWizard(); };
 if (document.getElementById('setupWizardNext')) document.getElementById('setupWizardNext').onclick = () => advanceSetupWizard(1).catch(e => paneError('Setup step failed', e.message || String(e)));

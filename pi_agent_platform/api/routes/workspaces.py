@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 from pi_agent_platform.core.config import WorkspaceProfile
 from pi_agent_platform.core.models import Event
 
+DEFAULT_ADMIN_CONTEXT_NAME = 'PAC/core'
+
 
 class UserWorkspacePayload(BaseModel):
     name: str
@@ -104,6 +106,23 @@ def create_workspaces_router(
     public_shared_storage: Callable[[Any], dict[str, Any]],
 ) -> APIRouter:
     router = APIRouter()
+    _workspace_template_catalog = workspace_template_catalog
+    _public_workspace_template = public_workspace_template
+    _public_user_workspace = public_user_workspace
+    _workspace_owner = workspace_owner
+    _workspace_payload_to_item = workspace_payload_to_item
+    _ensure_user_workspace_session = ensure_user_workspace_session
+    _context_visibility_owner_ids = context_visibility_owner_ids
+    _public_agent_context = public_agent_context
+    _can_use_agent_context = can_use_agent_context
+    _can_edit_agent_context = can_edit_agent_context
+    _is_pac_system_context = is_pac_system_context
+    _app_dir = app_dir
+    _agent_context_payload_to_item = agent_context_payload_to_item
+    _ensure_agent_context_session = ensure_agent_context_session
+    _storage_catalog = storage_catalog
+    _shared_storage_payload_to_item = shared_storage_payload_to_item
+    _public_shared_storage = public_shared_storage
 
     @router.get('/v1/workspace-templates')
     def list_workspace_templates(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
@@ -270,7 +289,7 @@ def create_workspaces_router(
 
     @router.get('/v1/shared-storages')
     def list_shared_storages(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
-        return {'items': [public_shared_storage(item) for item in _storage_catalog()]}
+        return {'items': [_public_shared_storage(item) for item in _storage_catalog()]}
 
 
     @router.post('/v1/shared-storages')
@@ -281,7 +300,7 @@ def create_workspaces_router(
         item = _shared_storage_payload_to_item(None, payload)
         store.add_shared_storage(item)
         store.add_event(Event(session_id='system', type='shared_storage_created', message=f'Shared storage created: {item.name}', data={'storage_id': item.id, 'driver': item.driver}))
-        return {'ok': True, 'storage': public_shared_storage(item)}
+        return {'ok': True, 'storage': _public_shared_storage(item)}
 
 
     @router.put('/v1/shared-storages/{storage_id}')
@@ -295,7 +314,7 @@ def create_workspaces_router(
         updated = _shared_storage_payload_to_item(item, payload)
         store.add_shared_storage(updated)
         store.add_event(Event(session_id='system', type='shared_storage_updated', message=f'Shared storage updated: {updated.name}', data={'storage_id': updated.id, 'driver': updated.driver}))
-        return {'ok': True, 'storage': public_shared_storage(updated)}
+        return {'ok': True, 'storage': _public_shared_storage(updated)}
 
 
     @router.delete('/v1/shared-storages/{storage_id}')

@@ -153,6 +153,12 @@
   gap:1rem;
   align-items:start;
 }
+.admin-directory-grid{
+  display:grid;
+  grid-template-columns:minmax(300px,.95fr) minmax(0,1.35fr);
+  gap:1rem;
+  align-items:start;
+}
 .admin-pane{
   min-width:0;
   display:grid;
@@ -255,6 +261,135 @@
 }
 .admin-form-wide{
   grid-column:1/-1;
+}
+.directory-tree-shell{
+  padding:.5rem;
+}
+.directory-root{
+  border:1px solid #241a3b;
+  border-radius:var(--radius);
+  background:rgba(10,8,16,.7);
+  margin-bottom:.6rem;
+}
+.directory-root summary{
+  cursor:pointer;
+  list-style:none;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.6rem;
+  padding:.7rem .8rem;
+  font-weight:700;
+}
+.directory-root summary::-webkit-details-marker{
+  display:none;
+}
+.directory-count{
+  color:#94a3b8;
+  font-size:.78rem;
+}
+.directory-children{
+  display:grid;
+  gap:.35rem;
+  padding:0 .5rem .5rem;
+}
+.directory-children.nested{
+  padding:.15rem 0 0 1rem;
+}
+.directory-group-shell{
+  display:grid;
+  gap:.2rem;
+}
+.directory-node{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.8rem;
+  text-align:left;
+  border:1px solid transparent;
+  background:rgba(15,23,42,.32);
+  color:#e2e8f0;
+  padding:.55rem .65rem;
+}
+.directory-node:hover{
+  border-color:rgba(96,165,250,.18);
+  background:rgba(30,41,59,.58);
+}
+.directory-node.active{
+  border-color:rgba(34,197,94,.4);
+  background:rgba(20,83,45,.22);
+}
+.directory-leaf{
+  font-size:.92rem;
+}
+.directory-node-label{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.directory-node-meta{
+  color:#94a3b8;
+  font-size:.76rem;
+  white-space:nowrap;
+}
+.directory-empty{
+  color:#94a3b8;
+  font-size:.8rem;
+  padding:.3rem .2rem .2rem 1rem;
+}
+.directory-detail-shell{
+  min-height:460px;
+  border:1px solid #241a3b;
+  border-radius:var(--radius);
+  background:#090712;
+  padding:.8rem;
+}
+.directory-detail-card{
+  display:grid;
+  gap:.85rem;
+}
+.directory-detail-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:1rem;
+}
+.directory-detail-head h3{
+  margin:0 0 .15rem;
+}
+.directory-detail-head p{
+  margin:0;
+}
+.directory-detail-meta{
+  display:flex;
+  align-items:center;
+  gap:1rem;
+  flex-wrap:wrap;
+  color:#94a3b8;
+  font-size:.8rem;
+}
+.directory-members{
+  display:flex;
+  align-items:center;
+  gap:.45rem;
+  flex-wrap:wrap;
+}
+.directory-members h4{
+  margin:0;
+  width:100%;
+  font-size:.82rem;
+  color:#cbd5e1;
+}
+.directory-member-pill{
+  display:inline-flex;
+  align-items:center;
+  border:1px solid rgba(96,165,250,.16);
+  background:rgba(15,23,42,.58);
+  color:#dbeafe;
+  border-radius:999px;
+  padding:.2rem .5rem;
+  font-size:.76rem;
 }
 .app-footer .app-version{display:inline-flex;margin-left:auto}
 .settings-subnav{
@@ -365,6 +500,7 @@
 @media(max-width:1100px){.health-grid{grid-template-columns:1fr}}
 @media(max-width:1180px){
   .admin-summary-grid,
+  .admin-directory-grid,
   .admin-management-grid,
   .admin-inline-grid{
     grid-template-columns:1fr;
@@ -410,4 +546,3 @@ html[data-theme="light"] .health-row b,
 body[data-theme="light"] .health-row b{
   color:#0f172a;
 }
-

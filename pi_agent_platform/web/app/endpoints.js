@@ -853,49 +853,6 @@ if (closeGitDiffBtn) closeGitDiffBtn.onclick = closeGitDiffModal;
 const gitDiffModal = document.getElementById('gitDiffModal');
 if (gitDiffModal) gitDiffModal.onclick = (ev) => { if (ev.target === gitDiffModal) closeGitDiffModal(); };
 
-const refreshGroupsBtn = document.getElementById('refreshGroupsBtn');
-if (refreshGroupsBtn) refreshGroupsBtn.onclick = () => loadGroupsList().catch((e)=>paneError('Groups could not be refreshed', e.message || String(e)));
-const createUserBtn = document.getElementById('createUserBtn');
-if (createUserBtn) createUserBtn.onclick = async () => {
-  const username = document.getElementById('newUsername')?.value.trim() || '';
-  const display_name = document.getElementById('newDisplayName')?.value.trim() || username;
-  const password = document.getElementById('newUserPassword')?.value || '';
-  const role = document.getElementById('newUserRole')?.value || 'user';
-  const groups = (document.getElementById('newUserGroups')?.value || '').split(',').map((item) => item.trim()).filter(Boolean);
-  const result = document.getElementById('usersResult');
-  try {
-    if (!username || !password) throw new Error('Username and password are required.');
-    await api('/v1/users', {method:'POST', body: JSON.stringify({username, display_name, password, role, groups})});
-    if (result) result.textContent = `User created: ${username}`;
-    ['newUsername', 'newDisplayName', 'newUserPassword', 'newUserGroups'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
-    await fetchAuthStatus();
-    renderAuthInfo();
-    await loadUsersList();
-  } catch (error) {
-    if (result) result.textContent = `Failed: ${error.message || String(error)}`;
-  }
-};
-const createGroupBtn = document.getElementById('createGroupBtn');
-if (createGroupBtn) createGroupBtn.onclick = async () => {
-  const id = document.getElementById('newGroupId')?.value.trim() || '';
-  const name = document.getElementById('newGroupName')?.value.trim() || id;
-  const description = document.getElementById('newGroupDescription')?.value.trim() || '';
-  const grants = parseGroupGrants(document.getElementById('newGroupGrants')?.value || '');
-  const result = document.getElementById('groupsResult');
-  try {
-    if (!id) throw new Error('Group id is required.');
-    await api('/v1/groups', {method:'POST', body: JSON.stringify({id, name, description, grants})});
-    if (result) result.textContent = `Group created: ${id}`;
-    ['newGroupId', 'newGroupName', 'newGroupDescription', 'newGroupGrants'].forEach((inputId) => { const el = document.getElementById(inputId); if (el) el.value = ''; });
-    await fetchAuthStatus();
-    renderAuthInfo();
-    await loadGroupsList();
-    await loadUsersList();
-  } catch (error) {
-    if (result) result.textContent = `Failed: ${error.message || String(error)}`;
-  }
-};
-
 // --- Let's Encrypt DNS-01 handlers ---
 if (document.getElementById('leEnableBtn')) {
     document.getElementById('leEnableBtn').onclick = async () => {
@@ -950,5 +907,4 @@ if (document.getElementById('leTestCfBtn')) {
         }
     };
 }
-
 

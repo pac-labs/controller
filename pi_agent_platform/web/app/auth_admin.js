@@ -1,12 +1,21 @@
-// Authentication, user, group, and personal-settings UI helpers extracted from app.js.
+// Authentication, user, group, and directory-style admin UI helpers.
+
+const authDirectoryState = {
+  users: [],
+  groups: [],
+  selectedKind: 'group',
+  selectedId: 'admin',
+};
 
 function getStoredToken() {
   return localStorage.getItem(AUTH_TOKEN_KEY) || '';
 }
+
 function setStoredToken(token) {
   if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
   else localStorage.removeItem(AUTH_TOKEN_KEY);
 }
+
 function showUserChip(user) {
   const chip = document.getElementById('userChip');
   const name = document.getElementById('userChipName');
@@ -26,14 +35,16 @@ function showUserChip(user) {
   }
   if (loginBtn) loginBtn.hidden = !!user;
 }
+
 async function fetchAuthStatus() {
   try {
-    authStatus = await fetch('/v1/auth/status').then(r => r.ok ? r.json() : {enabled:false, mode:'dev-token', needs_setup:false, user_count:0});
+    authStatus = await fetch('/v1/auth/status').then((r) => (r.ok ? r.json() : {enabled: false, mode: 'dev-token', needs_setup: false, user_count: 0}));
   } catch (_) {
-    authStatus = {enabled:false, mode:'dev-token', needs_setup:false, user_count:0};
+    authStatus = {enabled: false, mode: 'dev-token', needs_setup: false, user_count: 0};
   }
   return authStatus;
 }
+
 async function fetchCurrentUser() {
   if (!getStoredToken()) {
     currentUser = null;
@@ -51,16 +62,17 @@ async function fetchCurrentUser() {
     return null;
   }
 }
+
 function closeLoginModal() {
-  const modal = document.getElementById('loginModal');
-  if (modal) modal.remove();
+  document.getElementById('loginModal')?.remove();
 }
+
 function openLoginModal(mode = 'login') {
   closeLoginModal();
   const modal = document.createElement('div');
+  const isSetup = mode === 'setup';
   modal.id = 'loginModal';
   modal.className = 'modal-backdrop';
-  const isSetup = mode === 'setup';
   modal.innerHTML = `
     <section class="modal-card auth-modal-card" role="dialog" aria-modal="true" aria-labelledby="loginModalTitle">
       <div class="section-heading">
@@ -91,19 +103,23 @@ function openLoginModal(mode = 'login') {
   document.getElementById('loginPassword')?.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') submitLoginModal(mode); });
   document.getElementById('loginUsername')?.focus();
 }
+
 async function submitLoginModal(mode = 'login') {
   const username = document.getElementById('loginUsername')?.value.trim() || '';
   const password = document.getElementById('loginPassword')?.value || '';
   const displayName = document.getElementById('loginDisplayName')?.value.trim() || username;
   const errorEl = document.getElementById('loginError');
   if (!username || !password) {
-    if (errorEl) { errorEl.hidden = false; errorEl.textContent = 'Username and password are required.'; }
+    if (errorEl) {
+      errorEl.hidden = false;
+      errorEl.textContent = 'Username and password are required.';
+    }
     return;
   }
   const path = mode === 'setup' ? '/v1/auth/setup' : '/v1/auth/login';
   const payload = mode === 'setup' ? {username, password, display_name: displayName} : {username, password};
   try {
-    const response = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const response = await fetch(path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.detail || data.error || 'Authentication failed');
     setStoredToken(data.token || '');
@@ -119,6 +135,7 @@ async function submitLoginModal(mode = 'login') {
     }
   }
 }
+
 function logoutUser() {
   setStoredToken('');
   currentUser = null;
@@ -126,6 +143,7 @@ function logoutUser() {
   renderHeaderAuthBox();
   if (authStatus?.enabled && authStatus?.mode === 'user-password') openLoginModal('login');
 }
+
 async function ensureAuthReady() {
   await fetchAuthStatus();
   if (!authStatus?.enabled) {
@@ -143,26 +161,8 @@ async function ensureAuthReady() {
       openLoginModal('login');
       return false;
     }
-    return true;
   }
   return true;
-}
-function renderAuthInfo() {
-  const el = document.getElementById('authInfo');
-  if (!el) return;
-  const info = authStatus || config?.auth || {};
-  el.innerHTML = '';
-  const rows = [
-    ['Mode', String(info.mode || 'open')],
-    ['Enabled', info.enabled ? 'yes' : 'no'],
-    ['Users', String(info.user_count ?? '-')],
-    ['TTL', `${info.token_ttl_hours || config?.auth?.token_ttl_hours || 720}h`],
-  ];
-  rows.forEach(([label, value]) => {
-    const row = document.createElement('div');
-    row.innerHTML = `<span>${escapeHtml(label)}</span><code>${escapeHtml(value)}</code>`;
-    el.appendChild(row);
-  });
 }
 
 function serializeGroupGrants(grants = []) {
@@ -170,88 +170,23 @@ function serializeGroupGrants(grants = []) {
 }
 
 function parseGroupGrants(value) {
-  return String(value || '').split(',').map((item) => item.trim()).filter(Boolean).map((item) => {
-    const parts = item.split(':');
-    const access = (parts.pop() || 'read').trim();
-    const resource_type = (parts.shift() || 'workspace').trim();
-    const pattern = parts.join(':').trim();
-    return {resource_type, pattern, access};
-  }).filter((item) => item.pattern);
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const parts = item.split(':');
+      const access = (parts.pop() || 'read').trim();
+      const resource_type = (parts.shift() || 'workspace').trim();
+      const pattern = parts.join(':').trim();
+      return {resource_type, pattern, access};
+    })
+    .filter((item) => item.pattern);
 }
 
 function roleOptions(selected) {
   const current = String(selected || 'user');
   return ['user', 'admin', 'readonly'].map((role) => `<option value="${role}" ${current === role ? 'selected' : ''}>${role}</option>`).join('');
-}
-async function loadUsersList() {
-  const el = document.getElementById('usersList');
-  if (!el) return;
-  if (!(authStatus?.enabled && authStatus?.mode === 'user-password')) {
-    el.innerHTML = '<div class="muted small-text">User management is available when auth mode is set to user-password.</div>';
-    return;
-  }
-  try {
-    const users = await api('/v1/users');
-    if (!users.length) {
-      el.innerHTML = '<div class="muted small-text">No users found.</div>';
-      return;
-    }
-    el.innerHTML = users.map((user) => `
-      <div class="row">
-        <div><b>${escapeHtml(user.display_name || user.username)}</b><br><span class="muted small-text">${escapeHtml(user.username)} · ${escapeHtml(user.role || 'user')}</span></div>
-        <div class="button-row">
-          ${user.id === currentUser?.id ? '<span class="muted small-text">current</span>' : `<button class="ghost-button delete-user-btn" data-user-id="${escapeHtml(user.id)}" type="button">Delete</button>`}
-        </div>
-      </div>`).join('');
-    el.querySelectorAll('.delete-user-btn').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const userId = btn.dataset.userId || '';
-        if (!userId || !confirm(`Delete user ${userId}?`)) return;
-        await api(`/v1/users/${encodeURIComponent(userId)}`, {method:'DELETE'});
-        await fetchAuthStatus();
-        renderAuthInfo();
-        await loadUsersList();
-      });
-    });
-  } catch (error) {
-    el.innerHTML = `<div class="muted small-text">Could not load users: ${escapeHtml(error.message || String(error))}</div>`;
-  }
-}
-function renderHeaderAuthBox() {
-  const tokenInput = document.getElementById('token');
-  const loginBtn = document.getElementById('loginBtn');
-  const auth = authStatus || config?.auth || {};
-  const enabled = !!auth.enabled;
-  const storedToken = getStoredToken();
-  const hasToken = !!(storedToken || String(tokenInput?.value || '').trim());
-  if (tokenInput) tokenInput.hidden = !!(enabled && auth.mode === 'user-password');
-  if (loginBtn) loginBtn.textContent = auth.needs_setup ? 'Set up account' : 'Log in';
-  showUserChip(currentUser);
-}
-function closePersonalSettingsModal() {
-  document.getElementById('personalSettingsModal')?.remove();
-}
-async function loadPersonalSettingsData() {
-  const [me, tokens, ram] = await Promise.all([
-    api('/v1/users/me'),
-    api('/v1/users/me/tokens').catch(() => []),
-    api('/v1/users/me/ram').catch(() => ({content:''})),
-  ]);
-  return {me, tokens, ram};
-}
-function renderPersonalTokens(target, tokens, latestToken='') {
-  if (!target) return;
-  const items = Array.isArray(tokens) ? tokens : [];
-  target.innerHTML = `
-    ${latestToken ? `<div class="inline-result">${escapeHtml(latestToken)}</div>` : ''}
-    ${items.length ? items.map((item) => `<div class="row"><div><b>${escapeHtml(item.username || currentUser?.username || 'token')}</b><br><span class="muted small-text">expires ${escapeHtml(item.expires_at || '-')}</span></div><div class="button-row"><button class="ghost-button revoke-self-token-btn" data-token="${escapeHtml(item.token)}" type="button">Revoke</button></div></div>`).join('') : '<div class="muted small-text">No personal tokens yet.</div>'}`;
-  target.querySelectorAll('.revoke-self-token-btn').forEach((btn) => btn.addEventListener('click', async () => {
-    const token = btn.dataset.token || '';
-    if (!token || !confirm('Revoke this token?')) return;
-    await api(`/v1/users/me/tokens/${encodeURIComponent(token)}`, {method:'DELETE'});
-    const refreshed = await api('/v1/users/me/tokens').catch(() => []);
-    renderPersonalTokens(target, refreshed);
-  }));
 }
 
 function renderAuthInfo() {
@@ -273,137 +208,327 @@ function renderAuthInfo() {
   });
 }
 
-async function loadUsersList() {
-  const el = document.getElementById('usersList');
-  if (!el) return;
+function renderHeaderAuthBox() {
+  const tokenInput = document.getElementById('token');
+  const loginBtn = document.getElementById('loginBtn');
+  const auth = authStatus || config?.auth || {};
+  const enabled = !!auth.enabled;
+  const storedToken = getStoredToken();
+  const hasToken = !!(storedToken || String(tokenInput?.value || '').trim());
+  if (tokenInput) tokenInput.hidden = !!(enabled && auth.mode === 'user-password');
+  if (loginBtn) loginBtn.textContent = auth.needs_setup ? 'Set up account' : 'Log in';
+  showUserChip(currentUser);
+  if (!enabled && tokenInput && !hasToken) tokenInput.placeholder = 'Bearer token, optional';
+}
+
+function closePersonalSettingsModal() {
+  document.getElementById('personalSettingsModal')?.remove();
+}
+
+async function loadPersonalSettingsData() {
+  const [me, tokens, ram] = await Promise.all([
+    api('/v1/users/me'),
+    api('/v1/users/me/tokens').catch(() => []),
+    api('/v1/users/me/ram').catch(() => ({content: ''})),
+  ]);
+  return {me, tokens, ram};
+}
+
+function renderPersonalTokens(target, tokens, latestToken = '') {
+  if (!target) return;
+  const items = Array.isArray(tokens) ? tokens : [];
+  target.innerHTML = `
+    ${latestToken ? `<div class="inline-result">${escapeHtml(latestToken)}</div>` : ''}
+    ${items.length ? items.map((item) => `<div class="row"><div><b>${escapeHtml(item.username || currentUser?.username || 'token')}</b><br><span class="muted small-text">expires ${escapeHtml(item.expires_at || '-')}</span></div><div class="button-row"><button class="ghost-button revoke-self-token-btn" data-token="${escapeHtml(item.token)}" type="button">Revoke</button></div></div>`).join('') : '<div class="muted small-text">No personal tokens yet.</div>'}`;
+  target.querySelectorAll('.revoke-self-token-btn').forEach((btn) => btn.addEventListener('click', async () => {
+    const token = btn.dataset.token || '';
+    if (!token || !confirm('Revoke this token?')) return;
+    await api(`/v1/users/me/tokens/${encodeURIComponent(token)}`, {method: 'DELETE'});
+    const refreshed = await api('/v1/users/me/tokens').catch(() => []);
+    renderPersonalTokens(target, refreshed);
+  }));
+}
+
+function selectAuthDirectoryNode(kind, id) {
+  authDirectoryState.selectedKind = kind;
+  authDirectoryState.selectedId = id;
+  renderAuthDirectory();
+}
+
+function ensureAuthDirectorySelection() {
+  const currentItems = authDirectoryState[`${authDirectoryState.selectedKind}s`] || [];
+  const found = currentItems.find((item) => item.id === authDirectoryState.selectedId);
+  if (found) return;
+  const firstGroup = authDirectoryState.groups[0];
+  const firstUser = authDirectoryState.users[0];
+  if (firstGroup) {
+    authDirectoryState.selectedKind = 'group';
+    authDirectoryState.selectedId = firstGroup.id;
+  } else if (firstUser) {
+    authDirectoryState.selectedKind = 'user';
+    authDirectoryState.selectedId = firstUser.id;
+  } else {
+    authDirectoryState.selectedKind = 'group';
+    authDirectoryState.selectedId = '';
+  }
+}
+
+function renderAuthDirectoryTree() {
+  const tree = document.getElementById('authDirectoryTree');
+  if (!tree) return;
+  const groupMembers = new Map(authDirectoryState.groups.map((group) => [group.id, authDirectoryState.users.filter((user) => (user.groups || []).includes(group.id))]));
+  tree.innerHTML = `
+    <details class="directory-root" open>
+      <summary>Groups <span class="directory-count">${authDirectoryState.groups.length}</span></summary>
+      <div class="directory-children">
+        ${authDirectoryState.groups.map((group) => `
+          <div class="directory-group-shell">
+            <button class="directory-node${authDirectoryState.selectedKind === 'group' && authDirectoryState.selectedId === group.id ? ' active' : ''}" data-kind="group" data-id="${escapeHtml(group.id)}" type="button">
+              <span class="directory-node-label">${escapeHtml(group.name || group.id)}</span>
+              <span class="directory-node-meta">${escapeHtml(String((groupMembers.get(group.id) || []).length))} users</span>
+            </button>
+            <div class="directory-children nested">
+              ${(groupMembers.get(group.id) || []).map((user) => `
+                <button class="directory-node directory-leaf${authDirectoryState.selectedKind === 'user' && authDirectoryState.selectedId === user.id ? ' active' : ''}" data-kind="user" data-id="${escapeHtml(user.id)}" type="button">
+                  <span class="directory-node-label">${escapeHtml(user.display_name || user.username)}</span>
+                  <span class="directory-node-meta">${escapeHtml(user.role || 'user')}</span>
+                </button>`).join('') || '<div class="directory-empty">No users in group.</div>'}
+            </div>
+          </div>`).join('') || '<div class="directory-empty">No groups found.</div>'}
+      </div>
+    </details>
+    <details class="directory-root" open>
+      <summary>Users <span class="directory-count">${authDirectoryState.users.length}</span></summary>
+      <div class="directory-children">
+        ${authDirectoryState.users.map((user) => `
+          <button class="directory-node${authDirectoryState.selectedKind === 'user' && authDirectoryState.selectedId === user.id ? ' active' : ''}" data-kind="user" data-id="${escapeHtml(user.id)}" type="button">
+            <span class="directory-node-label">${escapeHtml(user.display_name || user.username)}</span>
+            <span class="directory-node-meta">${escapeHtml(user.role || 'user')}</span>
+          </button>`).join('') || '<div class="directory-empty">No users found.</div>'}
+      </div>
+    </details>`;
+  tree.querySelectorAll('.directory-node').forEach((btn) => {
+    btn.addEventListener('click', () => selectAuthDirectoryNode(btn.dataset.kind || 'user', btn.dataset.id || ''));
+  });
+}
+
+function selectedAuthDirectoryItem() {
+  const items = authDirectoryState[`${authDirectoryState.selectedKind}s`] || [];
+  return items.find((item) => item.id === authDirectoryState.selectedId) || null;
+}
+
+function renderUserDirectoryDetail(user) {
+  const detail = document.getElementById('authDirectoryDetail');
+  if (!detail) return;
+  const current = user.id === currentUser?.id;
+  detail.innerHTML = `
+    <article class="directory-detail-card">
+      <div class="directory-detail-head">
+        <div>
+          <h3>${escapeHtml(user.display_name || user.username)}</h3>
+          <p class="muted">${escapeHtml(user.username)} · ${escapeHtml(user.role || 'user')}</p>
+        </div>
+        <div class="admin-item-badges">
+          <span class="admin-badge subtle">${escapeHtml(user.role || 'user')}</span>
+          ${current ? '<span class="admin-badge">current</span>' : ''}
+        </div>
+      </div>
+      <div class="form-grid compact-form">
+        <label>Display name <input id="directoryUserDisplayName" value="${escapeHtml(user.display_name || user.username)}" /></label>
+        <label>Role <select id="directoryUserRole">${roleOptions(user.role || 'user')}</select></label>
+        <label class="admin-form-wide">Groups <input id="directoryUserGroups" value="${escapeHtml((user.groups || []).join(', '))}" placeholder="admin,docs,coders" /></label>
+      </div>
+      <div class="directory-detail-meta">
+        <span>Created ${escapeHtml(formatDate(user.created_at) || '-')}</span>
+        <span>User id <code>${escapeHtml(user.id)}</code></span>
+      </div>
+      <div class="button-row">
+        <button id="saveDirectoryUserBtn" type="button">Save user</button>
+        ${current ? '' : `<button id="deleteDirectoryUserBtn" class="ghost-button" type="button">Delete user</button>`}
+      </div>
+      <pre id="directoryUsersResult" class="inline-result compact-result"></pre>
+    </article>`;
+  document.getElementById('saveDirectoryUserBtn')?.addEventListener('click', async () => {
+    const result = document.getElementById('directoryUsersResult');
+    try {
+      const display_name = document.getElementById('directoryUserDisplayName')?.value.trim() || user.username;
+      const role = document.getElementById('directoryUserRole')?.value || 'user';
+      const groups = String(document.getElementById('directoryUserGroups')?.value || '').split(',').map((item) => item.trim()).filter(Boolean);
+      await api(`/v1/users/${encodeURIComponent(user.id)}`, {method: 'PUT', body: JSON.stringify({display_name, role, groups})});
+      if (result) result.textContent = `Saved user ${user.username}`;
+      await fetchAuthStatus();
+      renderAuthInfo();
+      await loadAuthDirectory();
+    } catch (error) {
+      if (result) result.textContent = `Failed: ${error.message || String(error)}`;
+    }
+  });
+  document.getElementById('deleteDirectoryUserBtn')?.addEventListener('click', async () => {
+    const result = document.getElementById('directoryUsersResult');
+    if (!confirm(`Delete user ${user.username}?`)) return;
+    try {
+      await api(`/v1/users/${encodeURIComponent(user.id)}`, {method: 'DELETE'});
+      authDirectoryState.selectedId = '';
+      if (result) result.textContent = `Deleted user ${user.username}`;
+      await fetchAuthStatus();
+      renderAuthInfo();
+      await loadAuthDirectory();
+    } catch (error) {
+      if (result) result.textContent = `Failed: ${error.message || String(error)}`;
+    }
+  });
+}
+
+function renderGroupDirectoryDetail(group) {
+  const detail = document.getElementById('authDirectoryDetail');
+  if (!detail) return;
+  const members = authDirectoryState.users.filter((user) => (user.groups || []).includes(group.id));
+  detail.innerHTML = `
+    <article class="directory-detail-card">
+      <div class="directory-detail-head">
+        <div>
+          <h3>${escapeHtml(group.name || group.id)}</h3>
+          <p class="muted">${escapeHtml(group.id)} · ${escapeHtml(String((group.grants || []).length))} grants</p>
+        </div>
+        <div class="admin-item-badges">
+          <span class="admin-badge subtle">${escapeHtml(String(members.length))} users</span>
+        </div>
+      </div>
+      <div class="form-grid compact-form">
+        <label>Name <input id="directoryGroupName" value="${escapeHtml(group.name || group.id)}" /></label>
+        <label>Description <input id="directoryGroupDescription" value="${escapeHtml(group.description || '')}" /></label>
+        <label class="admin-form-wide">Grants <input id="directoryGroupGrants" value="${escapeHtml(serializeGroupGrants(group.grants || []))}" placeholder="workspace:*:write, source_context:*:write" /></label>
+      </div>
+      <div class="directory-members">
+        <h4>Members</h4>
+        ${members.length ? members.map((user) => `<span class="directory-member-pill">${escapeHtml(user.display_name || user.username)}</span>`).join('') : '<span class="muted small-text">No users in this group.</span>'}
+      </div>
+      <div class="button-row">
+        <button id="saveDirectoryGroupBtn" type="button">Save group</button>
+        <button id="deleteDirectoryGroupBtn" class="ghost-button" type="button">Delete group</button>
+      </div>
+      <pre id="directoryGroupsResult" class="inline-result compact-result"></pre>
+    </article>`;
+  document.getElementById('saveDirectoryGroupBtn')?.addEventListener('click', async () => {
+    const result = document.getElementById('directoryGroupsResult');
+    try {
+      const name = document.getElementById('directoryGroupName')?.value.trim() || group.id;
+      const description = document.getElementById('directoryGroupDescription')?.value.trim() || '';
+      const grants = parseGroupGrants(document.getElementById('directoryGroupGrants')?.value || '');
+      await api(`/v1/groups/${encodeURIComponent(group.id)}`, {method: 'PUT', body: JSON.stringify({name, description, grants})});
+      if (result) result.textContent = `Saved group ${group.id}`;
+      await fetchAuthStatus();
+      renderAuthInfo();
+      await loadAuthDirectory();
+    } catch (error) {
+      if (result) result.textContent = `Failed: ${error.message || String(error)}`;
+    }
+  });
+  document.getElementById('deleteDirectoryGroupBtn')?.addEventListener('click', async () => {
+    const result = document.getElementById('directoryGroupsResult');
+    if (!confirm(`Delete group ${group.id}?`)) return;
+    try {
+      await api(`/v1/groups/${encodeURIComponent(group.id)}`, {method: 'DELETE'});
+      authDirectoryState.selectedId = '';
+      if (result) result.textContent = `Deleted group ${group.id}`;
+      await fetchAuthStatus();
+      renderAuthInfo();
+      await loadAuthDirectory();
+    } catch (error) {
+      if (result) result.textContent = `Failed: ${error.message || String(error)}`;
+    }
+  });
+}
+
+function renderAuthDirectoryDetail() {
+  const detail = document.getElementById('authDirectoryDetail');
+  if (!detail) return;
+  const item = selectedAuthDirectoryItem();
+  if (!item) {
+    detail.innerHTML = '<div class="muted small-text">Select a user or group from the directory tree.</div>';
+    return;
+  }
+  if (authDirectoryState.selectedKind === 'user') renderUserDirectoryDetail(item);
+  else renderGroupDirectoryDetail(item);
+}
+
+function renderAuthDirectory() {
+  renderAuthDirectoryTree();
+  renderAuthDirectoryDetail();
+}
+
+async function loadAuthDirectory() {
+  const tree = document.getElementById('authDirectoryTree');
+  const detail = document.getElementById('authDirectoryDetail');
+  if (!(tree && detail)) return;
   if (!(authStatus?.enabled && authStatus?.mode === 'user-password')) {
-    el.innerHTML = '<div class="muted small-text">User management is available when auth mode is set to user-password.</div>';
+    tree.innerHTML = '<div class="muted small-text">User management is available when auth mode is set to user-password.</div>';
+    detail.innerHTML = '<div class="muted small-text">Enable user-password auth to manage users, groups, and context access.</div>';
     return;
   }
   try {
-    const users = await api('/v1/users');
-    if (!users.length) {
-      el.innerHTML = '<div class="muted small-text">No users found.</div>';
-      return;
-    }
-    el.innerHTML = users.map((user) => {
-      const current = user.id === currentUser?.id;
-      return `
-        <article class="admin-item-card">
-          <div class="admin-item-head">
-            <div>
-              <b>${escapeHtml(user.display_name || user.username)}</b>
-              <span class="muted small-text">${escapeHtml(user.username)} · ${escapeHtml(user.role || 'user')}</span>
-            </div>
-            <div class="admin-item-badges">
-              <span class="admin-badge subtle">${escapeHtml(user.role || 'user')}</span>
-              ${current ? '<span class="admin-badge">current</span>' : ''}
-            </div>
-          </div>
-          <div class="admin-item-summary">Users inherit platform administration separately from resource usage. Use groups to control which contexts, workspaces, and tools they may actually use.</div>
-          <div class="admin-inline-grid">
-            <label>Display name <input class="user-display-input" data-user-id="${escapeHtml(user.id)}" value="${escapeHtml(user.display_name || user.username)}" placeholder="Display name" /></label>
-            <label>Role <select class="user-role-input" data-user-id="${escapeHtml(user.id)}">${roleOptions(user.role || 'user')}</select></label>
-            <label class="admin-form-wide">Groups <input class="user-groups-input" data-user-id="${escapeHtml(user.id)}" value="${escapeHtml((user.groups || []).join(', '))}" placeholder="admin,docs,coders" /></label>
-          </div>
-          <div class="admin-item-actions">
-            <span class="muted">Created ${escapeHtml(formatDate(user.created_at) || '-')}</span>
-            <div class="button-row">
-              <button class="ghost-button save-user-btn" data-user-id="${escapeHtml(user.id)}" type="button">Save</button>
-              ${current ? '' : `<button class="ghost-button delete-user-btn" data-user-id="${escapeHtml(user.id)}" type="button">Delete</button>`}
-            </div>
-          </div>
-        </article>`;
-    }).join('');
-    el.querySelectorAll('.save-user-btn').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const userId = btn.dataset.userId || '';
-        const card = btn.closest('.admin-item-card');
-        const display_name = card?.querySelector('.user-display-input')?.value?.trim() || userId;
-        const role = card?.querySelector('.user-role-input')?.value || 'user';
-        const groups = String(card?.querySelector('.user-groups-input')?.value || '').split(',').map((item) => item.trim()).filter(Boolean);
-        await api(`/v1/users/${encodeURIComponent(userId)}`, {method:'PUT', body: JSON.stringify({display_name, role, groups})});
-        await fetchAuthStatus();
-        renderAuthInfo();
-        await loadUsersList();
-      });
-    });
-    el.querySelectorAll('.delete-user-btn').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const userId = btn.dataset.userId || '';
-        if (!userId || !confirm(`Delete user ${userId}?`)) return;
-        await api(`/v1/users/${encodeURIComponent(userId)}`, {method:'DELETE'});
-        await fetchAuthStatus();
-        renderAuthInfo();
-        await loadUsersList();
-      });
-    });
+    const [users, groups] = await Promise.all([api('/v1/users'), api('/v1/groups')]);
+    authDirectoryState.users = users || [];
+    authDirectoryState.groups = groups || [];
+    ensureAuthDirectorySelection();
+    renderAuthDirectory();
   } catch (error) {
-    el.innerHTML = `<div class="muted small-text">Could not load users: ${escapeHtml(error.message || String(error))}</div>`;
+    tree.innerHTML = `<div class="muted small-text">Could not load directory: ${escapeHtml(error.message || String(error))}</div>`;
+    detail.innerHTML = '<div class="muted small-text">Directory details unavailable.</div>';
   }
+}
+
+async function loadUsersList() {
+  return loadAuthDirectory();
 }
 
 async function loadGroupsList() {
-  const el = document.getElementById('groupsList');
-  if (!el) return;
-  try {
-    const groups = await api('/v1/groups');
-    if (!groups.length) {
-      el.innerHTML = '<div class="muted small-text">No groups found.</div>';
-      return;
-    }
-    el.innerHTML = groups.map((group) => `
-      <article class="admin-item-card">
-        <div class="admin-item-head">
-          <div>
-            <b>${escapeHtml(group.name || group.id)}</b>
-            <span class="muted small-text">${escapeHtml(group.id)}</span>
-          </div>
-          <div class="admin-item-badges">
-            <span class="admin-badge subtle">${escapeHtml(String((group.grants || []).length))} grants</span>
-          </div>
-        </div>
-        <div class="admin-inline-grid">
-          <label>Name <input class="group-name-input" data-group-id="${escapeHtml(group.id)}" value="${escapeHtml(group.name || group.id)}" /></label>
-          <label>Description <input class="group-description-input" data-group-id="${escapeHtml(group.id)}" value="${escapeHtml(group.description || '')}" /></label>
-          <label class="admin-form-wide">Grants <input class="group-grants-input" data-group-id="${escapeHtml(group.id)}" value="${escapeHtml(serializeGroupGrants(group.grants || []))}" placeholder="workspace:*:write, source_context:*:write" /></label>
-        </div>
-        <div class="admin-item-actions">
-          <span class="muted">Use groups on agent contexts for who may use or edit them. Grants cover broad resource access.</span>
-          <div class="button-row">
-            <button class="ghost-button save-group-btn" data-group-id="${escapeHtml(group.id)}" type="button">Save</button>
-            <button class="ghost-button delete-group-btn" data-group-id="${escapeHtml(group.id)}" type="button">Delete</button>
-          </div>
-        </div>
-      </article>`).join('');
-    el.querySelectorAll('.save-group-btn').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const groupId = btn.dataset.groupId || '';
-        const card = btn.closest('.admin-item-card');
-        const name = card?.querySelector('.group-name-input')?.value?.trim() || groupId;
-        const description = card?.querySelector('.group-description-input')?.value?.trim() || '';
-        const grants = parseGroupGrants(card?.querySelector('.group-grants-input')?.value || '');
-        await api(`/v1/groups/${encodeURIComponent(groupId)}`, {method:'PUT', body: JSON.stringify({name, description, grants})});
-        await fetchAuthStatus();
-        renderAuthInfo();
-        await loadGroupsList();
-        await loadUsersList();
-      });
-    });
-    el.querySelectorAll('.delete-group-btn').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const groupId = btn.dataset.groupId || '';
-        if (!groupId || !confirm(`Delete group ${groupId}?`)) return;
-        await api(`/v1/groups/${encodeURIComponent(groupId)}`, {method:'DELETE'});
-        await fetchAuthStatus();
-        renderAuthInfo();
-        await loadGroupsList();
-        await loadUsersList();
-      });
-    });
-  } catch (error) {
-    el.innerHTML = `<div class="muted small-text">Could not load groups: ${escapeHtml(error.message || String(error))}</div>`;
-  }
+  return loadAuthDirectory();
 }
 
+function bindAuthAdminButtons() {
+  document.getElementById('refreshDirectoryBtn')?.addEventListener('click', () => loadAuthDirectory().catch((e) => paneError('Directory could not be refreshed', e.message || String(e))));
+  document.getElementById('createUserBtn')?.addEventListener('click', async () => {
+    const username = document.getElementById('newUsername')?.value.trim() || '';
+    const display_name = document.getElementById('newDisplayName')?.value.trim() || username;
+    const password = document.getElementById('newUserPassword')?.value || '';
+    const role = document.getElementById('newUserRole')?.value || 'user';
+    const groups = (document.getElementById('newUserGroups')?.value || '').split(',').map((item) => item.trim()).filter(Boolean);
+    const result = document.getElementById('usersResult');
+    try {
+      if (!username || !password) throw new Error('Username and password are required.');
+      await api('/v1/users', {method: 'POST', body: JSON.stringify({username, display_name, password, role, groups})});
+      ['newUsername', 'newDisplayName', 'newUserPassword', 'newUserGroups'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+      if (result) result.textContent = `User created: ${username}`;
+      await fetchAuthStatus();
+      renderAuthInfo();
+      authDirectoryState.selectedKind = 'user';
+      authDirectoryState.selectedId = username;
+      await loadAuthDirectory();
+    } catch (error) {
+      if (result) result.textContent = `Failed: ${error.message || String(error)}`;
+    }
+  });
+  document.getElementById('createGroupBtn')?.addEventListener('click', async () => {
+    const id = document.getElementById('newGroupId')?.value.trim() || '';
+    const name = document.getElementById('newGroupName')?.value.trim() || id;
+    const description = document.getElementById('newGroupDescription')?.value.trim() || '';
+    const grants = parseGroupGrants(document.getElementById('newGroupGrants')?.value || '');
+    const result = document.getElementById('groupsResult');
+    try {
+      if (!id) throw new Error('Group id is required.');
+      await api('/v1/groups', {method: 'POST', body: JSON.stringify({id, name, description, grants})});
+      ['newGroupId', 'newGroupName', 'newGroupDescription', 'newGroupGrants'].forEach((inputId) => { const el = document.getElementById(inputId); if (el) el.value = ''; });
+      if (result) result.textContent = `Group created: ${id}`;
+      await fetchAuthStatus();
+      renderAuthInfo();
+      authDirectoryState.selectedKind = 'group';
+      authDirectoryState.selectedId = id;
+      await loadAuthDirectory();
+    } catch (error) {
+      if (result) result.textContent = `Failed: ${error.message || String(error)}`;
+    }
+  });
+}
 
+bindAuthAdminButtons();
