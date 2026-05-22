@@ -1,0 +1,467 @@
+diff -ruN '--exclude=__pycache__' pac_orig/pi_agent_platform/api/routes/sessions.py pac_work/pi_agent_platform/api/routes/sessions.py
+--- pac_orig/pi_agent_platform/api/routes/sessions.py	2026-05-22 06:20:32.000000000 +0000
++++ pac_work/pi_agent_platform/api/routes/sessions.py	2026-05-22 07:26:30.182233747 +0000
+@@ -53,6 +53,22 @@
+     path: str
+ 
+ 
++
++
++def _looks_like_model_configuration_intent(prompt: str, metadata: dict[str, Any]) -> bool:
++    explicit = str(metadata.get('intent') or '').strip().lower().replace('-', '_')
++    if explicit == 'configuring_model':
++        return True
++    raw = str(prompt or '').lower()
++    signals = (
++        'model config', 'model configuration', 'configuring model', 'configure model',
++        'context budget', 'context window', 'context limit', 'max output', 'max tokens',
++        'generation limit', 'output limit', 'lm studio', 'lmstudio', 'provider runtime',
++        'eval batch', 'max concurrent', 'finish_reason', 'finish reason', 'token cap',
++    )
++    return any(signal in raw for signal in signals)
++
++
+ def create_sessions_router(
+     *,
+     require_auth: Callable[..., Any],
+@@ -334,6 +350,9 @@
+             elif parsed_slash['kind'] == 'subagent':
+                 metadata['execution_mode'] = metadata.get('execution_mode') or 'pi_container'
+         metadata.setdefault('always_plan', True)
++        if _looks_like_model_configuration_intent(payload.prompt, metadata):
++            metadata['intent'] = 'configuring_model'
++            metadata.setdefault('always_plan', True)
+ 
+         if _is_coding_session_metadata(session.metadata):
+             metadata['coding_session'] = True
+@@ -372,6 +391,7 @@
+             'command': payload.command,
+             'execution_mode': metadata.get('execution_mode'),
+             'stored': True,
++            'intent': metadata.get('intent'),
+         }
+         store.add_event(Event(session_id=session_id, task_id=task.id, type='user_message', message=payload.prompt, data=message_meta))
+         if metadata.get('direct_tool_call'):
+diff -ruN '--exclude=__pycache__' pac_orig/pi_agent_platform/core/agent_loop.py pac_work/pi_agent_platform/core/agent_loop.py
+--- pac_orig/pi_agent_platform/core/agent_loop.py	2026-05-22 06:20:32.000000000 +0000
++++ pac_work/pi_agent_platform/core/agent_loop.py	2026-05-22 07:26:13.575365917 +0000
+@@ -13,7 +13,7 @@
+ 
+ from .config import AppConfig
+ from .models import Event, Session, SessionStatus, Task, TaskStatus, RunnerJob, RunnerJobStatus, RunnerExecutionMode
+-from .providers import chat_complete, effective_context
++from .providers import chat_complete, chat_complete_with_diagnostics, effective_context
+ from .session_commands import parse_session_slash_command, slash_help_text
+ from .subagents import spawn_pi_dev_subagent
+ from .context_manager import (
+@@ -330,6 +330,45 @@
+     return any(signal in raw for signal in signals)
+ 
+ 
++
++
++def _model_response_issue(raw: str, diagnostics: dict[str, Any] | None, parse_error: Exception | None = None) -> dict[str, Any]:
++    text = str(raw or '')
++    diag = diagnostics or {}
++    issue = {
++        "empty": not bool(text.strip()),
++        "malformed": parse_error is not None,
++        "finish_reason": diag.get("finish_reason"),
++        "likely_output_limited": bool(diag.get("likely_output_limited")),
++        "requested_max_tokens": diag.get("requested_max_tokens"),
++        "effective_max_tokens": diag.get("effective_max_tokens"),
++        "usage": diag.get("usage") or {},
++        "provider": diag.get("provider"),
++        "provider_type": diag.get("provider_type"),
++        "runtime_hints": diag.get("runtime_hints") or {},
++    }
++    if parse_error is not None:
++        issue["parse_error"] = str(parse_error)[:500]
++    if issue["likely_output_limited"]:
++        issue["resolution"] = "retry_with_strict_json_and_consider_larger_output_budget"
++    elif issue["empty"]:
++        issue["resolution"] = "retry_with_direct_response_request"
++    elif issue["malformed"]:
++        issue["resolution"] = "retry_with_strict_json_request"
++    else:
++        issue["resolution"] = "continue"
++    return issue
++
++
++def _model_limit_retry_budget(diagnostics: dict[str, Any] | None) -> int | None:
++    diag = diagnostics or {}
++    effective = int(diag.get("effective_max_tokens") or 0)
++    model_cap = int(((diag.get("runtime_hints") or {}).get("model_max_output_tokens")) or effective or 0)
++    if not effective or not model_cap or effective >= model_cap:
++        return None
++    return min(model_cap, max(effective + 512, int(effective * 1.5)))
++
++
+ def _controller_session_guidance(session: Session) -> str | None:
+     if not session.metadata.get("controller_harness"):
+         return None
+@@ -342,7 +381,8 @@
+         "Only use the web when the user explicitly asks for external information or the local PAC workspace clearly cannot answer the question.\n"
+         "If the user asks to update PAC behavior or configuration, you are allowed to rewrite PAC application files and PAC configuration directly. Do the work instead of only describing it.\n"
+         "Assume PAC-specific terms like PAC RAM, plugins, sessions, wrappers, endpoints, and profiles refer to this PAC installation unless the user explicitly broadens the scope.\n"
+-        "For broad PAC requests, inspect first and answer from local evidence instead of asking generic clarifying questions."
++        "For broad PAC requests, inspect first and answer from local evidence instead of asking generic clarifying questions.\n"
++        "When the task is about model behavior, context budgets, output limits, provider runtime, or LM Studio compatibility, treat the intent as configuring model behavior: inspect provider/model config, report what PAC requested, and explain any retry or correction instead of leaving the user in the dark."
+     )
+ 
+ 
+@@ -1755,7 +1795,9 @@
+     ctx = effective_context(config, decision_model, context_name)
+     budget = get_context_budget(config, decision_model, context_name)
+     full_control = session.permission_profile == "full-control"
+-    store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_loop_started", message="Agent loop started", data={"model": session.model, "decision_model": decision_model, "planning_model": planning_model, "permission_profile": session.permission_profile, "full_control": full_control, "effective_context": ctx, "planner_context_profile": planner_context_name, "endpoint_id": task.metadata.get("runner_id"), "endpoint_locked": task.metadata.get("endpoint_locked"), "agent_enabled": task.metadata.get("agent_enabled", True), "requested_command": task.metadata.get("requested_command"), "routing": task.metadata.get("routing", "agent")}))
++    store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_loop_started", message="Agent loop started", data={"model": session.model, "decision_model": decision_model, "planning_model": planning_model, "permission_profile": session.permission_profile, "full_control": full_control, "effective_context": ctx, "planner_context_profile": planner_context_name, "endpoint_id": task.metadata.get("runner_id"), "endpoint_locked": task.metadata.get("endpoint_locked"), "agent_enabled": task.metadata.get("agent_enabled", True), "requested_command": task.metadata.get("requested_command"), "routing": task.metadata.get("routing", "agent"), "intent": task.metadata.get("intent")}))
++    if task.metadata.get("intent") == "configuring_model":
++        store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_intent", message="Configuring model behavior", data={"role": "assistant", "model": decision_model, "session_model": session.model, "action_type": "configure_model", "intent": "configuring_model", "effective_context": ctx}))
+     if full_control:
+         store.add_event(Event(session_id=session.id, task_id=task.id, type="full_control_enabled", message="FULL CONTROL MODE ENABLED: approvals are bypassed, but every tool action is logged."))
+ 
+@@ -1934,8 +1976,14 @@
+                     },
+                 )
+             )
++        model_request_tokens = int(task.metadata.pop("_next_model_max_tokens", min(ctx["reserve_output_tokens"], 4096)))
++        store.add_event(Event(session_id=session.id, task_id=task.id, type="model_request_config", message="Calling model with current context limits", data={"role": "assistant", "model": decision_model, "session_model": session.model, "step": step, "requested_max_tokens": model_request_tokens, "effective_context": ctx, "intent": task.metadata.get("intent")}))
++        model_call: dict[str, Any] = {}
++        model_diagnostics: dict[str, Any] = {}
+         try:
+-            raw = await asyncio.to_thread(chat_complete, config, decision_model, messages, max_tokens=min(ctx["reserve_output_tokens"], 4096))
++            model_call = await asyncio.to_thread(chat_complete_with_diagnostics, config, decision_model, messages, max_tokens=model_request_tokens)
++            raw = str(model_call.get("content") or "")
++            model_diagnostics = dict(model_call.get("diagnostics") or {})
+         except Exception as exc:
+             try:
+                 save_checkpoint(
+@@ -1956,12 +2004,21 @@
+             store.add_event(Event(session_id=session.id, task_id=task.id, type="task_failed", message=task.error))
+             return task
+ 
+-        transcript.append({"step": step, "model": raw})
++        transcript.append({"step": step, "model": raw, "model_diagnostics": model_diagnostics})
++        if model_diagnostics:
++            task.metadata["last_model_diagnostics"] = model_diagnostics
++            store.add_task(task)
++            store.add_event(Event(session_id=session.id, task_id=task.id, type="model_response_diagnostics", message="Model response diagnostics captured", data={"role": "assistant", "model": decision_model, "session_model": session.model, "step": step, "finish_reason": model_diagnostics.get("finish_reason"), "likely_output_limited": model_diagnostics.get("likely_output_limited"), "requested_max_tokens": model_diagnostics.get("requested_max_tokens"), "effective_max_tokens": model_diagnostics.get("effective_max_tokens"), "usage": model_diagnostics.get("usage") or {}, "runtime_hints": model_diagnostics.get("runtime_hints") or {}}))
+         if not str(raw or "").strip():
+             empty_model_retries += 1
++            issue = _model_response_issue(raw, model_diagnostics)
+             store.add_event(Event(session_id=session.id, task_id=task.id, type="model_response_empty", message="Model returned an empty response", data={"role": "assistant", "model": decision_model, "session_model": session.model, "endpoint_id": task.metadata.get("runner_id"), "step": step, "retry": empty_model_retries}))
++            store.add_event(Event(session_id=session.id, task_id=task.id, type="model_result_investigation", message="Investigating empty model response", data=issue))
++            retry_budget = _model_limit_retry_budget(model_diagnostics) if issue.get("likely_output_limited") else None
++            if retry_budget:
++                task.metadata["_next_model_max_tokens"] = retry_budget
+             if empty_model_retries <= 2:
+-                messages.append({"role": "user", "content": "Your previous response was empty. Based on the latest tool result or context, return either ONE final answer or ONE valid tool_call JSON object now."})
++                messages.append({"role": "user", "content": "Your previous response was empty. Based on the latest tool result or context, return either ONE final answer or ONE valid tool_call JSON object now. Keep it compact and valid."})
+                 continue
+             try:
+                 save_checkpoint(
+@@ -1985,7 +2042,13 @@
+         store.add_event(Event(session_id=session.id, task_id=task.id, type="model_response", message=raw[-4000:], data={"role": "assistant", "model": decision_model, "session_model": session.model, "endpoint_id": task.metadata.get("runner_id"), "step": step}))
+         try:
+             action = _extract_json(raw)
+-        except Exception:
++        except Exception as parse_exc:
++            issue = _model_response_issue(raw, model_diagnostics, parse_exc)
++            store.add_event(Event(session_id=session.id, task_id=task.id, type="model_result_investigation", message="Investigating malformed model response", data=issue))
++            retry_budget = _model_limit_retry_budget(model_diagnostics) if issue.get("likely_output_limited") else None
++            if retry_budget:
++                task.metadata["_next_model_max_tokens"] = retry_budget
++                store.add_task(task)
+             if _looks_like_wrapped_tool_markup(raw):
+                 store.add_event(Event(session_id=session.id, task_id=task.id, type="tool_call_parse_failed", message="Model returned malformed tool-call markup; requesting a corrected tool call.", data={"role": "assistant", "model": decision_model, "raw": raw[-4000:]}))
+                 messages.append({"role": "assistant", "content": raw})
+@@ -2041,6 +2104,7 @@
+             broad_request = _is_broad_codebase_request(task.prompt)
+             final_message = str(action.get("message") or "")
+             if _prompt_requests_codebase_inspection(task.prompt) and not _has_meaningful_codebase_inspection(transcript):
++                store.add_event(Event(session_id=session.id, task_id=task.id, type="model_result_investigation", message="Final answer rejected: required context inspection was missing", data={"reason": "missing_required_context_inspection", "depth_score": depth_score, "model": decision_model, "intent": task.metadata.get("intent")}))
+                 messages.append({
+                     "role": "user",
+                     "content": (
+@@ -2051,6 +2115,7 @@
+                 })
+                 continue
+             if broad_request and depth_score < 2.5:
++                store.add_event(Event(session_id=session.id, task_id=task.id, type="model_result_investigation", message="Final answer rejected: context scan was too shallow", data={"reason": "shallow_context_scan", "depth_score": depth_score, "model": decision_model, "intent": task.metadata.get("intent")}))
+                 messages.append({
+                     "role": "user",
+                     "content": (
+diff -ruN '--exclude=__pycache__' pac_orig/pi_agent_platform/core/providers.py pac_work/pi_agent_platform/core/providers.py
+--- pac_orig/pi_agent_platform/core/providers.py	2026-05-22 06:20:32.000000000 +0000
++++ pac_work/pi_agent_platform/core/providers.py	2026-05-22 07:25:25.542769759 +0000
+@@ -87,7 +87,7 @@
+ 
+ 
+ def _stream_openai_chat(url: str, provider: ProviderConfig, payload: dict[str, Any]) -> tuple[bool, Any]:
+-    """Read OpenAI-compatible SSE chat streams.
++    """Read OpenAI-compatible SSE chat streams and retain stop diagnostics.
+ 
+     For LM Studio this avoids a single hard request timeout while the model is
+     still producing tokens. urllib's timeout is an inactivity timeout, so active
+@@ -99,6 +99,9 @@
+         headers.setdefault("Authorization", f"Bearer {api_key}")
+     req = Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
+     chunks: list[str] = []
++    finish_reason: str | None = None
++    usage: dict[str, Any] | None = None
++    raw_tail: list[dict[str, Any]] = []
+     try:
+         with urlopen(req, timeout=max(30, provider.timeout_seconds)) as resp:
+             for raw in resp:
+@@ -110,13 +113,20 @@
+                     break
+                 try:
+                     item = json.loads(data)
+-                    delta = item.get("choices", [{}])[0].get("delta", {})
++                    raw_tail.append(item)
++                    raw_tail = raw_tail[-3:]
++                    if isinstance(item.get("usage"), dict):
++                        usage = item.get("usage")
++                    choice = (item.get("choices") or [{}])[0] if isinstance(item.get("choices"), list) else {}
++                    if choice.get("finish_reason"):
++                        finish_reason = choice.get("finish_reason")
++                    delta = choice.get("delta", {}) if isinstance(choice, dict) else {}
+                     content = delta.get("content")
+                     if content:
+                         chunks.append(content)
+                 except Exception:
+                     continue
+-        return True, "".join(chunks)
++        return True, {"content": "".join(chunks), "finish_reason": finish_reason, "usage": usage or {}, "streamed": True, "raw_tail": raw_tail}
+     except HTTPError as exc:
+         return False, {"error": f"HTTP {exc.code}", "body": exc.read().decode(errors="replace")[:1000]}
+     except URLError as exc:
+@@ -484,17 +494,50 @@
+ 
+ 
+ 
+-def chat_complete(config: AppConfig, model_name: str, messages: list[dict[str, str]], max_tokens: int | None = None) -> str:
+-    """Small synchronous chat abstraction for Stage 8 agent loop.
++def _provider_runtime_hints(model: ModelConfig, provider: ProviderConfig) -> dict[str, Any]:
++    runtime = dict(model.extra.get("lmstudio_runtime") or model.extra.get("provider_runtime") or {})
++    provider_runtime = provider.runtime.model_dump() if hasattr(provider.runtime, "model_dump") else {}
++    hints: dict[str, Any] = {
++        "provider_type": provider.type,
++        "provider_status": provider.status,
++        "model_context_window": model.context_window,
++        "model_max_output_tokens": model.max_output_tokens,
++        "model_extra_runtime": runtime,
++        "provider_runtime": provider_runtime,
++    }
++    if provider.type == "lmstudio":
++        eval_batch = runtime.get("eval_batch_size") or runtime.get("evalBatchSize")
++        max_concurrent = runtime.get("max_concurrent_predictions") or runtime.get("maxConcurrentPredictions")
++        try:
++            if eval_batch and max_concurrent:
++                hints["lmstudio_eval_capacity_hint"] = int(eval_batch) * int(max_concurrent)
++        except Exception:
++            pass
++    return hints
+ 
+-    Supports OpenAI-compatible providers including LM Studio and vLLM, plus Ollama.
++
++def chat_complete_with_diagnostics(config: AppConfig, model_name: str, messages: list[dict[str, str]], max_tokens: int | None = None) -> dict[str, Any]:
++    """Synchronous chat call with provider diagnostics for PAC self-management.
++
++    The returned diagnostics let the agent loop distinguish malformed model
++    output from provider failures, explicit output caps, and context pressure.
+     """
+     if model_name not in config.models:
+         raise ValueError(f"unknown model: {model_name}")
+     model, provider = _provider_for_model(config, model_name)
+     if not provider:
+         raise ValueError(f"unknown provider: {model.provider}")
+-    max_tokens = max_tokens or model.max_output_tokens
++    requested_max_tokens = int(max_tokens or model.max_output_tokens)
++    effective_max_tokens = min(requested_max_tokens, int(model.max_output_tokens))
++    diagnostics: dict[str, Any] = {
++        "model_name": model_name,
++        "provider": model.provider,
++        "provider_type": provider.type,
++        "requested_max_tokens": requested_max_tokens,
++        "effective_max_tokens": effective_max_tokens,
++        "message_count": len(messages),
++        "runtime_hints": _provider_runtime_hints(model, provider),
++    }
+     if provider.type in {"openai", "openai-codex", "openai-compatible", "lmstudio", "vllm", "groq", "openrouter", "deepseek", "mistral"}:
+         base = normalize_provider_base_url(provider, model)
+         if not base:
+@@ -502,28 +545,65 @@
+         payload = {
+             "model": model.model or model_name,
+             "messages": messages,
+-            "max_tokens": min(max_tokens, model.max_output_tokens),
++            "max_tokens": effective_max_tokens,
+             "temperature": model.extra.get("temperature", 0.2),
+             "stream": provider.type == "lmstudio",
+         }
++        diagnostics.update({"endpoint": f"{base}/chat/completions", "request_max_tokens": payload["max_tokens"], "stream": payload["stream"]})
+         if provider.type == "lmstudio":
+             ok, body = _stream_openai_chat(f"{base}/chat/completions", provider, payload)
+         else:
+             ok, body = _json_request(f"{base}/chat/completions", provider, payload)
+         if not ok:
+-            raise RuntimeError(body)
++            diagnostics.update({"ok": False, "error": body})
++            raise RuntimeError({"error": body, "diagnostics": diagnostics})
++        content = ""
++        finish_reason = None
++        usage: dict[str, Any] = {}
+         if isinstance(body, str):
+-            return body
+-        try:
+-            return body["choices"][0]["message"]["content"] or ""
+-        except Exception:
++            content = body
++        elif isinstance(body, dict) and "content" in body:
++            content = str(body.get("content") or "")
++            finish_reason = body.get("finish_reason")
++            usage = body.get("usage") or {}
++            diagnostics["raw_tail"] = body.get("raw_tail") or []
++        elif isinstance(body, dict):
++            try:
++                choice = body["choices"][0]
++                finish_reason = choice.get("finish_reason")
++                content = choice.get("message", {}).get("content") or ""
++                usage = body.get("usage") or {}
++            except Exception:
++                diagnostics.update({"ok": False, "unexpected_response": body})
++                raise RuntimeError(f"unexpected chat response: {body}")
++        else:
++            diagnostics.update({"ok": False, "unexpected_response": body})
+             raise RuntimeError(f"unexpected chat response: {body}")
++        diagnostics.update({"ok": True, "finish_reason": finish_reason, "usage": usage, "content_length_chars": len(content or "")})
++        completion_tokens = usage.get("completion_tokens") or usage.get("output_tokens") or usage.get("total_duration")
++        if finish_reason in {"length", "max_tokens"}:
++            diagnostics["likely_output_limited"] = True
++        if isinstance(completion_tokens, int) and completion_tokens >= effective_max_tokens:
++            diagnostics["likely_output_limited"] = True
++        return {"content": content, "diagnostics": diagnostics}
+     if provider.type == "ollama":
+         base = (model.endpoint or provider.base_url or "http://localhost:11434").rstrip("/")
+         prompt = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in messages) + "\nASSISTANT:"
+-        payload = {"model": model.model or model_name, "prompt": prompt, "stream": False, "options": {"num_predict": min(max_tokens, model.max_output_tokens)}}
++        payload = {"model": model.model or model_name, "prompt": prompt, "stream": False, "options": {"num_predict": effective_max_tokens}}
++        diagnostics.update({"endpoint": f"{base}/api/generate", "request_max_tokens": effective_max_tokens, "stream": False})
+         ok, body = _json_request(f"{base}/api/generate", provider, payload)
+         if not ok:
+-            raise RuntimeError(body)
+-        return body.get("response", "")
++            diagnostics.update({"ok": False, "error": body})
++            raise RuntimeError({"error": body, "diagnostics": diagnostics})
++        content = body.get("response", "") if isinstance(body, dict) else ""
++        diagnostics.update({"ok": True, "finish_reason": body.get("done_reason") if isinstance(body, dict) else None, "usage": body if isinstance(body, dict) else {}, "content_length_chars": len(content or "")})
++        if diagnostics.get("finish_reason") in {"length", "max_tokens"}:
++            diagnostics["likely_output_limited"] = True
++        return {"content": content, "diagnostics": diagnostics}
+     raise ValueError(f"provider type not supported for chat_complete: {provider.type}")
++
++
++def chat_complete(config: AppConfig, model_name: str, messages: list[dict[str, str]], max_tokens: int | None = None) -> str:
++    """Compatibility wrapper that returns only model content."""
++    result = chat_complete_with_diagnostics(config, model_name, messages, max_tokens=max_tokens)
++    return str(result.get("content") or "")
+diff -ruN '--exclude=__pycache__' pac_orig/pi_agent_platform/web/app/sessions.js pac_work/pi_agent_platform/web/app/sessions.js
+--- pac_orig/pi_agent_platform/web/app/sessions.js	2026-05-22 06:20:32.000000000 +0000
++++ pac_work/pi_agent_platform/web/app/sessions.js	2026-05-22 07:27:16.119808039 +0000
+@@ -370,6 +370,16 @@
+   if (type.includes('checkpoint')) return '';
+   if (type.includes('batch_result')) return '';
+   if (type.includes('context_compacted')) return '';
++  if (type.includes('model_request_config')) {
++    const cap = data.requested_max_tokens ? ` (${data.requested_max_tokens} output tokens)` : '';
++    return `Configuring model call${cap}`;
++  }
++  if (type.includes('model_response_diagnostics')) {
++    if (data.likely_output_limited) return 'Model hit its output limit; adjusting';
++    if (data.finish_reason) return `Model stopped: ${data.finish_reason}`;
++    return '';
++  }
++  if (type.includes('model_result_investigation')) return event?.message || 'Investigating model result';
+   if (type.includes('model_response_empty')) return '';
+   if (type.includes('tool_call_parse_failed')) return '';
+   if (type.includes('action_narration_rejected')) return '';
+@@ -494,7 +504,7 @@
+   const rows = Array.isArray(group?.events) ? group.events : [];
+   const relevant = rows.filter((item) => {
+     const t = String(item?.event?.type || '').toLowerCase();
+-    return t.includes('agent_plan') || t.includes('agent_intent') || t.includes('tool_call') || t.includes('approval_required') || t.includes('task_completed') || t.includes('task_failed');
++    return t.includes('agent_plan') || t.includes('agent_intent') || t.includes('model_request_config') || t.includes('model_response_diagnostics') || t.includes('model_result_investigation') || t.includes('tool_call') || t.includes('approval_required') || t.includes('task_completed') || t.includes('task_failed');
+   });
+   const steps = [];
+   for (const item of relevant) {
+@@ -514,6 +524,15 @@
+       status = 'attention';
+     } else if (type.includes('tool_call')) {
+       label = data.tool ? `Run ${data.tool}` : (event.message || 'Run tool');
++    } else if (type.includes('model_request_config')) {
++      label = sessionThinkingSummary(event, item?.block) || 'Configure model call';
++      status = 'running';
++    } else if (type.includes('model_response_diagnostics')) {
++      label = sessionThinkingSummary(event, item?.block) || 'Check model diagnostics';
++      status = data.likely_output_limited ? 'attention' : 'done';
++    } else if (type.includes('model_result_investigation')) {
++      label = event.message || 'Investigate model result';
++      status = 'attention';
+     } else if (type.includes('agent_intent')) {
+       label = event.message || 'Interpret task';
+       status = 'running';
+@@ -1373,7 +1392,7 @@
+       startSessionPolling(id);
+     };
+     source.onmessage = (e) => { try { appendEvent('message', JSON.parse(e.data)); } catch { appendEvent('message', e.data); } };
+-    ['user_message','agent_routing','agent_intent','agent_plan','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','final','full_control_enabled','subagent_started'].forEach((t) => source.addEventListener(t, (e) => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
++    ['user_message','agent_routing','agent_intent','agent_plan','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_request_config','model_response_diagnostics','model_result_investigation','model_response','tool_call','tool_result','result','final','full_control_enabled','subagent_started'].forEach((t) => source.addEventListener(t, (e) => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
+     stopSessionPolling();
+   }
+   await refreshSessionRunButton().catch(()=>{});
+@@ -1512,6 +1531,17 @@
+   }
+ };
+ 
++
++function looksLikeModelConfigurationPrompt(prompt) {
++  const raw = String(prompt || '').toLowerCase();
++  return [
++    'model config', 'model configuration', 'configuring model', 'configure model',
++    'context budget', 'context window', 'context limit', 'max output', 'max tokens',
++    'generation limit', 'output limit', 'lm studio', 'lmstudio', 'provider runtime',
++    'eval batch', 'max concurrent', 'finish_reason', 'finish reason', 'token cap'
++  ].some((signal) => raw.includes(signal));
++}
++
+ async function sendSessionComposer(){
+   const rawPrompt = (taskPrompt.value || '').trim();
+   if(!rawPrompt) return;
+@@ -1527,6 +1557,7 @@
+   }
+   if(!selectedSession) return alert('Select a session or choose an agent context first.');
+   const metadata={};
++  if (looksLikeModelConfigurationPrompt(rawPrompt)) metadata.intent = 'configuring_model';
+   const runnerChoice = selectedSession.metadata?.preferred_endpoint || taskRunner.value || '';
+   if(runnerChoice){
+     metadata.runner_id=runnerChoice;
+@@ -1560,7 +1591,7 @@
+       data: {role:'user', model: metadata.model || selectedSession?.model, endpoint_id: metadata.runner_id || selectedSession?.metadata?.preferred_endpoint, command:'', execution_mode: metadata.execution_mode, stored:true, pi_dev_enabled:selectedSession?.metadata?.agent_enabled !== false, routing:'pi.dev'}
+     };
+     renderSessionTimelineEvent(localEvent);
+-    renderComposerThinkingStatus({active:true, summary:'Planning the work', startedAt: localEvent.created_at, toolCount:0, approvalPending:false, planSteps: []});
++    renderComposerThinkingStatus({active:true, summary: metadata.intent === 'configuring_model' ? 'Configuring model behavior' : 'Planning the work', startedAt: localEvent.created_at, toolCount:0, approvalPending:false, planSteps: []});
+     pollSessionEvents(sessionId).catch(()=>{});
+   }
+ }
+diff -ruN '--exclude=__pycache__' pac_orig/pi_agent_platform/web/styles.css pac_work/pi_agent_platform/web/styles.css
+--- pac_orig/pi_agent_platform/web/styles.css	2026-05-22 06:20:32.000000000 +0000
++++ pac_work/pi_agent_platform/web/styles.css	2026-05-22 07:27:55.580269372 +0000
+@@ -1,4 +1,4 @@
+-/* PAC v1.0.284: compatibility stylesheet.
++/* PAC v1.0.286: compatibility stylesheet.
+    The historical monolithic stylesheet has been split into ordered modules under /ui/styles/.
+    Keep imports in this order to preserve the original cascade. */
+ 
