@@ -36,6 +36,20 @@ const DIRECTORY_FOLDERS = [
   ['credentials', 'Credentials', 'credential', 'credentials'],
 ];
 
+const DIRECTORY_KIND_LABELS = {
+  user: 'User',
+  group: 'Group',
+  service_account: 'Service account',
+  endpoint: 'Endpoint identity',
+  provider: 'Provider identity',
+  certificate_identity: 'Certificate identity',
+  credential: 'Credential',
+};
+
+function directoryKindLabel(kind) {
+  return DIRECTORY_KIND_LABELS[kind] || kind || 'Object';
+}
+
 function directoryItemsForKind(kind) {
   if (kind === 'user') return directoryAccessState.users;
   if (kind === 'group') return directoryAccessState.groups;
@@ -96,7 +110,7 @@ function renderAuthDirectoryTree() {
     const items = (directoryAccessState[stateKey] || []).filter((item) => directoryMatches(item, label));
     return `<details class="directory-root" open>
       <summary class="directory-folder${directoryAccessState.selectedKind === 'folder' && directoryAccessState.selectedId === folderId ? ' active' : ''}" data-kind="folder" data-id="${escapeHtml(folderId)}">
-        <span>${escapeHtml(label)}</span><span class="directory-count">${items.length}</span>
+        <span class="directory-label-with-icon"><span class="directory-kind-icon folder" aria-hidden="true"></span>${escapeHtml(label)}</span><span class="directory-count">${items.length}</span>
       </summary>
       <div class="directory-children">
         ${items.map((item) => renderDirectoryTreeItem(itemKind, item)).join('') || '<div class="directory-empty">No entries.</div>'}
@@ -118,7 +132,8 @@ function renderDirectoryTreeItem(kind, item) {
   const nested = kind === 'group' && (item.members || []).length
     ? `<div class="directory-children nested">${(item.members || []).slice(0, 8).map((member) => `<button class="directory-node directory-leaf${directoryAccessState.selectedKind === member.kind && directoryAccessState.selectedId === member.id ? ' active' : ''}" data-kind="${escapeHtml(member.kind)}" data-id="${escapeHtml(member.id)}" type="button"><span class="directory-node-label">${escapeHtml(directoryMemberTitle(member))}</span><span class="directory-node-meta">${escapeHtml(member.kind)}</span></button>`).join('')}</div>`
     : '';
-  return `<div class="directory-group-shell"><button class="directory-node${active ? ' active' : ''}" data-kind="${escapeHtml(kind)}" data-id="${escapeHtml(item.id)}" type="button"><span class="directory-node-label">${escapeHtml(label)}</span><span class="directory-node-meta">${escapeHtml(meta || '')}</span></button>${nested}</div>`;
+  const dropAttrs = kind === 'group' ? ` data-drop-group-id="${escapeHtml(item.id)}" aria-label="Drop directory objects here to add them to ${escapeHtml(label)}"` : '';
+  return `<div class="directory-group-shell"><button class="directory-node${active ? ' active' : ''}" data-kind="${escapeHtml(kind)}" data-id="${escapeHtml(item.id)}"${dropAttrs} type="button"><span class="directory-node-label directory-label-with-icon"><span class="directory-kind-icon ${escapeHtml(kind)}" aria-hidden="true"></span>${escapeHtml(label)}</span><span class="directory-node-meta">${escapeHtml(meta || '')}</span></button>${nested}</div>`;
 }
 
 function selectedAuthDirectoryItem() {
@@ -163,11 +178,17 @@ function renderAuthDirectoryDetail() {
 
 function renderDirectoryFolderDetail(folderId, detail, title, subtitle) {
   const folder = DIRECTORY_FOLDERS.find(([id]) => id === folderId) || DIRECTORY_FOLDERS[0];
-  const items = directoryItemsForKind(folder[2]);
+  const itemKind = folder[2];
+  const items = directoryItemsForKind(itemKind).filter((item) => directoryMatches(item, folder[1]));
   if (title) title.textContent = folder[1];
-  if (subtitle) subtitle.textContent = 'Directory container';
-  detail.innerHTML = `<article class="directory-detail-card"><h3>${escapeHtml(folder[1])}</h3><p class="muted">${items.length} entries in this directory section.</p><div class="directory-folder-summary">${items.slice(0, 20).map((item) => `<button class="directory-summary-card" data-kind="${escapeHtml(folder[2])}" data-id="${escapeHtml(item.id)}" type="button"><b>${escapeHtml(directoryPrincipalLabel(item))}</b><span>${escapeHtml(directoryPrincipalSubtitle(item))}</span></button>`).join('') || '<span class="muted small-text">No entries.</span>'}</div></article>`;
-  detail.querySelectorAll('.directory-summary-card').forEach((btn) => btn.addEventListener('click', () => selectAuthDirectoryNode(btn.dataset.kind || 'user', btn.dataset.id || '')));
+  if (subtitle) subtitle.textContent = `PAC Directory / ${folder[1]}`;
+  const rows = items.slice(0, 100).map((item) => {
+    const dropAttrs = itemKind === 'group' ? ` data-drop-group-id="${escapeHtml(item.id)}"` : '';
+    return `<tr class="directory-object-row" data-kind="${escapeHtml(itemKind)}" data-id="${escapeHtml(item.id)}"${dropAttrs}><td><span class="directory-label-with-icon"><span class="directory-kind-icon ${escapeHtml(itemKind)}" aria-hidden="true"></span><b>${escapeHtml(directoryPrincipalLabel(item))}</b></span></td><td>${escapeHtml(directoryKindLabel(itemKind))}</td><td>${escapeHtml(item.source || item.kind || '')}</td><td><span class="directory-status-pill">${escapeHtml(item.status || 'active')}</span></td><td>${escapeHtml(item.description || item.id || '')}</td></tr>`;
+  }).join('');
+  detail.innerHTML = `<article class="directory-detail-card directory-console"><div class="directory-console-toolbar"><div><h3>${escapeHtml(folder[1])}</h3><p class="muted small-text">${items.length} objects. Select a row to inspect it. Drag people, groups, service accounts, endpoints, or providers onto a group to add membership.</p></div><span class="directory-path-pill">PAC Directory › ${escapeHtml(folder[1])}</span></div><div class="directory-table-wrap"><table class="directory-object-table"><thead><tr><th>Name</th><th>Type</th><th>Source</th><th>Status</th><th>Description / ID</th></tr></thead><tbody>${rows || `<tr><td colspan="5" class="directory-empty-cell">No objects in this container.</td></tr>`}</tbody></table></div></article>`;
+  detail.querySelectorAll('.directory-object-row').forEach((row) => row.addEventListener('click', () => selectAuthDirectoryNode(row.dataset.kind || itemKind, row.dataset.id || '')));
+  window.bindDirectoryDragDrop?.(detail);
 }
 
 async function renderDirectoryPrincipalDetail(item, detail, title, subtitle) {
@@ -184,7 +205,7 @@ async function renderDirectoryPrincipalDetail(item, detail, title, subtitle) {
   detail.innerHTML = `<article class="directory-detail-card">
     <div class="directory-detail-head"><div><h3>${escapeHtml(directoryPrincipalLabel(item))}</h3><p class="muted">${escapeHtml(item.id)} · ${escapeHtml(item.kind)}</p></div><div class="admin-item-badges"><span class="admin-badge subtle">${escapeHtml(item.source || 'local')}</span>${item.system_managed ? '<span class="admin-badge">system</span>' : ''}</div></div>
     <div class="directory-tabs-grid">
-      <section><h4>Overview</h4><div class="directory-detail-meta"><span>Status ${escapeHtml(item.status || 'active')}</span><span>Created ${escapeHtml(formatDate(item.created_at) || '-')}</span></div><p class="muted small-text">${escapeHtml(item.description || 'No description provided.')}</p></section>
+      <section><h4>Overview</h4><dl class="directory-property-list"><div><dt>Type</dt><dd>${escapeHtml(directoryKindLabel(item.kind))}</dd></div><div><dt>Status</dt><dd>${escapeHtml(item.status || 'active')}</dd></div><div><dt>Source</dt><dd>${escapeHtml(item.source || 'local')}</dd></div><div><dt>Created</dt><dd>${escapeHtml(formatDate(item.created_at) || '-')}</dd></div></dl><p class="muted small-text">${escapeHtml(item.description || 'No description provided.')}</p></section>
       <section><h4>Groups</h4><p class="muted small-text">Direct membership</p>${formatGroupPills(direct, 'No direct groups.')}<p class="muted small-text">Inherited membership</p>${formatGroupPills(effective, 'No inherited groups.')}</section>
       <section><h4>Credentials</h4><p class="muted small-text">Credentials identify this principal. Permissions come from directory groups.</p>${renderCredentialRows(credentials, false)}${renderCredentialCreateControls(item)}</section>
       <section><h4>Effective access</h4>${formatGrantPills(access?.grants || [])}</section>
@@ -202,10 +223,11 @@ function renderDirectoryGroupDetail(group, detail, title, subtitle) {
   detail.innerHTML = `<article class="directory-detail-card">
     <div class="directory-detail-head"><div><h3>${escapeHtml(directoryPrincipalLabel(group))}</h3><p class="muted">${escapeHtml(group.id)} · group</p></div><div class="admin-item-badges"><span class="admin-badge subtle">${members.length} members</span>${group.system_managed ? '<span class="admin-badge">system</span>' : ''}</div></div>
     <div class="form-grid compact-form"><label>Name <input id="directoryGroupName" value="${escapeHtml(group.name || group.id)}" /></label><label>Description <input id="directoryGroupDescription" value="${escapeHtml(group.description || '')}" /></label><label class="admin-form-wide">Access grants <input id="directoryGroupGrants" value="${escapeHtml(serializeGroupGrants(group.grants || []))}" placeholder="profile:*:use, workspace:*:read" /></label><label>Common grant <select id="directoryGrantPreset"><option value="">Add a permission…</option>${DIRECTORY_GRANT_PRESETS.map(([value,label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('')}</select></label><p class="muted small-text admin-form-wide">Tokens only identify the principal. These directory grants decide what members can use.</p></div>
-    <div class="directory-tabs-grid"><section><h4>Members</h4>${members.length ? members.map((member) => `<span class="directory-member-pill">${escapeHtml(directoryMemberTitle(member))}<button class="link-button remove-directory-member" data-kind="${escapeHtml(member.kind)}" data-id="${escapeHtml(member.id)}" type="button">×</button></span>`).join('') : '<span class="muted small-text">No direct members.</span>'}<label class="admin-form-wide directory-add-member">Add member <select id="directoryMemberPicker"><option value="">Select a directory object…</option>${options}</select></label><button id="addDirectoryMemberBtn" class="ghost-button" type="button">Add member</button></section><section><h4>Access grants</h4>${formatGrantPills(group.grants || [])}</section></div>
+    <div class="directory-tabs-grid"><section class="directory-group-drop-zone" data-drop-group-id="${escapeHtml(group.id)}"><h4>Members</h4><p class="muted small-text">Drop directory objects here, or onto this group in the tree, to add direct membership.</p><div class="directory-member-list">${members.length ? members.map((member) => `<span class="directory-member-pill" data-kind="${escapeHtml(member.kind)}" data-id="${escapeHtml(member.id)}"><span class="directory-kind-icon ${escapeHtml(member.kind)}" aria-hidden="true"></span>${escapeHtml(directoryMemberTitle(member))}<button class="link-button remove-directory-member" data-kind="${escapeHtml(member.kind)}" data-id="${escapeHtml(member.id)}" type="button">×</button></span>`).join('') : '<span class="muted small-text">No direct members.</span>'}</div><label class="admin-form-wide directory-add-member">Add member <select id="directoryMemberPicker"><option value="">Select a directory object…</option>${options}</select></label><button id="addDirectoryMemberBtn" class="ghost-button" type="button">Add member</button></section><section><h4>Access grants</h4>${formatGrantPills(group.grants || [])}</section></div>
     <div class="button-row"><button id="saveDirectoryGroupBtn" type="button">Save group</button><button id="deleteDirectoryGroupBtn" class="ghost-button" type="button">Delete group</button></div><pre id="directoryGroupsResult" class="inline-result compact-result"></pre>
   </article>`;
   bindGroupDetailActions(detail, group);
+  window.bindDirectoryDragDrop?.(detail);
 }
 
 function bindGroupDetailActions(detail, group) {
@@ -281,6 +303,7 @@ function renderCredentialDetail(credential, detail, title, subtitle) {
 function renderAuthDirectory() {
   renderAuthDirectoryTree();
   renderAuthDirectoryDetail();
+  window.bindDirectoryDragDrop?.(document);
 }
 
 async function loadAuthDirectory(options = {}) {
