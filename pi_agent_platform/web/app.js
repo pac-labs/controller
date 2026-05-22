@@ -528,6 +528,7 @@ if (document.getElementById('saveModel')) saveModel.onclick=()=>saveModelFromFor
 if (document.getElementById('testModelForm')) testModelForm.onclick=()=>testModelFromForm().catch(e=>paneError('Model test failed', e.message));
 if (document.getElementById('modelProvider')) modelProvider.onchange=()=>{ const providerName = modelProvider.value || ''; const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = providerName; updateLmStudioModelControls(); syncSuggestedModelKey(true); refreshModelProviderCandidates(providerName).catch(()=>{}); };
 if (document.getElementById('modelId')) modelId.oninput = () => syncSuggestedModelKey();
+if (document.getElementById('modelManualIdOverride')) modelManualIdOverride.onchange = () => refreshModelIdManualOverrideState();
 if (document.getElementById('modelFunction')) document.getElementById('modelFunction').onchange = () => syncSuggestedModelKey(true);
 if (document.getElementById('modelName')) modelName.oninput = () => { modelName.dataset.auto = 'false'; };
 const checkSourceUpdatesBtn = document.getElementById('checkSourceUpdates');

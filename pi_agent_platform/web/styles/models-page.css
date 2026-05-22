@@ -1,0 +1,280 @@
+/* PAC Models page compaction and overflow fixes. */
+#models-tab .section-heading{
+  gap:1rem;
+  align-items:flex-start;
+}
+#models-tab .section-heading > div:first-child{
+  min-width:0;
+}
+#models-tab .section-heading h2,
+#models-tab .section-heading p{
+  overflow-wrap:anywhere;
+}
+#models-tab .section-heading .button-row{
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  max-width:100%;
+}
+#models-tab .split-admin-layout{
+  grid-template-columns:minmax(0,1fr) minmax(260px,340px);
+}
+#models-tab .split-main,
+#models-tab .split-side,
+#models-tab .card{
+  min-width:0;
+}
+.model-card-grid-compact{
+  grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+  gap:.85rem;
+}
+.model-overview-compact{
+  overflow:hidden;
+  gap:.62rem;
+}
+.model-card-head-compact{
+  align-items:flex-start;
+  min-width:0;
+}
+.model-title-block{
+  min-width:0;
+  display:grid;
+  gap:.18rem;
+}
+.model-title-block h3{
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  line-height:1.25;
+}
+.model-title-block .muted{
+  display:block;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.model-status-icon{
+  flex:0 0 auto;
+  font-size:.8rem;
+  line-height:1;
+  padding:.25rem .35rem;
+  border:1px solid rgba(148,163,184,.18);
+  border-radius:999px;
+  background:rgba(15,23,42,.36);
+}
+.model-id-line{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  gap:.45rem;
+  align-items:center;
+  padding:.45rem .55rem;
+  border:1px solid rgba(148,163,184,.14);
+  border-radius:.55rem;
+  background:rgba(2,6,23,.25);
+  min-width:0;
+}
+.model-id-label{
+  color:var(--muted);
+  font-size:.68rem;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.model-id-line code{
+  display:block;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#d1fae5;
+  background:transparent;
+  padding:0;
+  border:0;
+}
+.model-info-pill,
+.model-cap-pill{
+  max-width:100%;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.model-identity-pills,
+.model-capacity-pills,
+.model-cap-list{
+  min-width:0;
+}
+.model-provider-health{
+  min-width:0;
+}
+.model-provider-health .small-text{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--muted);
+}
+.model-card-note{
+  overflow-wrap:anywhere;
+}
+.compact-runtime-strip{
+  min-width:0;
+  overflow:hidden;
+}
+.compact-runtime-strip span{
+  max-width:100%;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.compact-model-actions{
+  flex-wrap:wrap;
+  gap:.4rem;
+}
+.compact-model-actions button{
+  flex:0 1 auto;
+  min-width:0;
+}
+.compact-live-provider{
+  overflow:hidden;
+  border-radius:.7rem;
+}
+.live-model-list{
+  display:grid;
+  gap:.42rem;
+  margin-top:.65rem;
+}
+.live-model-row{
+  display:grid;
+  grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) auto;
+  gap:.55rem;
+  align-items:center;
+  padding:.5rem .55rem;
+  border:1px solid rgba(148,163,184,.12);
+  border-radius:.55rem;
+  background:rgba(15,23,42,.28);
+  min-width:0;
+}
+.live-model-row.configured{
+  border-color:rgba(34,197,94,.22);
+}
+.live-model-name{
+  display:block;
+  min-width:0;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  text-align:left;
+  margin:0;
+}
+.live-model-meta{
+  min-width:0;
+  overflow:hidden;
+  flex-wrap:nowrap;
+}
+.live-model-meta .pill,
+.live-model-meta .small-text{
+  max-width:100%;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+#unconfiguredModelsPanel{
+  overflow:hidden;
+}
+#unconfiguredModelsList .inline-browser-row{
+  min-width:0;
+  flex-wrap:wrap;
+}
+#unconfiguredModelsList .inline-browser-row > div:first-child{
+  min-width:0;
+  flex:1 1 260px;
+}
+#unconfiguredModelsList .inline-browser-row b,
+#unconfiguredModelsList .inline-browser-row .small-text{
+  display:block;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+#unconfiguredModelsList .inline-browser-group{
+  flex:0 1 auto;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+@media(max-width:1100px){
+  #models-tab .split-admin-layout{
+    grid-template-columns:1fr;
+  }
+  .models-recommendations-panel{
+    position:static;
+    max-height:none;
+  }
+}
+@media(max-width:760px){
+  #models-tab .section-heading{
+    display:grid;
+  }
+  #models-tab .section-heading .button-row{
+    justify-content:flex-start;
+  }
+  .model-card-grid-compact{
+    grid-template-columns:1fr;
+  }
+  .live-model-row{
+    grid-template-columns:1fr;
+    align-items:flex-start;
+  }
+  .live-model-row .mini-button{
+    justify-self:start;
+  }
+}
+html[data-theme="light"] .model-overview-compact,
+body[data-theme="light"] .model-overview-compact{
+  background:linear-gradient(180deg,#ffffff,#f8fafc);
+  border-color:rgba(15,23,42,.12);
+}
+html[data-theme="light"] .model-id-line,
+body[data-theme="light"] .model-id-line,
+html[data-theme="light"] .live-model-row,
+body[data-theme="light"] .live-model-row{
+  background:rgba(255,255,255,.86);
+  border-color:rgba(15,23,42,.12);
+}
+html[data-theme="light"] .model-id-line code,
+body[data-theme="light"] .model-id-line code{
+  color:#064e3b;
+}
+html[data-theme="light"] .model-status-icon,
+body[data-theme="light"] .model-status-icon{
+  background:rgba(255,255,255,.92);
+  border-color:rgba(15,23,42,.14);
+}
+
+/* v1.0.298: provider model IDs are selected from discovery/marketplace first. */
+.model-id-source-field input[readonly] {
+  cursor: default;
+  border-style: dashed;
+  color: var(--text, #e8eef8);
+  background: color-mix(in srgb, var(--surface-2, #111827) 88%, var(--accent, #22c55e) 12%);
+}
+.model-id-source-field small {
+  display: block;
+  margin-top: .25rem;
+  line-height: 1.35;
+}
+.readonly-source-field {
+  opacity: .95;
+}
+.manual-source-field {
+  border-style: solid !important;
+}
+#modelAdvancedPanel .checkbox-line {
+  align-items: center;
+  gap: .45rem;
+  min-height: 2.2rem;
+}

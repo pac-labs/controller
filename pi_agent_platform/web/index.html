@@ -579,7 +579,7 @@
         <div class="form-grid compact-form">
           <label>PAC model key <input id="modelName" placeholder="coding/glm-4.7-flash" /><small class="muted">Use a stable key like <code>provider/model</code> or <code>function/model</code>.</small></label>
           <label>Provider <span id="modelProviderDisplay" class="field-value"></span><select id="modelProvider" hidden aria-hidden="true"></select></label>
-          <label>Provider model ID <input id="modelId" list="modelProviderModelOptions" placeholder="qwen2.5-coder-14b-instruct" /><datalist id="modelProviderModelOptions"></datalist></label>
+          <label class="model-id-source-field">Provider model ID <input id="modelId" list="modelProviderModelOptions" placeholder="select a provider model first" readonly /><datalist id="modelProviderModelOptions"></datalist><small id="modelIdSourceHint" class="muted">Selected from provider or marketplace. Manual entry is only available in Advanced.</small></label>
           <label>Function <select id="modelFunction"><option value="general">general</option><option value="coding">coding</option><option value="planner">planner</option><option value="reviewer">reviewer</option><option value="embedding">embedding</option><option value="docs">docs</option><option value="vision">vision</option><option value="reasoning">reasoning</option></select><small class="muted">What this model is mainly used for in PAC.</small></label>
           <label>Preferred session endpoint <select id="modelRunsOn"><option value="">provider default</option></select><small class="muted">Optional. Only pin this when placement matters.</small></label>
           <label>Context window <input id="modelContextWindow" type="number" value="4096" /></label>
@@ -612,9 +612,10 @@
           </div>
           <div class="button-row"><button id="loadLmStudioModel" class="ghost-button">Load in LM Studio</button><button id="unloadLmStudioModel" class="ghost-button">Unload</button><button id="inspectLmStudioModel" class="ghost-button">Inspect server</button></div>
         </div>
-        <details class="runtime-panel">
+        <details class="runtime-panel" id="modelAdvancedPanel">
           <summary>Advanced</summary>
           <div class="form-grid compact-form">
+            <label class="checkbox-line"><input id="modelManualIdOverride" type="checkbox" /> Allow manual provider model ID override</label>
             <label>Direct-read fraction <input id="modelDirectReadFraction" type="number" min="0.2" max="0.9" step="0.05" placeholder="0.55" /><small class="muted">Per-model threshold for reading whole files before PAC falls back to chunking.</small></label>
             <label>Minimum chunk tokens <input id="modelMinimumChunkTokens" type="number" min="600" step="100" placeholder="1200" /><small class="muted">Lower bound when PAC does have to chunk or batch-analyze large inputs.</small></label>
           </div>

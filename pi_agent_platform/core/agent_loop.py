@@ -399,9 +399,15 @@ def _looks_like_action_narration(text: str) -> bool:
     action_verbs = (
         "inspect", "read", "list", "open", "search", "scan", "run", "execute",
         "modify", "update", "write", "patch", "create", "apply", "check",
-        "use consult_model", "consult", "call", "configure", "change",
+        "plan", "prepare", "implement", "fix", "adjust", "change", "configure",
+        "use consult_model", "consult", "call", "investigate", "review", "look at",
     )
-    return any(verb in raw for verb in action_verbs)
+    if any(verb in raw for verb in action_verbs):
+        return True
+    # Catch natural-language planning statements such as
+    # "I need to plan a patch for ..." even when the exact implementation verb
+    # is not near the initial action signal.
+    return re.search(r"\b(i|we)\s+(need|should|will|would|can)\s+to\s+[^.]{0,160}\b(plan|patch|fix|modify|update|implement|inspect|check|review|configure)\b", raw) is not None
 
 
 def _should_reject_unformatted_action(session: Session, task: Task, text: str, transcript: list[dict[str, Any]]) -> bool:
@@ -413,13 +419,23 @@ def _should_reject_unformatted_action(session: Session, task: Task, text: str, t
     """
     if not _looks_like_action_narration(text):
         return False
+    # Controller sessions frequently run with slightly different metadata depending
+    # on how the PAC wrapper/pi.dev runtime was launched. When the model describes
+    # a future action, accepting that as a final answer leaves the user with an
+    # intention instead of work. Prefer one corrective tool-call retry for any PAC
+    # task that has a workspace, controller profile, endpoint metadata, or codebase
+    # style prompt.
     if session.metadata.get("controller_harness"):
         return True
     if session.workspace_path:
         return True
+    if session.agent_profile or session.permission_profile:
+        return True
+    if task.metadata.get("runner_id") or task.metadata.get("endpoint_id"):
+        return True
     if _prompt_requests_codebase_inspection(task.prompt):
         return True
-    return False
+    return True
 
 
 def _controller_session_guidance(session: Session) -> str | None:

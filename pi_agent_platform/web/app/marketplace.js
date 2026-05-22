@@ -113,7 +113,7 @@ function renderMarketplaceModalDetail(detail=null) {
   if (configureBtn) configureBtn.onclick = () => {
     const preferred = preferredMarketplaceProvider(detail);
     closeMarketplaceModal();
-    openModelDraft(preferred, detail.model_id || '');
+    openModelDraft(preferred, detail.model_id || '', 'marketplace');
     setModalStatus('modelModalStatus', 'Marketplace model copied into the PAC model form.');
   };
   const downloadBtn = document.getElementById('downloadMarketplaceModel');

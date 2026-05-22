@@ -147,6 +147,39 @@ function setModalStatus(id, value='') {
   if (el) el.textContent = value;
 }
 
+function setModelIdSource(source='manual', detail='') {
+  const input = document.getElementById('modelId');
+  const hint = document.getElementById('modelIdSourceHint');
+  const manual = document.getElementById('modelManualIdOverride');
+  if (!input) return;
+  const normalized = source || 'manual';
+  input.dataset.source = normalized;
+  input.dataset.sourceDetail = detail || '';
+  const manualAllowed = normalized === 'manual' || !!manual?.checked;
+  input.readOnly = !manualAllowed;
+  input.classList.toggle('readonly-source-field', !manualAllowed);
+  input.classList.toggle('manual-source-field', manualAllowed);
+  if (hint) {
+    if (normalized === 'provider') {
+      hint.textContent = detail ? `Discovered from provider: ${detail}.` : 'Discovered from the provider inventory.';
+    } else if (normalized === 'marketplace') {
+      hint.textContent = detail ? `Selected from marketplace: ${detail}.` : 'Selected from the model marketplace.';
+    } else if (normalized === 'configured') {
+      hint.textContent = detail ? `Stored configured model ID for ${detail}.` : 'Stored configured model ID.';
+    } else {
+      hint.textContent = 'Manual provider model ID override is enabled. Prefer selecting from provider inventory or marketplace when possible.';
+    }
+  }
+}
+
+function refreshModelIdManualOverrideState() {
+  const manual = document.getElementById('modelManualIdOverride');
+  const input = document.getElementById('modelId');
+  if (!manual || !input) return;
+  if (manual.checked) setModelIdSource('manual');
+  else setModelIdSource(input.dataset.source || (input.value.trim() ? 'configured' : 'manual'), input.dataset.sourceDetail || '');
+}
+
 function openProviderModal(name='') {
   if (name) fillProviderForm(name); else {
     providerName.value=''; if (document.getElementById('providerPreset')) providerPreset.value='custom-openai'; providerType.value='openai-compatible'; providerBaseUrl.value=''; providerApiKeyEnv.value=''; providerApiKey.value=''; providerTimeout.value=30; fillProviderRuntimeFields({});
@@ -164,6 +197,8 @@ function openModelModal(name='') {
   if (name) { fillModelForm(name); }
   else {
     modelName.value=''; modelId.value=''; modelRunsOn.value=''; modelContextWindow.value=4096; modelMaxOutput.value=1024;
+    const manualOverride = document.getElementById('modelManualIdOverride'); if (manualOverride) manualOverride.checked = true;
+    setModelIdSource('manual');
     const modelFunction = document.getElementById('modelFunction'); if (modelFunction) modelFunction.value='general';
     modelName.dataset.auto = 'true';
     modelSupportsChat.checked=true; modelSupportsTools.checked=false; modelSupportsVision.checked=false; modelSupportsJson.checked=false; modelSupportsStreaming.checked=true; modelReasoning.value='none'; modelInputPrice.value=''; modelOutputPrice.value=''; fillLmStudioRuntimeFields({});
@@ -276,6 +311,8 @@ function fillProviderForm(name) {
 function fillModelForm(name) {
   const m = config.models?.[name]; if (!m) return;
   modelName.value=name; const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = m.provider || '(none)'; modelId.value=m.model || ''; modelRunsOn.value=m.runs_on || '';
+  const manualOverride = document.getElementById('modelManualIdOverride'); if (manualOverride) manualOverride.checked = false;
+  setModelIdSource('configured', name);
   const providerSelect = document.getElementById('modelProvider'); if (providerSelect) { providerSelect.value = m.provider || ''; }
   const modelFunction = document.getElementById('modelFunction'); if (modelFunction) modelFunction.value = m.extra?.function || inferModelFunction(m.provider, m.model || name);
   modelName.dataset.auto = 'false';
@@ -311,6 +348,11 @@ async function refreshModelProviderCandidates(providerName) {
       option.label = modelSummaryLine(item);
       list.appendChild(option);
     });
+    const currentId = document.getElementById('modelId')?.value?.trim();
+    if (currentId && models.some((item) => currentId === String(item?.id || item?.name || item?.model || ''))) {
+      const manualOverride = document.getElementById('modelManualIdOverride'); if (manualOverride) manualOverride.checked = false;
+      setModelIdSource('provider', providerName);
+    }
   } catch (_) {
     // Leave the field usable even if live provider model listing fails.
   }

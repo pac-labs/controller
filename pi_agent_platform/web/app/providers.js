@@ -29,6 +29,44 @@ function modelSummaryLine(model) {
   if (model.size) bits.push(`size: ${model.size}`);
   return bits.join(' · ');
 }
+
+function compactTokenNumber(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return String(value || '-');
+  if (n >= 1000000) return `${(n / 1000000).toFixed(n % 1000000 === 0 ? 0 : 1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}k`;
+  return String(n);
+}
+function modelPill(label, value='', tone='') {
+  const text = value ? `${label}: ${value}` : label;
+  return `<span class="pill model-info-pill ${escapeHtml(tone)}" title="${escapeHtml(text)}">${escapeHtml(text)}</span>`;
+}
+function modelStatusGlyph(ok) {
+  return ok ? '●' : '▲';
+}
+function pricePill(label, value) {
+  if (value === undefined || value === null || value === '') return '';
+  return modelPill(label, `$${value}/1M`, 'price-pill');
+}
+function modelLiveMetaPills(model) {
+  const bits = [];
+  if (model.object) bits.push(modelPill(model.object));
+  if (model.owned_by) bits.push(modelPill('owner', model.owned_by));
+  if (model.size) bits.push(modelPill('size', model.size));
+  if (model.architecture) bits.push(modelPill('arch', model.architecture));
+  if (model.quantization) bits.push(modelPill('quant', model.quantization));
+  return bits.join('');
+}
+function modelCapabilityPills(model) {
+  return [
+    model.capabilities?.supports_chat ? ['chat', 'general chat and instruction following'] : null,
+    model.capabilities?.supports_tools ? ['tools', 'function and tool invocation'] : null,
+    model.capabilities?.supports_vision ? ['vision', 'image input'] : null,
+    model.capabilities?.supports_json ? ['json', 'structured output'] : null,
+    model.capabilities?.supports_streaming ? ['streaming', 'streaming output'] : null,
+    model.capabilities?.reasoning && model.capabilities.reasoning !== 'none' ? [`reasoning ${model.capabilities.reasoning}`, 'reasoning-oriented model'] : null,
+  ].filter(Boolean).map(([label, title]) => `<span class="pill model-cap-pill" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`).join('');
+}
 async function fetchProviderModels(name) {
   try { return await api(`/v1/providers/${name}/models`); }
   catch (e) { return {ok:false, error:e.message, models:[]}; }
@@ -359,19 +397,21 @@ function syncSuggestedModelKey(force=false) {
     modelName.dataset.auto = 'true';
   }
 }
-function openModelDraft(providerName, modelId) {
+function openModelDraft(providerName, providerModelId, source='provider') {
   openModelModal();
   const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = providerName;
   const providerSelect = document.getElementById('modelProvider'); if (providerSelect) providerSelect.value = providerName;
-  modelId.value = modelId;
+  modelId.value = providerModelId;
+  const manualOverride = document.getElementById('modelManualIdOverride'); if (manualOverride) manualOverride.checked = false;
+  if (typeof setModelIdSource === 'function') setModelIdSource(source, providerName || 'selected model');
   const modelFunction = document.getElementById('modelFunction');
-  if (modelFunction) modelFunction.value = inferModelFunction(providerName, modelId);
-  modelName.value = providerModelKey(providerName, modelId, modelFunction?.value || 'general') || sanitizeModelKeySegment(modelId);
+  if (modelFunction) modelFunction.value = inferModelFunction(providerName, providerModelId);
+  modelName.value = providerModelKey(providerName, providerModelId, modelFunction?.value || 'general') || sanitizeModelKeySegment(providerModelId);
   modelName.dataset.auto = 'true';
   modelRunsOn.value = '';
   fillModelChunkingFields({});
   refreshModelProviderCandidates(providerName).catch(()=>{});
-  setModalStatus('modelModalStatus', 'Review and save this model.');
+  setModalStatus('modelModalStatus', 'Provider model ID was selected from discovery. Review PAC-specific settings and save.');
 }
 function groupedSessionsBy(field) {
   const rows = new Map();
@@ -546,7 +586,7 @@ function renderWorkspaceActivityPanel() {
 function renderModels() {
   const el = document.getElementById('models');
   if (!el) return;
-  el.className = 'model-card-grid';
+  el.className = 'model-card-grid model-card-grid-compact';
   const models = Object.entries(config.models || {});
   if (!models.length) {
     el.innerHTML = '<div class="muted">No configured models yet. Add one from Marketplace or Browse providers.</div>';
@@ -558,45 +598,42 @@ function renderModels() {
       const health = providerHealthSummary(model.provider || '', provider || {});
       const sessionCount = (window.__pacSessions || []).filter(item => item.model === name).length;
       const card = document.createElement('article');
-      card.className = 'model-card model-overview-card clickable-row';
+      card.className = 'model-card model-overview-card model-overview-compact clickable-row';
       const runtime = model.extra?.lmstudio_runtime || {};
-      const caps = [
-        model.capabilities?.supports_chat ? ['chat', 'general chat and instruction following'] : null,
-        model.capabilities?.supports_tools ? ['tool use', 'function and tool invocation'] : null,
-        model.capabilities?.supports_vision ? ['pictures', 'image / vision input'] : null,
-        model.capabilities?.supports_json ? ['json', 'structured JSON output'] : null,
-        model.capabilities?.supports_streaming ? ['streaming', 'streaming output enabled'] : null,
-        model.capabilities?.reasoning && model.capabilities.reasoning !== 'none' ? [`reasoning ${model.capabilities.reasoning}`, 'reasoning-oriented model'] : null,
-      ].filter(Boolean).map(([label, title]) => `<span class="pill model-cap-pill" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`).join('');
+      const caps = modelCapabilityPills(model);
       const modelFunction = model.extra?.function || inferModelFunction(model.provider, model.model || name);
-      const cardMeta = [
-        provider?.type ? `${provider.type}` : '',
-        `${modelFunction} role`,
-      ].filter(Boolean).join(' • ');
-      card.innerHTML = `<div class="provider-card-head"><div class="provider-title-block"><h3>${escapeHtml(name)}</h3><span class="muted">${escapeHtml(providerLabel(model.provider || '-'))}</span></div><span class="pill ${availability.ok ? 'ok-pill' : 'warn-pill'}">${escapeHtml(availability.ok ? 'available' : 'attention')}</span></div>
-        <div class="provider-health-strip"><span class="pill ${escapeHtml(health.klass)}">${escapeHtml(health.pill)}</span><span class="small-text">${escapeHtml(health.detail)}</span></div>
-        <div class="model-card-subline">${escapeHtml(cardMeta)}</div>
+      const endpointLabel = model.runs_on ? endpointName(model.runs_on) : 'provider default';
+      const modelId = model.model || '-';
+      const identityPills = [
+        modelPill(modelStatusGlyph(availability.ok), availability.ok ? 'available' : 'attention', availability.ok ? 'ok-pill' : 'warn-pill'),
+        provider?.type ? modelPill('provider', provider.type) : '',
+        modelPill('role', modelFunction),
+        modelPill('sessions', sessionCount || 0),
+      ].filter(Boolean).join('');
+      const capacityPills = [
+        modelPill('ctx', compactTokenNumber(model.context_window)),
+        modelPill('out', compactTokenNumber(model.max_output_tokens)),
+        model.capabilities?.reasoning ? modelPill('reasoning', model.capabilities.reasoning) : '',
+        model.runs_on ? modelPill('endpoint', endpointLabel) : modelPill('endpoint', 'default'),
+        pricePill('in', model.input_price_per_million),
+        pricePill('out$', model.output_price_per_million),
+      ].filter(Boolean).join('');
+      card.innerHTML = `<div class="provider-card-head model-card-head-compact"><div class="provider-title-block model-title-block"><h3 title="${escapeHtml(name)}">${escapeHtml(name)}</h3><span class="muted" title="${escapeHtml(providerLabel(model.provider || '-'))}">${escapeHtml(providerLabel(model.provider || '-'))}</span></div><span class="model-status-icon ${availability.ok ? 'ok-text' : 'warn-text'}" title="${escapeHtml(availability.ok ? 'Available' : availability.reason)}">${modelStatusGlyph(availability.ok)}</span></div>
+        <div class="model-id-line"><span class="model-id-label">id</span><code title="${escapeHtml(modelId)}">${escapeHtml(modelId)}</code></div>
+        <div class="provider-pill-list model-identity-pills">${identityPills}</div>
+        <div class="provider-health-strip model-provider-health"><span class="pill ${escapeHtml(health.klass)}">${escapeHtml(health.pill)}</span><span class="small-text" title="${escapeHtml(health.detail)}">${escapeHtml(health.detail)}</span></div>
         ${caps ? `<div class="provider-pill-list model-cap-list">${caps}</div>` : ''}
-        <div class="workspace-card-grid model-stats-grid">
-          <div><small>model id</small><b>${escapeHtml(model.model || '-')}</b></div>
-          <div><small>preferred endpoint</small><b>${escapeHtml(model.runs_on ? endpointName(model.runs_on) : 'provider default')}</b></div>
-          <div><small>context</small><b>${escapeHtml(model.context_window || '-')}</b></div>
-          <div><small>max output</small><b>${escapeHtml(model.max_output_tokens || '-')}</b></div>
-          <div><small>reasoning</small><b>${escapeHtml(model.capabilities?.reasoning || 'none')}</b></div>
-          <div><small>sessions</small><b>${escapeHtml(sessionCount || 0)}</b></div>
-          <div><small>input price / 1M</small><b>${escapeHtml(model.input_price_per_million ?? '-')}</b></div>
-          <div><small>output price / 1M</small><b>${escapeHtml(model.output_price_per_million ?? '-')}</b></div>
-        </div>
-        <div class="muted small-text">${escapeHtml(availability.ok ? `Configured for ${modelFunction} work.` : `Issue: ${availability.reason}`)}</div>
-        ${provider?.type === 'lmstudio' ? `<div class="model-runtime-strip"><span>LM Studio</span><span>ctx ${escapeHtml(runtime.context_length || model.context_window || '-')}</span><span>gpu ${escapeHtml(runtime.gpu_offload || 'default')}</span><span>batch ${escapeHtml(runtime.eval_batch_size || runtime.batch_size || 'default')}</span><span>temp ${escapeHtml(runtime.temperature ?? 'default')}</span></div>` : ''}`;
+        <div class="provider-pill-list model-capacity-pills">${capacityPills}</div>
+        <div class="muted small-text model-card-note">${escapeHtml(availability.ok ? `Configured for ${modelFunction} work.` : `Issue: ${availability.reason}`)}</div>
+        ${provider?.type === 'lmstudio' ? `<div class="model-runtime-strip compact-runtime-strip"><span>LM Studio</span><span>ctx ${escapeHtml(compactTokenNumber(runtime.context_length || model.context_window || '-'))}</span><span>gpu ${escapeHtml(runtime.gpu_offload || 'default')}</span><span>batch ${escapeHtml(runtime.eval_batch_size || runtime.batch_size || 'default')}</span><span>temp ${escapeHtml(runtime.temperature ?? 'default')}</span></div>` : ''}`;
       card.onclick = () => openModelModal(name);
       const actions = document.createElement('div');
-      actions.className = 'button-row model-card-actions';
+      actions.className = 'button-row model-card-actions compact-model-actions';
       const edit = document.createElement('button');
       edit.textContent = 'Edit';
       edit.onclick = ev => { ev.stopPropagation(); openModelModal(name); };
       const test = document.createElement('button');
-      test.textContent = 'Test model';
+      test.textContent = 'Test';
       test.className = 'ghost-button';
       test.onclick = async ev => { ev.stopPropagation(); const r = await api(`/v1/models/${name}/test`, {method:'POST'}); showInline('modelFormResult', {model:name, ...r}); };
       const del = document.createElement('button');
@@ -605,9 +642,7 @@ function renderModels() {
       del.onclick = async ev => { ev.stopPropagation(); if (!confirm(`Delete model '${name}'`)) return; const r = await api(`/v1/models/${name}`, {method:'DELETE'}); if (r?.ok) renderModels(); else alert(r?.error || (r?.detail ? r.detail : 'Delete failed')); };
       actions.appendChild(edit);
       actions.appendChild(test);
-      if (!model.read_only) {
-        actions.appendChild(del);
-      }
+      if (!model.read_only) actions.appendChild(del);
       if (provider?.type === 'lmstudio') {
         const inspect = document.createElement('button');
         inspect.textContent = 'Inspect';
@@ -641,17 +676,18 @@ async function renderLiveModels() {
   for (const name of providers) {
     const result = await fetchProviderModels(name);
     if (!result.ok) {
-      chunks.push(`<div class="remote-provider failed"><b>${escapeHtml(name)}</b><br><span>${escapeHtml(result.error || result.response?.error || 'model listing failed')}</span></div>`);
+      chunks.push(`<div class="remote-provider failed compact-live-provider"><div class="provider-card-head"><b>${escapeHtml(name)}</b><span class="pill warn-pill">error</span></div><span>${escapeHtml(result.error || result.response?.error || 'model listing failed')}</span></div>`);
       continue;
     }
     const models = result.models || [];
     const rows = models.map(model => {
-      const id = model.id || model.name;
+      const id = model.id || model.name || model.model || 'unknown';
       const key = providerModelKey(name, id);
       const configured = !!config.models?.[key] || Object.values(config.models || {}).some(item => item.provider === name && (item.model || '') === id);
-      return `<li><button class="link-button" data-provider="${escapeHtml(name)}" data-model="${escapeHtml(id)}" data-key="${escapeHtml(key)}">${escapeHtml(id)}</button><button class="ghost-button mini-button" data-add-live-model="1" data-provider="${escapeHtml(name)}" data-model="${escapeHtml(id)}" data-key="${escapeHtml(key)}">${configured ? 'Edit' : 'Configure'}</button><span class="muted">${escapeHtml(modelSummaryLine(model))}</span></li>`;
+      const meta = modelLiveMetaPills(model);
+      return `<div class="live-model-row ${configured ? 'configured' : ''}"><button class="link-button live-model-name" data-provider="${escapeHtml(name)}" data-model="${escapeHtml(id)}" data-key="${escapeHtml(key)}" title="${escapeHtml(id)}">${escapeHtml(id)}</button><div class="provider-pill-list live-model-meta">${meta || '<span class="muted small-text">live provider model</span>'}</div><button class="ghost-button mini-button" data-add-live-model="1" data-provider="${escapeHtml(name)}" data-model="${escapeHtml(id)}" data-key="${escapeHtml(key)}">${configured ? 'Edit' : 'Configure'}</button></div>`;
     }).join('');
-    chunks.push(`<div class="remote-provider"><b>${escapeHtml(name)}</b> <span class="pill ${models.length ? 'ok' : ''}">${models.length} models</span><ul>${rows || '<li class="muted">No models returned</li>'}</ul></div>`);
+    chunks.push(`<section class="remote-provider compact-live-provider"><div class="provider-card-head"><div class="provider-title-block"><h3>${escapeHtml(providerLabel(name))}</h3><span class="muted small-text">Live provider inventory</span></div><span class="pill ${models.length ? 'ok-pill' : ''}">${models.length} models</span></div><div class="live-model-list">${rows || '<div class="muted small-text">No models returned</div>'}</div></section>`);
   }
   live.innerHTML = chunks.join('');
   live.querySelectorAll('button[data-model]').forEach(btn => {
@@ -661,3 +697,4 @@ async function renderLiveModels() {
     btn.onclick = async () => openModelDraft(btn.dataset.provider, btn.dataset.model);
   });
 }
+

@@ -1,5 +1,5 @@
 {
-  "version": "1.0.295",
+  "version": "1.0.298",
   "generated_at": "2026-05-22T00:00:00Z",
   "files": [
     {
@@ -38,9 +38,14 @@
       "sha256": "a7b61e9989e18307fa9f4b4a041af4e4d1f24fea73136e55e4562f26c5338559"
     },
     {
+      "path": "MANIFEST.json",
+      "size": 55141,
+      "sha256": "2e9e58dae08ba2889d8d4adc82871064b4d5e31912cd1b35d626c19944592e53"
+    },
+    {
       "path": "PAC_CHANGELOG.json",
-      "size": 20250,
-      "sha256": "b0a8f7ec42b5d1cf8654118fb5b63c3ff8cf6075c47e2ef589ad024463cdb3e4"
+      "size": 22139,
+      "sha256": "cb49bd9cb32bedfa177f976ba2fe3410a75c9ee20fbfe0cb28fbf717801bcf67"
     },
     {
       "path": "PAC_UPDATE_DIFF-1.0.286.diff",
@@ -55,12 +60,12 @@
     {
       "path": "VERSION",
       "size": 8,
-      "sha256": "20f5935a29c9b48ae4d1c5d80ba4d6daeb6b11c3fb58fd59ff881a710daa1f8b"
+      "sha256": "939acf4596c040e499b3c542ebde95fe08e601cb0a8cf43ab473ed07efa47bc2"
     },
     {
       "path": "VERSION_CURRENT.md",
-      "size": 201,
-      "sha256": "133f8e4f9d47461c8f33b5ea56ef9553cab9854a0ebb90c458aa799033108c66"
+      "size": 130,
+      "sha256": "cd66a0ec2856e69bfa9f78d7fb3da2b6ffb845c2543e1795d47c5eb61941484e"
     },
     {
       "path": "binaries/README.md",
@@ -588,6 +593,11 @@
       "sha256": "53515e697aeaf85eee20f3948ccd0f6d48e19c0410cea345a7fa585c5676f749"
     },
     {
+      "path": "pac-plan-vs-thought-action-intent-1.0.295.diff",
+      "size": 16483,
+      "sha256": "7f89db9b4aecdc95277c113f93459b3971953d2d1f22b5d3cf2db105405c1631"
+    },
+    {
       "path": "pi_agent_platform/__init__.py",
       "size": 36,
       "sha256": "3c78788ea0fb8b468bf16f215d385ccca713e31b0d6625da9c1c4e1f920e5b92"
@@ -819,8 +829,8 @@
     },
     {
       "path": "pi_agent_platform/core/__pycache__/agent_loop.cpython-313.pyc",
-      "size": 153623,
-      "sha256": "c64d1d1e08c91df3e499b81e885531a73fd2ba86337a5780193c6a1e92789af8"
+      "size": 156583,
+      "sha256": "b8ffb75dee3aace315c684f1aff760a287e7674d9dc417f9494b7bbfa8dc6526"
     },
     {
       "path": "pi_agent_platform/core/__pycache__/agent_plans.cpython-313.pyc",
@@ -989,8 +999,8 @@
     },
     {
       "path": "pi_agent_platform/core/agent_loop.py",
-      "size": 119727,
-      "sha256": "6d7780085bcfe81d75a7151358e345ad69984e8d6746abe1566039acfbd61fcd"
+      "size": 120802,
+      "sha256": "741df7824baf1616af1e873d12e2e9759e03cd9891480ea0ef42a5649365b509"
     },
     {
       "path": "pi_agent_platform/core/agent_plans.py",
@@ -1239,8 +1249,8 @@
     },
     {
       "path": "pi_agent_platform/web/app/providers.js",
-      "size": 42113,
-      "sha256": "9c75defa41e622b8251d4e70e4553a53bbdef04c30636122df42fc3645b442f9"
+      "size": 44445,
+      "sha256": "2b9d0040ac9e414795dd2a6e4eec038501d74c15e6fa17856249a921ff57b566"
     },
     {
       "path": "pi_agent_platform/web/app/session_commands.js",
@@ -1249,8 +1259,8 @@
     },
     {
       "path": "pi_agent_platform/web/app/sessions.js",
-      "size": 100690,
-      "sha256": "106bf6e8718fef0bcd2ebd79e5201acf495b1b7a0c98c01e20acab8fdb8fe6ec"
+      "size": 100877,
+      "sha256": "67fa51a872870e7c865158d2f487dcd8c79459a96f26c141b4e0e4e27796a816"
     },
     {
       "path": "pi_agent_platform/web/app/setup_wizard.js",
@@ -1433,6 +1443,11 @@
       "sha256": "e04064e1a11c8dade337327e4570245f00eb265f9415daf1d4b518aae43d11c9"
     },
     {
+      "path": "pi_agent_platform/web/styles/models-page.css",
+      "size": 5303,
+      "sha256": "c3e6380706bc413b7e6a9962e8607e2266528bc994b5d4df377ca340ac089398"
+    },
+    {
       "path": "pi_agent_platform/web/styles/providers-discovery.css",
       "size": 21886,
       "sha256": "966861f239f69fe98a21dcf6101794fa4e761e6e75ab314e3fd673543b6ce336"
@@ -1444,8 +1459,8 @@
     },
     {
       "path": "pi_agent_platform/web/styles/sessions-composer.css",
-      "size": 27478,
-      "sha256": "a2ffb6ed0ea98b4f14ed55afef3cab053828e222afb46af6928367302e3a509d"
+      "size": 28261,
+      "sha256": "2d51be02afb864317ad0b24fd63ea55a1dd09067fa63b74cca1ae82342fd025b"
     },
     {
       "path": "pi_agent_platform/web/styles/sessions-layout.css",
@@ -1474,13 +1489,13 @@
     },
     {
       "path": "pi_agent_platform/web/styles.css",
-      "size": 955,
-      "sha256": "4ed7887d70b46e563936cf11893ae19323e8b3071bd3aba4c5867b2fbdb6ec94"
+      "size": 998,
+      "sha256": "9d96a51a152a867494053b360be5e494bb74e893ca7da445e6bc5b17bde07771"
     },
     {
       "path": "pyproject.toml",
       "size": 622,
-      "sha256": "0fcfcda8fc6254089e82170e92eb59a1b45795a8227645c6aacce56339dc340d"
+      "sha256": "8eee5d0bdbb1e86c87fdf044e3e34851761ef4afe1026c485462c356cb88ad90"
     },
     {
       "path": "requirements.txt",

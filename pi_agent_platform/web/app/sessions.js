@@ -638,18 +638,21 @@ function updateSessionThinkingRow(group) {
   const headline = group.closed ? `Thought for ${duration}` : `Thinking for ${duration}`;
   const currentIntent = group.summary || sessionIntentSummary(event, null) || '';
   const latestIntermediate = thinkingGroupLatestIntermediate(group);
-  group.row.className = 'chat-message-row assistant thought-history-row';
+  const prompt = taskId ? sessionTaskPrompts.get(taskId) : '';
+  const fallbackMessage = currentIntent || prompt || (group.closed ? 'Finished working on the request.' : 'Working on the request.');
+  const workMessage = latestIntermediate?.text || fallbackMessage;
+  group.row.className = 'chat-message-row assistant thought-history-row assistant-work-row';
   group.row.innerHTML = '';
   const bubble = document.createElement('div');
-  bubble.className = `thought-history-line ${group.closed ? 'closed' : 'active'}`;
+  bubble.className = `thought-history-line assistant-work-progress ${group.closed ? 'closed' : 'active'}`;
   bubble.innerHTML = `
-    <button type="button" class="thought-history-main" aria-label="Open thought details" title="Open thought details">
+    <div class="assistant-work-message">${escapeHtml(workMessage)}</div>
+    ${currentIntent ? `<div class="assistant-work-intent">${escapeHtml(currentIntent)}</div>` : ''}
+    <button type="button" class="thought-history-main assistant-work-disclosure" aria-label="Open thought details" title="Open thought details">
       <span class="thought-history-dot">${group.closed ? '✓' : '<span class="tiny-spinner square" aria-hidden="true"></span>'}</span>
       <span class="thought-history-intent">${escapeHtml(headline)}</span>
       <span class="composer-thinking-chevron">›</span>
     </button>
-    ${currentIntent && !group.closed ? `<div class="thought-history-note">${escapeHtml(currentIntent)}</div>` : ''}
-    ${latestIntermediate ? `<div class="thought-history-intermediate"><span class="thought-history-intermediate-label">Model update</span><span>${escapeHtml(latestIntermediate.text)}</span></div>` : ''}
     ${approvalPending ? '<div class="thought-history-note attention">Awaiting approval</div>' : ''}`;
   const main = bubble.querySelector('.thought-history-main');
   if (main) {
