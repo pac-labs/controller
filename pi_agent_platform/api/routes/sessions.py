@@ -174,8 +174,9 @@ def create_sessions_router(
             raise HTTPException(status_code=400, detail=f'Model is not available for sessions: {selected_model} ({model_reason})')
 
         selected_model_config = config.models[selected_model]
-        if selected_model_config.runs_on and 'preferred_endpoint' not in payload.metadata:
-            payload.metadata['preferred_endpoint'] = selected_model_config.runs_on
+        model_runtime_target = str(selected_model_config.runs_on or '').strip()
+        if model_runtime_target and 'preferred_endpoint' not in payload.metadata and store.get_runner(model_runtime_target):
+            payload.metadata['preferred_endpoint'] = model_runtime_target
         if payload.metadata.get('preferred_endpoint'):
             endpoint_id = str(payload.metadata.get('preferred_endpoint'))
             if not store.get_runner(endpoint_id):
@@ -188,7 +189,7 @@ def create_sessions_router(
         unknown_tools = [t for t in selected_tools if t not in config.tools]
         if unknown_tools:
             raise HTTPException(status_code=400, detail=f'Unknown tools: {unknown_tools}')
-        preferred_endpoint = payload.metadata.get('preferred_endpoint') or selected_model_config.runs_on
+        preferred_endpoint = payload.metadata.get('preferred_endpoint')
         if selected_tools and preferred_endpoint:
             endpoint = store.get_runner(preferred_endpoint)
             endpoint_tools = (endpoint.metadata.get('agent_tools', []) if endpoint else [])
