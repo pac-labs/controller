@@ -228,9 +228,6 @@
       }
     }
   ],
-<<<<<<< HEAD
-  "current_version": "1.0.287"
-=======
   "current_version": "1.0.274",
   "schema": "pac.changelog.v1",
   "entries": [
@@ -242,5 +239,4 @@
       ]
     }
   ]
->>>>>>> 089bafc909448b5dfe36a5cbbdb9176f20b73d3c
 }
