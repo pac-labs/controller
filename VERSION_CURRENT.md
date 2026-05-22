@@ -1,3 +1,5 @@
-# PAC Version 1.0.290
+# PAC 1.0.291
 
-Assistant replies and thought/intent rows now render as open conversation content instead of metadata-heavy bubbles.
+Current packaged version: `1.0.291`.
+
+Focus: conversation thought disclosure polish, modal close reliability, and assistant-style thinking status behavior.

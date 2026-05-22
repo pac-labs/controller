@@ -385,9 +385,9 @@ function sessionThinkingSummary(event, block) {
     if (data.tool) return `Using ${data.tool}`;
   }
   if (type.includes('agent_intent')) {
-    if (data.tool) return `Preparing ${data.tool}`;
-    if (data.command) return `Preparing command ${data.command}`;
-    if (data.action_type === 'final') return 'Preparing final response';
+    if (data.tool) return `Using ${data.tool}`;
+    if (data.command) return `Running ${data.command}`;
+    if (data.action_type === 'final') return '';
     return event?.message || 'Choosing next step';
   }
   if (type.includes('agent_routing')) return event?.message || 'Routing task';
@@ -483,25 +483,25 @@ function openSessionThinkingModal(group) {
   if (!modal || !group) return;
   const title = document.getElementById('sessionEventModalTitle');
   const body = document.getElementById('sessionEventModalBody');
-  if (title) title.textContent = 'Thought details';
+  const duration = formatDurationMs(((group.endedAt || new Date()).getTime()) - (group.startedAt || new Date()).getTime());
+  if (title) title.textContent = group.closed ? `Thought for ${duration}` : `Thinking for ${duration}`;
   if (body) {
     body.className = 'modal-scroll-output tool-activity-modal';
-    const duration = formatDurationMs(((group.endedAt || new Date()).getTime()) - (group.startedAt || new Date()).getTime());
     const planSteps = deriveThinkingPlanSteps(group);
-    const summary = escapeHtml(group.summary || 'Thinking');
+    const summary = escapeHtml(group.summary || (group.closed ? 'Completed' : 'Working on the request'));
     body.innerHTML = `
       <div class="thought-modal-summary">
-        <div class="thought-modal-kicker">${escapeHtml(group.closed ? 'Thought completed' : 'Currently thinking')}</div>
+        <div class="thought-modal-kicker">${escapeHtml(group.closed ? 'Completed thought process' : 'Current thought process')}</div>
         <div class="thought-modal-title">${summary}</div>
         <div class="thought-modal-meta">
-          <span>${escapeHtml(group.closed ? `Thought for ${duration}` : `Thinking for ${duration}`)}</span>
-          <span>${thinkingGroupToolCount(group)} ${thinkingGroupToolCount(group) === 1 ? 'tool' : 'tools'}</span>
+          <span>${thinkingGroupToolCount(group)} ${thinkingGroupToolCount(group) === 1 ? 'tool/event' : 'tool/events'}</span>
           <span>${escapeHtml(thinkingGroupNeedsApproval(group) ? 'Awaiting approval' : group.closed ? 'Completed' : 'Active')}</span>
         </div>
       </div>
       ${planSteps.length ? `<div class="thought-modal-plan">${planSteps.map((step, index) => `<div class="thought-modal-plan-item ${escapeHtml(step.status)}"><span class="thought-modal-plan-index">${index + 1}</span><span class="thought-modal-plan-label">${escapeHtml(step.label)}</span><span class="thought-modal-plan-state">${escapeHtml(step.status === 'running' ? 'Active' : step.status === 'attention' ? 'Needs approval' : step.status === 'failed' ? 'Failed' : 'Done')}</span></div>`).join('')}</div>` : ''}
       ${sessionThinkingDetailsHtml(group.events || [])}`;
   }
+  bindSessionEventModalChrome();
   modal.hidden = false;
 }
 
@@ -547,23 +547,25 @@ async function resolveSessionApproval(taskId, approved) {
 function updateSessionThinkingRow(group) {
   if (!group?.row) return;
   const event = group.lastIntentEvent || group.lastEvent || group.events?.[group.events.length - 1]?.event;
-  const summary = group.summary || sessionIntentSummary(event, null) || (group.closed ? 'Completed' : 'Working');
   const endAt = group.endedAt || new Date();
   const startAt = group.startedAt || sessionEventDate(event) || new Date();
   const duration = formatDurationMs(endAt.getTime() - startAt.getTime());
   const approvalPending = thinkingGroupNeedsApproval(group);
   const taskId = event?.task_id || group.taskId || '';
+  const headline = group.closed ? `Thought for ${duration}` : `Thinking for ${duration}`;
+  const currentIntent = group.summary || sessionIntentSummary(event, null) || '';
   group.row.className = 'chat-message-row assistant thought-history-row';
   group.row.innerHTML = '';
   const bubble = document.createElement('div');
-  bubble.className = `chat-bubble thought-history-bubble ${group.closed ? 'closed' : 'active'}`;
+  bubble.className = `thought-history-line ${group.closed ? 'closed' : 'active'}`;
   bubble.innerHTML = `
     <button type="button" class="thought-history-main" aria-label="Open thought details" title="Open thought details">
       <span class="thought-history-dot">${group.closed ? '✓' : '<span class="tiny-spinner square" aria-hidden="true"></span>'}</span>
-      <span class="thought-history-intent">${escapeHtml(summary)}</span>
+      <span class="thought-history-intent">${escapeHtml(headline)}</span>
       <span class="composer-thinking-chevron">›</span>
     </button>
-    ${approvalPending ? '<div class="thought-history-note">Awaiting approval</div>' : ''}`;
+    ${currentIntent && !group.closed ? `<div class="thought-history-note">${escapeHtml(currentIntent)}</div>` : ''}
+    ${approvalPending ? '<div class="thought-history-note attention">Awaiting approval</div>' : ''}`;
   const main = bubble.querySelector('.thought-history-main');
   if (main) {
     main.onclick = () => openSessionThinkingModal(group);
@@ -635,6 +637,7 @@ function openSessionEventModal(event, block) {
     body.className = 'modal-scroll-output';
     body.textContent = sessionEventDetailsText(event, block);
   }
+  bindSessionEventModalChrome();
   modal.hidden = false;
 }
 
@@ -642,6 +645,32 @@ function closeSessionEventModal() {
   const modal = document.getElementById('sessionEventModal');
   if (modal) modal.hidden = true;
 }
+
+function bindSessionEventModalChrome() {
+  const modal = document.getElementById('sessionEventModal');
+  const closeButton = document.getElementById('closeSessionEventModal');
+  if (closeButton && !closeButton.dataset.sessionCloseBound) {
+    closeButton.dataset.sessionCloseBound = '1';
+    closeButton.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      closeSessionEventModal();
+    });
+  }
+  if (modal && !modal.dataset.sessionBackdropBound) {
+    modal.dataset.sessionBackdropBound = '1';
+    modal.addEventListener('click', (ev) => {
+      if (ev.target === modal) closeSessionEventModal();
+    });
+  }
+  if (!window.__pacSessionEventEscapeBound) {
+    window.__pacSessionEventEscapeBound = true;
+    window.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && modal && !modal.hidden) closeSessionEventModal();
+    });
+  }
+}
+
 
 function timelineText(event, block) {
   if (block) {
@@ -1923,3 +1952,5 @@ function refreshComposerThinkingStatusForTask(taskId='') {
   renderComposerThinkingStatus(null);
   updateComposerChrome();
 }
+
+try { bindSessionEventModalChrome(); } catch (_) {}

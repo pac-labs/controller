@@ -1,6 +1,18 @@
 {
   "releases": [
     {
+      "version": "1.0.291",
+      "date": "2026-05-22T13:05:00Z",
+      "summary": "Refine session thought disclosure into a ChatGPT-style conversation line and fix thought details modal closing.",
+      "changes": [
+        "Changed session thought rows to show a compact \"Thinking for\" / \"Thought for\" disclosure line instead of the current intent as the primary message.",
+        "Kept current intent/status visible only while active as subtle secondary text, with full timing/details available through the details modal.",
+        "Stopped final-response intent text from surfacing as \"Preparing final response\" in the conversation stream.",
+        "Bound the thought/details modal close button, backdrop click, and Escape key from the sessions UI so details can be reliably closed.",
+        "Kept raw model/tool output out of the conversation thought row; full execution detail remains in the full session log and details modal."
+      ]
+    },
+    {
       "version": "1.0.290",
       "date": "2026-05-22T12:45:00Z",
       "summary": "Rendered assistant replies and thought/intent status as clean conversation content without redundant labels or timestamps.",
@@ -263,5 +275,5 @@
       }
     }
   ],
-  "current_version": "1.0.290"
+  "current_version": "1.0.291"
 }
