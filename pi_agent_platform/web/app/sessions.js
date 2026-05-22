@@ -546,7 +546,7 @@ function openSessionThinkingModal(group) {
           <span>${escapeHtml(thinkingGroupNeedsApproval(group) ? 'Awaiting approval' : group.closed ? 'Completed' : 'Active')}</span>
         </div>
       </div>
-      ${planSteps.length ? `<div class="thought-modal-plan">${planSteps.map((step, index) => `<div class="thought-modal-plan-item ${escapeHtml(step.status)}"><span class="thought-modal-plan-index">${index + 1}</span><span class="thought-modal-plan-label">${escapeHtml(step.label)}</span><span class="thought-modal-plan-state">${escapeHtml(step.status === 'running' ? 'Active' : step.status === 'attention' ? 'Needs approval' : step.status === 'failed' ? 'Failed' : 'Done')}</span></div>`).join('')}</div>` : ''}
+      ${planSteps.length ? `<div class="thought-modal-plan"><div class="thought-modal-section-title">Work plan</div>${planSteps.map((step, index) => `<div class="thought-modal-plan-item ${escapeHtml(step.status)}"><span class="thought-modal-plan-index">${index + 1}</span><span class="thought-modal-plan-label">${escapeHtml(step.label)}</span><span class="thought-modal-plan-state">${escapeHtml(step.status === 'running' ? 'Active' : step.status === 'attention' ? 'Needs approval' : step.status === 'failed' ? 'Failed' : step.status === 'planned' ? 'Planned' : 'Done')}</span></div>`).join('')}</div>` : ''}
       ${sessionThinkingDetailsHtml(group.events || [])}`;
   }
   bindSessionEventModalChrome();
@@ -565,20 +565,55 @@ function thinkingGroupNeedsApproval(group) {
   return !!event && String(event.type || '').toLowerCase().includes('approval_required');
 }
 
+function extractWorkPlanStepsFromText(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return [];
+  const normalized = raw.replace(/\r/g, '');
+  const candidates = [];
+  normalized.split('\n').forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    const match = trimmed.match(/^(?:[-*•]|\d+[.)]|\[[ xX-]\])\s*(.+)$/);
+    if (match && match[1]) candidates.push(match[1].trim());
+  });
+  if (!candidates.length && /\b\d+[.)]\s+/.test(normalized)) {
+    const inline = normalized.split(/(?=\b\d+[.)]\s+)/g)
+      .map((part) => part.replace(/^\d+[.)]\s*/, '').trim())
+      .filter(Boolean);
+    candidates.push(...inline);
+  }
+  return candidates
+    .map((label) => label.replace(/^(plan|step|task)\s*[:：-]\s*/i, '').trim())
+    .filter((label) => label && label.length > 3)
+    .slice(0, 8)
+    .map((label) => ({label, status: 'planned', time: ''}));
+}
+
 function deriveThinkingPlanSteps(group) {
   const rows = Array.isArray(group?.events) ? group.events : [];
-  const intents = rows
-    .filter((item) => isSessionIntentEvent(item?.event))
-    .map((item) => ({label: sessionIntentSummary(item.event, item.block), time: item.event?.created_at || ''}))
-    .filter((item) => item.label);
-  if (!intents.length && group?.summary) return [{label: group.summary, status: group.closed ? 'done' : 'running', time: ''}];
+  const planEvents = rows.filter((item) => String(item?.event?.type || '').toLowerCase().includes('agent_plan'));
+  const steps = [];
+  planEvents.forEach((item) => {
+    const data = item?.event?.data && typeof item.event.data === 'object' ? item.event.data : {};
+    const explicit = Array.isArray(data.steps) ? data.steps : Array.isArray(data.plan_steps) ? data.plan_steps : [];
+    explicit.forEach((step) => {
+      if (typeof step === 'string') steps.push({label: step.trim(), status: 'planned', time: item.event?.created_at || ''});
+      else if (step && typeof step === 'object') steps.push({label: String(step.label || step.title || step.summary || '').trim(), status: String(step.status || 'planned').toLowerCase(), time: item.event?.created_at || ''});
+    });
+    const text = String(data.plan || data.summary || item?.event?.message || timelineText(item.event, item.block) || '').trim();
+    extractWorkPlanStepsFromText(text).forEach((step) => steps.push({...step, time: item.event?.created_at || ''}));
+  });
   const deduped = [];
-  for (const item of intents) {
-    const previous = deduped[deduped.length - 1];
-    if (previous?.label === item.label) continue;
-    deduped.push({label: item.label, status: group?.closed ? 'done' : 'running', time: item.time});
+  const seen = new Set();
+  for (const step of steps) {
+    const label = String(step.label || '').trim();
+    if (!label) continue;
+    const key = label.toLowerCase().replace(/\s+/g, ' ');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push({label, status: step.status || 'planned', time: step.time || ''});
   }
-  return deduped.slice(-3);
+  return deduped.slice(0, 8);
 }
 
 async function resolveSessionApproval(taskId, approved) {

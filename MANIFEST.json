@@ -1,5 +1,5 @@
 {
-  "version": "1.0.294",
+  "version": "1.0.295",
   "generated_at": "2026-05-22T00:00:00Z",
   "files": [
     {
@@ -38,14 +38,9 @@
       "sha256": "a7b61e9989e18307fa9f4b4a041af4e4d1f24fea73136e55e4562f26c5338559"
     },
     {
-      "path": "MANIFEST.json",
-      "size": 54959,
-      "sha256": "7d3b5b1899aaf4540b2cb561bd13d53fbe4227ab289ff22b2be20161f3887526"
-    },
-    {
       "path": "PAC_CHANGELOG.json",
-      "size": 19144,
-      "sha256": "0adfb41f93c6c0a743dc9a7787e9f38f4e4ec14f004e2e7c04ae6d0b4fcf505e"
+      "size": 20250,
+      "sha256": "b0a8f7ec42b5d1cf8654118fb5b63c3ff8cf6075c47e2ef589ad024463cdb3e4"
     },
     {
       "path": "PAC_UPDATE_DIFF-1.0.286.diff",
@@ -60,12 +55,12 @@
     {
       "path": "VERSION",
       "size": 8,
-      "sha256": "15dddd7a7240e081f807ed39ca3d8788c98c84c470bc2e71312c2f7288543f35"
+      "sha256": "20f5935a29c9b48ae4d1c5d80ba4d6daeb6b11c3fb58fd59ff881a710daa1f8b"
     },
     {
       "path": "VERSION_CURRENT.md",
-      "size": 108,
-      "sha256": "b81bd8518859d848533fc02ae0ed1f65304679b991cd0ddd669927beba87eb14"
+      "size": 201,
+      "sha256": "133f8e4f9d47461c8f33b5ea56ef9553cab9854a0ebb90c458aa799033108c66"
     },
     {
       "path": "binaries/README.md",
@@ -994,8 +989,8 @@
     },
     {
       "path": "pi_agent_platform/core/agent_loop.py",
-      "size": 117192,
-      "sha256": "02bebb880f30da0163d8c2642f628818d030eec75387adb35a2de8b3e9317bbd"
+      "size": 119727,
+      "sha256": "6d7780085bcfe81d75a7151358e345ad69984e8d6746abe1566039acfbd61fcd"
     },
     {
       "path": "pi_agent_platform/core/agent_plans.py",
@@ -1254,8 +1249,8 @@
     },
     {
       "path": "pi_agent_platform/web/app/sessions.js",
-      "size": 98926,
-      "sha256": "80af107c2b07b5d48e92109b3f9fca8d17041e48d6b0f26e175ca8c2993e2885"
+      "size": 100690,
+      "sha256": "106bf6e8718fef0bcd2ebd79e5201acf495b1b7a0c98c01e20acab8fdb8fe6ec"
     },
     {
       "path": "pi_agent_platform/web/app/setup_wizard.js",
@@ -1485,7 +1480,7 @@
     {
       "path": "pyproject.toml",
       "size": 622,
-      "sha256": "19b84eb604fad33e1ff168c29feb085846e71da0c76048776ff6fa375e9ea08e"
+      "sha256": "0fcfcda8fc6254089e82170e92eb59a1b45795a8227645c6aacce56339dc340d"
     },
     {
       "path": "requirements.txt",

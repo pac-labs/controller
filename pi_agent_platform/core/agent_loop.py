@@ -384,8 +384,42 @@ def _looks_like_action_narration(text: str) -> bool:
         "i will scan ",
         "i will list ",
         "i will read ",
+        "i need to ",
+        "i should ",
+        "i can start by ",
+        "i would start by ",
+        "i would inspect ",
+        "let me ",
+        "next i will ",
+        "we need to ",
+        "we should ",
     )
-    return any(signal in raw for signal in signals)
+    if not any(signal in raw for signal in signals):
+        return False
+    action_verbs = (
+        "inspect", "read", "list", "open", "search", "scan", "run", "execute",
+        "modify", "update", "write", "patch", "create", "apply", "check",
+        "use consult_model", "consult", "call", "configure", "change",
+    )
+    return any(verb in raw for verb in action_verbs)
+
+
+def _should_reject_unformatted_action(session: Session, task: Task, text: str, transcript: list[dict[str, Any]]) -> bool:
+    """Return True when model prose is clearly an intended action, not an answer.
+
+    Local/controller sessions should act through structured tool calls. If a model says
+    it will inspect, patch, run, consult, or configure something but does not emit the
+    tool_call JSON, treating that prose as a final answer creates dead-end sessions.
+    """
+    if not _looks_like_action_narration(text):
+        return False
+    if session.metadata.get("controller_harness"):
+        return True
+    if session.workspace_path:
+        return True
+    if _prompt_requests_codebase_inspection(task.prompt):
+        return True
+    return False
 
 
 def _controller_session_guidance(session: Session) -> str | None:
@@ -2057,15 +2091,16 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                 messages.append({"role": "assistant", "content": raw})
                 messages.append({"role": "user", "content": 'Your previous reply contained malformed tool-call markup. Return ONE valid JSON object only. If you intend to act, return {"type":"tool_call","tool":"...","input":{...}}. Do not include wrapper markers, pseudo-code, or explanatory narration.'})
                 continue
-            if _prompt_requests_codebase_inspection(task.prompt) and _looks_like_action_narration(raw):
-                store.add_event(Event(session_id=session.id, task_id=task.id, type="action_narration_rejected", message="Model narrated an action instead of taking one; requesting a real tool call.", data={"role": "assistant", "model": decision_model, "raw": raw[-4000:]}))
+            if _should_reject_unformatted_action(session, task, raw, transcript):
+                store.add_event(Event(session_id=session.id, task_id=task.id, type="action_narration_rejected", message="Model described an intended action instead of returning a structured tool call; requesting the executable instruction.", data={"role": "assistant", "model": decision_model, "raw": raw[-4000:], "reason": "unformatted_action_intent"}))
                 messages.append({"role": "assistant", "content": raw})
                 messages.append({
                     "role": "user",
                     "content": (
-                        "Do not narrate future actions for this code/workspace task. "
-                        "If inspection is needed, return exactly ONE valid tool_call JSON object now. "
-                        "Only return a final answer after you have actually inspected the workspace."
+                        "You described an action you intend to take, but PAC can only execute actions from structured tool calls. "
+                        "Return exactly ONE valid JSON object now. If you intend to act, use "
+                        "{\"type\":\"tool_call\",\"tool\":\"...\",\"input\":{...}}. "
+                        "Only return {\"type\":\"final\",\"message\":\"...\"} when no further action is needed."
                     ),
                 })
                 continue
@@ -2119,6 +2154,18 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                 }
                 thought_summary, thought_meta = _summarize_model_action(action)
                 store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_intent", message=thought_summary, data={"role": "assistant", "model": decision_model, "session_model": session.model, "endpoint_id": task.metadata.get("runner_id"), "step": step, **thought_meta}))
+            elif _should_reject_unformatted_action(session, task, final_message, transcript):
+                store.add_event(Event(session_id=session.id, task_id=task.id, type="action_narration_rejected", message="Model returned an intended action as a final answer; requesting a structured tool call instead.", data={"role": "assistant", "model": decision_model, "session_model": session.model, "step": step, "final_message": final_message[-1000:], "reason": "final_unformatted_action_intent"}))
+                messages.append({"role": "assistant", "content": raw})
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "Your previous final answer was an intention to do work, not the completed answer. "
+                        "Convert that intention into exactly ONE structured tool_call JSON object now, "
+                        "or return a final answer only if the work is already complete."
+                    ),
+                })
+                continue
 
         if action.get("type") == "final":
             if _prompt_requests_codebase_inspection(task.prompt) and not _has_meaningful_codebase_inspection(transcript):
