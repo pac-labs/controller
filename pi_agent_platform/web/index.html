@@ -929,15 +929,14 @@
         <div class="settings-panel-inner settings-panel-single">
           <div class="settings-main admin-settings-main">
             <section class="card setting-cube compact-setting-card wide directory-hero-card">
-              <div class="admin-summary-grid">
+              <div class="section-heading compact-heading">
                 <div>
                   <h2>Directory &amp; Access</h2>
-                  <p class="muted">Manage PAC identities as a directory: people, groups, service accounts, endpoints, providers, credentials, and effective platform access.</p>
+                  <p class="muted">Manage PAC identities as a directory: people, nested groups, service accounts, endpoints, providers, credentials, and effective platform access.</p>
                 </div>
-                <div>
-                  <h2>Auth</h2>
-                  <p class="muted">Credentials answer <b>who are you</b>. Directory groups answer <b>what are you allowed to do</b>.</p>
-                  <div id="authInfo" class="kv compact-kv"></div>
+                <div class="directory-identity-rule" title="Tokens and certificates identify a principal. Directory groups decide the principal access.">
+                  <span>Credentials identify who you are.</span>
+                  <span>Directory groups decide what you can use.</span>
                 </div>
               </div>
             </section>
@@ -965,40 +964,52 @@
                 </section>
               </div>
             </section>
-            <section class="card setting-cube compact-setting-card wide">
-              <div class="admin-management-grid directory-create-grid">
-                <section class="admin-pane">
-                  <div class="admin-pane-head"><div><h2>Add person</h2><p class="muted">Create an interactive user. Add membership from a group detail panel.</p></div></div>
-                  <div class="form-grid compact-form">
-                    <label>Username <input id="newUsername" placeholder="developer" /></label>
-                    <label>Display name <input id="newDisplayName" placeholder="Developer" /></label>
-                    <label>Password <input id="newUserPassword" type="password" placeholder="min 8 characters" /></label>
-                    <label>Role <select id="newUserRole"><option value="user">user</option><option value="admin">admin</option><option value="readonly">readonly</option></select></label>
+            <section class="card setting-cube compact-setting-card wide directory-create-strip">
+              <div class="section-heading compact-heading">
+                <div>
+                  <h3>Add directory objects</h3>
+                  <p class="muted">Use the small add menus below. Group membership is added from a group detail panel or by drag/drop.</p>
+                </div>
+              </div>
+              <div class="directory-add-actions" aria-label="Add directory objects">
+                <details id="addPersonMenu" class="directory-add-menu">
+                  <summary><span class="directory-plus-icon" aria-hidden="true">+</span><span>Add person</span></summary>
+                  <div class="directory-add-body">
+                    <div class="form-grid compact-form">
+                      <label>Username <input id="newUsername" placeholder="developer" /></label>
+                      <label>Display name <input id="newDisplayName" placeholder="Developer" /></label>
+                      <label>Password <input id="newUserPassword" type="password" placeholder="min 8 characters" /></label>
+                      <label>Role <select id="newUserRole"><option value="user">user</option><option value="admin">admin</option><option value="readonly">readonly</option></select></label>
+                    </div>
+                    <div class="button-row"><button id="createUserBtn">Create person</button></div>
+                    <pre id="usersResult" class="inline-result compact-result"></pre>
                   </div>
-                  <div class="button-row"><button id="createUserBtn">Create user</button></div>
-                  <pre id="usersResult" class="inline-result compact-result"></pre>
-                </section>
-                <section class="admin-pane">
-                  <div class="admin-pane-head"><div><h2>Add group</h2><p class="muted">Groups can contain users, service accounts, endpoints, providers, and other groups.</p></div></div>
-                  <div class="form-grid compact-form">
-                    <label>Group id <input id="newGroupId" placeholder="platform-users" /></label>
-                    <label>Name <input id="newGroupName" placeholder="Platform users" /></label>
-                    <label class="admin-form-wide">Description <input id="newGroupDescription" placeholder="People allowed to use PAC platform resources" /></label>
-                    <label class="admin-form-wide">Advanced grants <input id="newGroupGrants" placeholder="profile:*:use, workspace:*:read, session:*:write" /></label>
+                </details>
+                <details id="addGroupMenu" class="directory-add-menu">
+                  <summary><span class="directory-plus-icon" aria-hidden="true">+</span><span>Add group</span></summary>
+                  <div class="directory-add-body">
+                    <div class="form-grid compact-form">
+                      <label>Group id <input id="newGroupId" placeholder="platform-users" /></label>
+                      <label>Name <input id="newGroupName" placeholder="Platform users" /></label>
+                      <label class="admin-form-wide">Description <input id="newGroupDescription" placeholder="People allowed to use PAC platform resources" /></label>
+                      <label class="admin-form-wide">Advanced grants <input id="newGroupGrants" placeholder="profile:*:use, workspace:*:read, session:*:write" /></label>
+                    </div>
+                    <div class="button-row"><button id="createGroupBtn">Create group</button></div>
+                    <pre id="groupsResult" class="inline-result compact-result"></pre>
                   </div>
-                  <div class="button-row"><button id="createGroupBtn">Create group</button></div>
-                  <pre id="groupsResult" class="inline-result compact-result"></pre>
-                </section>
-                <section class="admin-pane">
-                  <div class="admin-pane-head"><div><h2>Add service account</h2><p class="muted">Use for endpoints, providers, automation, and integrations that should not log in interactively.</p></div></div>
-                  <div class="form-grid compact-form">
-                    <label>Principal id <input id="newServiceAccountId" placeholder="svc-builder-01" /></label>
-                    <label>Name <input id="newServiceAccountName" placeholder="Builder service account" /></label>
-                    <label class="admin-form-wide">Description <input id="newServiceAccountDescription" placeholder="Used by a build endpoint or provider integration" /></label>
+                </details>
+                <details id="addServiceAccountMenu" class="directory-add-menu">
+                  <summary><span class="directory-plus-icon" aria-hidden="true">+</span><span>Add service account</span></summary>
+                  <div class="directory-add-body">
+                    <div class="form-grid compact-form">
+                      <label>Principal id <input id="newServiceAccountId" placeholder="svc-builder-01" /></label>
+                      <label>Name <input id="newServiceAccountName" placeholder="Builder service account" /></label>
+                      <label class="admin-form-wide">Description <input id="newServiceAccountDescription" placeholder="Used by a build endpoint or provider integration" /></label>
+                    </div>
+                    <div class="button-row"><button id="createServiceAccountBtn">Create service account</button></div>
+                    <pre id="serviceAccountsResult" class="inline-result compact-result"></pre>
                   </div>
-                  <div class="button-row"><button id="createServiceAccountBtn">Create service account</button></div>
-                  <pre id="serviceAccountsResult" class="inline-result compact-result"></pre>
-                </section>
+                </details>
               </div>
             </section>
           </div>
@@ -1137,6 +1148,15 @@
       <div id="settings-config" class="settings-panel" style="display:none">
         <div class="settings-panel-inner settings-panel-single">
           <div class="settings-main">
+            <section class="card wide setting-cube compact-setting-card">
+              <div class="section-heading compact-heading">
+                <div>
+                  <h2>Authentication</h2>
+                  <p class="muted">Controller auth mode and credential lifetime. Directory memberships live under Directory &amp; Access.</p>
+                </div>
+              </div>
+              <div id="authInfo" class="kv compact-kv config-auth-summary"></div>
+            </section>
             <section class="card wide setting-cube">
               <h2>Configuration editor</h2>
               <p class="muted">Raw JSON config. Saved server-side as YAML in the PAC home directory.</p>

@@ -117,3 +117,36 @@ html[data-theme="light"] .error-text,
 body[data-theme="light"] .error-text{
   color:#991b1b!important;
 }
+
+html[data-theme="light"] .directory-identity-rule,
+body[data-theme="light"] .directory-identity-rule,
+html[data-theme="light"] .directory-add-menu,
+body[data-theme="light"] .directory-add-menu{
+  border-color:rgba(22,101,52,.16);
+  background:#f8fafc;
+  color:#14532d;
+}
+html[data-theme="light"] .directory-add-menu summary,
+body[data-theme="light"] .directory-add-menu summary{
+  color:#14532d;
+}
+html[data-theme="light"] .directory-add-menu[open] summary,
+body[data-theme="light"] .directory-add-menu[open] summary{
+  border-bottom-color:rgba(22,101,52,.14);
+  background:#ecfdf5;
+}
+html[data-theme="light"] .directory-inline-add,
+html[data-theme="light"] .directory-plus-icon,
+body[data-theme="light"] .directory-inline-add,
+body[data-theme="light"] .directory-plus-icon{
+  border-color:rgba(22,101,52,.22);
+  background:#ecfdf5;
+  color:#166534;
+}
+html[data-theme="light"] .directory-inline-add:hover,
+html[data-theme="light"] .directory-inline-add:focus-visible,
+body[data-theme="light"] .directory-inline-add:hover,
+body[data-theme="light"] .directory-inline-add:focus-visible{
+  border-color:rgba(22,163,74,.55);
+  background:#dcfce7;
+}

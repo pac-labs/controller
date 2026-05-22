@@ -46,6 +46,35 @@ const DIRECTORY_KIND_LABELS = {
   credential: 'Credential',
 };
 
+
+function directoryFormatDate(value) {
+  if (!value) return '';
+  try {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString();
+  } catch (_) {
+    return String(value);
+  }
+}
+
+function directoryCreateMenuForFolder(folderId) {
+  if (folderId === 'people') return 'addPersonMenu';
+  if (folderId === 'groups') return 'addGroupMenu';
+  if (folderId === 'service_accounts') return 'addServiceAccountMenu';
+  return '';
+}
+
+function openDirectoryCreateMenu(menuId) {
+  if (!menuId) return;
+  document.querySelectorAll('.directory-add-menu').forEach((menu) => { menu.open = menu.id === menuId; });
+  const menu = document.getElementById(menuId);
+  if (menu) {
+    menu.open = true;
+    menu.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+  }
+}
+
 function directoryKindLabel(kind) {
   return DIRECTORY_KIND_LABELS[kind] || kind || 'Object';
 }
@@ -110,15 +139,23 @@ function renderAuthDirectoryTree() {
     const items = (directoryAccessState[stateKey] || []).filter((item) => directoryMatches(item, label));
     return `<details class="directory-root" open>
       <summary class="directory-folder${directoryAccessState.selectedKind === 'folder' && directoryAccessState.selectedId === folderId ? ' active' : ''}" data-kind="folder" data-id="${escapeHtml(folderId)}">
-        <span class="directory-label-with-icon"><span class="directory-kind-icon folder" aria-hidden="true"></span>${escapeHtml(label)}</span><span class="directory-count">${items.length}</span>
+        <span class="directory-label-with-icon"><span class="directory-kind-icon folder" aria-hidden="true"></span>${escapeHtml(label)}</span><span class="directory-folder-actions">${directoryCreateMenuForFolder(folderId) ? `<button class="directory-inline-add" data-open-add="${escapeHtml(directoryCreateMenuForFolder(folderId))}" type="button" title="Add ${escapeHtml(label.slice(0, -1) || label)}" aria-label="Add ${escapeHtml(label.slice(0, -1) || label)}">+</button>` : ''}<span class="directory-count">${items.length}</span></span>
       </summary>
       <div class="directory-children">
         ${items.map((item) => renderDirectoryTreeItem(itemKind, item)).join('') || '<div class="directory-empty">No entries.</div>'}
       </div>
     </details>`;
   }).join('');
+  tree.querySelectorAll('[data-open-add]').forEach((button) => {
+    button.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      openDirectoryCreateMenu(button.dataset.openAdd || '');
+    });
+  });
   tree.querySelectorAll('.directory-node,.directory-folder').forEach((node) => {
     node.addEventListener('click', (ev) => {
+      if (ev.target.closest?.('[data-open-add]')) return;
       if (node.classList.contains('directory-folder')) ev.preventDefault();
       selectAuthDirectoryNode(node.dataset.kind || 'folder', node.dataset.id || 'people');
     });
@@ -205,7 +242,7 @@ async function renderDirectoryPrincipalDetail(item, detail, title, subtitle) {
   detail.innerHTML = `<article class="directory-detail-card">
     <div class="directory-detail-head"><div><h3>${escapeHtml(directoryPrincipalLabel(item))}</h3><p class="muted">${escapeHtml(item.id)} · ${escapeHtml(item.kind)}</p></div><div class="admin-item-badges"><span class="admin-badge subtle">${escapeHtml(item.source || 'local')}</span>${item.system_managed ? '<span class="admin-badge">system</span>' : ''}</div></div>
     <div class="directory-tabs-grid">
-      <section><h4>Overview</h4><dl class="directory-property-list"><div><dt>Type</dt><dd>${escapeHtml(directoryKindLabel(item.kind))}</dd></div><div><dt>Status</dt><dd>${escapeHtml(item.status || 'active')}</dd></div><div><dt>Source</dt><dd>${escapeHtml(item.source || 'local')}</dd></div><div><dt>Created</dt><dd>${escapeHtml(formatDate(item.created_at) || '-')}</dd></div></dl><p class="muted small-text">${escapeHtml(item.description || 'No description provided.')}</p></section>
+      <section><h4>Overview</h4><dl class="directory-property-list"><div><dt>Type</dt><dd>${escapeHtml(directoryKindLabel(item.kind))}</dd></div><div><dt>Status</dt><dd>${escapeHtml(item.status || 'active')}</dd></div><div><dt>Source</dt><dd>${escapeHtml(item.source || 'local')}</dd></div><div><dt>Created</dt><dd>${escapeHtml(directoryFormatDate(item.created_at) || '-')}</dd></div></dl><p class="muted small-text">${escapeHtml(item.description || 'No description provided.')}</p></section>
       <section><h4>Groups</h4><p class="muted small-text">Direct membership</p>${formatGroupPills(direct, 'No direct groups.')}<p class="muted small-text">Inherited membership</p>${formatGroupPills(effective, 'No inherited groups.')}</section>
       <section><h4>Credentials</h4><p class="muted small-text">Credentials identify this principal. Permissions come from directory groups.</p>${renderCredentialRows(credentials, false)}${renderCredentialCreateControls(item)}</section>
       <section><h4>Effective access</h4>${formatGrantPills(access?.grants || [])}</section>
@@ -364,6 +401,7 @@ function bindDirectoryAccessUi() {
       await api('/v1/directory/users', {method: 'POST', body: JSON.stringify({username, display_name, password, role})});
       ['newUsername', 'newDisplayName', 'newUserPassword'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
       if (result) result.textContent = `User created: ${username}`;
+      const personMenu = document.getElementById('addPersonMenu'); if (personMenu) personMenu.open = false;
       directoryAccessState.selectedKind = 'user'; directoryAccessState.selectedId = username;
       await fetchAuthStatus(); renderAuthInfo(); await loadAuthDirectory();
     } catch (error) { if (result) result.textContent = `Failed: ${error.message || String(error)}`; }
@@ -379,6 +417,7 @@ function bindDirectoryAccessUi() {
       await api('/v1/directory/groups', {method: 'POST', body: JSON.stringify({id, name, description, grants})});
       ['newGroupId', 'newGroupName', 'newGroupDescription', 'newGroupGrants'].forEach((inputId) => { const el = document.getElementById(inputId); if (el) el.value = ''; });
       if (result) result.textContent = `Group created: ${id}`;
+      const groupMenu = document.getElementById('addGroupMenu'); if (groupMenu) groupMenu.open = false;
       directoryAccessState.selectedKind = 'group'; directoryAccessState.selectedId = id;
       await fetchAuthStatus(); renderAuthInfo(); await loadAuthDirectory();
     } catch (error) { if (result) result.textContent = `Failed: ${error.message || String(error)}`; }
@@ -393,6 +432,7 @@ function bindDirectoryAccessUi() {
       await api('/v1/directory/service-accounts', {method: 'POST', body: JSON.stringify({id, name, description})});
       ['newServiceAccountId','newServiceAccountName','newServiceAccountDescription'].forEach((inputId) => { const el = document.getElementById(inputId); if (el) el.value = ''; });
       if (result) result.textContent = `Service account created: ${id}`;
+      const serviceMenu = document.getElementById('addServiceAccountMenu'); if (serviceMenu) serviceMenu.open = false;
       directoryAccessState.selectedKind = 'service_account'; directoryAccessState.selectedId = id;
       await fetchAuthStatus(); renderAuthInfo(); await loadAuthDirectory();
     } catch (error) { if (result) result.textContent = `Failed: ${error.message || String(error)}`; }

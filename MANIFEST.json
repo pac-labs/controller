@@ -1,8 +1,8 @@
 {
-  "version": "1.0.323",
-  "generated_at": "2026-05-22T22:35:00Z",
-  "build": "directory-dragdrop-membership-20260522",
-  "latest_change": "Directory & Access drag/drop membership editing",
+  "version": "1.0.324",
+  "generated_at": "2026-05-22T23:05:00Z",
+  "build": "directory-compact-add-config-auth-20260522",
+  "latest_change": "Directory & Access compact add controls, Config auth summary, and date rendering fix",
   "files": [
     {
       "path": ".github/workflows/pac-expand-diff-pr.yml",
@@ -31,13 +31,13 @@
     },
     {
       "path": "MANIFEST.json",
-      "size": 55237,
-      "sha256": "d46241a91fa6775c4e09c4aebb873b6149bc4caad6638eee40d6be623eaa2c0d"
+      "size": 73123,
+      "sha256": "b8821438dd9dd473858fa490fe89f5eba8cfabd138e7a58d561b3e7015b412a5"
     },
     {
       "path": "PAC_CHANGELOG.json",
-      "size": 30884,
-      "sha256": "6a9a32187614456c9c7458195a358099f346b7897f1fe0a87797731fdd13ea4a"
+      "size": 32031,
+      "sha256": "c8e0b13aee0851f7300959cfaf28e37026686ac4206b3449542bd6ac29804257"
     },
     {
       "path": "PAC_UPDATE_DIFF-1.0.314.diff",
@@ -80,6 +80,16 @@
       "sha256": "0f08d0c8cc0e8775a55a1f6fb7eeffda944a3c2d00cdeb31dbc0f88da11dbf43"
     },
     {
+      "path": "PAC_UPDATE_DIFF-1.0.323.diff",
+      "size": 47189,
+      "sha256": "84a7b4dd76d532d5950e63e0fabef2735acf02b79896024ca75850ed10233eb2"
+    },
+    {
+      "path": "PAC_UPDATE_DIFF-1.0.324.diff",
+      "size": 134364,
+      "sha256": "51f655d57d525f59186c81d205b896e6e4cdba74d3e9b8cd4c318d3190a6a247"
+    },
+    {
       "path": "README.md",
       "size": 17633,
       "sha256": "85487d642e8b99471228c8168b8ca7b03efb9182883fab6e30f9c0ea962af71c"
@@ -87,12 +97,12 @@
     {
       "path": "VERSION",
       "size": 8,
-      "sha256": "d67ffa8c1a05ceb738aba9b8fdc342e3036af04bb5bc16e24172936d96fc3af0"
+      "sha256": "887e646028d2197041741686e71b6594bc88f6fe948a0fa4595a9f3c55cad45c"
     },
     {
       "path": "VERSION_CURRENT.md",
-      "size": 144,
-      "sha256": "220773d537229bfa7c5b08d05d2c1688b8d344aa3319f40bd05bd015357dde04"
+      "size": 147,
+      "sha256": "c21a4e003562f476ad42cdfbb06dbdd8a84cd07669ff34a276f0bbeddb5375ab"
     },
     {
       "path": "binaries/README.md",
@@ -543,6 +553,11 @@
       "path": "docs/directory-ui-active-directory-refresh.md",
       "size": 1453,
       "sha256": "c7e42769a75cd8f3b6f505a9d7467ceefc4542426bcb33cdcc751f9124686eac"
+    },
+    {
+      "path": "docs/directory-ui-compact-add-config-auth-20260522.md",
+      "size": 1216,
+      "sha256": "7e01d2521a84ebd98999ec9a529108aa95114b0bf4e38166b696845b4519604e"
     },
     {
       "path": "docs/directory-ui-dragdrop-pass7.md",
@@ -1571,8 +1586,8 @@
     },
     {
       "path": "pi_agent_platform/web/app/directory_access.js",
-      "size": 30519,
-      "sha256": "687a7d2492a7761e8b5795c56fa5398dfa6a05c8097e1fb4d2524d6d8317e5ab"
+      "size": 32322,
+      "sha256": "59402752f6f586b702302da3bfe6e087504c20749aba9069e060de440ad7cf8e"
     },
     {
       "path": "pi_agent_platform/web/app/directory_dragdrop.js",
@@ -1641,8 +1656,8 @@
     },
     {
       "path": "pi_agent_platform/web/app/ui_helpers.js",
-      "size": 156,
-      "sha256": "7b3adb051f558b5a8462393a8e105abf1ce9e31beeda1ebb71d935ca6556d13c"
+      "size": 395,
+      "sha256": "3fa55e39bf4e4af150d0d4087d24a3d7cc79ecaa4ce8f75609d53e0ec53b4bc2"
     },
     {
       "path": "pi_agent_platform/web/app/workspaces_contexts.js",
@@ -1766,8 +1781,8 @@
     },
     {
       "path": "pi_agent_platform/web/index.html",
-      "size": 99338,
-      "sha256": "2e3e01eba1c78f767f38d893c6c2f3ee0f52cad42ee31bb14f64113d8b2ff8c3"
+      "size": 100399,
+      "sha256": "a0caf58a404cc9e4bb55cb778b829d0bddf890716a3ac6b9d880d44fb22be0d8"
     },
     {
       "path": "pi_agent_platform/web/styles/admin-components.css",
@@ -1791,13 +1806,13 @@
     },
     {
       "path": "pi_agent_platform/web/styles/directory-access-light.css",
-      "size": 4135,
-      "sha256": "3e5c165e17e10f3ea9ec570d7b3d4659c2994944fc22baffdb9a4f2729ef9657"
+      "size": 5280,
+      "sha256": "fc316b5c265ac20638bc2560dd183e26ca25024eb7319b7753e42417f3fbf2a7"
     },
     {
       "path": "pi_agent_platform/web/styles/directory-access.css",
-      "size": 7254,
-      "sha256": "582e49bda4f341275b68faef5d574ec2f12df18a232ab435fea76b21d7c0a222"
+      "size": 9143,
+      "sha256": "07e96f60dd4f1e7adfb3598c8697865a316d1c3b3f1482e67b543e0873f5c021"
     },
     {
       "path": "pi_agent_platform/web/styles/endpoints.css",
@@ -1977,7 +1992,7 @@
     {
       "path": "pyproject.toml",
       "size": 622,
-      "sha256": "fd9e94a8489359d0dbc30e34e3ea7fb6553f8db42987854c92de355af7fdb176"
+      "sha256": "25244530b21f54c6cb091a98c2e846d342099cbcde2fccb40ef807fec46b3432"
     },
     {
       "path": "requirements.txt",

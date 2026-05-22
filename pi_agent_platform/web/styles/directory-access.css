@@ -316,3 +316,89 @@ tr.directory-drop-over td{
 .error-text{
   color:#fecaca!important;
 }
+
+/* Directory creation is intentionally compact: one small + menu per object type. */
+.directory-identity-rule{
+  display:grid;
+  gap:.15rem;
+  padding:.55rem .7rem;
+  border:1px solid rgba(79,229,159,.18);
+  border-radius:.8rem;
+  color:#bbf7d0;
+  background:rgba(79,229,159,.07);
+  font-size:.82rem;
+  font-weight:800;
+}
+.directory-folder-actions{
+  display:inline-flex;
+  align-items:center;
+  gap:.35rem;
+  margin-left:auto;
+}
+.directory-inline-add{
+  display:inline-grid;
+  place-items:center;
+  width:1.35rem;
+  height:1.35rem;
+  border:1px solid rgba(79,229,159,.28);
+  border-radius:999px;
+  color:#bbf7d0;
+  background:rgba(79,229,159,.1);
+  font-weight:900;
+  line-height:1;
+  cursor:pointer;
+}
+.directory-inline-add:hover,
+.directory-inline-add:focus-visible{
+  border-color:rgba(79,229,159,.62);
+  background:rgba(79,229,159,.2);
+  outline:none;
+}
+.directory-create-strip{
+  margin-top:.9rem;
+}
+.directory-add-actions{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:.65rem;
+}
+.directory-add-menu{
+  border:1px solid rgba(79,229,159,.16);
+  border-radius:.9rem;
+  background:rgba(2,6,23,.24);
+  overflow:hidden;
+}
+.directory-add-menu summary{
+  display:flex;
+  align-items:center;
+  gap:.55rem;
+  min-height:2.65rem;
+  padding:.65rem .8rem;
+  cursor:pointer;
+  color:#d9fbe8;
+  font-weight:900;
+  list-style:none;
+}
+.directory-add-menu summary::-webkit-details-marker{display:none;}
+.directory-add-menu[open] summary{
+  border-bottom:1px solid rgba(79,229,159,.14);
+  background:rgba(79,229,159,.08);
+}
+.directory-plus-icon{
+  display:inline-grid;
+  place-items:center;
+  width:1.6rem;
+  height:1.6rem;
+  border:1px solid rgba(79,229,159,.28);
+  border-radius:999px;
+  color:#bbf7d0;
+  background:rgba(79,229,159,.11);
+  font-size:1.05rem;
+  line-height:1;
+}
+.directory-add-body{
+  padding:.85rem;
+}
+.config-auth-summary{
+  max-width:44rem;
+}
