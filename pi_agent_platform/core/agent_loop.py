@@ -69,7 +69,14 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     if full_control:
         events.full_control_enabled()
 
-    prompt_context = build_agent_prompt_context(session, task, config, agent=agent)
+    transcript: list[dict[str, Any]] = task.metadata.get("agent_transcript") or []
+    lifecycle = AgentRunLifecycle(session, task, config, transcript)
+
+    try:
+        prompt_context = build_agent_prompt_context(session, task, config, agent=agent)
+    except Exception as exc:
+        task = await lifecycle.fail(f"Agent prompt preparation failed: {exc}")
+        return task
     messages = prompt_context.messages
     controller_guidance = prompt_context.controller_guidance
     controller_context = prompt_context.controller_runtime_context
@@ -79,12 +86,16 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     events.workspace_indexed(prompt_context.workspace_index_event_data)
 
     if task.metadata.get("always_plan", True) and not task.metadata.get("plan_generated"):
-        plan = await generate_plan(
-            config,
-            model=planning_model,
-            prompt=task.prompt,
-            extra_context=[controller_guidance or "", controller_context or "", index_briefing or ""],
-        )
+        try:
+            plan = await generate_plan(
+                config,
+                model=planning_model,
+                prompt=task.prompt,
+                extra_context=[controller_guidance or "", controller_context or "", index_briefing or ""],
+            )
+        except Exception as exc:
+            task = await lifecycle.fail(f"Planning model call failed: {exc}", messages=messages)
+            return task
         task.metadata["plan_generated"] = True
         task.metadata["current_plan"] = plan
         store.add_task(task)
@@ -101,15 +112,17 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     pending = task.metadata.pop("pending_tool", None)
     if pending:
         events.tool_resumed(pending)
-        observation, paused = await execute_tool(session, task, pending.get("tool", ""), pending.get("input", {}), config)
+        try:
+            observation, paused = await execute_tool(session, task, pending.get("tool", ""), pending.get("input", {}), config)
+        except Exception as exc:
+            task = await lifecycle.fail(f"Resumed tool failed before producing a result: {exc}", messages=messages)
+            return task
         if paused:
             return task
         messages.append({"role": "assistant", "content": json.dumps(pending)})
         messages.append({"role": "user", "content": "Tool result:\n" + observation})
     max_runtime_minutes = max(1, int(task.metadata.get("max_runtime_minutes") or (getattr(agent, "max_runtime_minutes", 60) if agent else 60)))
     deadline = time.monotonic() + (max_runtime_minutes * 60)
-    transcript: list[dict[str, Any]] = task.metadata.get("agent_transcript") or []
-    lifecycle = AgentRunLifecycle(session, task, config, transcript)
     empty_model_retries = 0
     step = 0
     while True:
@@ -270,7 +283,16 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             tool = str(action.get("tool") or "")
             inp = action.get("input") or {}
             events.tool_call(tool=tool, input=inp)
-            observation, paused = await execute_tool(session, task, tool, inp, config)
+            try:
+                observation, paused = await execute_tool(session, task, tool, inp, config)
+            except Exception as exc:
+                task = await lifecycle.fail(
+                    f"Tool execution failed before producing a result: {tool}: {exc}",
+                    step=step,
+                    messages=messages,
+                    rolling_summary=context_manager.rolling_summary,
+                )
+                return task
             transcript.append({"step": step, "tool": tool, "input": inp, "observation": observation[-4000:]})
             task.metadata["agent_transcript"] = transcript[-20:]
             store.add_task(task)
