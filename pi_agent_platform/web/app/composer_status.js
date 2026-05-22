@@ -16,10 +16,15 @@ function deriveComposerThinkingState(events) {
     const internal = taskEvents.filter((event) => isInternalSessionEvent(event) || looksLikeInternalResultMessage(event, timelineText(event, normalizeTimelineBlock(event))));
     if (!internal.length) return {active: true, summary: 'Thinking about your latest request', startedAt: taskEvents[0]?.created_at, toolCount: 0, approvalPending: false, planSteps: []};
     let summary = '';
+    let latestIntermediate = '';
     let approvalPending = false;
     let toolCount = 0;
     let planSteps = [];
     for (const event of internal) {
+        if (typeof modelIntermediateResponseText === 'function') {
+            const intermediate = modelIntermediateResponseText(event, normalizeTimelineBlock(event));
+            if (intermediate) latestIntermediate = intermediate;
+        }
         const type = String(event?.type || '').toLowerCase();
         if (type.includes('tool_call')) toolCount += 1;
         if (type.includes('approval_required')) approvalPending = true;
@@ -39,6 +44,7 @@ function deriveComposerThinkingState(events) {
         toolCount,
         approvalPending,
         planSteps,
+        latestIntermediate,
     };
 }
 
@@ -57,12 +63,13 @@ function renderComposerThinkingStatus(state) {
     const duration = formatDurationMs(Math.max(0, (new Date(endAt).getTime() - new Date(state.startedAt || new Date().toISOString()).getTime())));
     const summary = state.summary || (state.closed ? 'Done.' : 'Thinking');
     const meta = state.approvalPending ? '<span class="composer-thinking-meta">Awaiting approval</span>' : '';
+    const update = state.latestIntermediate ? `<span class="composer-thinking-update"><span>Model update</span>${escapeHtml(state.latestIntermediate)}</span>` : '';
     const plan = '';
     el.hidden = false;
     el.classList.toggle('closed', !!state.closed);
     el.classList.toggle('active', !state.closed);
     const opener = state.onOpen ? ' role="button" tabindex="0"' : '';
-    el.innerHTML = `<span class="composer-thinking-entry"${opener}><span class="composer-thinking-heading">${escapeHtml(state.closed ? `Thought for ${duration}` : `Thinking for ${duration}`)} <span class="composer-thinking-chevron">›</span></span><span class="composer-thinking-summary">${escapeHtml(summary)}</span>${meta}${plan}</span>`;
+    el.innerHTML = `<span class="composer-thinking-entry"${opener}><span class="composer-thinking-heading">${escapeHtml(state.closed ? `Thought for ${duration}` : `Thinking for ${duration}`)} <span class="composer-thinking-chevron">›</span></span><span class="composer-thinking-summary">${escapeHtml(summary)}</span>${update}${meta}${plan}</span>`;
     if (state.onOpen) {
         const open = () => state.onOpen();
         el.onclick = open;

@@ -1,0 +1,210 @@
+/* PAC v1.0.292: theme-aware thought/detail modal surfaces. */
+#sessionEventModal {
+  background: rgba(3, 7, 18, .72);
+  backdrop-filter: blur(10px) saturate(1.05);
+}
+#sessionEventModal .modal-card {
+  color: var(--modal-text, #f4f1ff) !important;
+  background:
+    linear-gradient(180deg, rgba(17,24,39,.98), rgba(8,13,24,.98)) !important;
+  border-color: rgba(36,195,107,.28) !important;
+  box-shadow: 0 28px 90px rgba(0,0,0,.62), inset 0 1px 0 rgba(255,255,255,.04) !important;
+}
+#sessionEventModal .section-heading {
+  border-bottom: 1px solid rgba(148,163,184,.16);
+  margin-bottom: .85rem;
+  padding-bottom: .8rem;
+}
+#sessionEventModal .section-heading h2 {
+  color: #f8fafc !important;
+}
+#sessionEventModal .section-heading p,
+#sessionEventModal .muted {
+  color: #a6b3c5 !important;
+}
+#sessionEventModal .ghost-button {
+  background: rgba(15,23,42,.78) !important;
+  border-color: rgba(148,163,184,.24) !important;
+  color: #dbeafe !important;
+}
+#sessionEventModal .ghost-button:hover,
+#sessionEventModal .ghost-button:focus-visible {
+  background: rgba(36,195,107,.13) !important;
+  border-color: rgba(36,195,107,.56) !important;
+  color: #ecfdf5 !important;
+}
+#sessionEventModal .tool-activity-modal {
+  background: rgba(2,6,23,.62) !important;
+  color: #e5e7eb !important;
+  border: 1px solid rgba(148,163,184,.18) !important;
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+}
+#sessionEventModal .thought-modal-summary {
+  background: linear-gradient(180deg, rgba(15,23,42,.86), rgba(15,23,42,.52));
+  border-bottom: 1px solid rgba(148,163,184,.16);
+  border-radius: 16px 16px 0 0;
+  margin: 0;
+  padding: 1rem;
+}
+#sessionEventModal .thought-modal-kicker {
+  color: #93c5fd !important;
+}
+#sessionEventModal .thought-modal-title,
+#sessionEventModal .thought-modal-plan-label,
+#sessionEventModal .tool-activity-title {
+  color: #f8fafc !important;
+}
+#sessionEventModal .thought-modal-meta span {
+  background: rgba(30,41,59,.66) !important;
+  border-color: rgba(148,163,184,.22) !important;
+  color: #cbd5e1 !important;
+}
+#sessionEventModal .thought-modal-plan {
+  background: rgba(2,6,23,.38);
+  border-top: 1px solid rgba(148,163,184,.10);
+  margin: 0;
+  padding: .8rem;
+}
+#sessionEventModal .thought-modal-plan-item {
+  background: rgba(15,23,42,.74) !important;
+  border-color: rgba(148,163,184,.18) !important;
+  color: #e5e7eb !important;
+}
+#sessionEventModal .thought-modal-plan-index {
+  background: rgba(30,64,175,.20);
+  border-color: rgba(96,165,250,.38);
+  color: #bfdbfe;
+}
+#sessionEventModal .thought-modal-plan-state,
+#sessionEventModal .tool-activity-status,
+#sessionEventModal .tool-activity-time {
+  color: #9ca3af !important;
+}
+#sessionEventModal .tool-activity-empty {
+  color: #a6b3c5 !important;
+  background: rgba(2,6,23,.26);
+  border-top: 1px solid rgba(148,163,184,.10);
+  padding: 1rem;
+}
+#sessionEventModal .tool-activity-list {
+  border-top: 1px solid rgba(148,163,184,.12);
+  background: rgba(15,23,42,.52);
+}
+#sessionEventModal .tool-activity-item {
+  border-bottom-color: rgba(148,163,184,.14) !important;
+}
+#sessionEventModal .tool-activity-item summary {
+  color: #e5e7eb !important;
+  background: rgba(15,23,42,.58);
+}
+#sessionEventModal .tool-activity-item summary:hover {
+  background: rgba(36,195,107,.10) !important;
+}
+#sessionEventModal .tool-activity-icon {
+  color: #86efac;
+}
+
+html[data-theme="light"] #sessionEventModal,
+body[data-theme="light"] #sessionEventModal {
+  background: rgba(15,23,42,.32);
+}
+html[data-theme="light"] #sessionEventModal .modal-card,
+body[data-theme="light"] #sessionEventModal .modal-card {
+  background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(241,245,249,.98)) !important;
+  color: #0f172a !important;
+  border-color: rgba(148,163,184,.28) !important;
+  box-shadow: 0 28px 90px rgba(15,23,42,.22) !important;
+}
+html[data-theme="light"] #sessionEventModal .section-heading,
+body[data-theme="light"] #sessionEventModal .section-heading {
+  border-bottom-color: rgba(148,163,184,.24);
+}
+html[data-theme="light"] #sessionEventModal .section-heading h2,
+body[data-theme="light"] #sessionEventModal .section-heading h2,
+html[data-theme="light"] #sessionEventModal .thought-modal-title,
+body[data-theme="light"] #sessionEventModal .thought-modal-title,
+html[data-theme="light"] #sessionEventModal .thought-modal-plan-label,
+body[data-theme="light"] #sessionEventModal .thought-modal-plan-label,
+html[data-theme="light"] #sessionEventModal .tool-activity-title,
+body[data-theme="light"] #sessionEventModal .tool-activity-title {
+  color: #0f172a !important;
+}
+html[data-theme="light"] #sessionEventModal .section-heading p,
+body[data-theme="light"] #sessionEventModal .section-heading p,
+html[data-theme="light"] #sessionEventModal .muted,
+body[data-theme="light"] #sessionEventModal .muted,
+html[data-theme="light"] #sessionEventModal .tool-activity-empty,
+body[data-theme="light"] #sessionEventModal .tool-activity-empty {
+  color: #475569 !important;
+}
+html[data-theme="light"] #sessionEventModal .ghost-button,
+body[data-theme="light"] #sessionEventModal .ghost-button {
+  background: #f8fafc !important;
+  color: #0f172a !important;
+  border-color: rgba(100,116,139,.42) !important;
+}
+html[data-theme="light"] #sessionEventModal .tool-activity-modal,
+body[data-theme="light"] #sessionEventModal .tool-activity-modal {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border-color: rgba(148,163,184,.28) !important;
+}
+html[data-theme="light"] #sessionEventModal .thought-modal-summary,
+body[data-theme="light"] #sessionEventModal .thought-modal-summary {
+  background: linear-gradient(180deg, rgba(248,250,252,.98), rgba(241,245,249,.92));
+  border-bottom-color: rgba(148,163,184,.24);
+}
+html[data-theme="light"] #sessionEventModal .thought-modal-kicker,
+body[data-theme="light"] #sessionEventModal .thought-modal-kicker {
+  color: #2563eb !important;
+}
+html[data-theme="light"] #sessionEventModal .thought-modal-meta span,
+body[data-theme="light"] #sessionEventModal .thought-modal-meta span,
+html[data-theme="light"] #sessionEventModal .thought-modal-plan-item,
+body[data-theme="light"] #sessionEventModal .thought-modal-plan-item,
+html[data-theme="light"] #sessionEventModal .tool-activity-item summary,
+body[data-theme="light"] #sessionEventModal .tool-activity-item summary {
+  background: #f8fafc !important;
+  border-color: rgba(148,163,184,.24) !important;
+  color: #0f172a !important;
+}
+html[data-theme="light"] #sessionEventModal .thought-modal-plan,
+body[data-theme="light"] #sessionEventModal .thought-modal-plan,
+html[data-theme="light"] #sessionEventModal .tool-activity-list,
+body[data-theme="light"] #sessionEventModal .tool-activity-list {
+  background: rgba(241,245,249,.72);
+  border-color: rgba(148,163,184,.24);
+}
+html[data-theme="light"] #sessionEventModal .thought-modal-plan-index,
+body[data-theme="light"] #sessionEventModal .thought-modal-plan-index {
+  background: #eff6ff;
+  border-color: rgba(37,99,235,.32);
+  color: #1d4ed8;
+}
+html[data-theme="light"] #sessionEventModal .thought-modal-plan-state,
+body[data-theme="light"] #sessionEventModal .thought-modal-plan-state,
+html[data-theme="light"] #sessionEventModal .tool-activity-status,
+html[data-theme="light"] #sessionEventModal .tool-activity-time,
+body[data-theme="light"] #sessionEventModal .tool-activity-status,
+body[data-theme="light"] #sessionEventModal .tool-activity-time {
+  color: #64748b !important;
+}
+
+
+#sessionEventModal .thought-modal-intermediates,
+#sessionEventModal .thought-modal-intermediate,
+#sessionEventModal .thought-modal-intermediate-text,
+#sessionEventModal .thought-modal-section-title {
+  color: inherit;
+}
+#sessionEventModal .thought-modal-intermediate {
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-2) 84%, transparent);
+}
+#sessionEventModal .thought-modal-section-title {
+  color: var(--muted);
+}
+#sessionEventModal .thought-modal-intermediate-text {
+  color: var(--text);
+}

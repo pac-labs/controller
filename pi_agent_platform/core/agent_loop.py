@@ -77,7 +77,7 @@ Rules:
 - If approval is needed, ask for that approval directly and briefly instead of saying the action has already started.
 - Prefer read_file for normal source files. Use read_file_chunk or batch_analyze_file only when a file is too large for the current effective context budget.
 - Use web_search before web_fetch when you do not know the exact URL.
-- Use consult_model when you want a second opinion from another configured PAC model or want to fan out a planning question to multiple models.
+- Use consult_model when you want a second opinion from another configured PAC model or want to fan out a planning question to multiple models. If you do not know a configured consult model name, omit the models field and PAC will choose an available consult/fallback model. Never return a final answer that merely says to use consult_model; call the tool or continue with the available session model.
 - Use remote_memory when profile/user/workspace memory may contain relevant prior preferences, customer context, or durable notes.
 - Save important generated files/results with save_artifact when the user may want to download them.
 """.strip()
@@ -134,6 +134,64 @@ def _summarize_model_action(action: dict[str, Any]) -> tuple[str, dict[str, Any]
         return concise or "Preparing final response", {"action_type": kind}
     return "Re-evaluating next step", {"action_type": kind or "unknown"}
 
+
+
+def _looks_like_unexecuted_consult_request(text: str) -> bool:
+    raw = str(text or "").strip().lower()
+    if not raw:
+        return False
+    return (
+        "consult_model" in raw
+        or "consult model" in raw
+        or "use the consult" in raw
+        or "using consult" in raw
+        or "ask another model" in raw
+        or "second opinion" in raw
+    ) and (
+        "generate" in raw
+        or "plan" in raw
+        or "review" in raw
+        or "continue" in raw
+        or "next step" in raw
+        or "extensive" in raw
+    )
+
+
+def _consult_prompt_from_final_message(task_prompt: str, final_message: str) -> str:
+    original = str(task_prompt or "").strip()
+    final = str(final_message or "").strip()
+    pieces = []
+    if original:
+        pieces.append("Original user request:\n" + original)
+    if final:
+        pieces.append("The primary model requested consultation instead of completing the work:\n" + final)
+    pieces.append(
+        "Provide concise, actionable guidance that the primary PAC agent can use immediately. "
+        "If approval is needed, say so directly. Do not return tool-call JSON."
+    )
+    return "\n\n".join(pieces)
+
+
+def _default_consult_models(config: AppConfig, session_model: str | None, limit: int = 2) -> list[str]:
+    configured = config.models or {}
+    preferred: list[str] = []
+    fallback: list[str] = []
+    session_model = str(session_model or "").strip()
+    for name, model in configured.items():
+        if not name or name == session_model:
+            continue
+        caps = getattr(model, "capabilities", None)
+        reasoning = str(getattr(caps, "reasoning", "none") or "none")
+        if reasoning in {"medium", "high"} or any(marker in name.lower() for marker in ("think", "reason", "planner", "consult")):
+            preferred.append(name)
+        else:
+            fallback.append(name)
+    chosen = (preferred + fallback)[:max(0, limit)]
+    if chosen:
+        return chosen
+    if session_model and session_model in configured:
+        return [session_model]
+    return list(configured.keys())[:1]
 
 def _extract_wrapped_tool_call(text: str) -> dict[str, Any] | None:
     raw = str(text or "").strip()
@@ -1159,10 +1217,18 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
             single = str(inp.get("model") or "").strip()
             target_models = [single] if single else []
         if not target_models:
-            return "CONSULT_MODEL_FAILED: specify model or models", False
+            target_models = _default_consult_models(config, session.model, limit=2)
         unknown = [model for model in target_models if model not in config.models]
         if unknown:
-            return f"CONSULT_MODEL_FAILED: unknown configured model(s): {', '.join(unknown)}", False
+            store.add_event(Event(session_id=session.id, task_id=task.id, type="model_routing_issue", message=f"Consult model unavailable: {', '.join(unknown)}", data={"requested_models": target_models, "unknown_models": unknown, "session_model": session.model}))
+            target_models = [model for model in target_models if model in config.models]
+        if not target_models:
+            fallback = session.model if session.model in config.models else None
+            if fallback:
+                target_models = [fallback]
+                store.add_event(Event(session_id=session.id, task_id=task.id, type="model_routing_issue", message=f"No separate consult model is configured; using session model {fallback} for self-consultation.", data={"session_model": session.model, "fallback_model": fallback}))
+            else:
+                return as_json_text({"ok": False, "error": "CONSULT_MODEL_FAILED", "message": "No requested consult model is configured and no session model fallback is available. Continue with the current model and explain the limitation."}), False
         prompt = str(inp.get("prompt") or inp.get("question") or "").strip()
         if not prompt:
             return "CONSULT_MODEL_FAILED: prompt is required", False
@@ -2040,6 +2106,21 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             depth_score = _inspection_depth_score(transcript)
             broad_request = _is_broad_codebase_request(task.prompt)
             final_message = str(action.get("message") or "")
+            if _looks_like_unexecuted_consult_request(final_message):
+                store.add_event(Event(session_id=session.id, task_id=task.id, type="model_routing_issue", message="Model returned consult_model as a final answer; converting it into an actual consult/fallback step.", data={"role": "assistant", "model": decision_model, "session_model": session.model, "step": step, "final_message": final_message[-1000:]}))
+                action = {
+                    "type": "tool_call",
+                    "tool": "consult_model",
+                    "input": {
+                        "prompt": _consult_prompt_from_final_message(task.prompt or "", final_message),
+                        "include_recent_context": True,
+                        "max_tokens": min(1600, max(800, int(out_tokens or 1200))),
+                    },
+                }
+                thought_summary, thought_meta = _summarize_model_action(action)
+                store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_intent", message=thought_summary, data={"role": "assistant", "model": decision_model, "session_model": session.model, "endpoint_id": task.metadata.get("runner_id"), "step": step, **thought_meta}))
+
+        if action.get("type") == "final":
             if _prompt_requests_codebase_inspection(task.prompt) and not _has_meaningful_codebase_inspection(transcript):
                 messages.append({
                     "role": "user",

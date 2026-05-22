@@ -458,6 +458,50 @@ function sessionIntentSummary(event, block) {
   return '';
 }
 
+function modelIntermediateResponseText(event, block = null) {
+  const type = String(event?.type || '').toLowerCase();
+  if (!type.includes('model_response')) return '';
+  const data = event?.data && typeof event.data === 'object' ? event.data : {};
+  const raw = String(data.preview || data.intermediate || data.message || event?.message || timelineText(event, block) || '').trim();
+  if (!raw) return '';
+  const normalized = normalizeAssistantText(raw).trim();
+  if (!normalized) return '';
+  const compact = normalized.replace(/```[\s\S]*?```/g, '').trim();
+  const first = compact.slice(0, 280).trim();
+  const lower = first.toLowerCase();
+  if (!first) return '';
+  if (/^\s*[\[{]/.test(first)) return '';
+  if (lower.includes('"type"') && lower.includes('tool_call')) return '';
+  if (lower.includes('<|tool_call') || lower.includes('tool_call|>')) return '';
+  if (/^call:(?:tool_call:)?[a-z0-9_:-]+/i.test(first)) return '';
+  if (/^\s*(tool|command|input|arguments)\s*:/i.test(first)) return '';
+  if (/^(thinking|done|ok|okay|yes)[.!]?$/i.test(first)) return '';
+  if (first.length < 18) return '';
+  const lines = normalized.split('\n').map(line => line.trim()).filter(Boolean);
+  const meaningful = lines.slice(0, 4).join('\n');
+  return meaningful.length > 900 ? `${meaningful.slice(0, 897).trim()}…` : meaningful;
+}
+
+function thinkingGroupIntermediateResponses(group, limit = 3) {
+  const rows = Array.isArray(group?.events) ? group.events : [];
+  const seen = new Set();
+  const items = [];
+  rows.forEach((item) => {
+    const text = modelIntermediateResponseText(item?.event, item?.block);
+    if (!text) return;
+    const key = text.replace(/\s+/g, ' ').trim().slice(0, 220);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    items.push({text, createdAt: item?.event?.created_at || ''});
+  });
+  return items.slice(-limit);
+}
+
+function thinkingGroupLatestIntermediate(group) {
+  const items = thinkingGroupIntermediateResponses(group, 1);
+  return items.length ? items[0] : null;
+}
+
 function taskStartEventForThinking(event) {
   const t = String(event?.type || '').toLowerCase();
   return t.includes('model_request_config') || t.includes('agent_loop_started') || t.includes('task_started') || t.includes('task_queued') || t.includes('agent_routing') || t.includes('agent_intent');
@@ -475,7 +519,11 @@ function sessionThinkingDetailsHtml(events) {
   const last = rows[rows.length - 1]?.event;
   const start = formatEventTime(first?.created_at);
   const end = formatEventTime(last?.created_at);
-  return `<div class="tool-activity-empty">Detailed model responses, tool output, stdout, stderr, and raw diagnostics are kept in the full session log. This thought bubble only tracks the active intent and timing for the conversation history.</div><div class="tool-activity-list"><div class="tool-activity-item"><summary><span class="tool-activity-icon">⌁</span><span class="tool-activity-title">Internal events recorded</span><span class="tool-activity-status">${rows.length}</span><span class="tool-activity-time">${escapeHtml(start)} → ${escapeHtml(end)}</span></summary></div></div>`;
+  const modelNotes = thinkingGroupIntermediateResponses({events: rows}, 6);
+  const notesHtml = modelNotes.length
+    ? `<div class="thought-modal-intermediates"><div class="thought-modal-section-title">Model updates shown during the run</div>${modelNotes.map((item, index) => `<div class="thought-modal-intermediate"><span class="thought-modal-plan-index">${index + 1}</span><div class="thought-modal-intermediate-text">${escapeHtml(item.text)}</div></div>`).join('')}</div>`
+    : '<div class="tool-activity-empty">No user-facing model updates were produced during this run. Raw model responses remain available in the full session log.</div>';
+  return `${notesHtml}<div class="tool-activity-empty">Tool output, stdout, stderr, and raw diagnostics are kept in the full session log.</div><div class="tool-activity-list"><div class="tool-activity-item"><summary><span class="tool-activity-icon">⌁</span><span class="tool-activity-title">Internal events recorded</span><span class="tool-activity-status">${rows.length}</span><span class="tool-activity-time">${escapeHtml(start)} → ${escapeHtml(end)}</span></summary></div></div>`;
 }
 
 function openSessionThinkingModal(group) {
@@ -554,6 +602,7 @@ function updateSessionThinkingRow(group) {
   const taskId = event?.task_id || group.taskId || '';
   const headline = group.closed ? `Thought for ${duration}` : `Thinking for ${duration}`;
   const currentIntent = group.summary || sessionIntentSummary(event, null) || '';
+  const latestIntermediate = thinkingGroupLatestIntermediate(group);
   group.row.className = 'chat-message-row assistant thought-history-row';
   group.row.innerHTML = '';
   const bubble = document.createElement('div');
@@ -565,6 +614,7 @@ function updateSessionThinkingRow(group) {
       <span class="composer-thinking-chevron">›</span>
     </button>
     ${currentIntent && !group.closed ? `<div class="thought-history-note">${escapeHtml(currentIntent)}</div>` : ''}
+    ${latestIntermediate ? `<div class="thought-history-intermediate"><span class="thought-history-intermediate-label">Model update</span><span>${escapeHtml(latestIntermediate.text)}</span></div>` : ''}
     ${approvalPending ? '<div class="thought-history-note attention">Awaiting approval</div>' : ''}`;
   const main = bubble.querySelector('.thought-history-main');
   if (main) {

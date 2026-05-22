@@ -1001,3 +1001,71 @@ body:not(.light) .compact-destination-controls select {
 .thought-history-line .thought-history-note.attention {
   color: #facc15;
 }
+
+
+.thought-history-line .thought-history-intermediate {
+  margin: .38rem 0 0 1.35rem;
+  max-width: min(720px, 100%);
+  color: var(--text);
+  font-size: .88rem;
+  line-height: 1.45;
+  background: color-mix(in srgb, var(--surface-2) 78%, transparent);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: .55rem .7rem;
+  white-space: pre-wrap;
+}
+.thought-history-line .thought-history-intermediate-label {
+  display: block;
+  margin-bottom: .25rem;
+  color: var(--muted);
+  font-size: .68rem;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.composer-thinking-update {
+  display: block;
+  margin-top: .35rem;
+  max-width: 68rem;
+  color: var(--text);
+  font-size: .82rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+.composer-thinking-update > span {
+  display: inline-block;
+  margin-right: .45rem;
+  color: var(--muted);
+  font-size: .68rem;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.thought-modal-intermediates {
+  display: grid;
+  gap: .55rem;
+  margin: .75rem 0;
+}
+.thought-modal-section-title {
+  color: var(--muted);
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.thought-modal-intermediate {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .65rem;
+  align-items: start;
+  padding: .65rem .75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-2) 82%, transparent);
+}
+.thought-modal-intermediate-text {
+  color: var(--text);
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
