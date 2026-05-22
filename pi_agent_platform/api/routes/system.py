@@ -19,6 +19,26 @@ from pi_agent_platform.core.model_metrics import model_metrics
 NOISY_EVENT_TYPES = {'runner_heartbeat', 'endpoint_heartbeat', 'provider_heartbeat'}
 
 
+def _version_tuple(value: str | None) -> tuple[int, ...]:
+    parts: list[int] = []
+    for token in str(value or "").strip().lstrip("v").split("."):
+        number = ""
+        for char in token:
+            if char.isdigit():
+                number += char
+            else:
+                break
+        parts.append(int(number) if number else 0)
+    return tuple(parts or [0])
+
+
+def _event_reports_newer_update(data: dict[str, Any], current_version: str) -> bool:
+    latest = str(data.get("latest_version") or "").strip()
+    if not data.get("has_update") or not latest:
+        return False
+    return _version_tuple(latest) > _version_tuple(current_version)
+
+
 def _node(node_id: str, kind: str, label: str, status: str = "unknown", detail: str = "", data: dict[str, Any] | None = None) -> dict[str, Any]:
     return {
         "id": node_id,
@@ -140,7 +160,7 @@ def _notification_item(kind: str, severity: str, title: str, detail: str = "", a
     }
 
 
-def _build_notification_summary(*, tasks: list[Any], alerts: list[dict[str, Any]], component_health: dict[str, Any], setup: dict[str, Any], recent_events: list[Any]) -> dict[str, Any]:
+def _build_notification_summary(*, tasks: list[Any], alerts: list[dict[str, Any]], component_health: dict[str, Any], setup: dict[str, Any], recent_events: list[Any], current_version: str) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     pending = [task for task in tasks if (getattr(getattr(task, "status", None), "value", None) or str(getattr(task, "status", ""))) == "approval_required"]
     if pending:
@@ -161,7 +181,7 @@ def _build_notification_summary(*, tasks: list[Any], alerts: list[dict[str, Any]
     for event in recent_events:
         data = getattr(event, "data", {}) or {}
         event_type = str(getattr(event, "type", "") or "")
-        if event_type == "update_checked" and data.get("has_update"):
+        if event_type == "update_checked" and _event_reports_newer_update(data, current_version):
             latest = data.get("latest_version") or "latest"
             items.append(_notification_item("update", "info", f"PAC update available: v{latest}", "A newer PAC release was detected.", "Open updates", "settings:updates", data))
             break
@@ -301,6 +321,7 @@ def create_system_router(
             component_health=component_health,
             setup=setup_status(),
             recent_events=recent_events,
+            current_version=pac_version,
         )
 
     @router.get('/v1/model-usage')

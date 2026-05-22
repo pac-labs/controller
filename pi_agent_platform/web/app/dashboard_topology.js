@@ -1,8 +1,8 @@
 // Dashboard topology, private widgets, and notification-summary helpers.
 
 const DASHBOARD_WIDGET_KEY = 'pac-dashboard-widgets-v1';
-const DASHBOARD_TOPOLOGY_LAYOUT_KEY = 'pac-dashboard-topology-layout-v1';
-const DASHBOARD_DEFAULT_WIDGETS = ['overview', 'topology', 'execution', 'components', 'readiness', 'events', 'sessions'];
+const DASHBOARD_TOPOLOGY_LAYOUT_KEY = 'pac-dashboard-topology-layout-inside-out-v2';
+const DASHBOARD_DEFAULT_WIDGETS = ['topology', 'overview', 'execution', 'components', 'readiness', 'events', 'sessions'];
 const DASHBOARD_WIDGETS = [
   {id: 'overview', label: 'Operations overview'},
   {id: 'topology', label: 'Connection map'},
@@ -15,13 +15,13 @@ const DASHBOARD_WIDGETS = [
 ];
 
 const TOPOLOGY_KIND_META = {
-  controller: {icon: '⌂', label: 'Controller', column: 0},
-  profile: {icon: '◈', label: 'Profile', column: 1},
-  model: {icon: '✦', label: 'Model', column: 2},
-  provider: {icon: '◍', label: 'Provider', column: 3},
-  context: {icon: '▣', label: 'Context', column: 1},
-  workspace: {icon: '▤', label: 'Workspace', column: 2},
-  endpoint: {icon: '▰', label: 'Endpoint', column: 3},
+  controller: {icon: '⌂', label: 'Controller', ring: 0, order: 0},
+  profile: {icon: '◈', label: 'Profile', ring: 1, order: 0},
+  context: {icon: '▣', label: 'Context', ring: 1, order: 1},
+  workspace: {icon: '▤', label: 'Workspace', ring: 1, order: 2},
+  model: {icon: '✦', label: 'Model', ring: 2, order: 0},
+  endpoint: {icon: '▰', label: 'Endpoint', ring: 2, order: 1},
+  provider: {icon: '◍', label: 'Provider', ring: 3, order: 0},
 };
 
 function dashboardSelectedWidgets() {
@@ -86,7 +86,7 @@ function setupDashboardWidgetPicker() {
 }
 
 function topologyKindMeta(kind) {
-  return TOPOLOGY_KIND_META[kind] || {icon: '•', label: kind || 'Object', column: 2};
+  return TOPOLOGY_KIND_META[kind] || {icon: '•', label: kind || 'Object', ring: 2, order: 9};
 }
 
 function topologyStatusClass(status) {
@@ -110,18 +110,45 @@ function saveTopologyLayout(layout) {
 }
 
 function defaultTopologyPositions(nodes, containerWidth = 920) {
-  const lanes = [0, 1, 2, 3];
-  const laneWidth = Math.max(210, Math.floor(Math.max(containerWidth, 880) / lanes.length));
-  const counts = new Map();
-  const positions = {};
+  const width = Math.max(960, containerWidth || 920);
+  const height = Math.max(620, 260 + Math.ceil(Math.max(nodes.length, 1) / 5) * 92);
+  const nodeWidth = 224;
+  const center = {x: Math.max(24, Math.floor(width / 2) - Math.floor(nodeWidth / 2)), y: Math.max(42, Math.floor(height / 2) - 38)};
+  const rings = new Map();
   nodes.forEach((node) => {
-    const col = topologyKindMeta(node.kind).column ?? 2;
-    const idx = counts.get(col) || 0;
-    counts.set(col, idx + 1);
-    positions[node.id] = {
-      x: 18 + col * laneWidth,
-      y: 54 + idx * 96,
-    };
+    const meta = topologyKindMeta(node.kind);
+    const ring = Number.isFinite(Number(meta.ring)) ? Number(meta.ring) : 2;
+    if (!rings.has(ring)) rings.set(ring, []);
+    rings.get(ring).push(node);
+  });
+  for (const items of rings.values()) {
+    items.sort((a, b) => {
+      const ma = topologyKindMeta(a.kind);
+      const mb = topologyKindMeta(b.kind);
+      return (ma.order ?? 9) - (mb.order ?? 9) || String(a.label || a.id).localeCompare(String(b.label || b.id));
+    });
+  }
+  const positions = {};
+  const maxRadius = Math.max(220, Math.min(width, height) / 2 - 92);
+  const ringStep = Math.max(148, Math.floor(maxRadius / 3));
+  [...rings.entries()].sort(([a], [b]) => a - b).forEach(([ring, items]) => {
+    if (ring <= 0) {
+      items.forEach((node, idx) => {
+        positions[node.id] = {x: center.x + idx * 18, y: center.y + idx * 18};
+      });
+      return;
+    }
+    const radius = Math.min(maxRadius, ringStep * ring);
+    const angleOffset = ring === 1 ? -Math.PI / 2 : ring === 2 ? -Math.PI / 2 + Math.PI / Math.max(items.length, 3) : -Math.PI / 2 + Math.PI / 6;
+    items.forEach((node, idx) => {
+      const angle = angleOffset + (Math.PI * 2 * idx) / Math.max(items.length, 1);
+      const x = center.x + Math.cos(angle) * radius;
+      const y = center.y + Math.sin(angle) * radius;
+      positions[node.id] = {
+        x: Math.round(Math.max(8, Math.min(width - nodeWidth - 18, x))),
+        y: Math.round(Math.max(48, Math.min(height - 86, y))),
+      };
+    });
   });
   return positions;
 }
@@ -262,13 +289,21 @@ function renderDashboardTopology(graph) {
   const positions = effectiveTopologyPositions(nodes, el);
   const maxY = Math.max(...Object.values(positions).map((pos) => pos.y), 260) + 110;
   const maxX = Math.max(...Object.values(positions).map((pos) => pos.x), 720) + 260;
-  const lanes = ['Control', 'Use', 'Runtime', 'Infrastructure'];
-  const laneWidth = Math.max(210, Math.floor(Math.max(maxX, 880) / lanes.length));
+  const canvasWidth = Math.max(maxX, 960);
+  const canvasHeight = Math.max(maxY, 620);
+  const centerX = Math.round(canvasWidth / 2);
+  const centerY = Math.round(canvasHeight / 2);
+  const ringLabels = [
+    {label: 'PAC control', radius: 86},
+    {label: 'Use layer', radius: Math.max(170, Math.min(canvasWidth, canvasHeight) * .24)},
+    {label: 'Runtime layer', radius: Math.max(300, Math.min(canvasWidth, canvasHeight) * .38)},
+    {label: 'External / infrastructure', radius: Math.max(430, Math.min(canvasWidth, canvasHeight) * .52)},
+  ];
   el.classList.remove('muted');
   el.innerHTML = `
     <svg class="topology-lines" aria-hidden="true"></svg>
-    <div class="topology-lane-labels" style="width:${Math.max(maxX, 880)}px">${lanes.map((title, index) => `<span style="left:${18 + index * laneWidth}px">${escapeHtml(title)}</span>`).join('')}</div>
-    <div class="topology-freeform-layer" style="width:${Math.max(maxX, 880)}px; min-height:${Math.max(maxY, 420)}px">${nodes.map((node) => {
+    <div class="topology-ring-labels" style="width:${canvasWidth}px; min-height:${canvasHeight}px">${ringLabels.map((ring) => `<span class="topology-ring" style="left:${centerX - ring.radius}px;top:${centerY - ring.radius}px;width:${ring.radius * 2}px;height:${ring.radius * 2}px"><b>${escapeHtml(ring.label)}</b></span>`).join('')}</div>
+    <div class="topology-freeform-layer" style="width:${canvasWidth}px; min-height:${canvasHeight}px">${nodes.map((node) => {
       const meta = topologyKindMeta(node.kind);
       const pos = positions[node.id] || {x: 24, y: 64};
       return `<button type="button" class="topology-node status-${topologyStatusClass(node.status)}" data-node-id="${escapeHtml(node.id)}" style="left:${pos.x}px;top:${pos.y}px"><span class="topology-icon">${escapeHtml(meta.icon)}</span><span class="topology-node-main"><b>${escapeHtml(node.label || node.id)}</b><small>${escapeHtml(meta.label)}${node.detail ? ` · ${escapeHtml(node.detail)}` : ''}</small></span><i>${escapeHtml(node.status || '')}</i></button>`;

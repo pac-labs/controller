@@ -941,10 +941,13 @@ def fetch_online_package_updates(manifest_url: str | None = None, timeout_second
         local_hash = local_record.get('content_hash') if local_record else None
         if not local_record:
             status_text = 'new'
+        elif remote_version or local_version:
+            # Version is authoritative when both sides provide it. This prevents a
+            # package with the same published version but different generated hash
+            # metadata from being reported as an update for the version already in use.
+            status_text = 'update' if _version_is_newer(remote_version, local_version) else 'current'
         elif remote_hash and local_hash:
             status_text = 'update' if remote_hash != local_hash else 'current'
-        elif remote_version or local_version:
-            status_text = 'update' if _version_is_newer(remote_version, local_version) else 'current'
         else:
             # The repository-level package version changes on every controller release.
             # Do not treat that as a module update when the module has no explicit

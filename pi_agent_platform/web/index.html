@@ -95,18 +95,18 @@
         </div>
       </div>
       <div class="dashboard-grid dashboard-metrics private-dashboard-grid">
-        <section class="card hero wide dashboard-widget" data-dashboard-widget="overview">
-          <div class="hero-title"><img class="hero-mark" src="/ui/assets/pac-icon-green-128.png" alt="" /><div><h2>Operations overview</h2><p class="eyebrow">Real activity • Sessions • Endpoints</p></div></div>
-          <p class="muted">Current PAC state across sessions, endpoints, providers, controller runtime, and recent events.</p>
-          <div id="dashboardStats" class="stats-grid"><div class="metric"><b>—</b><span>loading</span></div></div>
-          <div class="button-row"><button id="dashboardNewSession">New session</button><button id="dashboardRefreshMetrics" class="ghost-button">Refresh metrics</button></div>
-        </section>
         <section class="card wide dashboard-widget dashboard-topology-card" data-dashboard-widget="topology">
           <div class="section-heading dashboard-map-heading"><div><h2>Connection map</h2><p class="muted">Models, providers, workspaces, endpoints, contexts, and profiles. Drag objects to arrange your private map.</p></div><div class="button-row compact-row"><button id="dashboardResetTopologyLayout" class="ghost-button" type="button">Reset layout</button><button id="dashboardRefreshTopology" class="ghost-button" type="button">Refresh map</button></div></div>
           <div class="dashboard-map-layout">
             <div id="dashboardTopologyMap" class="dashboard-topology-map muted">Loading connection map…</div>
             <aside id="dashboardTopologyDetails" class="dashboard-topology-details"><h3>Select an object</h3><p class="muted small-text">Click a node to inspect how it connects to the rest of PAC.</p></aside>
           </div>
+        </section>
+        <section class="card hero wide dashboard-widget" data-dashboard-widget="overview">
+          <div class="hero-title"><img class="hero-mark" src="/ui/assets/pac-icon-green-128.png" alt="" /><div><h2>Operations overview</h2><p class="eyebrow">Real activity • Sessions • Endpoints</p></div></div>
+          <p class="muted">Current PAC state across sessions, endpoints, providers, controller runtime, and recent events.</p>
+          <div id="dashboardStats" class="stats-grid"><div class="metric"><b>—</b><span>loading</span></div></div>
+          <div class="button-row"><button id="dashboardNewSession">New session</button><button id="dashboardRefreshMetrics" class="ghost-button">Refresh metrics</button></div>
         </section>
         <section class="card dashboard-widget" data-dashboard-widget="execution"><h2>Execution health</h2><div id="taskStatusChart" class="bar-chart muted">Loading execution health…</div></section>
         <section class="card dashboard-widget" data-dashboard-widget="components"><h2>Critical components</h2><div id="componentHealth" class="health-grid muted">Loading component health…</div></section>
