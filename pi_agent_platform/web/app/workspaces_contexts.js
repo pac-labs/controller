@@ -569,9 +569,7 @@ function renderWorkspaces() {
   }
   if (profileSelect) {
     profileSelect.innerHTML = '<option value="">default</option>';
-    Object.entries(config.agent_profiles || {}).forEach(([name, profile]) => {
-      if (profile?.model && modelAvailability(profile.model).ok) opt(profileSelect, name);
-    });
+    Object.entries(config.agent_profiles || {}).forEach(([name]) => opt(profileSelect, name));
   }
   if (modelSelect) {
     modelSelect.innerHTML = '<option value="">default</option>';

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Header
 
 
 AuthDependency = Callable[..., Any]
+ConfigPayloadProvider = Callable[[Any | None], dict[str, Any]]
 NoArgDictProvider = Callable[[], dict[str, Any]]
 NoArgListProvider = Callable[[], list[Any]]
 RunnerAuthProvider = Callable[[str | None, str | None, str | None], Any]
@@ -30,7 +31,7 @@ def create_system_router(
     metrics_component_health: Callable[[list[Any]], dict[str, Any]],
     platform_alerts: Callable[[list[Any]], list[dict[str, Any]]],
     ui_build_info: NoArgDictProvider,
-    config_payload: NoArgDictProvider,
+    config_payload: ConfigPayloadProvider,
     public_url: Callable[[], str],
     source_contexts: Callable[[], dict[str, Any]],
     workspaces: Callable[[], dict[str, Any]],
@@ -112,7 +113,7 @@ def create_system_router(
 
     @router.get('/v1/config')
     def get_config(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
-        return config_payload()
+        return config_payload(_auth)
 
     @router.get('/v1/ide/config')
     def get_ide_config(

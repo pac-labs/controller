@@ -319,15 +319,73 @@
 
     <section id="profiles-tab" class="tab-panel">
       <div class="split-admin-layout">
-        <section class="card split-main"><h2>Profiles</h2><p class="muted">Create session presets here. A profile needs a configured model before it can be selected for a session.</p><div class="form-grid compact-form"><label>Profile name <input id="profileName" placeholder="local-coder" /></label><label>Model <select id="profileModel"></select></label><label>Planner model <select id="profilePlannerModel"><option value="">same as model</option></select><small class="muted">Optional second model for planning/tool choice.</small></label><label>Context profile <select id="profileContextProfile"></select><small class="muted">Token budget preset.</small></label><label>Planner context <select id="profilePlannerContextProfile"><option value="">same as profile</option></select><small class="muted">Optional budget override for planner turns.</small></label><label>Mode <select id="profileContextMode"><option>low</option><option selected>medium</option><option>high</option><option>max</option></select><small class="muted">Session context size.</small></label><label>Permission profile <select id="profilePermission"></select></label><label>Tools <select id="profileTools" multiple size="7"></select></label></div><label>System prompt <textarea id="profileSystemPrompt" rows="3">You are a careful remote coding and infrastructure agent.</textarea></label><div class="button-row"><button id="saveProfile">Save profile</button><button id="deleteProfile" class="ghost-button">Delete profile</button></div><div id="profileFormResult" class="inline-result"></div><div id="profiles"></div></section>
+        <section class="card split-main">
+          <div class="section-heading">
+            <div>
+              <h2>Profiles</h2>
+              <p class="muted">Profiles define agent behavior, instructions, access, and context policy. Models and tools are resolved by the session, workspace, endpoint, and agent context.</p>
+            </div>
+            <button id="openProfileModalBtn" class="session-plus-button" title="Create a new agent behavior profile" aria-label="Create a new agent behavior profile">+</button>
+          </div>
+          <div id="profileFormResult" class="inline-result"></div>
+          <div id="profiles" class="workspace-card-grid-list profile-card-grid-list"></div>
+        </section>
         <aside class="split-side">
           <section class="card side-panel">
-            <h2>Session usage</h2>
-            <div id="profilesUsage"><div class="muted small-text">Loading…</div></div>
+            <h2>Profile behavior</h2>
+            <div id="profilesUsage" class="small-text muted">
+              <p>Profiles define how an agent behaves, what instructions it follows, who can use it, and how much context it may use.</p>
+              <p>Models are resolved by the selected agent context and session routing. Tools are discovered from the workspace, endpoint, and plugin/tool packages.</p>
+            </div>
           </section>
         </aside>
       </div>
     </section>
+
+    <div id="profileModal" class="modal-backdrop" hidden>
+      <section class="modal-card wide-modal" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+        <div class="section-heading">
+          <div>
+            <h2 id="profileModalTitle">Profile</h2>
+            <p class="muted">Create or refine one behavior and context preset at a time.</p>
+          </div>
+          <button id="closeProfileModal" class="ghost-button" type="button">Close</button>
+        </div>
+        <input id="profileEditOriginalName" hidden value="" />
+        <div class="form-grid compact-form profile-form-grid">
+          <label>Profile name / ID <input id="profileEditorName" placeholder="controller-coder" /></label>
+          <label>Display name <input id="profileEditorDisplayName" placeholder="Controller Coder" /></label>
+          <label class="admin-form-wide">Description <input id="profileEditorDescription" placeholder="Codes against the PAC controller source with context-aware diffs." /></label>
+          <label>Context profile <select id="profileEditorContextProfile"></select></label>
+          <label>Planner context profile <select id="profileEditorPlannerContextProfile"><option value="">same as context profile</option></select></label>
+          <label>Permission profile <select id="profileEditorPermissionProfile"></select></label>
+          <label>Visibility <select id="profileEditorVisibility"><option value="global">global</option><option value="group">group</option><option value="private">private</option></select></label>
+        </div>
+        <label>Instructions <textarea id="profileEditorInstructions" rows="8" placeholder="Use the PAC controller source as the source of truth. Prefer small patches and explain risky changes."></textarea></label>
+        <section class="card inset-card">
+          <h3>Output preferences</h3>
+          <div class="pill-toggle-row">
+            <label><input id="profilePreferDiffs" type="checkbox" /> Prefer diffs</label>
+            <label><input id="profileSummarizeFirst" type="checkbox" /> Summarize first</label>
+            <label><input id="profileAvoidMutation" type="checkbox" /> Avoid file mutation unless requested</label>
+          </div>
+        </section>
+        <section class="card inset-card">
+          <h3>Allowed groups</h3>
+          <div id="profileAllowedGroups" class="profile-group-selector"></div>
+        </section>
+        <section class="card inset-card profile-runtime-note">
+          <h3>Runtime resolution</h3>
+          <p class="muted small-text">Models are resolved by the selected agent context and session routing. Tools are discovered from the workspace, endpoint, and plugin/tool packages.</p>
+        </section>
+        <div class="button-row">
+          <button id="saveProfileModalBtn" type="button">Save profile</button>
+          <button id="duplicateProfileModalBtn" class="ghost-button" type="button">Duplicate</button>
+          <button id="deleteProfileModalBtn" class="ghost-button danger-button" type="button">Delete</button>
+        </div>
+        <div id="profileModalStatus" class="inline-result"></div>
+      </section>
+    </div>
 
     <section id="contexts-tab" class="tab-panel">
       <div class="split-admin-layout">
@@ -1148,6 +1206,7 @@
   <script src="/ui/app/events.js"></script>
   <script src="/ui/app/workspaces_contexts.js"></script>
   <script src="/ui/app/profiles_config.js"></script>
+  <script src="/ui/app/profiles_page.js"></script>
   <script src="/ui/app/admin_updates.js"></script>
   <script src="/ui/app/marketplace.js"></script>
   <script src="/ui/app/personal_settings.js"></script>

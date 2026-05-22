@@ -41,6 +41,7 @@ from pi_agent_platform.api.routes.providers import create_providers_router
 from pi_agent_platform.api.routes.proxy import create_proxy_router
 from pi_agent_platform.api.routes.server_config import create_server_config_router
 from pi_agent_platform.api.routes.package_upload import create_package_upload_router
+from pi_agent_platform.api.routes.profiles import create_profiles_router
 from pi_agent_platform.api.routes.service_runtime import create_service_runtime_router
 from pi_agent_platform.api.routes.sources import create_sources_router
 from pi_agent_platform.api.routes.sessions import create_sessions_router
@@ -79,6 +80,7 @@ from pi_agent_platform.core.letsencrypt_cert import (
 )
 from pi_agent_platform.core.dns_providers import test_cloudflare_credentials
 from pi_agent_platform.core.config import LetsEncryptConfig
+from pi_agent_platform.core.profiles import can_use_profile, public_profile_payload, profile_context_name
 
 NOISY_EVENT_TYPES = {'runner_heartbeat', 'endpoint_heartbeat', 'provider_heartbeat'}
 
@@ -466,7 +468,15 @@ def _platform_alerts(runners: list[Runner] | None = None) -> list[dict[str, Any]
     return alerts
 
 
-def _config_payload() -> dict[str, Any]:
+def _visible_agent_profiles(auth: Any | None = None) -> dict[str, Any]:
+    profiles: dict[str, Any] = {}
+    for name, profile in config.agent_profiles.items():
+        if auth is None or can_use_profile(profile, auth) or getattr(auth, 'is_admin', False):
+            profiles[name] = public_profile_payload(name, profile, auth or type('Anon', (), {'is_admin': True, 'user': None})())
+    return profiles
+
+
+def _config_payload(auth: Any | None = None) -> dict[str, Any]:
     return {
         'server': config.server.model_dump(),
         'runtime': config.runtime.model_dump(),
@@ -478,7 +488,7 @@ def _config_payload() -> dict[str, Any]:
         'providers': provider_public(config),
         'context_profiles': {name: cp.model_dump() for name, cp in config.context_profiles.items()},
         'permission_profiles': {name: p.model_dump() for name, p in config.permission_profiles.items()},
-        'agent_profiles': {name: p.model_dump() for name, p in config.agent_profiles.items()},
+        'agent_profiles': _visible_agent_profiles(auth),
         'workspaces': {name: w.model_dump() for name, w in config.workspaces.items()},
         'source_contexts': {name: ctx.model_dump() for name, ctx in config.source_contexts.items()},
         'models': {name: model.model_dump() for name, model in config.models.items()},
@@ -701,7 +711,7 @@ def _harness_model_and_profile() -> tuple[str | None, str | None, str | None]:
     settings = config.controller_harness
     profile_name = settings.agent_profile or MAIN_PI_DEV_PROFILE
     profile = config.agent_profiles.get(profile_name) if profile_name else None
-    model_name = settings.model or (profile.model if profile else None)
+    model_name = settings.model
     if model_name == MODEL_NOT_SELECTED:
         model_name = None
     permission = settings.permission_profile or (profile.permission_profile if profile else 'ask-first')
@@ -723,7 +733,7 @@ def _ensure_controller_harness_session() -> dict[str, Any]:
     workspace = _ensure_controller_harness_workspace()
     model_name, profile_name, permission = _harness_model_and_profile()
     profile = config.agent_profiles.get(profile_name) if profile_name else None
-    desired_context_mode = (profile.context_mode if profile and getattr(profile, 'context_mode', None) else settings.context_mode) or 'medium'
+    desired_context_mode = settings.context_mode or (profile_context_name(profile) if profile else 'medium') or 'medium'
     existing = _find_controller_harness_session()
     _ensure_auth_admin_scaffolding()
     system_context = _find_pac_system_context()
@@ -2093,6 +2103,14 @@ def _agent_context_to_session_create(item: AgentContext) -> SessionCreate:
             metadata['preferred_execution_mode'] = 'container'
     if item.endpoint_id:
         metadata['preferred_endpoint'] = item.endpoint_id
+    if item.executor_model:
+        metadata['executor_model'] = item.executor_model
+    if item.planner_model:
+        metadata['planner_model'] = item.planner_model
+    if item.reviewer_model:
+        metadata['reviewer_model'] = item.reviewer_model
+    if item.retrieval_model:
+        metadata['retrieval_model'] = item.retrieval_model
     if item.endpoint_selector:
         metadata['preferred_endpoint_selector'] = item.endpoint_selector
     if item.requires_container:
@@ -3433,7 +3451,7 @@ app.include_router(create_system_router(
     metrics_component_health=_metrics_component_health,
     platform_alerts=_platform_alerts,
     ui_build_info=_ui_build_info,
-    config_payload=_config_payload,
+    config_payload=lambda auth=None: _config_payload(auth),
     public_url=lambda: config.server.public_url,
     source_contexts=lambda: config.source_contexts,
     workspaces=lambda: config.workspaces,
@@ -3475,6 +3493,13 @@ app.include_router(create_providers_router(
     ensure_controller_wrapper=_ensure_controller_wrapper,
     restart_controller_wrapper=_restart_controller_wrapper,
     refresh_local_runner_metadata=_refresh_local_runner_metadata,
+))
+
+app.include_router(create_profiles_router(
+    require_auth=require_auth,
+    get_config=lambda: config,
+    save_config=save_config,
+    store=store,
 ))
 
 

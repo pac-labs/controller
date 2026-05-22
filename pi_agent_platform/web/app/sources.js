@@ -613,11 +613,9 @@ function guessProfileForTech(stackSpec) {
   return entries[0]?.[0] || '';
 }
 function guessModelForTech(stackSpec, profileName='') {
-  const ctxProfile = profileName && config.agent_profiles?.[profileName];
-  if (ctxProfile?.model) return ctxProfile.model;
   const entries = Object.entries(config.models || {}).filter(([name, model]) => {
     const av = modelAvailability(name);
-    return av.ok && (model.supports_tools || model.supports_chat);
+    return av.ok && (model.capabilities?.supports_tools || model.capabilities?.supports_chat);
   });
   const hints = [...(stackSpec?.profileHints || []), 'coder', 'code'];
   for (const [name] of entries) {

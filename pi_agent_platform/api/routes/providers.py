@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
-from pi_agent_platform.core.config import AgentProfile, MAIN_PI_DEV_PROFILE, ProviderConfig
+from pi_agent_platform.core.config import ProviderConfig
 from pi_agent_platform.core.models import Event
 
 
@@ -479,76 +479,6 @@ def create_providers_router(
         result = _ensure_controller_harness_session()
         store.add_event(Event(session_id='system', type='controller_harness_settings_saved', message='Controller pi.dev settings saved', data={'ok': result.get('ok'), 'message': result.get('message')}))
         return result
-
-
-    @router.get('/v1/profiles')
-    def list_profiles(_auth: None = Depends(require_auth)) -> dict[str, Any]:
-        config = _get_config()
-        return {
-            'agent_profiles': {name: p.model_dump() for name, p in config.agent_profiles.items()},
-            'permission_profiles': {name: p.model_dump() for name, p in config.permission_profiles.items()},
-            'workspaces': {name: w.model_dump() for name, w in config.workspaces.items()},
-        }
-
-    @router.get('/v1/agent-profiles')
-    def list_agent_profiles(_auth: None = Depends(require_auth)) -> dict[str, Any]:
-        config = _get_config()
-        profiles = {}
-        for name, profile in config.agent_profiles.items():
-            data = profile.model_dump()
-            available, reason = _model_available(profile.model)
-            data['valid'] = available
-            data['missing_model'] = None if data['valid'] else profile.model
-            data['availability_reason'] = reason
-            if profile.planner_model:
-                planner_available, planner_reason = _model_available(profile.planner_model)
-                data['planner_valid'] = planner_available
-                data['planner_availability_reason'] = planner_reason
-            profiles[name] = data
-        return profiles
-
-
-    @router.put('/v1/agent-profiles/{profile_name}')
-    def upsert_agent_profile(profile_name: str, payload: dict[str, Any], _auth: None = Depends(require_auth)) -> dict[str, Any]:
-        config = _get_config()
-        if not payload.get('model') or payload['model'] not in config.models:
-            raise HTTPException(status_code=400, detail='Profile requires an existing configured model')
-        planner_model = payload.get('planner_model')
-        if planner_model:
-            if planner_model not in config.models:
-                raise HTTPException(status_code=400, detail='Planner model must be an existing configured model')
-        permission_profile = payload.get('permission_profile') or 'ask-first'
-        if permission_profile not in config.permission_profiles:
-            raise HTTPException(status_code=400, detail='Unknown permission profile')
-        context_profile = payload.get('context_profile')
-        if context_profile and context_profile not in config.context_profiles:
-            raise HTTPException(status_code=400, detail='Unknown context profile')
-        planner_context_profile = payload.get('planner_context_profile')
-        if planner_context_profile and planner_context_profile not in config.context_profiles:
-            raise HTTPException(status_code=400, detail='Unknown planner context profile')
-        tools = payload.get('tools') or []
-        unknown_tools = [tool for tool in tools if tool not in config.tools]
-        if unknown_tools:
-            raise HTTPException(status_code=400, detail=f'Unknown tools: {unknown_tools}')
-        config.agent_profiles[profile_name] = AgentProfile.model_validate(payload)
-        save_config(config)
-        store.add_event(Event(session_id='system', type='agent_profile_saved', message=f'Profile saved: {profile_name}', data={'profile': profile_name, 'model': payload.get('model')}))
-        data = config.agent_profiles[profile_name].model_dump()
-        data['valid'] = True
-        return data
-
-
-    @router.delete('/v1/agent-profiles/{profile_name}')
-    def delete_agent_profile(profile_name: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
-        config = _get_config()
-        if profile_name not in config.agent_profiles:
-            raise HTTPException(status_code=404, detail='Agent profile not found')
-        if profile_name == MAIN_PI_DEV_PROFILE:
-            raise HTTPException(status_code=403, detail=f'Agent profile {MAIN_PI_DEV_PROFILE} is required and cannot be deleted')
-        del config.agent_profiles[profile_name]
-        save_config(config)
-        store.add_event(Event(session_id='system', type='agent_profile_deleted', message=f'Agent profile deleted: {profile_name}'))
-        return {'ok': True, 'deleted': profile_name}
 
 
     @router.delete('/v1/models/{model_name}')

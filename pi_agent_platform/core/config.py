@@ -7,7 +7,9 @@ from typing import Any, Literal
 from .platform_home import ensure_pacp_layout, pacp_path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from .profiles import DEFAULT_PROFILE_INSTRUCTIONS
 
 
 class ServerConfig(BaseModel):
@@ -228,17 +230,48 @@ MAIN_PI_DEV_SYSTEM_PROMPT = (
 
 
 class AgentProfile(BaseModel):
+    display_name: str | None = None
     description: str | None = None
-    model: str
-    planner_model: str | None = None
-    context_mode: Literal["low", "medium", "high", "max"] = "medium"
+    instructions: str = DEFAULT_PROFILE_INSTRUCTIONS
     context_profile: str | None = None
     planner_context_profile: str | None = None
     permission_profile: str = "ask-first"
-    tools: list[str] = Field(default_factory=list)
-    system_prompt: str = "You are a careful remote coding and infrastructure agent."
+    output_preferences: dict[str, Any] = Field(default_factory=dict)
+    allowed_groups: list[str] = Field(default_factory=list)
+    visibility: Literal["private", "group", "global"] | None = None
     max_agent_steps: int | None = None
     max_runtime_minutes: int = 60
+    model: str | None = None
+    planner_model: str | None = None
+    context_mode: Literal["low", "medium", "high", "max"] = "medium"
+    tools: list[str] = Field(default_factory=list)
+    system_prompt: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_legacy_aliases(cls, raw: Any) -> Any:
+        if not isinstance(raw, dict):
+            return raw
+        data = dict(raw)
+        if not str(data.get("instructions") or "").strip() and str(data.get("system_prompt") or "").strip():
+            data["instructions"] = data.get("system_prompt")
+        if not str(data.get("context_profile") or "").strip() and str(data.get("context_mode") or "").strip():
+            data["context_profile"] = data.get("context_mode")
+        if not data.get("visibility"):
+            data["visibility"] = "group" if data.get("allowed_groups") else "global"
+        return data
+
+    @model_validator(mode="after")
+    def _sync_legacy_fields(self) -> "AgentProfile":
+        if not (self.instructions or "").strip():
+            self.instructions = DEFAULT_PROFILE_INSTRUCTIONS
+        if not (self.system_prompt or "").strip():
+            self.system_prompt = self.instructions
+        if not (self.context_profile or "").strip():
+            self.context_profile = self.context_mode
+        if not self.visibility:
+            self.visibility = "group" if self.allowed_groups else "global"
+        return self
 
 
 class WorkspaceProfile(BaseModel):
@@ -376,8 +409,7 @@ def prune_packaged_demo_entries(cfg: AppConfig) -> bool:
     demo_profiles = {"safe-coder", "infra-admin", "full-control-coder", "tiny-local-coder"}
     demo_models = {"gpt-remote", "lmstudio-qwen-coder", "ollama-small", "vllm-coder"}
     for name in list(cfg.agent_profiles.keys()):
-        profile = cfg.agent_profiles.get(name)
-        if name in demo_profiles and (not profile or profile.model in demo_models or profile.model not in cfg.models):
+        if name in demo_profiles:
             del cfg.agent_profiles[name]
             changed = True
     for name in list(cfg.models.keys()):
@@ -413,31 +445,18 @@ def prune_packaged_demo_entries(cfg: AppConfig) -> bool:
     profile = cfg.agent_profiles.get(MAIN_PI_DEV_PROFILE)
     if not profile:
         cfg.agent_profiles[MAIN_PI_DEV_PROFILE] = AgentProfile(
+            display_name="PAC controller",
             description="Main pi.dev profile for the PAC controller runtime. Select its model in Settings when no model is configured yet.",
-            model=preferred_model,
-            planner_model=preferred_model if preferred_model != MODEL_NOT_SELECTED else None,
-            context_mode="high",
             context_profile="high" if "high" in cfg.context_profiles else None,
+            planner_context_profile="high" if "high" in cfg.context_profiles else None,
             permission_profile=harness_cfg.permission_profile or "ask-first",
-            tools=[name for name in MAIN_PI_DEV_PROFILE_TOOLS if name in cfg.tools],
-            system_prompt=MAIN_PI_DEV_SYSTEM_PROMPT,
+            instructions=MAIN_PI_DEV_SYSTEM_PROMPT,
             max_runtime_minutes=120,
         )
         changed = True
     else:
-        if profile.model == MODEL_NOT_SELECTED and harness_cfg.model:
-            profile.model = harness_cfg.model
-            changed = True
-        desired_tools = [name for name in MAIN_PI_DEV_PROFILE_TOOLS if name in cfg.tools]
-        merged_tools = list(dict.fromkeys([*(profile.tools or []), *desired_tools]))
-        if merged_tools != (profile.tools or []):
-            profile.tools = merged_tools
-            changed = True
-        if not profile.planner_model and profile.model and profile.model != MODEL_NOT_SELECTED:
-            profile.planner_model = profile.model
-            changed = True
-        if profile.context_mode != "high":
-            profile.context_mode = "high"
+        if not (profile.display_name or "").strip():
+            profile.display_name = "PAC controller"
             changed = True
         desired_context_profile = "high" if "high" in cfg.context_profiles else profile.context_profile
         if desired_context_profile and profile.context_profile != desired_context_profile:
@@ -451,6 +470,9 @@ def prune_packaged_demo_entries(cfg: AppConfig) -> bool:
             changed = True
         if (profile.max_runtime_minutes or 0) < 120:
             profile.max_runtime_minutes = 120
+            changed = True
+        if (profile.instructions or "").strip() != MAIN_PI_DEV_SYSTEM_PROMPT.strip():
+            profile.instructions = MAIN_PI_DEV_SYSTEM_PROMPT
             changed = True
         if (profile.system_prompt or "").strip() != MAIN_PI_DEV_SYSTEM_PROMPT.strip():
             profile.system_prompt = MAIN_PI_DEV_SYSTEM_PROMPT
@@ -574,16 +596,6 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             binaries=["printing-press", "printing_press", "printingpress", "press"],
             install_hint="Install the Printing Press CLI and make sure one of its binary names is available on PATH.",
         )
-        changed = True
-    main_profile = cfg.agent_profiles.get(MAIN_PI_DEV_PROFILE)
-    if main_profile and "consult_model" in cfg.tools and "consult_model" not in (main_profile.tools or []):
-        main_profile.tools = [*(main_profile.tools or []), "consult_model"]
-        changed = True
-    if main_profile and "remote_memory" in cfg.tools and "remote_memory" not in (main_profile.tools or []):
-        main_profile.tools = [*(main_profile.tools or []), "remote_memory"]
-        changed = True
-    if main_profile and "printing_press" in cfg.tools and "printing_press" not in (main_profile.tools or []):
-        main_profile.tools = [*(main_profile.tools or []), "printing_press"]
         changed = True
     if changed:
         config_path.write_text(yaml.safe_dump(cfg.model_dump(mode="json", exclude_none=True), sort_keys=False), encoding="utf-8")

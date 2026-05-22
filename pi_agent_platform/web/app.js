@@ -298,23 +298,46 @@ function fillSelects() {
   if (document.getElementById('profilePlannerContextProfile')) profilePlannerContextProfile.innerHTML = '<option value="">same as profile</option>';
   if (document.getElementById('profilePermission')) profilePermission.innerHTML = '';
   if (document.getElementById('profileTools') && profileTools.tagName === 'SELECT') profileTools.innerHTML = '';
+  if (document.getElementById('profileEditorContextProfile')) profileEditorContextProfile.innerHTML = '';
+  if (document.getElementById('profileEditorPlannerContextProfile')) profileEditorPlannerContextProfile.innerHTML = '<option value="">same as context profile</option>';
+  if (document.getElementById('profileEditorPermissionProfile')) profileEditorPermissionProfile.innerHTML = '';
   if (document.getElementById('runnerTools') && runnerTools.tagName === 'SELECT') runnerTools.innerHTML = '';
   if (document.getElementById('wizardRunnerTools') && wizardRunnerTools.tagName === 'SELECT') wizardRunnerTools.innerHTML = '';
   if (document.getElementById('runnerDefaultWorkspace')) runnerDefaultWorkspace.innerHTML = '<option value="">auto</option>';
   if (document.getElementById('wizardRunnerDefaultWorkspace')) wizardRunnerDefaultWorkspace.innerHTML = '<option value="">auto</option>';
   if (document.getElementById('workspaceEndpoint')) workspaceEndpoint.innerHTML = '<option value="">none</option>';
   if (document.getElementById('toolPackage')) toolPackage.innerHTML = '<option value="">none</option>';
-  Object.entries(config.agent_profiles || {}).forEach(([k,p]) => { if (p?.model && modelAvailability(p.model).ok) { opt(agentProfile,k); const wd=document.getElementById('workspaceDefaultProfile'); if (wd) opt(wd,k); } });
+  Object.entries(config.agent_profiles || {}).forEach(([k]) => {
+    opt(agentProfile, k);
+    const wd = document.getElementById('workspaceDefaultProfile');
+    if (wd) opt(wd, k);
+  });
   Object.keys(config.workspaces || {}).forEach(k => { if (document.getElementById('workspaceProfile')) opt(workspaceProfile,k); if (document.getElementById('runnerDefaultWorkspace')) opt(runnerDefaultWorkspace,k); if (document.getElementById('wizardRunnerDefaultWorkspace')) opt(wizardRunnerDefaultWorkspace,k); });
   Object.entries(config.source_contexts || {}).forEach(([k,ctx]) => {
     const label = [k, ctx.customer_id || '', ctx.workspace_profile || ''].filter(Boolean).join(' · ');
     if (document.getElementById('sessionSourceContext')) opt(sessionSourceContext, k, label);
   });
-  Object.keys(config.models || {}).forEach(k => { if (modelAvailability(k).ok) { opt(modelOverride,k); if (document.getElementById('taskModel')) opt(taskModel,k); } if (document.getElementById('profileModel')) opt(profileModel,k, k); if (document.getElementById('profilePlannerModel')) opt(profilePlannerModel,k, k); });
+  Object.keys(config.models || {}).forEach(k => {
+    if (modelAvailability(k).ok) {
+      opt(modelOverride, k);
+      if (document.getElementById('taskModel')) opt(taskModel, k);
+    }
+    if (document.getElementById('profileModel')) opt(profileModel, k, k);
+    if (document.getElementById('profilePlannerModel')) opt(profilePlannerModel, k, k);
+  });
   if (document.getElementById('modelProvider')) { modelProvider.innerHTML=''; Object.keys(config.providers || {}).forEach(k => opt(modelProvider,k)); }
   fillModelEndpointOptions();
-  Object.keys(config.permission_profiles || {}).forEach(k => { opt(permissionOverride,k); if (document.getElementById('profilePermission')) opt(profilePermission,k); });
-  Object.keys(config.context_profiles || {}).forEach(k => { if (document.getElementById('profileContextProfile')) opt(profileContextProfile,k); if (document.getElementById('profilePlannerContextProfile')) opt(profilePlannerContextProfile,k); });
+  Object.keys(config.permission_profiles || {}).forEach(k => {
+    opt(permissionOverride, k);
+    if (document.getElementById('profilePermission')) opt(profilePermission, k);
+    if (document.getElementById('profileEditorPermissionProfile')) opt(profileEditorPermissionProfile, k);
+  });
+  Object.keys(config.context_profiles || {}).forEach(k => {
+    if (document.getElementById('profileContextProfile')) opt(profileContextProfile, k);
+    if (document.getElementById('profilePlannerContextProfile')) opt(profilePlannerContextProfile, k);
+    if (document.getElementById('profileEditorContextProfile')) opt(profileEditorContextProfile, k);
+    if (document.getElementById('profileEditorPlannerContextProfile')) opt(profileEditorPlannerContextProfile, k);
+  });
   Object.keys(config.tool_packages || {}).forEach(k => { if (document.getElementById('toolPackage')) opt(toolPackage,k); });
   Object.entries(config.tools || {}).forEach(([k,t]) => {
     const label = `${k}${t.package ? ' · '+t.package : ''}${t.enabled === false ? ' (disabled)' : ''}`;
@@ -458,11 +481,7 @@ if (applyAllModelSyncBtn) applyAllModelSyncBtn.onclick = applyAllModelSync;
 
 
 function fillProfileForm(name) {
-  const p = config.agent_profiles?.[name]; if (!p) return;
-  profileName.value = name; profileModel.value = p.model || ''; profileContextProfile.value = p.context_profile || 'medium'; profileContextMode.value = p.context_mode || 'medium';
-  if (document.getElementById('profilePlannerModel')) profilePlannerModel.value = p.planner_model || '';
-  if (document.getElementById('profilePlannerContextProfile')) profilePlannerContextProfile.value = p.planner_context_profile || '';
-  profilePermission.value = p.permission_profile || 'ask-first'; setSelectedToolNames(p.tools || []); profileSystemPrompt.value = p.system_prompt || 'You are a careful remote coding and infrastructure agent.';
+  if (typeof openProfileModal === 'function') openProfileModal(name);
 }
 
 async function loadConfig() {
@@ -504,6 +523,7 @@ if (document.getElementById('openControllerHarnessSession')) document.getElement
 if (document.getElementById('providerPreset')) providerPreset.onchange=()=>applyProviderPreset(providerPreset.value);
 if (document.getElementById('saveProvider')) saveProvider.onclick=()=>saveProviderFromForm().catch(e=>paneError('Provider save failed', e.message));
 if (document.getElementById('connectProviderForm')) connectProviderForm.onclick=()=>connectProviderFromForm().catch(e=>paneError('Provider connect failed', e.message));
+if (typeof bindProfilesPage === 'function') bindProfilesPage();
 if (document.getElementById('saveModel')) saveModel.onclick=()=>saveModelFromForm().catch(e=>paneError('Model save failed', e.message));
 if (document.getElementById('testModelForm')) testModelForm.onclick=()=>testModelFromForm().catch(e=>paneError('Model test failed', e.message));
 if (document.getElementById('modelProvider')) modelProvider.onchange=()=>{ const providerName = modelProvider.value || ''; const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = providerName; updateLmStudioModelControls(); syncSuggestedModelKey(true); refreshModelProviderCandidates(providerName).catch(()=>{}); };
@@ -771,9 +791,7 @@ if (closeMarketplaceBtn) closeMarketplaceBtn.onclick = () => closeMarketplaceMod
 const runMarketplaceSearchBtn = document.getElementById('runMarketplaceSearch');
 if (runMarketplaceSearchBtn) runMarketplaceSearchBtn.onclick = () => searchMarketplaceModal().catch(e=>paneError('Marketplace search failed', e.message));
 if (document.getElementById('saveTool')) saveTool.onclick=()=>saveToolFromForm().catch(e=>paneError('Tool save failed', e.message));
-if (document.getElementById('saveProfile')) saveProfile.onclick=()=>saveProfileFromForm().catch(e=>paneError('Profile save failed', e.message));
 if (document.getElementById('saveWorkspace')) saveWorkspace.onclick=()=>saveWorkspaceFromForm().catch(e=>paneError('Workspace save failed', e.message));
-if (document.getElementById('deleteProfile')) deleteProfile.onclick=()=>deleteProfileFromForm().catch(e=>paneError('Profile delete failed', e.message));
 if (document.getElementById('deleteWorkspace')) deleteWorkspace.onclick=()=>deleteWorkspaceFromForm().catch(e=>paneError('Workspace delete failed', e.message));
 if (document.getElementById('deleteTool')) deleteTool.onclick=()=>deleteToolFromForm().catch(e=>paneError('Tool delete failed', e.message));
 if (document.getElementById('uploadStagePackage')) uploadStagePackage.onclick=()=>uploadStagePackageFromForm().catch(e=>{ showInline('stagePackageResult', `Failed: ${e.message}`); paneError('Package upload failed', e.message); });
@@ -962,8 +980,5 @@ init().catch(e=>paneError('PAC UI could not load', e.message || String(e)));
 
 const openEndpointBtn = document.getElementById('openEndpointModal');
 if (openEndpointBtn) openEndpointBtn.onclick = openEndpointModal;
-
-
-
 
 

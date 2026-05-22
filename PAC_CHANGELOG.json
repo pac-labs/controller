@@ -1,6 +1,18 @@
 {
   "releases": [
     {
+      "version": "1.0.285",
+      "date": "2026-05-22T09:15:00Z",
+      "summary": "Refactored profiles into behavior/context/access presets with card-based management and server-side group restrictions.",
+      "changes": [
+        "Added a dedicated profiles API router and a card-based Profiles page with a top-level create action.",
+        "Refactored profiles so they define instructions, context policy, permission defaults, and group access instead of owning concrete models or tool lists.",
+        "Added server-side group checks for listing, reading, and using restricted profiles, including workspace-default profile authorization errors.",
+        "Stopped session creation from resolving concrete models or runtime tool lists from profile-owned model/tool fields.",
+        "Preserved legacy profile fields for compatibility while removing them from the active profile editor and runtime ownership model."
+      ]
+    },
+    {
       "version": "1.0.284",
       "date": "2026-05-21T22:00:00Z",
       "summary": "Split the monolithic web stylesheet into ordered CSS modules while preserving the existing cascade through a compatibility loader.",

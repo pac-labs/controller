@@ -37,6 +37,7 @@ from .workspace_index import build_workspace_index
 from .workspace_lessons import save_lesson, load_lessons, search_lessons, get_project_memory
 from .background_jobs import start_job
 from .checkpoint import save_checkpoint, load_latest_checkpoint, list_checkpoints
+from .profiles import profile_context_name, profile_instructions, profile_planner_context_name
 
 
 TOOL_HELP = """
@@ -353,12 +354,7 @@ def _controller_session_runtime_context(session: Session, config: AppConfig) -> 
     config_path = f"{data_dir.rstrip('/')}/config/config.yaml" if data_dir not in {"-", ""} else "-"
     public_url = str(config.server.public_url or "").strip() or "-"
     endpoint_id = str(session.metadata.get("preferred_endpoint") or "local-PAC")
-    tool_names = []
-    agent = config.agent_profiles.get(session.agent_profile or "")
-    if agent:
-        tool_names = list(agent.tools or [])
-    if not tool_names:
-        tool_names = list(config.tools.keys())
+    tool_names = list(session.tools or []) or list(config.tools.keys())
     top_level_hints = ["pi_agent_platform/", "binaries/", "containers/", "plugins/", "docs/", "config/"]
     return (
         "PAC controller runtime snapshot:\n"
@@ -1752,17 +1748,19 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     store.add_task(task)
 
     agent = config.agent_profiles.get(session.agent_profile or "")
-    context_name = (agent.context_profile if agent and agent.context_profile else session.context_mode)
-    planning_model = task.metadata.get('model') or (agent.planner_model if agent and agent.planner_model else session.model)
+    context_name = profile_context_name(agent, session.context_mode) if agent else session.context_mode
+    planner_context_name = profile_planner_context_name(agent, context_name) if agent else context_name
+    planning_model = task.metadata.get('planner_model') or task.metadata.get('model') or session.model
     decision_model = task.metadata.get('model') or session.model
     ctx = effective_context(config, decision_model, context_name)
     budget = get_context_budget(config, decision_model, context_name)
     full_control = session.permission_profile == "full-control"
-    store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_loop_started", message="Agent loop started", data={"model": session.model, "decision_model": decision_model, "planning_model": planning_model, "planner_model": agent.planner_model if agent else None, "permission_profile": session.permission_profile, "full_control": full_control, "effective_context": ctx, "endpoint_id": task.metadata.get("runner_id"), "endpoint_locked": task.metadata.get("endpoint_locked"), "agent_enabled": task.metadata.get("agent_enabled", True), "requested_command": task.metadata.get("requested_command"), "routing": task.metadata.get("routing", "agent")}))
+    store.add_event(Event(session_id=session.id, task_id=task.id, type="agent_loop_started", message="Agent loop started", data={"model": session.model, "decision_model": decision_model, "planning_model": planning_model, "permission_profile": session.permission_profile, "full_control": full_control, "effective_context": ctx, "planner_context_profile": planner_context_name, "endpoint_id": task.metadata.get("runner_id"), "endpoint_locked": task.metadata.get("endpoint_locked"), "agent_enabled": task.metadata.get("agent_enabled", True), "requested_command": task.metadata.get("requested_command"), "routing": task.metadata.get("routing", "agent")}))
     if full_control:
         store.add_event(Event(session_id=session.id, task_id=task.id, type="full_control_enabled", message="FULL CONTROL MODE ENABLED: approvals are bypassed, but every tool action is logged."))
 
-    system_prompt = (agent.system_prompt if agent else "You are a remote coding agent.") + "\n\n" + TOOL_HELP
+    system_prompt = profile_instructions(agent) if agent else "You are a remote coding agent."
+    system_prompt = system_prompt + "\n\n" + TOOL_HELP
     messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
     controller_guidance = _controller_session_guidance(session)
     if controller_guidance:

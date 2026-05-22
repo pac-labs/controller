@@ -519,7 +519,10 @@ function renderProfileUsagePanel() {
   }
   target.innerHTML = profiles.map(([name, profile]) => {
     const usage = grouped.get(name) || {count:0, running:0, failed:0};
-    return `<div class="inline-browser-row"><div><b>${escapeHtml(name)}</b><div class="muted small-text">${escapeHtml(profile.model || '-')} - ${escapeHtml(profile.permission_profile || '-')}</div></div><span class="pill">${usage.count} session(s)</span></div>`;
+    const display = profile.display_name || name;
+    const contextProfile = profile.context_profile || profile.context_mode || 'medium';
+    const visibility = profile.visibility || ((profile.allowed_groups || []).length ? 'group' : 'global');
+    return `<div class="inline-browser-row"><div><b>${escapeHtml(display)}</b><div class="muted small-text">${escapeHtml(contextProfile)} - ${escapeHtml(profile.permission_profile || '-')} - ${escapeHtml(visibility)}</div></div><span class="pill">${usage.count} session(s)</span></div>`;
   }).join('');
 }
 function renderWorkspaceActivityPanel() {

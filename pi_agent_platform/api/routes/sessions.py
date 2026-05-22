@@ -21,6 +21,7 @@ from pi_agent_platform.core.agent_loop import run_agent_loop, execute_tool
 from pi_agent_platform.core.session_commands import parse_session_slash_command, slash_help_text
 from pi_agent_platform.core.subagents import spawn_pi_dev_subagent
 from pi_agent_platform.core.shared_storage import controller_storage_path, shared_storage_binding
+from pi_agent_platform.core.profiles import can_use_profile, profile_context_name
 
 
 create_session_for_internal_use: Callable[..., Session] | None = None
@@ -128,6 +129,12 @@ def create_sessions_router(
                 payload.metadata['workspace_storage_required'] = True
                 workspace.path = controller_storage_path(storage, w.storage_subpath) or workspace.path
             if not payload.agent_profile and w.default_agent_profile and w.default_agent_profile in config.agent_profiles:
+                default_profile = config.agent_profiles[w.default_agent_profile]
+                if not can_use_profile(default_profile, _auth):
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f'The workspace default profile "{w.default_agent_profile}" is restricted to groups you are not a member of. Select another profile or ask an administrator for access.',
+                    )
                 payload.agent_profile = w.default_agent_profile
 
         coding_session = _is_coding_session_metadata(payload.metadata)
@@ -152,10 +159,14 @@ def create_sessions_router(
                 payload.metadata['preferred_endpoint'] = _default_coding_endpoint_id()
 
         agent_profile = config.agent_profiles.get(payload.agent_profile) if payload.agent_profile else None
+        if payload.agent_profile and not agent_profile:
+            raise HTTPException(status_code=400, detail=f'Unknown agent profile: {payload.agent_profile}')
+        if agent_profile and not can_use_profile(agent_profile, _auth):
+            raise HTTPException(status_code=403, detail=f'You are not allowed to use agent profile "{payload.agent_profile}"')
 
-        selected_model = payload.model or (agent_profile.model if agent_profile else None)
+        selected_model = payload.model
         if not selected_model:
-            raise HTTPException(status_code=400, detail='Session requires model or agent_profile')
+            raise HTTPException(status_code=400, detail='Session requires a model or an agent context that resolves one')
         if selected_model not in config.models:
             raise HTTPException(status_code=400, detail=f'Unknown model: {selected_model}')
         model_available, model_reason = _model_available(selected_model)
@@ -171,7 +182,7 @@ def create_sessions_router(
                 raise HTTPException(status_code=400, detail=f'Unknown endpoint: {endpoint_id}')
             payload.metadata['endpoint_locked'] = True
 
-        selected_tools = payload.tools or (agent_profile.tools if agent_profile else [])
+        selected_tools = list(payload.tools or [])
         if payload.metadata.get('agent_enabled') and 'printing_press' in config.tools and 'printing_press' not in selected_tools:
             selected_tools = [*selected_tools, 'printing_press']
         unknown_tools = [t for t in selected_tools if t not in config.tools]
@@ -215,11 +226,12 @@ def create_sessions_router(
         payload.metadata.setdefault('agent_enabled', True)
         payload.metadata.setdefault('execution_mode', 'container' if coding_session else 'pi.dev')
 
+        context_name = payload.context_mode or (profile_context_name(agent_profile) if agent_profile else 'medium')
         session = Session(
             name=payload.name,
             agent_profile=payload.agent_profile,
             permission_profile=selected_permission,
-            context_mode=payload.context_mode or (agent_profile.context_mode if agent_profile else 'medium'),
+            context_mode=context_name,
             workspace=workspace,
             workspace_path=workspace_path,
             model=selected_model,
@@ -241,7 +253,7 @@ def create_sessions_router(
                     raise HTTPException(status_code=500, detail=result.stderr)
 
         store.add_session(session)
-        store.add_event(Event(session_id=session.id, type='session_created', message='Session created', data={'workspace_path': session.workspace_path, 'agent_profile': session.agent_profile, 'permission_profile': session.permission_profile, 'context_mode': session.context_mode, 'endpoint': session.metadata.get('preferred_endpoint'), 'endpoint_locked': session.metadata.get('endpoint_locked'), 'agent_enabled': session.metadata.get('agent_enabled', True), 'execution_mode': session.metadata.get('execution_mode', 'pi.dev'), 'effective_context': _effective_context(config, session.model, agent_profile.context_profile if agent_profile else session.context_mode)}))
+        store.add_event(Event(session_id=session.id, type='session_created', message='Session created', data={'workspace_path': session.workspace_path, 'agent_profile': session.agent_profile, 'permission_profile': session.permission_profile, 'context_mode': session.context_mode, 'endpoint': session.metadata.get('preferred_endpoint'), 'endpoint_locked': session.metadata.get('endpoint_locked'), 'agent_enabled': session.metadata.get('agent_enabled', True), 'execution_mode': session.metadata.get('execution_mode', 'pi.dev'), 'effective_context': _effective_context(config, session.model, context_name)}))
         return session
 
 

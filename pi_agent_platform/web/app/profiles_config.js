@@ -1,39 +1,9 @@
 // Extracted from /ui/app.js during the v1.0.283 final app.js cleanup pass.
 // Kept as classic-script globals so existing inline handlers and boot wiring continue to work.
 
-function renderProfiles() {
-  const el = document.getElementById('profiles');
-  el.innerHTML = '';
-  for (const [name,p] of Object.entries(config.agent_profiles || {})) {
-    const av = p.model ? modelAvailability(p.model) : {ok:false, reason:'no model'};
-    const configured = !!(p.model && config.models?.[p.model]);
-    const valid = av.ok;
-    const row = document.createElement('div');
-    row.className = 'model-card clickable-row';
-    row.innerHTML = `<code>${escapeHtml(name)}\nmodel: ${escapeHtml(p.model || '-')}${p.planner_model ? `\nplanner: ${escapeHtml(p.planner_model)}` : ''}
-context: ${escapeHtml(p.context_profile || p.context_mode)}
-permissions: ${escapeHtml(p.permission_profile)}
-tools: ${escapeHtml((p.tools||[]).join(', '))}${!configured ? '\n[model not configured]' : (av.ok ? '' : '\n[runtime unavailable: ' + av.reason + ']')}</code>`;
-    row.onclick = () => fillProfileForm(name);
-    el.appendChild(row);
-  }
-  renderProfileUsagePanel();
-}
-
-function selectedToolNames() {
-  const sel = document.getElementById('profileTools');
-  if (!sel) return [];
-  if (sel.tagName === 'SELECT') return Array.from(sel.selectedOptions).map(o => o.value).filter(Boolean);
-  return csv(sel.value);
-}
-
-function setSelectedToolNames(names) {
-  const sel = document.getElementById('profileTools');
-  if (!sel) return;
-  const wanted = new Set(names || []);
-  if (sel.tagName === 'SELECT') Array.from(sel.options).forEach(o => { o.selected = wanted.has(o.value); });
-  else sel.value = (names || []).join(', ');
-}
+// Legacy profile rendering and form helpers were removed when profiles became
+// behavior/context/access cards instead of model/tool presets. The active
+// profile UI now lives in /ui/app/profiles_page.js.
 
 function renderTools() {
   const pkgEl = document.getElementById('toolPackagesOverview');
@@ -415,18 +385,6 @@ async function persistConfigAndReload(messageId, message) {
   showInline(messageId, message || 'Saved');
 }
 
-function renderProfiles() {
-  const el = document.getElementById('profiles'); el.innerHTML = '';
-  for (const [name,p] of Object.entries(config.agent_profiles || {})) {
-    const av = p.model ? modelAvailability(p.model) : {ok:false, reason:'no model'};
-    const configured = !!(p.model && config.models?.[p.model]);
-    const row = document.createElement('div'); row.className = 'model-card clickable-row';
-    row.innerHTML = `<code>${name}${configured ? '' : ' [model missing]'}${av.ok ? '' : ' [runtime unavailable]'}\nmodel: ${p.model}${p.planner_model ? `\nplanner: ${p.planner_model}` : ''}\ncontext: ${p.context_profile || p.context_mode}${p.planner_context_profile ? `\nplanner context: ${p.planner_context_profile}` : ''}\npermissions: ${p.permission_profile}\ntools: ${(p.tools||[]).join(', ')}${!configured ? '\nreason: configured model no longer exists' : (av.ok ? '' : `\nruntime: ${av.reason}`)}</code>`;
-    row.onclick = () => fillProfileForm(name);
-    el.appendChild(row);
-  }
-}
-
 async function saveProviderFromForm() {
   if (!providerName.value.trim()) return alert('Provider name is required');
   config.providers = config.providers || {};
@@ -486,36 +444,8 @@ async function saveModelFromForm() {
   setModalStatus('modelModalStatus', 'Saved');
 }
 
-async function saveProfileFromForm() {
-  const name = profileName.value.trim();
-  if (!name) return alert('Profile name is required');
-  if (!profileModel.value || !config.models?.[profileModel.value]) return alert('Choose an existing configured model first');
-  const body = {
-    description: `Session preset for ${profileModel.value}`,
-    model: profileModel.value,
-    planner_model: document.getElementById('profilePlannerModel')?.value || null,
-    context_profile: profileContextProfile.value || null,
-    planner_context_profile: document.getElementById('profilePlannerContextProfile')?.value || null,
-    context_mode: profileContextMode.value || 'medium',
-    permission_profile: profilePermission.value || 'ask-first',
-    tools: selectedToolNames(),
-    system_prompt: profileSystemPrompt.value.trim() || 'You are a careful remote coding and infrastructure agent.',
-    max_runtime_minutes: 60,
-  };
-  const r = await api(`/v1/agent-profiles/${encodeURIComponent(name)}`,{method:'PUT',body:JSON.stringify(body)});
-  config.agent_profiles = config.agent_profiles || {}; config.agent_profiles[name] = r;
-  await loadConfig();
-  showInline('profileFormResult', `Saved profile ${name}`);
-}
-
-async function deleteProfileFromForm() {
-  const name = profileName.value.trim();
-  if (!name || !config.agent_profiles?.[name]) return alert('Select an existing profile first');
-  if (!confirm(`Delete profile ${name}?`)) return;
-  await api(`/v1/agent-profiles/${encodeURIComponent(name)}`,{method:'DELETE'});
-  await loadConfig();
-  showInline('profileFormResult', `Deleted profile ${name}`);
-}
+// saveProfileFromForm/deleteProfileFromForm are implemented in
+// /ui/app/profiles_page.js.
 
 async function saveToolFromForm() {
   if (!toolName.value.trim()) return alert('Tool name is required');
@@ -599,4 +529,3 @@ async function testModelFromForm() {
   const r = await api(`/v1/models/${name}/test`,{method:'POST'});
   showInline('modelFormResult', {model:name, ...r});
 }
-
