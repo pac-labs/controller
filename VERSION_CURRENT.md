@@ -1,5 +1,3 @@
-# PAC 1.0.291
+# PAC Version
 
-Current packaged version: `1.0.291`.
-
-Focus: conversation thought disclosure polish, modal close reliability, and assistant-style thinking status behavior.
+Current release: 1.0.277
