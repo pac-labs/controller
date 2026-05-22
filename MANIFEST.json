@@ -1,7 +1,32 @@
 {
-  "version": "1.0.300",
-  "generated_at": "2026-05-22T00:00:00Z",
+  "version": "1.0.311",
+  "generated_at": "2026-05-22T16:34:39Z",
   "files": [
+    {
+      "path": ".github/workflows/pac-expand-diff-pr.yml",
+      "size": 4449,
+      "sha256": "a7a06d5086ce93ff047e930f0a3a8b5971fb1bcd97c09972f52c1d29ccc4adeb"
+    },
+    {
+      "path": ".github/workflows/pac-pr-approved-release.yml",
+      "size": 2610,
+      "sha256": "01f3da9f3045d097b58afbd41ebed9bb862c47bee8c147f267bf4b0982e0563a"
+    },
+    {
+      "path": ".github/workflows/pac-release.yml",
+      "size": 5018,
+      "sha256": "3136b0f76b1d11d22f79393b6b5d9f4c245a5686d10ebb84e3de6981d747c281"
+    },
+    {
+      "path": ".github/workflows/seed-packages.yml",
+      "size": 2000,
+      "sha256": "fac2188fe767a4d29d6c709db6e08b24d7dc9a9b6c248e2eae18da212e6009c4"
+    },
+    {
+      "path": ".gitignore",
+      "size": 19,
+      "sha256": "862263fa1f46c20f0d1e4dac5ffcc75abd55c08211b2c3864c5f8764b9d87793"
+    },
     {
       "path": "AGENTS.md",
       "size": 2820,
@@ -13,14 +38,48 @@
       "sha256": "a7b61e9989e18307fa9f4b4a041af4e4d1f24fea73136e55e4562f26c5338559"
     },
     {
+      "path": "MANIFEST.json",
+      "description": "PAC package manifest"
+    },
+    {
       "path": "PAC_CHANGELOG.json",
-      "size": 24096,
-      "sha256": "4b158055dcef4beb5f5f7e59da962ce3ae5ca549604ce55eedf4fe17a6b89d9b"
+      "size": 37690,
+      "sha256": "d7808f52def2f3ce0eb656012991dc3f50244ae0876414f78615f335c87421cd"
     },
     {
       "path": "PAC_UPDATE_DIFF-1.0.286.diff",
       "size": 72225,
       "sha256": "1389fb6539315ca87210b47034844b8b4072938d620ff2027af2270fdb8f9271"
+    },
+    {
+      "path": "PAC_UPDATE_DIFF-1.0.303.diff",
+      "size": 158314,
+      "sha256": "aeb038673c18aeccc7380685c6986c0e4fd89831785b496b56337bd75eaab49c"
+    },
+    {
+      "path": "PAC_UPDATE_DIFF-1.0.304.diff",
+      "size": 361077,
+      "sha256": "d6a7aa69264642a34f4c85987af49eb7e02ac7e4e1fc1cb12d54cec763f92798"
+    },
+    {
+      "path": "PAC_UPDATE_DIFF-1.0.306.diff",
+      "size": 187775,
+      "sha256": "739f569baeeeea326dd5137983c7bdd6df597134b807588fbf72b3f7a418e56f"
+    },
+    {
+      "path": "PAC_UPDATE_DIFF-1.0.307.diff",
+      "size": 46332,
+      "sha256": "3e72d6af503913402da0052f27dc637b8e030e95f2c0823c5466e403ccaf0f10"
+    },
+    {
+      "path": "PAC_UPDATE_DIFF-1.0.308.diff",
+      "size": 35235,
+      "sha256": "e4d19cf8d6311740d0efe37d7cf383e591f103a66c20c07a28c4a856eff797f6"
+    },
+    {
+      "path": "PAC_UPDATE_DIFF-1.0.309.diff",
+      "size": 29421,
+      "sha256": "516725808ab8e608cc642e409e14b62237e4b22e90b7e7c704782dccf86374b8"
     },
     {
       "path": "README.md",
@@ -30,12 +89,12 @@
     {
       "path": "VERSION",
       "size": 8,
-      "sha256": "e7da5f88cae6cbaa9d701b45b4c0e1cb68f761e90152fecf3c5a48729a078056"
+      "sha256": "e0499636674bb8f35bad623aba4aaa678cb742c8e64ebb21a2bb564b435fc68d"
     },
     {
       "path": "VERSION_CURRENT.md",
-      "size": 52,
-      "sha256": "b0f469dddf9358298208bc2258f3d18ed7edd0ce31127a08876648839e6549dd"
+      "size": 30,
+      "sha256": "39e10f3be1441ebb9e9b09dd853e902305fafb0c92a49d2da1593c02237443f1"
     },
     {
       "path": "binaries/README.md",
@@ -688,14 +747,114 @@
       "sha256": "31bf4915cf4381ed3d786132afe585071c57d8f0c9bb2bc1811762defc3a56e0"
     },
     {
+      "path": "pi_agent_platform/core/agent_action_recovery.py",
+      "size": 9421,
+      "sha256": "1f4a2d8410073568461902d85ee3d740649376cb8dd3cf5ac68b60099a62c91f"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_context_manager.py",
+      "size": 4981,
+      "sha256": "69e7cda8406079dace348b59cafb3dad49d44b354489abfa97883d4d76b3395c"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_final_answer_policy.py",
+      "size": 8528,
+      "sha256": "47b76e43049152bc3facc137958157be6045eb10c1d31f7ae4456936ce72368d"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_inspection_policy.py",
+      "size": 3107,
+      "sha256": "98c420db69a94746ea71948d3eccfc8f4ff30226e89504aa73eea262f333bfad"
+    },
+    {
       "path": "pi_agent_platform/core/agent_loop.py",
-      "size": 120802,
-      "sha256": "741df7824baf1616af1e873d12e2e9759e03cd9891480ea0ef42a5649365b509"
+      "size": 18000,
+      "sha256": "2e73f7c72e1b5d4c1d2ab98416cc3fd90509cbcb7709adfdd9e633cf60711ea6"
     },
     {
       "path": "pi_agent_platform/core/agent_plans.py",
       "size": 2529,
       "sha256": "e69339ea7eef517df1a35e09ee5ed81ce404c8591e4cfc491df036284406addd"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_prompt_context.py",
+      "size": 13513,
+      "sha256": "1937d7960c3d35a2e4712da4ed7dd57e3e05e6e2d7ba1f3f355dde57110ec0f0"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_response_parser.py",
+      "size": 5802,
+      "sha256": "b375b1267e13c45edf1ce9df9d656e927f2e4bc3448ff064e3c7a439f7be37c5"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_run_lifecycle.py",
+      "size": 9973,
+      "sha256": "3b138543cd1bb0cc49dd7a96b645f144dde8e79d68fbfb0363b03a85670ca6fe"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/__init__.py",
+      "size": 63,
+      "sha256": "8de4c7301090354d6353fcd4a81bd4d431fbbb5d50983eacaed78b7c52da8af1"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/artifacts.py",
+      "size": 1003,
+      "sha256": "fcf0c43e7797ea10f9cd1070684aed3982d3ff7f5d9d47046a06158716368578"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/diagnostics.py",
+      "size": 9042,
+      "sha256": "a68de7b0203813138ff9e630f72a764f47b166a0f277a1379da6c5a616b88fbf"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/file_ops.py",
+      "size": 12381,
+      "sha256": "89f20de82c380bc6d2e07d963463c0ab3456b43eee00503bd3e178d126c1bd89"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/git.py",
+      "size": 2334,
+      "sha256": "358b3d84e82019206cfdbeedcb73aeb619d4160dd30e31ec41781f1d0d04c36a"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/memory.py",
+      "size": 3813,
+      "sha256": "0ede2f57c4b7d7059554d8af6605a31b78e07668b1ad9529fb56ff236be49f3d"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/model_consult.py",
+      "size": 4035,
+      "sha256": "14a2dc657c4be98169063d86d97602887bb4780b5c85ad66fa800eccd405316e"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/pty.py",
+      "size": 3427,
+      "sha256": "646c9663ed3e25d0a0eee81eb16a559d5e1e6c3db7e8a62a5b92f09fb2ab9c32"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/registry.py",
+      "size": 3043,
+      "sha256": "2d91104cc4ac9654f28ca3d598e5570ee27875b4965fd3d20982e21c03ad1f04"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/shell.py",
+      "size": 7811,
+      "sha256": "0f51a03da5abfd47a0297835a1a4db5db261617f9a4c6d77f423b958b86c1a3e"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/task_control.py",
+      "size": 6245,
+      "sha256": "2463f72d4842232625a8de536440f92b87b2eddaf9800978fe19b69ca2d15bca"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/web.py",
+      "size": 3887,
+      "sha256": "be30913bbcef38134b2e48df2e194b2c4ab6be5b53d4a24dba3a2ff245fb3883"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/workspace.py",
+      "size": 8226,
+      "sha256": "78b763fd48f3f12a643ae9af4bc7c0213cefa90153217f83114dc99673850bf3"
     },
     {
       "path": "pi_agent_platform/core/artifacts.py",
@@ -929,8 +1088,8 @@
     },
     {
       "path": "pi_agent_platform/web/app/providers.js",
-      "size": 45568,
-      "sha256": "8964a3842a943fac0fd5b26ea4d532bdeef465cc00d7966d43e87721cb3aba4a"
+      "size": 46479,
+      "sha256": "3295ab6e924068f31c5b7485abf99c884754a7fef5378409149ec3189e8b2453"
     },
     {
       "path": "pi_agent_platform/web/app/session_commands.js",
@@ -939,8 +1098,8 @@
     },
     {
       "path": "pi_agent_platform/web/app/sessions.js",
-      "size": 100877,
-      "sha256": "67fa51a872870e7c865158d2f487dcd8c79459a96f26c141b4e0e4e27796a816"
+      "size": 101133,
+      "sha256": "975938495dbf9409e359120fe7de7c55951d30e9dbc9874df1ad377a0f14e0d3"
     },
     {
       "path": "pi_agent_platform/web/app/setup_wizard.js",
@@ -1124,8 +1283,8 @@
     },
     {
       "path": "pi_agent_platform/web/styles/models-page.css",
-      "size": 5891,
-      "sha256": "e97d7ba9dd96c13674c71bc09da95ae7fa0cd1e1b71f8a30f7c11bdf4b38f61f"
+      "size": 7409,
+      "sha256": "afa530ba67dbcf797fa8410c32656d05693b40dafef061dd65bbff925b539474"
     },
     {
       "path": "pi_agent_platform/web/styles/providers-discovery.css",
@@ -1170,7 +1329,7 @@
     {
       "path": "pyproject.toml",
       "size": 622,
-      "sha256": "d2b4d4f4aa8fc3a18f87a0e2b0607c8804b992837a17f270d648570e188df822"
+      "sha256": "98fa42d594ae73c57c0fba65d650ebe5d46fe8b2da2e6290ce6b30b4e4837998"
     },
     {
       "path": "requirements.txt",
@@ -1261,9 +1420,24 @@
       "path": "vscode-extension/tsconfig.json",
       "size": 187,
       "sha256": "76d06af6343398d155bf42b9f0f924af863de3de04c9a92724a2590b6fc500fa"
+    },
+    {
+      "path": "PAC_UPDATE_DIFF-1.0.311.diff",
+      "description": "Patch diff for PAC 1.0.311"
+    },
+    {
+      "path": "pac-full-1.0.311-permission-guard.zip",
+      "description": "Full PAC source package for 1.0.311"
     }
   ],
-  "changes": [
-    "Models page card polish with provider terminology, icon actions, equal heights, and delete refresh."
+  "artifacts": [
+    {
+      "path": "pac-full-1.0.309-agent-context-manager.zip",
+      "description": "Full PAC source package for 1.0.309"
+    },
+    {
+      "path": "PAC_UPDATE_DIFF-1.0.309.diff",
+      "description": "Patch diff for PAC 1.0.309"
+    }
   ]
 }

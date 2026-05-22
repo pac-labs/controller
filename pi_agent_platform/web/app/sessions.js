@@ -804,8 +804,14 @@ function sessionEventDate(event) {
 
 function formatDurationMs(ms) {
   const safe = Math.max(0, Number(ms) || 0);
-  if (safe < 1000) return `${Math.round(safe)}ms`;
-  return `${(safe / 1000).toFixed(safe < 10000 ? 1 : 0)}s`;
+  const totalSeconds = Math.floor(safe / 1000);
+  if (totalSeconds < 1) return '0s';
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
 }
 
 function sessionEventMetaLines(event) {
