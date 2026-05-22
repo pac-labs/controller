@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import os
+from uuid import uuid4
 from typing import Any, Literal
 
 from .platform_home import ensure_pacp_layout, pacp_path
@@ -110,6 +111,8 @@ class ModelCapability(BaseModel):
 
 
 class ModelConfig(BaseModel):
+    id: str = Field(default_factory=lambda: f"model-{uuid4().hex}")
+    display_name: str | None = None
     provider: str
     model: str | None = None
     endpoint: str | None = None  # legacy alias; prefer providers.<name>.base_url

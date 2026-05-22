@@ -196,7 +196,7 @@ function openModelModal(name='') {
   fillModelEndpointOptions();
   if (name) { fillModelForm(name); }
   else {
-    modelName.value=''; modelId.value=''; modelRunsOn.value=''; modelContextWindow.value=4096; modelMaxOutput.value=1024;
+    modelName.value=''; modelName.dataset.originalKey=''; modelName.dataset.pacModelId=''; modelId.value=''; modelRunsOn.value=''; modelContextWindow.value=4096; modelMaxOutput.value=1024;
     const manualOverride = document.getElementById('modelManualIdOverride'); if (manualOverride) manualOverride.checked = true;
     setModelIdSource('manual');
     const modelFunction = document.getElementById('modelFunction'); if (modelFunction) modelFunction.value='general';
@@ -310,7 +310,10 @@ function fillProviderForm(name) {
 
 function fillModelForm(name) {
   const m = config.models?.[name]; if (!m) return;
-  modelName.value=name; const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = m.provider || '(none)'; modelId.value=m.model || ''; modelRunsOn.value=m.runs_on || '';
+  modelName.value=(typeof modelDisplayName === 'function' ? modelDisplayName(name, m) : (m.display_name || name));
+  modelName.dataset.originalKey = name;
+  modelName.dataset.pacModelId = m.id || name;
+  const providerDisplay = document.getElementById('modelProviderDisplay'); if (providerDisplay) providerDisplay.textContent = m.provider || '(none)'; modelId.value=m.model || ''; modelRunsOn.value=m.runs_on || '';
   const manualOverride = document.getElementById('modelManualIdOverride'); if (manualOverride) manualOverride.checked = false;
   setModelIdSource('configured', name);
   const providerSelect = document.getElementById('modelProvider'); if (providerSelect) { providerSelect.value = m.provider || ''; }
@@ -452,13 +455,19 @@ async function saveProviderFromForm() {
 }
 
 async function saveModelFromForm() {
-  if (!modelName.value.trim()) return alert('Model name is required');
+  if (!modelName.value.trim()) return alert('Display name is required');
   if (!modelProvider.value) return alert('Provider is required');
-  const duplicate = findConfiguredModelByProviderModel(modelProvider.value, modelId.value.trim() || modelName.value.trim(), modelName.value.trim());
+  config.models = config.models || {};
+  const originalKey = modelName.dataset.originalKey || '';
+  const targetKey = originalKey || (typeof newPacModelKey === 'function' ? newPacModelKey() : `model-${Date.now()}`);
+  const existingModel = originalKey ? (config.models[originalKey] || {}) : {};
+  const duplicate = findConfiguredModelByProviderModel(modelProvider.value, modelId.value.trim() || modelName.value.trim(), targetKey);
   if (duplicate) return alert(`This provider model is already configured as '${duplicate[0]}'. Edit that entry instead of creating a duplicate.`);
   const chunking = collectModelChunkingFields();
-  config.models = config.models || {};
-  config.models[modelName.value.trim()] = {
+  config.models[targetKey] = {
+    ...existingModel,
+    id: existingModel.id || modelName.dataset.pacModelId || targetKey,
+    display_name: modelName.value.trim(),
     provider: modelProvider.value,
     model: modelId.value.trim() || null,
     runs_on: modelRunsOn.value.trim() || null,
@@ -481,8 +490,10 @@ async function saveModelFromForm() {
     },
   };
   const savedName = modelName.value.trim();
+  const savedKey = targetKey;
+  modelName.dataset.originalKey = savedKey;
   await persistConfigAndReload(null, null);
-  showInline('modelFormResult', {model: savedName, provider: modelProvider.value, model_id: modelId.value.trim() || null, preferred_endpoint: modelRunsOn.value.trim() || null});
+  showInline('modelFormResult', {model: savedName, pac_model_id: savedKey, provider: modelProvider.value, model_id: modelId.value.trim() || null, preferred_endpoint: modelRunsOn.value.trim() || null});
   setModalStatus('modelModalStatus', 'Saved');
 }
 

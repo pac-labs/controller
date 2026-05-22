@@ -48,6 +48,16 @@ function pricePill(label, value) {
   if (value === undefined || value === null || value === '') return '';
   return modelPill(label, `$${value}/1M`, 'price-pill');
 }
+function modelDisplayName(name, model) {
+  return String(model?.display_name || model?.extra?.display_name || name || '').trim();
+}
+function modelStableId(name, model) {
+  return String(model?.id || name || '').trim();
+}
+function newPacModelKey() {
+  const id = (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `model-${id.replace(/[^a-zA-Z0-9-]/g, '')}`;
+}
 function modelLiveMetaPills(model) {
   const bits = [];
   if (model.object) bits.push(modelPill(model.object));
@@ -309,7 +319,7 @@ function renderModels() {
   configured.innerHTML = '<h3>Configured models</h3>';
   for (const [name,m] of Object.entries(config.models || {})) {
     const wrap=document.createElement('div'); wrap.className='model-card clickable-row';
-    { const av = modelAvailability(name); wrap.innerHTML = `<code>${name} ${av.ok ? '' : '[not available]'}\nprovider: ${m.provider}\nmodel id: ${m.model || '-'}\nexecution endpoint: ${endpointName(m.runs_on)}\ncontext: ${m.context_window}\nmax out: ${m.max_output_tokens}${av.ok ? '' : `\nreason: ${av.reason}`}</code>`; }
+    { const av = modelAvailability(name); wrap.innerHTML = `<code>${modelDisplayName(name,m)} ${av.ok ? '' : '[not available]'}\nPAC id: ${modelStableId(name,m)}\nprovider: ${m.provider}\nmodel id: ${m.model || '-'}\nexecution endpoint: ${endpointName(m.runs_on)}\ncontext: ${m.context_window}\nmax out: ${m.max_output_tokens}${av.ok ? '' : `\nreason: ${av.reason}`}</code>`; }
     wrap.onclick=()=>openModelModal(name);
     const actions=document.createElement('div'); actions.className='button-row';
     const edit=document.createElement('button'); edit.textContent='Edit'; edit.onclick=(ev)=>{ ev.stopPropagation(); openModelModal(name); };
@@ -601,8 +611,10 @@ function renderModels() {
       card.className = 'model-card model-overview-card model-overview-compact clickable-row';
       const runtime = model.extra?.lmstudio_runtime || {};
       const caps = modelCapabilityPills(model);
-      const modelFunction = model.extra?.function || inferModelFunction(model.provider, model.model || name);
-      const endpointLabel = model.runs_on ? endpointName(model.runs_on) : 'provider default';
+      const displayName = modelDisplayName(name, model);
+      const stableId = modelStableId(name, model);
+      const modelFunction = model.extra?.function || inferModelFunction(model.provider, model.model || displayName || name);
+      const providerName = providerLabel(model.provider || '-');
       const modelId = model.model || '-';
       const identityPills = [
         modelPill(modelStatusGlyph(availability.ok), availability.ok ? 'available' : 'attention', availability.ok ? 'ok-pill' : 'warn-pill'),
@@ -614,12 +626,12 @@ function renderModels() {
         modelPill('ctx', compactTokenNumber(model.context_window)),
         modelPill('out', compactTokenNumber(model.max_output_tokens)),
         model.capabilities?.reasoning ? modelPill('reasoning', model.capabilities.reasoning) : '',
-        model.runs_on ? modelPill('endpoint', endpointLabel) : modelPill('endpoint', 'default'),
+        modelPill('provider', providerName),
         pricePill('in', model.input_price_per_million),
         pricePill('out$', model.output_price_per_million),
       ].filter(Boolean).join('');
-      card.innerHTML = `<div class="provider-card-head model-card-head-compact"><div class="provider-title-block model-title-block"><h3 title="${escapeHtml(name)}">${escapeHtml(name)}</h3><span class="muted" title="${escapeHtml(providerLabel(model.provider || '-'))}">${escapeHtml(providerLabel(model.provider || '-'))}</span></div><span class="model-status-icon ${availability.ok ? 'ok-text' : 'warn-text'}" title="${escapeHtml(availability.ok ? 'Available' : availability.reason)}">${modelStatusGlyph(availability.ok)}</span></div>
-        <div class="model-id-line"><span class="model-id-label">id</span><code title="${escapeHtml(modelId)}">${escapeHtml(modelId)}</code></div>
+      card.innerHTML = `<div class="provider-card-head model-card-head-compact"><div class="provider-title-block model-title-block"><h3 title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</h3><span class="muted" title="${escapeHtml(stableId)}">PAC id: ${escapeHtml(stableId)}</span><span class="muted" title="${escapeHtml(providerLabel(model.provider || '-'))}">${escapeHtml(providerLabel(model.provider || '-'))}</span></div><span class="model-status-icon ${availability.ok ? 'ok-text' : 'warn-text'}" title="${escapeHtml(availability.ok ? 'Available' : availability.reason)}">${modelStatusGlyph(availability.ok)}</span></div>
+        <div class="model-id-line"><span class="model-id-label">provider id</span><code title="${escapeHtml(modelId)}">${escapeHtml(modelId)}</code></div>
         <div class="provider-pill-list model-identity-pills">${identityPills}</div>
         <div class="provider-health-strip model-provider-health"><span class="pill ${escapeHtml(health.klass)}">${escapeHtml(health.pill)}</span><span class="small-text" title="${escapeHtml(health.detail)}">${escapeHtml(health.detail)}</span></div>
         ${caps ? `<div class="provider-pill-list model-cap-list">${caps}</div>` : ''}
@@ -628,34 +640,41 @@ function renderModels() {
         ${provider?.type === 'lmstudio' ? `<div class="model-runtime-strip compact-runtime-strip"><span>LM Studio</span><span>ctx ${escapeHtml(compactTokenNumber(runtime.context_length || model.context_window || '-'))}</span><span>gpu ${escapeHtml(runtime.gpu_offload || 'default')}</span><span>batch ${escapeHtml(runtime.eval_batch_size || runtime.batch_size || 'default')}</span><span>temp ${escapeHtml(runtime.temperature ?? 'default')}</span></div>` : ''}`;
       card.onclick = () => openModelModal(name);
       const actions = document.createElement('div');
-      actions.className = 'button-row model-card-actions compact-model-actions';
-      const edit = document.createElement('button');
-      edit.textContent = 'Edit';
-      edit.onclick = ev => { ev.stopPropagation(); openModelModal(name); };
-      const test = document.createElement('button');
-      test.textContent = 'Test';
-      test.className = 'ghost-button';
-      test.onclick = async ev => { ev.stopPropagation(); const r = await api(`/v1/models/${name}/test`, {method:'POST'}); showInline('modelFormResult', {model:name, ...r}); };
-      const del = document.createElement('button');
-      del.textContent = 'Delete';
-      del.className = 'ghost-button danger-button';
-      del.onclick = async ev => { ev.stopPropagation(); if (!confirm(`Delete model '${name}'`)) return; const r = await api(`/v1/models/${name}`, {method:'DELETE'}); if (r?.ok) renderModels(); else alert(r?.error || (r?.detail ? r.detail : 'Delete failed')); };
+      actions.className = 'model-card-actions compact-model-actions model-card-icon-actions';
+      const makeIconAction = (label, icon, className, handler) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `model-icon-action ${className || ''}`.trim();
+        button.setAttribute('aria-label', label);
+        button.title = label;
+        button.textContent = icon;
+        button.onclick = handler;
+        return button;
+      };
+      const edit = makeIconAction('Edit model configuration', '✎', '', ev => { ev.stopPropagation(); openModelModal(name); });
+      const test = makeIconAction('Test model', '▶', '', async ev => { ev.stopPropagation(); const r = await api(`/v1/models/${name}/test`, {method:'POST'}); showInline('modelFormResult', {model:name, ...r}); });
       actions.appendChild(edit);
       actions.appendChild(test);
-      if (!model.read_only) actions.appendChild(del);
+      if (!model.read_only) {
+        const del = makeIconAction('Delete model configuration', '×', 'danger-action', async ev => {
+          ev.stopPropagation();
+          if (!confirm(`Delete model '${displayName}'`)) return;
+          const r = await api(`/v1/models/${name}`, {method:'DELETE'});
+          if (r?.ok) {
+            if (config.models && Object.prototype.hasOwnProperty.call(config.models, name)) delete config.models[name];
+            card.classList.add('is-removing');
+            setTimeout(() => { renderModels(); }, 120);
+            await loadGlobalEvents(true).catch(()=>{});
+          } else {
+            alert(r?.error || (r?.detail ? r.detail : 'Delete failed'));
+          }
+        });
+        actions.appendChild(del);
+      }
       if (provider?.type === 'lmstudio') {
-        const inspect = document.createElement('button');
-        inspect.textContent = 'Inspect';
-        inspect.className = 'ghost-button mini-button';
-        inspect.onclick = ev => { ev.stopPropagation(); inspectLmStudioModelByName(name).catch(e => alert(e.message)); };
-        const load = document.createElement('button');
-        load.textContent = 'Load';
-        load.className = 'ghost-button mini-button';
-        load.onclick = ev => { ev.stopPropagation(); loadLmStudioModelByName(name).catch(e => alert(e.message)); };
-        const unload = document.createElement('button');
-        unload.textContent = 'Unload';
-        unload.className = 'ghost-button mini-button';
-        unload.onclick = ev => { ev.stopPropagation(); unloadLmStudioModelByName(name).catch(e => alert(e.message)); };
+        const inspect = makeIconAction('Inspect LM Studio model runtime', '◉', '', ev => { ev.stopPropagation(); inspectLmStudioModelByName(name).catch(e => alert(e.message)); });
+        const load = makeIconAction('Load model in LM Studio', '⇧', '', ev => { ev.stopPropagation(); loadLmStudioModelByName(name).catch(e => alert(e.message)); });
+        const unload = makeIconAction('Unload model from LM Studio', '⇩', '', ev => { ev.stopPropagation(); unloadLmStudioModelByName(name).catch(e => alert(e.message)); });
         actions.appendChild(inspect);
         actions.appendChild(load);
         actions.appendChild(unload);
@@ -664,9 +683,22 @@ function renderModels() {
       el.appendChild(card);
     }
   }
+  equalizeModelCardHeights();
+  requestAnimationFrame(equalizeModelCardHeights);
   renderModelRecommendations();
   renderUnconfiguredModelsPanelFromLive().catch(()=>{});
 }
+function equalizeModelCardHeights() {
+  const cards = Array.from(document.querySelectorAll('#models .model-overview-card'));
+  if (!cards.length) return;
+  cards.forEach(card => { card.style.minHeight = ''; });
+  const maxHeight = Math.ceil(Math.max(...cards.map(card => card.getBoundingClientRect().height)));
+  if (maxHeight > 0) cards.forEach(card => { card.style.minHeight = `${maxHeight}px`; });
+}
+window.addEventListener('resize', () => {
+  clearTimeout(window.__pacModelCardHeightTimer);
+  window.__pacModelCardHeightTimer = setTimeout(equalizeModelCardHeights, 120);
+});
 async function renderLiveModels() {
   const live = document.getElementById('modelsLive');
   if (!live) return;

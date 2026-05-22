@@ -278,3 +278,68 @@ body[data-theme="light"] .model-status-icon{
   gap: .45rem;
   min-height: 2.2rem;
 }
+
+/* v1.0.300: provider terminology, icon-only actions, equal card heights. */
+.model-overview-compact{
+  display:flex;
+  flex-direction:column;
+  transition:opacity .14s ease, transform .14s ease;
+}
+.model-overview-compact.is-removing{
+  opacity:.35;
+  transform:scale(.985);
+  pointer-events:none;
+}
+.model-overview-compact .model-card-actions{
+  margin-top:auto;
+}
+.model-card-icon-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:.22rem;
+  flex-wrap:wrap;
+  padding-top:.2rem;
+}
+.model-icon-action{
+  appearance:none;
+  border:0;
+  background:transparent;
+  color:var(--muted);
+  min-width:1.85rem;
+  width:1.85rem;
+  height:1.85rem;
+  padding:0;
+  border-radius:999px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:.92rem;
+  line-height:1;
+  cursor:pointer;
+  transition:background .12s ease,color .12s ease,transform .12s ease;
+}
+.model-icon-action:hover,
+.model-icon-action:focus-visible{
+  background:rgba(148,163,184,.16);
+  color:var(--text);
+  outline:none;
+  transform:translateY(-1px);
+}
+.model-icon-action.danger-action:hover,
+.model-icon-action.danger-action:focus-visible{
+  background:rgba(239,68,68,.14);
+  color:#fecaca;
+}
+html[data-theme="light"] .model-icon-action.danger-action:hover,
+body[data-theme="light"] .model-icon-action.danger-action:focus-visible{
+  color:#991b1b;
+}
+@media(max-width:760px){
+  .model-overview-compact{
+    min-height:0 !important;
+  }
+  .model-card-icon-actions{
+    justify-content:flex-start;
+  }
+}
