@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "1.0.347",
+      "date": "2026-05-23T19:30:00Z",
+      "summary": "Made the agent loop lighter by classifying requests, caching workspace indexes, and planning only when needed.",
+      "changes": [
+        "Added request classification so greetings, simple direct actions, and local fact questions can skip heavyweight planning and workspace indexing.",
+        "Cached workspace indexes per session with a short TTL and invalidation on file writes so repeated coding turns stop rebuilding the same project snapshot.",
+        "Changed session task creation so planning is no longer forced on every turn; explicit /plan still works, while normal turns rely on request complexity.",
+        "Reduced controller-session overhead by only emitting fresh workspace indexing when PAC actually rebuilds the index instead of on every request."
+      ]
+    },
+    {
       "version": "1.0.291",
       "date": "2026-05-22T13:05:00Z",
       "summary": "Refine session thought disclosure into a ChatGPT-style conversation line and fix thought details modal closing.",
@@ -275,5 +286,5 @@
       }
     }
   ],
-  "current_version": "1.0.291"
+  "current_version": "1.0.347"
 }

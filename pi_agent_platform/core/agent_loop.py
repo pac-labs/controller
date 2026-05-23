@@ -16,6 +16,7 @@ from .agent_context_manager import AgentContextManager
 from .agent_loop_timing import AgentLoopTiming
 from .agent_events import AgentEvents
 from .agent_prompt_context import build_agent_prompt_context
+from .agent_request_policy import classify_request
 from .profiles import profile_context_name, profile_planner_context_name
 from .agent_response_parser import (
     _extract_json,
@@ -74,22 +75,41 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
 
     transcript: list[dict[str, Any]] = task.metadata.get("agent_transcript") or []
     lifecycle = AgentRunLifecycle(session, task, config, transcript)
+    request_policy = classify_request(session, task)
+    task.metadata["request_policy"] = {
+        "prompt_kind": request_policy.prompt_kind,
+        "needs_workspace_index": request_policy.needs_workspace_index,
+        "needs_plan": request_policy.needs_plan,
+        "prefer_local_inspection": request_policy.prefer_local_inspection,
+        "reason": request_policy.reason,
+    }
+    store.add_task(task)
 
     try:
         with timing.phase("prompt_context", "Agent prompt/context preparation was slow"):
-            prompt_context = build_agent_prompt_context(session, task, config, agent=agent)
+            prompt_context = build_agent_prompt_context(
+                session,
+                task,
+                config,
+                agent=agent,
+                include_workspace_index=request_policy.needs_workspace_index,
+            )
     except Exception as exc:
         task = await lifecycle.fail(f"Agent prompt preparation failed: {exc}")
         return task
     messages = prompt_context.messages
     controller_guidance = prompt_context.controller_guidance
     controller_context = prompt_context.controller_runtime_context
-    index_briefing = prompt_context.workspace_index_briefing
+    index_briefing = prompt_context.workspace_index_briefing or ""
     task.metadata["workspace_index"] = prompt_context.workspace_index
     store.add_task(task)
-    events.workspace_indexed(prompt_context.workspace_index_event_data)
+    if prompt_context.workspace_index_event_data and prompt_context.workspace_index_source == "fresh":
+        events.workspace_indexed(prompt_context.workspace_index_event_data)
 
-    if task.metadata.get("always_plan", True) and not task.metadata.get("plan_generated"):
+    should_plan = bool(task.metadata.get("plan_only")) or (
+        bool(task.metadata.get("always_plan")) if "always_plan" in task.metadata else request_policy.needs_plan
+    )
+    if should_plan and not task.metadata.get("plan_generated"):
         try:
             planning_timeout_seconds = max(3, int(task.metadata.get("planning_timeout_seconds") or 12))
             try:

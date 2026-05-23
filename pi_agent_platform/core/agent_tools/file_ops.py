@@ -10,6 +10,7 @@ from ..context_manager import batch_reduce_text, chunk_text, file_manifest, shou
 from ..models import Session, Task, TaskStatus
 from ..agent_events import AgentEvents
 from ..store import store
+from ..workspace_index_cache import clear_workspace_index
 from .permission_guard import PermissionGuard
 
 
@@ -225,6 +226,7 @@ async def try_execute_file_tool(
         target = _safe_path(session, path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
+        clear_workspace_index(Path(session.workspace_path))
         events.tool_result(tool="write_file", message=f"wrote {path}", data={"path": path})
         return f"WROTE {path} ({len(content)} bytes)", False
 

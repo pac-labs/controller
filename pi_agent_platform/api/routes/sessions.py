@@ -343,8 +343,6 @@ def create_sessions_router(
                 metadata['execution_mode'] = 'host'
             elif parsed_slash['kind'] == 'subagent':
                 metadata['execution_mode'] = metadata.get('execution_mode') or 'pi_container'
-        metadata.setdefault('always_plan', True)
-
         if _is_coding_session_metadata(session.metadata):
             metadata['coding_session'] = True
             metadata['execution_mode'] = 'container'

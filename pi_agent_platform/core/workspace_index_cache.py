@@ -41,3 +41,8 @@ def get_workspace_index(root: Path, *, max_files: int = 600, ttl_seconds: float 
     value = build_workspace_index(root, max_files=max_files)
     _CACHE[key] = _CachedIndex(created_at=now, root_mtime_ns=root_mtime_ns, max_files=max_files, value=value)
     return value, False
+
+
+def clear_workspace_index(root: Path) -> None:
+    key = str(root.resolve()) if root.exists() else str(root)
+    _CACHE.pop(key, None)

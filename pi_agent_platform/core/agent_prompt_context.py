@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from .config import AppConfig
@@ -60,9 +59,10 @@ class AgentPromptContext:
     messages: list[dict[str, str]]
     controller_guidance: str | None
     controller_runtime_context: str | None
-    workspace_index: dict[str, Any]
-    workspace_index_briefing: str
-    workspace_index_event_data: dict[str, Any]
+    workspace_index: dict[str, Any] | None
+    workspace_index_briefing: str | None
+    workspace_index_event_data: dict[str, Any] | None
+    workspace_index_source: str | None
 
 
 def controller_session_guidance(session: Session) -> str | None:
@@ -190,7 +190,14 @@ def session_history_messages(session: Session, current_task_id: str | None = Non
     return messages
 
 
-def build_agent_prompt_context(session: Session, task: Task, config: AppConfig, *, agent: Any | None = None) -> AgentPromptContext:
+def build_agent_prompt_context(
+    session: Session,
+    task: Task,
+    config: AppConfig,
+    *,
+    agent: Any | None = None,
+    include_workspace_index: bool = True,
+) -> AgentPromptContext:
     system_prompt = profile_instructions(agent) if agent else "You are a remote coding agent."
     messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt + "\n\n" + TOOL_HELP}]
 
@@ -202,11 +209,18 @@ def build_agent_prompt_context(session: Session, task: Task, config: AppConfig, 
     if runtime_context:
         messages.append({"role": "system", "content": runtime_context})
 
-    workspace_index, workspace_index_cached = get_workspace_index(Path(session.workspace_path), max_files=600)
-    workspace_index["cached"] = workspace_index_cached
-    index_briefing = format_workspace_index_briefing(workspace_index)
-    if index_briefing:
-        messages.append({"role": "system", "content": index_briefing})
+    workspace_index: dict[str, Any] | None = None
+    workspace_index_briefing: str | None = None
+    workspace_index_event_data_value: dict[str, Any] | None = None
+    workspace_index_source: str | None = None
+    if include_workspace_index:
+        workspace_index, workspace_index_cached = get_workspace_index(Path(session.workspace_path), max_files=600)
+        workspace_index = {**workspace_index, "cached": workspace_index_cached}
+        workspace_index_briefing = format_workspace_index_briefing(workspace_index)
+        workspace_index_event_data_value = workspace_index_event_data(workspace_index)
+        workspace_index_source = "cache" if workspace_index_cached else "fresh"
+        if workspace_index_briefing:
+            messages.append({"role": "system", "content": workspace_index_briefing})
 
     memory_brief = project_memory_brief(session.workspace_path)
     if memory_brief:
@@ -220,8 +234,9 @@ def build_agent_prompt_context(session: Session, task: Task, config: AppConfig, 
         controller_guidance=guidance,
         controller_runtime_context=runtime_context,
         workspace_index=workspace_index,
-        workspace_index_briefing=index_briefing,
-        workspace_index_event_data=workspace_index_event_data(workspace_index),
+        workspace_index_briefing=workspace_index_briefing,
+        workspace_index_event_data=workspace_index_event_data_value,
+        workspace_index_source=workspace_index_source,
     )
 
 
