@@ -543,7 +543,7 @@ async function uploadStagePackageFromForm() {
   fd.append('file', input.files[0]);
   const apply = document.getElementById('stageApplyNow')?.checked !== false;
   const restartAfterUpdate = true;
-  result.textContent = 'Uploading package...';
+  if (window.PACLoading) PACLoading.status(result, 'Uploading package…'); else result.textContent = 'Uploading package…';
   let r = await fetch(`/v1/admin/stage-package?apply_update=${apply ? 'true' : 'false'}&restart_after_update=${restartAfterUpdate ? 'true' : 'false'}`, {
     method: 'POST',
     headers: tokenHeaders(),

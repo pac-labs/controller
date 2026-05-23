@@ -96,6 +96,13 @@ class AgentEvents:
             {"summary": summary, "steps": steps, "model": model},
         )
 
+    def agent_plan_timeout(self, *, model: str, timeout_seconds: int, fallback: bool) -> None:
+        self.emit(
+            "agent_plan_timeout",
+            "Planning model exceeded the fast-path timeout; continuing with a fallback plan.",
+            {"model": model, "timeout_seconds": timeout_seconds, "fallback": fallback},
+        )
+
     def tool_resumed(self, pending: dict[str, Any]) -> None:
         self.emit("tool_resumed", f"Resuming approved tool: {pending.get('tool')}", pending)
 
@@ -109,6 +116,43 @@ class AgentEvents:
                 "input_budget_tokens": input_budget_tokens,
                 "remaining_seconds": remaining_seconds,
             },
+        )
+
+
+    def model_stream_progress(
+        self,
+        *,
+        model: str,
+        step: int | None,
+        call_type: str,
+        chars: int,
+        preview: str | None = None,
+    ) -> None:
+        self.emit(
+            "model_stream_progress",
+            "Model is streaming a response",
+            self.assistant_data(
+                model=model,
+                step=step,
+                call_type=call_type,
+                chars=chars,
+                preview=(preview or "")[-900:],
+                streaming=True,
+            ),
+        )
+
+    def model_call_abandoned(self, *, model: str, call_type: str, timeout_seconds: int) -> None:
+        self.emit(
+            "model_call_abandoned",
+            "Provider call passed its timeout; PAC continued without waiting for that blocking request.",
+            self.assistant_data(model=model, call_type=call_type, timeout_seconds=timeout_seconds),
+        )
+
+    def model_call_late_completed(self, *, model: str, call_type: str, success: bool) -> None:
+        self.emit(
+            "model_call_late_completed",
+            "A previously abandoned provider call finished later.",
+            self.assistant_data(model=model, call_type=call_type, success=success),
         )
 
     def model_response_empty(self, *, model: str, step: int, retry: int) -> None:

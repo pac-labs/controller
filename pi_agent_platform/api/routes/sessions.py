@@ -36,6 +36,14 @@ class TimelineEventCreate(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
 
 
+class UiEventCreate(BaseModel):
+    type: str = 'ui_event'
+    message: str = ''
+    session_id: str | None = None
+    task_id: str | None = None
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
 class FileWriteRequest(BaseModel):
     path: str
     content: str
@@ -563,6 +571,21 @@ def create_sessions_router(
     @router.get('/v1/events/recent')
     def recent_events(limit: int = Query(default=80, ge=1, le=500), include_noisy: bool = False, _auth: None = Depends(require_auth)) -> list[Event]:
         return store.list_recent_events(limit=limit, exclude_types=None if include_noisy else _noisy_event_types)
+
+
+    @router.post('/v1/events/ui', response_model=Event)
+    def add_ui_event(payload: UiEventCreate, _auth: None = Depends(require_auth)) -> Event:
+        event_type = re.sub(r'[^a-zA-Z0-9_:-]+', '_', payload.type or 'ui_event')[:80]
+        session_id = (payload.session_id or 'system').strip() or 'system'
+        event = Event(
+            session_id=session_id,
+            task_id=payload.task_id,
+            type=event_type,
+            message=payload.message or event_type,
+            data={**(payload.data or {}), 'source': (payload.data or {}).get('source') or 'ui'},
+        )
+        store.add_event(event)
+        return event
 
 
     @router.post('/v1/sessions/{session_id}/events', response_model=Event)

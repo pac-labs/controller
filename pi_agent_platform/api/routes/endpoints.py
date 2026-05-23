@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shlex
@@ -16,6 +17,8 @@ from pydantic import BaseModel
 
 from pi_agent_platform.core.config import WorkspaceProfile
 from pi_agent_platform.core.directory_identities import ensure_endpoint_principal, retire_endpoint_principal
+from .endpoint_heartbeat_events import emit_heartbeat_events, stable_capability_signature
+
 from pi_agent_platform.core.models import (
     Event,
     Runner,
@@ -93,6 +96,7 @@ def create_endpoints_router(
 ) -> APIRouter:
     """Endpoint and runner routes extracted from the controller bootstrap file."""
     router = APIRouter()
+    log = logging.getLogger("pac.endpoints")
 
     _issue_endpoint_certificate = issue_endpoint_certificate
     _mint_endpoint_onboarding_token = mint_endpoint_onboarding_token
@@ -106,6 +110,22 @@ def create_endpoints_router(
     _node_install_command = node_install_command
     _install_pi_harness_command = install_pi_harness_command
     _local_pi_harness_install_worker = local_pi_harness_install_worker
+
+    def _endpoint_os_family(runner: Runner) -> str:
+        metadata = runner.metadata or {}
+        values = [metadata.get('os_family'), metadata.get('os'), metadata.get('host_os'), metadata.get('platform'), metadata.get('onboarding_target'), *(runner.labels or [])]
+        for value in values:
+            text = str(value or '').lower()
+            if 'windows' in text or text in {'win32', 'win64'}:
+                return 'windows'
+            if 'darwin' in text or 'macos' in text or text == 'mac':
+                return 'darwin'
+            if 'linux' in text:
+                return 'linux'
+        return 'unknown'
+
+    def _default_host_shell_for_runner(runner: Runner) -> str:
+        return 'powershell' if _endpoint_os_family(runner) == 'windows' else 'sh'
 
     @router.get('/v1/runners', response_model=list[Runner])
     @router.get('/v1/endpoints', response_model=list[Runner])
@@ -253,13 +273,18 @@ def create_endpoints_router(
             linux_install.append(f'export PAC_WORKSPACE={shlex.quote(workspace_path)}')
         linux_install.append(f'"{linux_path}"')
         powershell_install = [
-            '$dest = "$env:USERPROFILE\\\\pac-endpoint.exe"',
+            '$ErrorActionPreference = "Stop"',
+            '$dest = "$env:USERPROFILE\\pac-endpoint.exe"',
             f'Invoke-WebRequest -Headers @{{ Authorization = "Bearer {token}" }} -Uri "{download_url}" -OutFile $dest' if download_url else '# Build the pac-endpoint binary for this target first.',
             '$env:PAC_TOKEN = "' + token + '"',
+            '$env:PAC_RUNNER_ENABLED = "true"',
         ]
         if workspace_path:
             powershell_install.append('$env:PAC_WORKSPACE = "' + workspace_path.replace('\\', '\\\\') + '"')
-        powershell_install.append('& $dest')
+        powershell_install.extend([
+            'Write-Host "Starting PAC Windows endpoint. Leave this window open, or wrap this command in a Windows Service/Scheduled Task."',
+            '& $dest',
+        ])
         return {
             'ok': True,
             'endpoint_name': endpoint_name,
@@ -291,6 +316,7 @@ def create_endpoints_router(
                 'The endpoint binary is preconfigured with the controller URL and endpoint name from this wizard.',
                 'At install time you usually only need PAC_TOKEN. PAC_WORKSPACE remains optional as a host-specific override.',
                 'Keep the process running on the endpoint to maintain heartbeats and receive jobs.',
+                'On Windows, host jobs run through PowerShell by default and remain scoped to the selected endpoint workspace.',
                 'Trusted workspaces can expose plugin and tool source live to containerized coding sessions.',
             ],
         }
@@ -328,7 +354,7 @@ def create_endpoints_router(
         previous_status = runner.status
         previous_labels = list(runner.labels or [])
         previous_version = str(runner.metadata.get('runner_version') or runner.metadata.get('endpoint_version') or '')
-        previous_capability_signature = json.dumps(runner.capabilities or {}, sort_keys=True, default=str)
+        previous_capability_signature = stable_capability_signature(runner.capabilities)
         runner.status = payload.status
         runner.labels = payload.labels or runner.labels
         runner.capabilities = payload.capabilities
@@ -352,29 +378,17 @@ def create_endpoints_router(
         store.add_runner(runner)
         ensure_endpoint_principal(store, runner)
         current_version = str(runner.metadata.get('runner_version') or runner.metadata.get('endpoint_version') or '')
-        current_capability_signature = json.dumps(runner.capabilities or {}, sort_keys=True, default=str)
-        heartbeat_changed = (
-            previous_status != runner.status
-            or previous_labels != list(runner.labels or [])
-            or previous_version != current_version
-            or previous_capability_signature != current_capability_signature
+        current_capability_signature = stable_capability_signature(runner.capabilities)
+        emit_heartbeat_events(
+            store,
+            runner=runner,
+            previous_status=previous_status,
+            previous_labels=previous_labels,
+            previous_version=previous_version,
+            previous_capability_signature=previous_capability_signature,
+            current_version=current_version,
+            current_capability_signature=current_capability_signature,
         )
-        if heartbeat_changed:
-            store.add_event(
-                Event(
-                    session_id='system',
-                    type='runner_status_changed',
-                    message=f'Endpoint {runner.name} changed to {runner.status}',
-                    data={
-                        'runner_id': runner.id,
-                        'status': runner.status,
-                        'labels': runner.labels,
-                        'version': current_version,
-                        'containers': len(runner.containers),
-                        'capabilities': runner.capabilities,
-                    },
-                )
-            )
         return runner
 
 
@@ -446,6 +460,7 @@ def create_endpoints_router(
         )
         store.add_runner_job(job)
         store.add_event(Event(session_id=job.session_id or 'system', task_id=job.task_id, type='endpoint_command_queued', message=f'Command queued for endpoint {runner.name}', data={'runner_id': runner.id, 'runner_job_id': job.id, 'execution_mode': job.execution_mode, 'command': job.command}))
+        log.info('endpoint command queued endpoint_id=%s job_id=%s mode=%s shell=%s', runner.id, job.id, job.execution_mode, job.metadata.get('shell'))
         return job
 
 
@@ -620,6 +635,10 @@ def create_endpoints_router(
             raise HTTPException(status_code=400, detail='Endpoint does not allow container execution')
         if payload.execution_mode == 'container' and not payload.container_image:
             raise HTTPException(status_code=400, detail='Container execution requires container_image')
+        job_metadata = dict(payload.metadata or {})
+        if payload.execution_mode == 'host' and job_metadata.get('shell') is None:
+            job_metadata['shell'] = _default_host_shell_for_runner(runner)
+        job_metadata.setdefault('endpoint_os_family', _endpoint_os_family(runner))
         job = RunnerJob(
             runner_id=runner.id,
             prompt=payload.prompt,
@@ -630,7 +649,7 @@ def create_endpoints_router(
             workspace_path=payload.workspace_path,
             session_id=payload.session_id,
             task_id=payload.task_id,
-            metadata=payload.metadata,
+            metadata=job_metadata,
         )
         store.add_runner_job(job)
         store.add_event(Event(session_id=job.session_id or 'system', task_id=job.task_id, type='runner_job_queued', message=payload.prompt, data={'runner_id': runner.id, 'runner_job_id': job.id, 'execution_mode': job.execution_mode, 'command': job.command, 'container_image': job.container_image}))
@@ -658,6 +677,26 @@ def create_endpoints_router(
         store.add_event(Event(session_id=job.session_id or 'system', task_id=job.task_id, type=f'runner_{payload.stream}', message=payload.message[-4000:], data={'runner_job_id': job.id, 'runner_id': job.runner_id}))
         return {'status': 'ok'}
 
+
+
+    @router.get('/v1/runner-jobs/{job_id}')
+    def get_runner_job_detail(job_id: str, _auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        job = store.get_runner_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail='Runner job not found')
+        require_resource_access(_auth, 'endpoint', job.runner_id, 'read')
+        events = []
+        for event in store.list_recent_events(limit=250):
+            data = event.data or {}
+            if data.get('runner_job_id') == job.id:
+                events.append(event.model_dump(mode='json'))
+        events.reverse()
+        endpoint = store.get_runner(job.runner_id)
+        return {
+            'job': job.model_dump(mode='json'),
+            'endpoint': endpoint.model_dump(mode='json') if endpoint else None,
+            'events': events,
+        }
 
     @router.post('/v1/runner-jobs/{job_id}', response_model=RunnerJob)
     def update_runner_job(job_id: str, payload: RunnerJobUpdate, _auth: None = Depends(require_auth)) -> RunnerJob:
@@ -690,6 +729,7 @@ def create_endpoints_router(
             event_data['output_tail'] = job.output[-4000:]
         status_value = payload.status.value if hasattr(payload.status, 'value') else str(payload.status)
         store.add_event(Event(session_id=job.session_id or 'system', task_id=job.task_id, type=f'endpoint_job_{status_value}', message=f'Endpoint job {job.id} {status_value}', data=event_data))
+        log.info('endpoint job status job_id=%s endpoint_id=%s status=%s exit_code=%s operation=%s', job.id, job.runner_id, status_value, job.exit_code, job.metadata.get('operation'))
         if job.task_id:
             task = store.get_task(job.task_id)
             if task:

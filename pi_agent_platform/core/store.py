@@ -114,18 +114,18 @@ class SQLiteStore:
     def get_events(self, session_id: str, after_id: str | None = None, limit: int = 500, latest: bool = False) -> list[Event]:
         with self._connect() as conn:
             if after_id:
-                marker = conn.execute('select created_at from events where id = ?', (after_id,)).fetchone()
+                marker = conn.execute('select created_at, rowid from events where id = ?', (after_id,)).fetchone()
                 if marker:
                     rows = conn.execute(
-                        'select payload from events where session_id = ? and created_at > ? order by created_at asc limit ?',
-                        (session_id, marker['created_at'], limit),
+                        'select payload from events where session_id = ? and (created_at > ? or (created_at = ? and rowid > ?)) order by created_at asc, rowid asc limit ?',
+                        (session_id, marker['created_at'], marker['created_at'], marker['rowid'], limit),
                     ).fetchall()
                 else:
                     order = 'desc' if latest else 'asc'
-                    rows = conn.execute(f'select payload from events where session_id = ? order by created_at {order} limit ?', (session_id, limit)).fetchall()
+                    rows = conn.execute(f'select payload from events where session_id = ? order by created_at {order}, rowid {order} limit ?', (session_id, limit)).fetchall()
             else:
                 order = 'desc' if latest else 'asc'
-                rows = conn.execute(f'select payload from events where session_id = ? order by created_at {order} limit ?', (session_id, limit)).fetchall()
+                rows = conn.execute(f'select payload from events where session_id = ? order by created_at {order}, rowid {order} limit ?', (session_id, limit)).fetchall()
         events = [Event.model_validate_json(r['payload']) for r in rows]
         if latest:
             events.reverse()

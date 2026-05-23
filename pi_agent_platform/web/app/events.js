@@ -174,7 +174,10 @@ async function loadGlobalEvents(reset=false) {
     if (existing) existing.remove();
     if (reset) list.innerHTML = '';
     [...events].reverse().forEach(e => renderGlobalEvent(e));
-    if (!list.children.length) list.innerHTML = '<div class="empty-events">No events yet.</div>';
+    if (window.__pacLastUiEvent) renderGlobalEvent(window.__pacLastUiEvent);
+    if (!list.children.length) {
+      list.innerHTML = '<div class="empty-events"><b>No visible events yet.</b><br><span>Actions you run from the UI are recorded here now. Controller logs and traces remain under Observe.</span></div>';
+    }
   } catch (e) {
     eventsFetchFailureCount += 1;
     const msg = String(e.message || e);
@@ -210,6 +213,7 @@ function setupEventsRail() {
     if (typeof loadNotificationSummary === 'function') await loadNotificationSummary().catch(()=>{});
     await loadGlobalEvents(true).catch(()=>{});
   };
+  window.openEventsRail = showRail;
   const hideRail = () => {
     if (!rail) return;
     rail.classList.remove('open');

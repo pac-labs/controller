@@ -11,51 +11,95 @@ async function openPersonalSettingsModal() {
   modal.id = 'personalSettingsModal';
   modal.className = 'modal-backdrop';
   modal.innerHTML = `
-    <section class="modal-card auth-modal-card personal-settings-modal" role="dialog" aria-modal="true" aria-labelledby="personalSettingsTitle">
-      <div class="section-heading">
-        <div><h2 id="personalSettingsTitle">My Access</h2><p class="muted">Your profile, groups, usable PAC resources, tokens, access requests, and personal memory.</p></div>
+    <section class="modal-card personal-profile-modal" role="dialog" aria-modal="true" aria-labelledby="personalSettingsTitle">
+      <header class="personal-profile-header">
+        <div class="personal-profile-identity">
+          <div class="personal-profile-avatar" aria-hidden="true">${escapeHtml((currentUser?.display_name || currentUser?.username || 'U').slice(0, 1).toUpperCase())}</div>
+          <div>
+            <p class="modal-eyebrow">Directory profile</p>
+            <h2 id="personalSettingsTitle">My profile settings</h2>
+            <p class="muted">Manage your PAC identity, access, tokens, and personal memory from one profile.</p>
+          </div>
+        </div>
         <button id="closePersonalSettingsBtn" class="ghost-button" type="button">Close</button>
-      </div>
-      <div class="split personal-settings-grid">
-        <section class="card setting-cube compact-setting-card">
-          <h3>Profile</h3>
-          <div class="form-grid compact-form">
-            <label>Username <input id="personalUsername" disabled /></label>
-            <label>Display name <input id="personalDisplayName" /></label>
-            <label>Email <input id="personalEmail" placeholder="name@example.com" /></label>
+      </header>
+      <div class="personal-profile-body">
+        <aside class="personal-profile-nav" aria-label="Profile settings sections">
+          <div class="personal-profile-card identity-card">
+            <span class="identity-label">Signed in as</span>
+            <strong id="personalNavDisplayName">${escapeHtml(currentUser?.display_name || currentUser?.username || 'Current user')}</strong>
+            <code id="personalNavUsername">${escapeHtml(currentUser?.username || '')}</code>
           </div>
-          <label>Preferences JSON <textarea id="personalPreferences" rows="8"></textarea></label>
-          <div class="button-row"><button id="savePersonalProfileBtn" type="button">Save profile</button></div>
-          <div id="personalProfileStatus" class="inline-result" hidden></div>
-        </section>
-        <section class="card setting-cube compact-setting-card">
-          <h3>My tokens</h3>
-          <p class="muted small-text">Tokens answer who you are. Directory groups decide what you are allowed to do.</p>
-          <div class="button-row">
-            <button id="mintPersonalTokenBtn" type="button">Generate token</button>
-            <label>TTL hours <input id="personalTokenTtl" type="number" value="720" min="1" max="8760" /></label>
+          <button class="personal-profile-tab is-active" type="button" data-personal-tab="overview">Overview</button>
+          <button class="personal-profile-tab" type="button" data-personal-tab="access">Access</button>
+          <button class="personal-profile-tab" type="button" data-personal-tab="credentials">Credentials</button>
+          <button class="personal-profile-tab" type="button" data-personal-tab="memory">PAC RAM</button>
+          <button class="personal-profile-tab" type="button" data-personal-tab="preferences">Preferences</button>
+          <div class="personal-profile-rule">
+            <b>Credential rule</b>
+            <span>Tokens identify who you are. Directory groups decide what you can do.</span>
           </div>
-          <div id="personalTokensList" class="stacked-output compact-scroll-output"><div class="muted small-text">Loading tokens…</div></div>
-        </section>
+        </aside>
+        <main class="personal-profile-content">
+          <section class="personal-profile-panel is-active" data-personal-panel="overview">
+            <div class="profile-panel-heading">
+              <div><h3>Profile overview</h3><p class="muted">The identity shown to PAC and used by directory-backed access checks.</p></div>
+              <button id="savePersonalProfileBtn" type="button">Save profile</button>
+            </div>
+            <div class="profile-form-card">
+              <div class="form-grid compact-form">
+                <label>Username <input id="personalUsername" disabled /></label>
+                <label>Display name <input id="personalDisplayName" /></label>
+                <label>Email <input id="personalEmail" placeholder="name@example.com" /></label>
+              </div>
+              <div id="personalProfileStatus" class="inline-result" hidden></div>
+            </div>
+          </section>
+          <section class="personal-profile-panel" data-personal-panel="access">
+            <div class="profile-panel-heading">
+              <div><h3>My platform access</h3><p class="muted">Groups, profiles, workspaces, contexts, and requests resolved from your directory principal.</p></div>
+              <button id="refreshMyAccessBtn" class="ghost-button" type="button">Refresh access</button>
+            </div>
+            <div id="myAccessSummary" class="my-access-summary unified-access-summary"><div class="muted small-text" data-pac-loading="Loading access…">Loading access…</div></div>
+          </section>
+          <section class="personal-profile-panel" data-personal-panel="credentials">
+            <div class="profile-panel-heading">
+              <div><h3>Credentials</h3><p class="muted">Generate or revoke tokens for this identity. Tokens do not carry their own permissions.</p></div>
+              <div class="button-row compact-token-controls">
+                <label>TTL hours <input id="personalTokenTtl" type="number" value="720" min="1" max="8760" /></label>
+                <button id="mintPersonalTokenBtn" type="button">Generate token</button>
+              </div>
+            </div>
+            <div id="personalTokensList" class="stacked-output compact-scroll-output credential-list"><div class="muted small-text" data-pac-loading="Loading tokens…">Loading tokens…</div></div>
+          </section>
+          <section class="personal-profile-panel" data-personal-panel="memory">
+            <div class="profile-panel-heading">
+              <div><h3>Personal PAC RAM</h3><p class="muted">Memory used by PAC when working as your user.</p></div>
+              <button id="savePersonalRamBtn" type="button">Save memory</button>
+            </div>
+            <label class="profile-textarea-label"><textarea id="personalRamContent" rows="14"></textarea></label>
+            <div id="personalRamStatus" class="inline-result" hidden></div>
+          </section>
+          <section class="personal-profile-panel" data-personal-panel="preferences">
+            <div class="profile-panel-heading">
+              <div><h3>Advanced preferences</h3><p class="muted">Structured user preferences. Keep this valid JSON.</p></div>
+              <button id="savePersonalPreferencesBtn" type="button">Save preferences</button>
+            </div>
+            <label class="profile-textarea-label"><textarea id="personalPreferences" rows="14"></textarea></label>
+            <p class="muted small-text">Profile details and preferences are saved together.</p>
+          </section>
+        </main>
       </div>
-      <section class="card setting-cube compact-setting-card my-access-card" style="margin-top:1rem">
-        <div class="section-heading"><div><h3>My platform access</h3><p class="muted">Groups, profiles, workspaces, contexts, and access requests available to your directory principal.</p></div><button id="refreshMyAccessBtn" class="ghost-button" type="button">Refresh access</button></div>
-        <div id="myAccessSummary" class="my-access-summary"><div class="muted small-text">Loading access…</div></div>
-      </section>
-      <section class="card setting-cube compact-setting-card" style="margin-top:1rem">
-        <h3>Personal PAC RAM</h3>
-        <p class="muted">This is the remote memory bundle PAC can use for your user.</p>
-        <label><textarea id="personalRamContent" rows="10"></textarea></label>
-        <div class="button-row"><button id="savePersonalRamBtn" type="button">Save memory</button></div>
-        <div id="personalRamStatus" class="inline-result" hidden></div>
-      </section>
     </section>`;
   document.body.appendChild(modal);
+  bindPersonalProfileTabs(modal);
   document.getElementById('closePersonalSettingsBtn')?.addEventListener('click', closePersonalSettingsModal);
   modal.addEventListener('click', (ev) => { if (ev.target === modal) closePersonalSettingsModal(); });
   const data = await loadPersonalSettingsData();
   document.getElementById('personalUsername').value = data.me?.username || '';
+  document.getElementById('personalNavUsername').textContent = data.me?.username || '';
   document.getElementById('personalDisplayName').value = data.me?.display_name || data.me?.username || '';
+  document.getElementById('personalNavDisplayName').textContent = data.me?.display_name || data.me?.username || 'Current user';
   document.getElementById('personalEmail').value = data.me?.metadata?.email || '';
   document.getElementById('personalPreferences').value = JSON.stringify(data.me?.metadata?.preferences || {}, null, 2);
   document.getElementById('personalRamContent').value = data.ram?.content || '';
@@ -73,6 +117,7 @@ async function openPersonalSettingsModal() {
       if (status) { status.hidden = false; status.textContent = `Failed: ${error.message || String(error)}`; }
     }
   });
+  document.getElementById('savePersonalPreferencesBtn')?.addEventListener('click', () => document.getElementById('savePersonalProfileBtn')?.click());
   document.getElementById('mintPersonalTokenBtn')?.addEventListener('click', async () => {
     const ttl = Number(document.getElementById('personalTokenTtl').value || 720);
     const response = await api('/v1/users/me/tokens', {method:'POST', body: JSON.stringify({ttl_hours: ttl})});
@@ -90,6 +135,19 @@ async function openPersonalSettingsModal() {
     }
   });
 }
+
+function bindPersonalProfileTabs(modal) {
+  const tabs = Array.from(modal.querySelectorAll('[data-personal-tab]'));
+  const panels = Array.from(modal.querySelectorAll('[data-personal-panel]'));
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const selected = tab.dataset.personalTab;
+      tabs.forEach((item) => item.classList.toggle('is-active', item === tab));
+      panels.forEach((panel) => panel.classList.toggle('is-active', panel.dataset.personalPanel === selected));
+    });
+  });
+}
+
 
 
 

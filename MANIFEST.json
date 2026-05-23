@@ -1,8 +1,6 @@
 {
-  "version": "1.0.328",
-  "generated_at": "2026-05-23T00:40:00Z",
-  "build": "dashboard-freeform-notification-checks-20260523",
-  "latest_change": "Dashboard freeform topology canvas and explicit notification update checks",
+  "version": "1.0.337",
+  "generated_at": "2026-05-23T04:20:00Z",
   "files": [
     {
       "path": ".github/workflows/pac-expand-diff-pr.yml",
@@ -30,14 +28,9 @@
       "sha256": "a7b61e9989e18307fa9f4b4a041af4e4d1f24fea73136e55e4562f26c5338559"
     },
     {
-      "path": "MANIFEST.json",
-      "size": 57720,
-      "sha256": "e15b75b873c5eeb88d3489d55ed20d132ac12f6ac1a967f1fd426db792a71d77"
-    },
-    {
       "path": "PAC_CHANGELOG.json",
-      "size": 40669,
-      "sha256": "0069f14ee8078c451eb3c0f0998605036fe78f1c2597eaf1a32bf2957d1cb539"
+      "size": 59604,
+      "sha256": "e61e288cd0a68922174b59dcb5238ab0f11ec260d0a4c5449e4bcf20ea9975d5"
     },
     {
       "path": "PAC_UPDATE_DIFF-1.0.314.diff",
@@ -101,8 +94,48 @@
     },
     {
       "path": "PAC_UPDATE_DIFF-1.0.328.diff",
-      "size": 53859,
-      "sha256": "afdaa7c284f4671cc658900fe742c91b82c2a13d5a25c1b7bfdb46b50cd91dbc"
+      "size": 84000,
+      "sha256": "ecc8151adda0a5eeca72b04663d734acc11426b8938e17adf009237d2c2c148b"
+    },
+    {
+      "path": "PAC_UPDATE_DIFF-1.0.329.diff",
+      "size": 77558,
+      "sha256": "0bd651ef6d109574f955c1ab87b0a9dae8fd38c57f8fc22a3eb61ba2b33683c9"
+    },
+    {
+      "path": "PAC_UPDATE_DIFF-1.0.330.diff",
+      "size": 44631,
+      "sha256": "430463b291d67aa140f8796a7dc45bb0a5cacd3ebbdbd7198597294d9c82aa18"
+    },
+    {
+      "path": "PAC_UPDATE_DIFF-1.0.331.diff",
+      "size": 33585,
+      "sha256": "220b36d56eb91077ca47a3cc6abe7359892f4f62cdc1b124f76d3195c4575bbe"
+    },
+    {
+      "path": "PAC_UPDATE_DIFF-1.0.332.diff",
+      "size": 82452,
+      "sha256": "2285bb60032ccdc057691359a915db8a56f6e76a75e6ebddafbb2faf1cb3b7d4"
+    },
+    {
+      "path": "PAC_UPDATE_DIFF-1.0.334.diff",
+      "size": 113726,
+      "sha256": "8cf4e44fd2a1dfb474eedff52def5f7ed8f6654ad03d45b49f9599613e3662d3"
+    },
+    {
+      "path": "PAC_UPDATE_DIFF-1.0.335.diff",
+      "size": 59324,
+      "sha256": "46928432f8cd7826c23f2b44cb10ff12aecca3b350da0da25925a2cb9f05bd68"
+    },
+    {
+      "path": "PAC_UPDATE_DIFF-1.0.336.diff",
+      "size": 37664,
+      "sha256": "70f05e3580cfa7a7d7fa49235537ddfa8373ef7c6e9e9685c4448d2bd1226f6a"
+    },
+    {
+      "path": "PAC_UPDATE_DIFF-1.0.337.diff",
+      "size": 41159,
+      "sha256": "45ff26c0877e6c8130c3b1a7c7b5247b640568a2231be39f653feadbb1d942f8"
     },
     {
       "path": "README.md",
@@ -112,12 +145,12 @@
     {
       "path": "VERSION",
       "size": 8,
-      "sha256": "a56b251b2c4df541864bf847df6e3e56eecc9716ecb9c0aaa87b1c7de59a7e93"
+      "sha256": "c197fac2d1ff142809199a5bc268d60aa7ad0a589a2f4b18953c32c8273dbacd"
     },
     {
       "path": "VERSION_CURRENT.md",
-      "size": 100,
-      "sha256": "5880a10df8f948b3c22e98330e18907618b3a16275eefe8380ada4a483d76cd2"
+      "size": 8,
+      "sha256": "c197fac2d1ff142809199a5bc268d60aa7ad0a589a2f4b18953c32c8273dbacd"
     },
     {
       "path": "binaries/README.md",
@@ -186,8 +219,8 @@
     },
     {
       "path": "binaries/pac-endpoint/main.go",
-      "size": 19254,
-      "sha256": "ff8bf6a26ccda7e7c4c7a9730b3e3b39d04a621222e3cfaf88609cdd6103bd4b"
+      "size": 21130,
+      "sha256": "3b34152327b5e0b96922655debdd8442c9776e15726812794db5d135d033509d"
     },
     {
       "path": "binaries/pac-endpoint/pac-component.json",
@@ -516,8 +549,8 @@
     },
     {
       "path": "docs/PAC_Technical_Design_v0.2.adoc",
-      "size": 7571,
-      "sha256": "5e772d4ea5100106bda2413e0acac8c0422f4a30f658b668eee600804d345169"
+      "size": 11469,
+      "sha256": "d27615fd7ecd0463a731a3e75612b1779ac5763838c211bb4e572edf8deeaffa"
     },
     {
       "path": "docs/codebase-migration-plan.md",
@@ -535,6 +568,11 @@
       "sha256": "c7d8bd55a9b30a69e5767f354350dad60d27e4a1f445ab74ccc5e71c8378cc2b"
     },
     {
+      "path": "docs/dashboard-inside-out-map-update-filter-20260523.md",
+      "size": 1381,
+      "sha256": "d97adb18c1b45ccfbf56782fe52bb4538cb32515d52f249c4ec939206e4f29b5"
+    },
+    {
       "path": "docs/dashboard-topology-freeform-notification-check-20260523.md",
       "size": 1317,
       "sha256": "0ed210ea95b04287aef082e84179bd973fe47c85d7da54a3a344c82ccd72bdca"
@@ -543,6 +581,11 @@
       "path": "docs/dashboard-topology-private-widgets-20260523.md",
       "size": 2039,
       "sha256": "670f2f9f2c9e4a5a3d191e660a077c712a7012fd9faf57ae67ae66d6b4efe331"
+    },
+    {
+      "path": "docs/dashboard-type-hub-map-agent-context-sync-20260523.md",
+      "size": 1654,
+      "sha256": "02ea92713cb43a9574ac1733415f1cb8a6c36d2dd86587552781583c674903dc"
     },
     {
       "path": "docs/directory-access-control-pass4.md",
@@ -605,9 +648,24 @@
       "sha256": "c07304714d792d62846ac7bee7e3f7da97d38464cce361b5aff15520b733b3e2"
     },
     {
+      "path": "docs/endpoint-inventory-card-refresh-20260523.md",
+      "size": 1475,
+      "sha256": "cc8d600fda019bc76694a115c9037d9729a727de3fc81073eb2bda9683bb77de"
+    },
+    {
+      "path": "docs/endpoint-progress-observability-20260523.md",
+      "size": 1859,
+      "sha256": "dde30981034996ca93069108a608f5c74ab78adfc9d17b075964d2d7ced29a34"
+    },
+    {
       "path": "docs/endpoint-tool-execution-bridge.md",
       "size": 836,
       "sha256": "7119caf9a8bc9e00dfb36c7d02e70f6c4b383f279fce83c22d297dfd91a8331b"
+    },
+    {
+      "path": "docs/events-rail-ui-event-persistence-20260523.md",
+      "size": 909,
+      "sha256": "19e8171061485b01ed1c44d69dcae6b753b005adf495348bf18cae4bfbe20655"
     },
     {
       "path": "docs/feature-update-packs.md",
@@ -645,6 +703,16 @@
       "sha256": "c9e1c4409ccc7b19bef8ded70cf8417612ec3f595d3fbb45319ac106916c73fe"
     },
     {
+      "path": "docs/observe-embedded-store-personal-composer-20260523.md",
+      "size": 1973,
+      "sha256": "3276c8d75390d88f200d4dd15a39f3c8b2315e892b342f17b99375297dfb01a2"
+    },
+    {
+      "path": "docs/observe-menu-observability-20260523.md",
+      "size": 847,
+      "sha256": "3ec0c76ba43e6466b7888fff83a59da1a110e313ee4602fd51838655685f7877"
+    },
+    {
       "path": "docs/pac-component.json",
       "size": 357,
       "sha256": "427bc681d9e0ca56d779ef52b3a39198364875353296637e6ff242cd3e796ce5"
@@ -658,6 +726,11 @@
       "path": "docs/pac-diff-pr-workflow.md",
       "size": 1690,
       "sha256": "5838a3af39b3789668ca5cbf1fafab5f753df95ea5e0442d8ce32d34bd7fedf5"
+    },
+    {
+      "path": "docs/personal-profile-modal-refresh-20260523.md",
+      "size": 1084,
+      "sha256": "66be85fead48458893676c65864653caeaa7201764a71c3dd0fbb91ff5402ace"
     },
     {
       "path": "docs/pi-dev-runtime-terminology.md",
@@ -688,6 +761,11 @@
       "path": "docs/ui-guided-create-design-rule.md",
       "size": 1957,
       "sha256": "c008d41d35879e636ec452cf9301d5cdc0cf571b9cdcb05cb8ae3311757d876a"
+    },
+    {
+      "path": "docs/windows-endpoint-remote-execution-20260523.md",
+      "size": 1471,
+      "sha256": "e754d338f8986772ddf3829872aaf561d2c69889515179d761309f74241e0a78"
     },
     {
       "path": "docs/zed-configuration.md",
@@ -730,19 +808,129 @@
       "sha256": "3c78788ea0fb8b468bf16f215d385ccca713e31b0d6625da9c1c4e1f920e5b92"
     },
     {
+      "path": "pi_agent_platform/__pycache__/__init__.cpython-313.pyc",
+      "size": 175,
+      "sha256": "7055099fb46be42815c446c2a01a782375f265d7f68c4a893e416d5c59fc3abd"
+    },
+    {
+      "path": "pi_agent_platform/__pycache__/runner.cpython-313.pyc",
+      "size": 31814,
+      "sha256": "bed3b4b6d18f14e92a5759529d21742f18ee62e778de86c4ea6917aa0dc6e384"
+    },
+    {
       "path": "pi_agent_platform/api/__init__.py",
       "size": 36,
       "sha256": "3c78788ea0fb8b468bf16f215d385ccca713e31b0d6625da9c1c4e1f920e5b92"
     },
     {
+      "path": "pi_agent_platform/api/__pycache__/__init__.cpython-313.pyc",
+      "size": 179,
+      "sha256": "40b519ec29e99ed34b864149a3f65f5bfb4acaa0736273aa2adab69c3ca28468"
+    },
+    {
+      "path": "pi_agent_platform/api/__pycache__/main.cpython-313.pyc",
+      "size": 247746,
+      "sha256": "9a2b02a332c77f2615ba1622d523a61a6a96ee54e9802135fbb2af5f2c1d254a"
+    },
+    {
       "path": "pi_agent_platform/api/main.py",
-      "size": 178020,
-      "sha256": "1ec6eed4c52b847400eb5236aa6655b827ac16ead4882e821796d45a2d601e08"
+      "size": 184346,
+      "sha256": "852f456d87805ea3c5b31c84c387383524137b8e678c2393693c2e5a703c70bb"
     },
     {
       "path": "pi_agent_platform/api/routes/__init__.py",
       "size": 35,
       "sha256": "5384bfdb2df380b6557cc7a71d16891415bccaa87699406e236f752c6415389f"
+    },
+    {
+      "path": "pi_agent_platform/api/routes/__pycache__/__init__.cpython-313.pyc",
+      "size": 186,
+      "sha256": "43e672648c448130ce21d45a5280ea4a9c337d6f12e5c820971b212727466f94"
+    },
+    {
+      "path": "pi_agent_platform/api/routes/__pycache__/auth.cpython-313.pyc",
+      "size": 70470,
+      "sha256": "9892b1b4557209ec6095c2c0c0169daea99b681b4d6373c6a6e779303959af90"
+    },
+    {
+      "path": "pi_agent_platform/api/routes/__pycache__/endpoints.cpython-313.pyc",
+      "size": 60358,
+      "sha256": "b879cc402df3fbf3244d2a903ebad12ee5f196e813a24f32c49bc311c5340eb9"
+    },
+    {
+      "path": "pi_agent_platform/api/routes/__pycache__/marketplace.cpython-313.pyc",
+      "size": 3245,
+      "sha256": "33c3d506543c99af2d1bf44824a1b78fe1f47bde80be41775ae3b67569066068"
+    },
+    {
+      "path": "pi_agent_platform/api/routes/__pycache__/mcp.cpython-313.pyc",
+      "size": 4257,
+      "sha256": "18cb5cd6d66a8ef1c1dd5088019c43f20402d250d1df8a02791cb49e720d3c3a"
+    },
+    {
+      "path": "pi_agent_platform/api/routes/__pycache__/package_upload.cpython-313.pyc",
+      "size": 7124,
+      "sha256": "db938579da7efb0243d2ae24dd8e45053b965e4b62998a29b9881304b4696c2e"
+    },
+    {
+      "path": "pi_agent_platform/api/routes/__pycache__/profiles.cpython-313.pyc",
+      "size": 10625,
+      "sha256": "d1b710e272b52d5c39038240a2af5aa1e3894f3317ff13830c55a8692cf9908b"
+    },
+    {
+      "path": "pi_agent_platform/api/routes/__pycache__/providers.cpython-313.pyc",
+      "size": 39436,
+      "sha256": "87e29f7bdccf13db1b00635c529fa4c7d002419dfb33e6266cf4e6ccb54f9cf3"
+    },
+    {
+      "path": "pi_agent_platform/api/routes/__pycache__/proxy.cpython-313.pyc",
+      "size": 11234,
+      "sha256": "3b99290bc5d8835fed7c980e92e95fb340664d699904c5143a1eb0360722e823"
+    },
+    {
+      "path": "pi_agent_platform/api/routes/__pycache__/server_config.cpython-313.pyc",
+      "size": 4835,
+      "sha256": "11586294439ea06775cb14adbc1867e37c743df31245e39581366f2c6ce5c56b"
+    },
+    {
+      "path": "pi_agent_platform/api/routes/__pycache__/service_runtime.cpython-313.pyc",
+      "size": 15459,
+      "sha256": "8120606b89e53c9c4f19c8ad79ea7a299d3e928bf677ec5301151e79375827a6"
+    },
+    {
+      "path": "pi_agent_platform/api/routes/__pycache__/sessions.cpython-313.pyc",
+      "size": 65496,
+      "sha256": "dd156d6d7ce70bf29e5eb6458419e8f1961796380990456ad175fa4d47de8988"
+    },
+    {
+      "path": "pi_agent_platform/api/routes/__pycache__/sources.cpython-313.pyc",
+      "size": 53702,
+      "sha256": "5a16ad7227d1039164471c3884612bcde8ef07b85cad9ffad500935a0560209c"
+    },
+    {
+      "path": "pi_agent_platform/api/routes/__pycache__/system.cpython-313.pyc",
+      "size": 35966,
+      "sha256": "fe3f6e61e511a3c27a37cb23204955da946bf89da79b239fe463a66ef2eb8258"
+    },
+    {
+      "path": "pi_agent_platform/api/routes/__pycache__/ui.cpython-313.pyc",
+      "size": 1584,
+      "sha256": "7a14f13ad6bdd0d3b5ac985e00182f927962c76f1c95b5e18d66a7aa7ab00986"
+    },
+    {
+      "path": "pi_agent_platform/api/routes/__pycache__/updates.cpython-313.pyc",
+      "size": 18598,
+      "sha256": "f46cd6c24361c40b9e48da0bba16c8388ece416589f732bac3344296ff093a52"
+    },
+    {
+      "path": "pi_agent_platform/api/routes/__pycache__/version.cpython-313.pyc",
+      "size": 1275,
+      "sha256": "31443c83bbe87413d40cba28e5e671eadb6688b782cb606a5ddea5edceeaaa81"
+    },
+    {
+      "path": "pi_agent_platform/api/routes/__pycache__/workspaces.cpython-313.pyc",
+      "size": 29571,
+      "sha256": "d62887551d7ef16aca29a66950ee2708549791d0608a851036f2120875c8fba1"
     },
     {
       "path": "pi_agent_platform/api/routes/auth.py",
@@ -751,8 +939,8 @@
     },
     {
       "path": "pi_agent_platform/api/routes/endpoints.py",
-      "size": 41834,
-      "sha256": "4c2c6a097b3759d511ca8a6920e348e64aa7c91560f41af6c5ab03aca85ef6bb"
+      "size": 44530,
+      "sha256": "f096c0cdf6ed758c7bc1d8a4fcbd78fff8cdaec2dbc0bbff63a56d191b15f3fa"
     },
     {
       "path": "pi_agent_platform/api/routes/marketplace.py",
@@ -796,8 +984,8 @@
     },
     {
       "path": "pi_agent_platform/api/routes/sessions.py",
-      "size": 49553,
-      "sha256": "0d32cdb3df1c77b6f7f6f786cfc8a18e9a42edd963e490af23f803b61928e0c4"
+      "size": 50401,
+      "sha256": "806178aabd5f49336d34213c8ab404582d565fe61329ace40c7b7be413aed3bc"
     },
     {
       "path": "pi_agent_platform/api/routes/sources.py",
@@ -806,8 +994,8 @@
     },
     {
       "path": "pi_agent_platform/api/routes/system.py",
-      "size": 18810,
-      "sha256": "ed87107527e57f58d2ec03a9894a680a0d31f79075999cbbf8898e6e03700514"
+      "size": 24677,
+      "sha256": "42843fb00cb932cda0eeebb0502e7be0aaf094c8e76089afba5d1119b474470b"
     },
     {
       "path": "pi_agent_platform/api/routes/ui.py",
@@ -826,13 +1014,268 @@
     },
     {
       "path": "pi_agent_platform/api/routes/workspaces.py",
-      "size": 22073,
-      "sha256": "29c2359e367ceae5fc98cb36b8dfe217908dba406f931b98e1c24b121473376a"
+      "size": 22423,
+      "sha256": "a9670bc63b194704decd1cb70ccaef2555d1d71c7769d3f4794e4bb028416b5f"
     },
     {
       "path": "pi_agent_platform/core/__init__.py",
       "size": 36,
       "sha256": "3c78788ea0fb8b468bf16f215d385ccca713e31b0d6625da9c1c4e1f920e5b92"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/__init__.cpython-313.pyc",
+      "size": 180,
+      "sha256": "cb86370b2971953a6127912d6731ff7d237c74fdbe9c97d46ceb435580392f25"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/access_control.cpython-313.pyc",
+      "size": 9904,
+      "sha256": "b135b829ad7dcda0149ebdac178adac6be2e155eec6b4d2e07360ab05d9bb10e"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/acme_dns01.cpython-313.pyc",
+      "size": 15822,
+      "sha256": "09cb12888f2582e90f096e08ee6b288e5474b16c7f4e366619e9beafaf2d6aab"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/agent_action_recovery.cpython-313.pyc",
+      "size": 13129,
+      "sha256": "da0061211791b06bda6bf6a58f258a0eecacf1000f602897bad039578ce09381"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/agent_context_manager.cpython-313.pyc",
+      "size": 6653,
+      "sha256": "141857f5f4ff902d7a577c532e752eae6c7b6538fd463f04ecdc68bcfe81f8b6"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/agent_events.cpython-313.pyc",
+      "size": 13654,
+      "sha256": "b784f304804c06e2e27ee90d6aab5565d166fafcb4fa6c833b918ca7f58fee9f"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/agent_final_answer_policy.cpython-313.pyc",
+      "size": 8918,
+      "sha256": "67bec193fe8bfc126674bdbd0d2abe23b9251443e3ebc2b5f93087408d89086e"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/agent_inspection_policy.cpython-313.pyc",
+      "size": 5035,
+      "sha256": "7ff68405a74649a87175caa5993790c4cdc3aa2513d9864753fc542f414bb8bf"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/agent_loop.cpython-313.pyc",
+      "size": 19412,
+      "sha256": "0c4f8cf49044e41ab4208cee267de6c9587d88c9063c2a8760cab4cb992b96b7"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/agent_plans.cpython-313.pyc",
+      "size": 4008,
+      "sha256": "eeda61449c600a683d19e8f431d0dc41984966691b7c5b24a68f8ac33701028e"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/agent_prompt_context.cpython-313.pyc",
+      "size": 18063,
+      "sha256": "d2703377f5be631f897a0454c431a9f9899a43d5abc6b220c3ec454cee7f2cbf"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/agent_response_parser.cpython-313.pyc",
+      "size": 9087,
+      "sha256": "86be35663cc362f9a4f13c6f5ea2716b76e23e7d87408a1d06788b310b7f16f0"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/agent_run_lifecycle.cpython-313.pyc",
+      "size": 13049,
+      "sha256": "5f3a42e8ce280a6e307b1a1da1ad724ef3b726dfd1c00dff6bb7e1fe3f4aae86"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/artifacts.cpython-313.pyc",
+      "size": 5306,
+      "sha256": "adccf059b87e7e955924e2a5828f6cb51aef4c5d6ec52eef1fec16f582c26bce"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/auto_approve.cpython-313.pyc",
+      "size": 4417,
+      "sha256": "dd470ab5d71fed7c3ac3662c8189c573aceb222716efa46054db7b98e92ae691"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/auto_commit.cpython-313.pyc",
+      "size": 6336,
+      "sha256": "01322114e7beb26389e011eb2d38fa0c44228f5081180c9d702e26c6f7c823b6"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/background_jobs.cpython-313.pyc",
+      "size": 5190,
+      "sha256": "694b3c92390d18d559c326f9af74aab9f85e6d91e0c801b823b4025aabc5bc88"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/checkpoint.cpython-313.pyc",
+      "size": 6757,
+      "sha256": "f27b35e04cdc949ea4202607173f109d71b6a7c4faafd4385089d5c05ff40a85"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/config.cpython-313.pyc",
+      "size": 34532,
+      "sha256": "65e22cdd0f6694789451fce0e6d7ff7deed3b4be5101cb4091d5af4541bcf3d5"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/context_manager.cpython-313.pyc",
+      "size": 13731,
+      "sha256": "1660317fb55f657649ee86346a26728a6d55915fa7dbb65bed01768d01a85759"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/credentials.cpython-313.pyc",
+      "size": 6104,
+      "sha256": "bd70312a093c30d199b7389bf1338ac16e898cee357747072206ab5cda1cba49"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/diagnostics_bundle.cpython-313.pyc",
+      "size": 19344,
+      "sha256": "cd80e3cadf9ddacf4a2b8e4913547e3f98a99406a604fb7cfbf2833e59c9dfed"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/directory.cpython-313.pyc",
+      "size": 19459,
+      "sha256": "056c2bd3862626d718d653a4283c8fe5ee1b9b5275282717691e5769c606caa3"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/directory_identities.cpython-313.pyc",
+      "size": 6135,
+      "sha256": "2c1262997a523cd8a4b8b00198e9de0789f026d0f9fe6100e0cd0458f6b3e032"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/dns_providers.cpython-313.pyc",
+      "size": 5588,
+      "sha256": "5b8cca3a07ac2a82f32f9494da0689bfd318b65eef95aaba87ceb8c9680ebc14"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/letsencrypt_cert.cpython-313.pyc",
+      "size": 10746,
+      "sha256": "bfad8dd1334f625b63eb739b10e1e1004fb03ee2aaa683e9909be93c9d682fdb"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/maintenance.cpython-313.pyc",
+      "size": 9630,
+      "sha256": "4df2e9d61a15390f4687c8873faa3553b58a9c22460055adfcb1b7fda9ba073e"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/marketplace.cpython-313.pyc",
+      "size": 19604,
+      "sha256": "dbdff87063b069b5e4bde396e7d6f984e4e6c50f411a900f07afd33f7b356e06"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/model_metrics.cpython-313.pyc",
+      "size": 14577,
+      "sha256": "6eaa46a17e7e3051cfec170eb0e3f04da8e56512e5b50557f0a71ab1e2e4bfb7"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/models.cpython-313.pyc",
+      "size": 23230,
+      "sha256": "b40c49ff8160de2363dfda754efb7c6d8e8f63efcefbbc967e73aa972d31e894"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/observability.cpython-313.pyc",
+      "size": 8279,
+      "sha256": "a01dd881e7c918f0650a11c7a9993176e3fd2be422b215b98f6a750427b8bca9"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/observability_store.cpython-313.pyc",
+      "size": 20366,
+      "sha256": "cabd23ed5af5a0f9e08e064a0ad6280ce77da19d990e6e669e1690c6d8b58ffb"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/pac_ram.cpython-313.pyc",
+      "size": 8549,
+      "sha256": "9149e4581f3772207e8cb50030908f34e9f21390d6215e096db025432ce55d06"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/platform_home.cpython-313.pyc",
+      "size": 1410,
+      "sha256": "f653933a7246b98c9313c4e875c81670f7c430390bca5af3d2a752fee2bf7f9e"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/printing_press.cpython-313.pyc",
+      "size": 3533,
+      "sha256": "b1701d9c00b5a8e5add0b8ca26d20f7934e036d13cd5a429617db8fac619fea7"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/profiles.cpython-313.pyc",
+      "size": 6129,
+      "sha256": "480a3599dc64f62c91cf9b27c81d4be26a5644a6b119e83638d76de2dcaf06c7"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/providers.cpython-313.pyc",
+      "size": 37541,
+      "sha256": "017cdb429d14590a91bc5eb60c54931c4f29686623bebb32cc25d4639b8ece79"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/pty_shell.cpython-313.pyc",
+      "size": 5475,
+      "sha256": "7f973ec7dee8b23f664528593083b751289aaf30d71bb5974ec9c559061be114"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/runner_discovery.cpython-313.pyc",
+      "size": 12177,
+      "sha256": "dd98e8af2ec47d1b5bbaf1c7ac6bab04314a93dc8872d39e50611870d9d030c8"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/runtime.cpython-313.pyc",
+      "size": 12902,
+      "sha256": "7249007b571485f8be68584afcab37631d9ad8ea080576884e2cf8424e60808b"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/secrets.cpython-313.pyc",
+      "size": 10573,
+      "sha256": "7a972a0ce2c468783d5c6cb27362821555bc9bc16cef850eea84ec8a863cd26f"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/session_commands.cpython-313.pyc",
+      "size": 5562,
+      "sha256": "4d90997f74b054a028390d7daf0c5f877b3f0d431d79310d416e5ece66d20fff"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/shared_storage.cpython-313.pyc",
+      "size": 4367,
+      "sha256": "d563fcfc25f7c5617a1e69a20fb79571bf19423539f53461f150de4677d2dd9c"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/source_library.cpython-313.pyc",
+      "size": 64966,
+      "sha256": "b16b9b9860a41cfd23feacfb06542e59231bdf8c30adb09f4c06d0e963c0913c"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/source_variables.cpython-313.pyc",
+      "size": 7559,
+      "sha256": "166c95d27785c07c7ad3961327517f802905668225500c9b8b0bedd709e7a469"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/store.cpython-313.pyc",
+      "size": 54027,
+      "sha256": "a3a7a24213f33d57aa4487a50824ed4112e70929f9c121853cea7d710ccb465e"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/subagents.cpython-313.pyc",
+      "size": 7114,
+      "sha256": "b2bb0d67e75877f19cf5f3521e44a39692d8a463b48c191eab92dc11c588b493"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/update_preservation.cpython-313.pyc",
+      "size": 10835,
+      "sha256": "b884fcd5a215f699c161eff02fe0ea65c7ebdc3baf7d292ffdce48bbbeb3ab66"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/web_tools.cpython-313.pyc",
+      "size": 10709,
+      "sha256": "37a86b8315f68fef4264cb430031f76e6fd72685c25ab4d83b03a000e0754ed6"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/workspace_index.cpython-313.pyc",
+      "size": 12876,
+      "sha256": "daa84e5890f9df0b18c870ec02977119341bbcfae6b7801cd83d294ef9faad4a"
+    },
+    {
+      "path": "pi_agent_platform/core/__pycache__/workspace_lessons.cpython-313.pyc",
+      "size": 12683,
+      "sha256": "6eb7d532b0343e99e7f4bcdc0eeba9ffa8a426909aacc7a04575927e09f0cf0d"
     },
     {
       "path": "pi_agent_platform/core/access_control.py",
@@ -898,6 +1341,76 @@
       "path": "pi_agent_platform/core/agent_tools/__init__.py",
       "size": 63,
       "sha256": "8de4c7301090354d6353fcd4a81bd4d431fbbb5d50983eacaed78b7c52da8af1"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/__pycache__/__init__.cpython-313.pyc",
+      "size": 219,
+      "sha256": "ac69cb636c4ecfe7e5f959e02ba1c49418bd5abc8a778d00e940447f9cca8751"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/__pycache__/artifacts.cpython-313.pyc",
+      "size": 1752,
+      "sha256": "9cf1ca822dabff2b93ef16c977c90bc3de34b4002ac9f5e84a86b6832855588d"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/__pycache__/diagnostics.cpython-313.pyc",
+      "size": 12327,
+      "sha256": "1a3788c29b9527f6915aa032dbbdf3de83bf6bae3348780b0f9f91b21c5f7647"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/__pycache__/file_ops.cpython-313.pyc",
+      "size": 15520,
+      "sha256": "52be0d01ed0700716b78beb10cc1f5203e44ce8ca1de8fe39042e608d672d877"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/__pycache__/git.cpython-313.pyc",
+      "size": 3496,
+      "sha256": "4870bb0f9f28d8985b0789f7779c8b0f665e9b283f6d4196e7d23f329ef11dc6"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/__pycache__/memory.cpython-313.pyc",
+      "size": 5764,
+      "sha256": "9d9cb0875cac8440906a2f61c005a5faf5fc7f2dbde1d0b678f6932064696760"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/__pycache__/model_consult.cpython-313.pyc",
+      "size": 6196,
+      "sha256": "85fe2ba748d812aa6f064f6e8213cf3940395766cc8ea3dabb7c05a94037bfd8"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/__pycache__/permission_guard.cpython-313.pyc",
+      "size": 2811,
+      "sha256": "4d043237cadd6551674a83bbe41cf8f85ef068b5a44ac9eb65c06b3de8eb23ab"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/__pycache__/pty.cpython-313.pyc",
+      "size": 4773,
+      "sha256": "edc00dbcfb1c491d06ef6a211a138c6a12ec2b854fcabaf5fc815d94897710f5"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/__pycache__/registry.cpython-313.pyc",
+      "size": 5006,
+      "sha256": "8cb976b8fe86c213cbc28353429dcc597d0043eb995c0117dcf96422f7c7e645"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/__pycache__/shell.cpython-313.pyc",
+      "size": 10825,
+      "sha256": "75f2f527ee5e5f91f5f282436e6549f67d00b7f9bcd61d1d3b2637255c8ca091"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/__pycache__/task_control.cpython-313.pyc",
+      "size": 8192,
+      "sha256": "43f67390e4a89997efe85b82603f27c1f10425177b2fe226621aaee605b0d636"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/__pycache__/web.cpython-313.pyc",
+      "size": 4606,
+      "sha256": "5ce25e62ee14086c252d05342158b1bfaa8d27023474b396c172de819756516a"
+    },
+    {
+      "path": "pi_agent_platform/core/agent_tools/__pycache__/workspace.cpython-313.pyc",
+      "size": 10698,
+      "sha256": "4b5c79c53a461d353e3089bc405fd5fbbdaba8dc68eb299e5a32a945a1a7373c"
     },
     {
       "path": "pi_agent_platform/core/agent_tools/artifacts.py",
@@ -1050,6 +1563,16 @@
       "sha256": "439d96b91ad881cdadf95bc4b428e190b153424df6cef2f9b0895be22b72e2f6"
     },
     {
+      "path": "pi_agent_platform/core/observability.py",
+      "size": 5621,
+      "sha256": "242d9b390a7955522b54ca7b6bd9eab14a118843215f3610e39022d1f65dd09d"
+    },
+    {
+      "path": "pi_agent_platform/core/observability_store.py",
+      "size": 14212,
+      "sha256": "6b8f9a7110fff18cd4af7778f55be570ac9763d38edc2efd693341191354523a"
+    },
+    {
       "path": "pi_agent_platform/core/pac_ram.py",
       "size": 6105,
       "sha256": "6d49c6fd7b364c776172d7d0c76aa6e5fe90cbde3a8f51050fe2c33a1d9d5fc0"
@@ -1106,8 +1629,8 @@
     },
     {
       "path": "pi_agent_platform/core/source_library.py",
-      "size": 43831,
-      "sha256": "46005da00c1c335f6b5b01c9dc94fa13743906775c953207f78f3c18d8306f92"
+      "size": 44085,
+      "sha256": "6a44e2ab9ca208eb1754ae2400dde7feb1d50666e12b4288af271da5a5a78bbe"
     },
     {
       "path": "pi_agent_platform/core/source_variables.py",
@@ -1150,6 +1673,16 @@
       "sha256": "3c78788ea0fb8b468bf16f215d385ccca713e31b0d6625da9c1c4e1f920e5b92"
     },
     {
+      "path": "pi_agent_platform/mcp/__pycache__/__init__.cpython-313.pyc",
+      "size": 179,
+      "sha256": "96a8ce3dfda019eb922f778f19637fc996aa3c5357e4fc10b078c5130c2f05d9"
+    },
+    {
+      "path": "pi_agent_platform/mcp/__pycache__/server.cpython-313.pyc",
+      "size": 10358,
+      "sha256": "bb5cc78ec207c33658f469fba73a752fd9bc22d94b69bb9b65ce49a049712302"
+    },
+    {
       "path": "pi_agent_platform/mcp/server.py",
       "size": 8310,
       "sha256": "1a85aa02553283e66ade58e997d34695ff53e73eb0d8397b846729034b9c3dfa"
@@ -1163,6 +1696,11 @@
       "path": "pi_agent_platform/updates/__init__.py",
       "size": 4582,
       "sha256": "b1fe3377836f8427c517eae0753afcb00281cb8f1ce723f7b563bce04439a7f9"
+    },
+    {
+      "path": "pi_agent_platform/updates/__pycache__/__init__.cpython-313.pyc",
+      "size": 7330,
+      "sha256": "f2ade0ab214eb3337e27d186b63a62dbc17b92ba41c9d5f2c1f117db703b79bb"
     },
     {
       "path": "pi_agent_platform/web/app/admin_updates.js",
@@ -1181,8 +1719,8 @@
     },
     {
       "path": "pi_agent_platform/web/app/dashboard_topology.js",
-      "size": 16995,
-      "sha256": "5b83fa160fc136bf4991c7be722153321d71bcec1014297bb60d764c679226d8"
+      "size": 20878,
+      "sha256": "2657ee2f81a12175b1fc32947f9e82699c86bfd98a02ea7160b83048e397225f"
     },
     {
       "path": "pi_agent_platform/web/app/directory_access.js",
@@ -1195,14 +1733,24 @@
       "sha256": "8b6ee7f828ead3d17de3c7bc8391792d350cacd4beaf0a6ebc03a9e87d74477b"
     },
     {
+      "path": "pi_agent_platform/web/app/endpoint_actions.js",
+      "size": 11712,
+      "sha256": "074882330731e41043d1fd0f47e32d2bddf25c832de069e804a770aac8ad68ce"
+    },
+    {
+      "path": "pi_agent_platform/web/app/endpoint_cards.js",
+      "size": 12060,
+      "sha256": "a5a0915721780af97974d5747891efdfab0ed0cc55ccb744555c8f36182cf8a3"
+    },
+    {
       "path": "pi_agent_platform/web/app/endpoints.js",
-      "size": 57530,
-      "sha256": "79cda5f31980f052b3a692d5a00fd18196afaa6a06c7bc8348c7a1a868ffa172"
+      "size": 54474,
+      "sha256": "29be4a0abe06fb11b4d75468027bd7433dfae05f82e46b6d32c1ecfbb6cad540"
     },
     {
       "path": "pi_agent_platform/web/app/events.js",
-      "size": 12669,
-      "sha256": "012d21343ecbdb1b22cb00fc5f34d8610e44daf48c7329f4cbf174fb1e37d54f"
+      "size": 12927,
+      "sha256": "921cef4d9a34866c7b5ca8a476568bdf54908109dd0837fe5dc3ec6505bf4b77"
     },
     {
       "path": "pi_agent_platform/web/app/marketplace.js",
@@ -1210,9 +1758,14 @@
       "sha256": "bff61e18adca7f4a2dd12abfcb6748542f770a1aea4f6cbe10d61d7661cf690d"
     },
     {
+      "path": "pi_agent_platform/web/app/observe.js",
+      "size": 8774,
+      "sha256": "661d516ea05e9c1895481263ddad2228dda4644f1876b07fa3baebb51615689c"
+    },
+    {
       "path": "pi_agent_platform/web/app/personal_settings.js",
-      "size": 8461,
-      "sha256": "b3d45e430daa392fbd15b418e485c9a207190fc1ca62096af4014d0724197f60"
+      "size": 12046,
+      "sha256": "873996ce34822e1a13f8684c89a395d433ab968b25ad898b98d0297865b91e45"
     },
     {
       "path": "pi_agent_platform/web/app/profiles_config.js",
@@ -1241,8 +1794,8 @@
     },
     {
       "path": "pi_agent_platform/web/app/sessions.js",
-      "size": 103017,
-      "sha256": "a4ad386f4b3ce216188bbff2a616209d272feb9df4333f886dba4b64181f0c2c"
+      "size": 103558,
+      "sha256": "fd4f18c754c47f093954364b8d02b7363de02feffb2c380b50220323dea63521"
     },
     {
       "path": "pi_agent_platform/web/app/setup_wizard.js",
@@ -1266,8 +1819,8 @@
     },
     {
       "path": "pi_agent_platform/web/app.js",
-      "size": 55080,
-      "sha256": "eb62438129ade2aee064577c76b652c71bfad7e69b55d4a9b7374b2eff3fbeee"
+      "size": 55794,
+      "sha256": "9b7c6bfb4e8d38bc23af2d9e8ac7a1322740264b22ebe73144e54b3b21f362ea"
     },
     {
       "path": "pi_agent_platform/web/assets/banner.png",
@@ -1381,8 +1934,8 @@
     },
     {
       "path": "pi_agent_platform/web/index.html",
-      "size": 105777,
-      "sha256": "b12bc38ca171986c3436a995ebb3e64d2c8f7e087e3f9be386bc68150e89ae04"
+      "size": 108637,
+      "sha256": "915ae297ecc999d326d42b6caa823f79531694c3af720422771e25449a7b727c"
     },
     {
       "path": "pi_agent_platform/web/styles/admin-components.css",
@@ -1406,8 +1959,8 @@
     },
     {
       "path": "pi_agent_platform/web/styles/dashboard-topology.css",
-      "size": 8274,
-      "sha256": "ee6d9671b890876c011ea7856d9e50413c9925c5aa2cd16c7055b3ee2bc8029a"
+      "size": 10551,
+      "sha256": "7b2fcf6672c290c845bd133de2db6363618aa992039643c897c162f85d92dcba"
     },
     {
       "path": "pi_agent_platform/web/styles/directory-access-light.css",
@@ -1421,8 +1974,8 @@
     },
     {
       "path": "pi_agent_platform/web/styles/endpoints.css",
-      "size": 5162,
-      "sha256": "20767ed876e8ce729e8431d1c5f7db78350f991e50b98f8a304c61a267080869"
+      "size": 15952,
+      "sha256": "714b83ec8aaab8b671f297d908c37894fb07b0c6140ddfbef0c7aab20618504e"
     },
     {
       "path": "pi_agent_platform/web/styles/foundation.css",
@@ -1445,9 +1998,19 @@
       "sha256": "afa530ba67dbcf797fa8410c32656d05693b40dafef061dd65bbff925b539474"
     },
     {
+      "path": "pi_agent_platform/web/styles/observe.css",
+      "size": 2359,
+      "sha256": "3380d9cc24c9362d7d1ea0a0726816ab89e26d8b315155850b5d59fe8cfd4bef"
+    },
+    {
+      "path": "pi_agent_platform/web/styles/personal-settings.css",
+      "size": 7113,
+      "sha256": "b0992ec0dd029d5feaa477509eb04e6dd4f8f5c30ef6dfac8c1ffa5850376e45"
+    },
+    {
       "path": "pi_agent_platform/web/styles/providers-discovery.css",
-      "size": 21886,
-      "sha256": "966861f239f69fe98a21dcf6101794fa4e761e6e75ab314e3fd673543b6ce336"
+      "size": 22917,
+      "sha256": "9b08018718b51e4d0669971a49066f0577037357b950e47dedc86f260ec9e18d"
     },
     {
       "path": "pi_agent_platform/web/styles/release-mobile.css",
@@ -1486,8 +2049,8 @@
     },
     {
       "path": "pi_agent_platform/web/styles.css",
-      "size": 1150,
-      "sha256": "43d86dbfc43f5ec8e87ce89886efdc17314b1876bc8ba8799ba00485617cb2a6"
+      "size": 1238,
+      "sha256": "6ed447e02ad6807c7098c1fa7c129a3772e66a34a9255063a08fe7cc103e1ea7"
     },
     {
       "path": "plugins/artifacts/README.md",
@@ -1597,7 +2160,7 @@
     {
       "path": "pyproject.toml",
       "size": 622,
-      "sha256": "74a322f4be839314802d525378cacbdce6bc7cd6b7127f6241f3760c97da6263"
+      "sha256": "58e4d56c1434b53a2fb129514d31be66e15831a80046fc949b18bfdfaa390395"
     },
     {
       "path": "requirements.txt",

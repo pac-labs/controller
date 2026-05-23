@@ -3,7 +3,7 @@
 
 /* v1.0.149: dashboard readability and integrated session sidebar */
 .pac-loader{
-  background:url('/ui/assets/pac-icon-green-32.png') center/contain no-repeat !important;
+  background:url('/ui/assets/pac-loader.svg') center/contain no-repeat !important;
   width:28px;
   height:28px;
 }

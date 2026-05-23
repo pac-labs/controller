@@ -334,7 +334,7 @@ function renderModels() {
   }
   el.appendChild(configured);
   const live = document.createElement('div');
-  live.innerHTML = '<h3>Live server models</h3><div id="modelsLive" class="remote-models">Loading live model lists…</div>';
+  live.innerHTML = `<h3>Live server models</h3><div id="modelsLive" class="remote-models">${pacLoadingLineHtml('Loading live model lists…')}</div>`;
   el.appendChild(live);
   renderLiveModels().catch(()=>{});
 }

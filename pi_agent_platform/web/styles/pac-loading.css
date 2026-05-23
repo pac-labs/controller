@@ -1,0 +1,82 @@
+/* PAC v1.0.344: shared loading, progress, and thinking indicators. */
+.pac-loader,
+.pac-loader-icon {
+  inline-size: var(--pac-loader-size, 1.35rem);
+  block-size: var(--pac-loader-size, 1.35rem);
+  display: inline-block;
+  flex: 0 0 auto;
+  vertical-align: -0.28em;
+  background: center / contain no-repeat url('/ui/assets/pac-loader.svg');
+  filter: drop-shadow(0 0 8px rgba(36,195,107,.30));
+}
+.pac-loader-icon.is-tiny { --pac-loader-size: .92rem; }
+.pac-loader-icon.is-small { --pac-loader-size: 1.12rem; }
+.pac-loader-icon.is-medium { --pac-loader-size: 1.55rem; }
+.pac-loader-icon.is-large { --pac-loader-size: 2.4rem; }
+.pac-loading-line,
+.pac-loading-placeholder,
+.pac-progress-line,
+.pac-thinking-line {
+  display: inline-flex;
+  align-items: center;
+  gap: .48rem;
+  min-width: 0;
+}
+.pac-loading-placeholder {
+  color: var(--muted);
+}
+.pac-loading-block {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .55rem;
+  min-block-size: 3.25rem;
+  text-align: center;
+}
+.pac-status-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: .42rem;
+}
+.composer-thinking-status.active::before {
+  content: '';
+  inline-size: 1.15rem;
+  block-size: 1.15rem;
+  flex: 0 0 auto;
+  background: center / contain no-repeat url('/ui/assets/pac-loader.svg');
+  filter: drop-shadow(0 0 8px rgba(36,195,107,.28));
+}
+.composer-thinking-status.closed::before {
+  content: '✓';
+  inline-size: 1.15rem;
+  block-size: 1.15rem;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  color: #86efac;
+  background: rgba(34,197,94,.12);
+  border: 1px solid rgba(34,197,94,.35);
+  font-size: .78rem;
+  font-weight: 900;
+}
+.tiny-spinner,
+.tiny-spinner.square {
+  inline-size: var(--pac-loader-size, 1rem);
+  block-size: var(--pac-loader-size, 1rem);
+  border: 0;
+  border-radius: 0;
+  background: center / contain no-repeat url('/ui/assets/pac-loader.svg');
+  animation: none;
+  filter: drop-shadow(0 0 6px rgba(36,195,107,.28));
+}
+.thought-history-dot .pac-loader-icon,
+.thought-history-dot .tiny-spinner {
+  --pac-loader-size: 1.05rem;
+}
+body.light .pac-loader,
+body.light .pac-loader-icon,
+body.light .tiny-spinner,
+body.light .composer-thinking-status.active::before {
+  filter: drop-shadow(0 0 5px rgba(22,163,74,.22));
+}

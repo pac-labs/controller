@@ -452,3 +452,39 @@ html[data-theme="dark"] .recommendation-card{background:linear-gradient(180deg,r
 html[data-theme="dark"] .recommendation-card h4{color:#f8fafc}
 html[data-theme="dark"] .recommendation-card p{color:#dbe7ff}
 
+/* My Access is a workspace-style modal, not a small auth dialog. */
+.personal-settings-modal {
+  width: min(1320px, 98vw) !important;
+  max-width: 1320px !important;
+  max-height: min(92vh, 980px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.personal-settings-modal .personal-settings-grid {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.15fr) minmax(340px, .85fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+.personal-settings-modal textarea {
+  min-height: 180px;
+}
+.personal-settings-modal #personalRamContent {
+  min-height: 280px;
+}
+.personal-settings-modal .my-access-card {
+  min-height: 220px;
+}
+.personal-settings-modal .my-access-grid {
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+.personal-settings-modal .compact-scroll-output {
+  max-height: 280px;
+  overflow: auto;
+}
+@media (max-width: 900px) {
+  .personal-settings-modal { width: 98vw !important; max-height: 94vh; }
+  .personal-settings-modal .personal-settings-grid { grid-template-columns: 1fr; }
+}

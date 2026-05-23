@@ -242,6 +242,7 @@ Typical PAC-backed IDE flow:
 - Visible orchestration across IDE, controller, endpoint, and container boundaries
 - Customer- and user-aware session bootstrapping
 - Guided creation flows: every UI mechanism that adds or creates a resource starts from a compact `+` action and opens a guided modal instead of exposing large inline forms
+- User profile settings: personal profile / My Access must be a coherent settings workspace with identity context, section navigation, and focused panels, not a stack of loosely connected cards.
 
 == Constraints
 
@@ -270,3 +271,79 @@ Typical PAC-backed IDE flow:
 - Prefer endpoint-local execution
 - Treat tools as authoritative execution layer
 - Keep controller control-plane oriented, but do not confuse "lightweight" with "unable to perform operational bootstrap work"
+
+=== Windows Endpoint Execution
+
+Windows endpoints are first-class PAC endpoints for workloads that can run on Windows. They register as endpoint principals, advertise the `windows` workload platform, and execute host jobs through the controller-queued endpoint job channel. PowerShell is the default host shell for Windows endpoints.
+
+Rules:
+- Windows remote code execution must remain endpoint-scoped and permission-gated through Directory & Access.
+- Tokens and certificates authenticate the endpoint principal only; directory grants decide what the endpoint can do.
+- Jobs should run in the configured endpoint workspace by default.
+- Endpoint capabilities must advertise OS family, remote code execution availability, default shell, and available tools.
+
+=== Endpoint Inventory UI Rule
+
+The endpoint inventory page must show endpoints as workload cards, not as old runner rows or placeholder pills.
+
+Each endpoint card should make current operational state visible:
+
+- platform/OS family
+- reachability and command-channel state
+- default workspace
+- pi.dev/runtime readiness
+- container runtime availability
+- tool inventory state
+- hardware summary
+- linked models/workspaces/directory principal
+
+Status indicators should describe a concrete state and consequence. Avoid generic placeholder-looking pills such as plain `enabled`, `missing`, or unlabelled tags when a richer state row or capability tile can explain what the value means.
+
+Verbose raw runtime metadata belongs behind a technical details disclosure so the inventory card stays usable for normal platform operators.
+
+== Endpoint Operations and Observability UI Rule
+
+Endpoint actions must not silently queue remote work without feedback.
+
+Any endpoint action that starts or queues work should show a progress surface containing:
+- endpoint identity
+- job id
+- operation name
+- current status
+- command or managed operation details
+- recent progress events
+- output/error when available
+
+PAC uses local rotating Python logs as the default internal observability substrate. Logs are stored under `PACP_HOME/logs` and can be tailed through diagnostics APIs or shipped to an external system later.
+
+=== Observe Navigation Ownership
+
+Runtime evidence belongs under the existing Observe menu.
+
+Observe includes:
+- event rail and notifications
+- controller-local logs
+- metrics snapshots
+- model usage
+- traces and endpoint job evidence as those stores mature
+
+Config remains for configuration and setup values. Do not create a second observability surface under Config/System when the data is operational evidence.
+
+=== Embedded Observe Store Rule
+
+PAC should provide a lightweight internal observability substrate before requiring an external observability stack.
+
+The default internal layer is:
+- rotating controller and audit logs under `PACP_HOME/logs`
+- embedded SQLite metrics and trace spans under `PACP_HOME/observability.db`
+- explicit retention and pruning controls
+- APIs and UI under the existing Observe menu
+
+This internal layer should remain dependency-free and low overhead. External systems such as VictoriaMetrics, VictoriaLogs, VictoriaTraces, Loki, Prometheus, or OpenTelemetry should be optional exporters/integrations, not required runtime dependencies for a normal PAC installation.
+
+
+=== Observe Navigation
+
+Observe contains runtime evidence: events, logs, metrics, traces, and diagnostics. Config contains configuration and setup values.
+
+Events shown from the top notification/bell rail must include backend events and UI-triggered operations that are persisted through the controller event API. UI actions that say “Details are in Events” must create an event row, not only a transient browser-only message.

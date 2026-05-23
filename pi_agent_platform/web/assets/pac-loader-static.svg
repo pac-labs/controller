@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">PAC loading mark static frame</title>
+  <desc id="desc">Static fully lit PAC loading mark.</desc>
+  <defs>
+    <filter id="hotGlow" x="-36%" y="-36%" width="172%" height="172%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.10 0 0 0 0 0.86 0 0 0 0 0.40 0 0 0 .72 0" result="glow"/>
+      <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="none"/>
+  <g fill="#22c55e" stroke="#55f09a" stroke-width="8" stroke-linejoin="round" filter="url(#hotGlow)">
+    <path d="M169 45h125l-43 74h-82z"/>
+    <path d="M312 58l108 63-64 37-72-42z"/>
+    <path d="M436 146v129l-72-41V188z"/>
+    <path d="M344 362l-88 51-88-51 43-74h90z"/>
+    <path d="M148 349L76 308V184l72 42z"/>
+    <path d="M156 58v100l-72 42V121z"/>
+    <rect x="236" y="258" width="40" height="84" rx="5"/>
+    <circle cx="256" cy="228" r="36" fill="#86efac"/>
+  </g>
+</svg>

@@ -87,7 +87,7 @@
       <div class="dashboard-private-head">
         <div>
           <h2>Operations dashboard</h2>
-          <p class="muted">Private widget layout with mandatory system status and selectable PAC topology views.</p>
+          <p class="muted">Private widget layout with mandatory system status and the zoomable PAC Component Atlas.</p>
         </div>
         <div class="dashboard-widget-picker-wrap">
           <button id="dashboardWidgetPicker" class="ghost-button" type="button" aria-haspopup="menu" aria-expanded="false">Widgets</button>
@@ -96,10 +96,10 @@
       </div>
       <div class="dashboard-grid dashboard-metrics private-dashboard-grid">
         <section class="card wide dashboard-widget dashboard-topology-card" data-dashboard-widget="topology">
-          <div class="section-heading dashboard-map-heading"><div><h2>Connection map</h2><p class="muted">Models, providers, workspaces, endpoints, contexts, and profiles. Drag objects to arrange your private map.</p></div><div class="button-row compact-row"><button id="dashboardResetTopologyLayout" class="ghost-button" type="button">Reset layout</button><button id="dashboardRefreshTopology" class="ghost-button" type="button">Refresh map</button></div></div>
+          <div class="section-heading dashboard-map-heading"><div><h2>PAC Component Atlas</h2><p class="muted">Zoomable system overview centered on PAC: controller, PAC agent, pi.dev agent, endpoints, workspaces, sessions, providers, models, tools, plugins, observability, and artifacts.</p></div><div class="button-row compact-row"><button id="dashboardResetTopologyLayout" class="ghost-button" type="button">Reset atlas</button><button id="dashboardRefreshTopology" class="ghost-button" type="button">Refresh atlas</button></div></div>
           <div class="dashboard-map-layout">
-            <div id="dashboardTopologyMap" class="dashboard-topology-map muted">Loading connection map…</div>
-            <aside id="dashboardTopologyDetails" class="dashboard-topology-details"><h3>Select an object</h3><p class="muted small-text">Click a node to inspect how it connects to the rest of PAC.</p></aside>
+            <div id="dashboardTopologyMap" class="dashboard-topology-map muted" data-pac-loading="Loading PAC Component Atlas…">Loading PAC Component Atlas…</div>
+            <aside id="dashboardTopologyDetails" class="dashboard-topology-details"><h3>Select an object</h3><p class="muted small-text">Click a component to inspect its PAC role, parent, details, and visible connections.</p></aside>
           </div>
         </section>
         <section class="card hero wide dashboard-widget" data-dashboard-widget="overview">
@@ -108,10 +108,10 @@
           <div id="dashboardStats" class="stats-grid"><div class="metric"><b>—</b><span>loading</span></div></div>
           <div class="button-row"><button id="dashboardNewSession">New session</button><button id="dashboardRefreshMetrics" class="ghost-button">Refresh metrics</button></div>
         </section>
-        <section class="card dashboard-widget" data-dashboard-widget="execution"><h2>Execution health</h2><div id="taskStatusChart" class="bar-chart muted">Loading execution health…</div></section>
-        <section class="card dashboard-widget" data-dashboard-widget="components"><h2>Critical components</h2><div id="componentHealth" class="health-grid muted">Loading component health…</div></section>
-        <section class="card dashboard-widget" data-dashboard-widget="readiness"><h2>Setup and updates</h2><div id="opsReadiness" class="health-grid muted">Loading setup state…</div></section>
-        <section class="card dashboard-widget" data-dashboard-widget="events"><h2>Event activity</h2><div id="eventActivityChart" class="spark-chart muted">Loading event activity…</div></section>
+        <section class="card dashboard-widget" data-dashboard-widget="execution"><h2>Execution health</h2><div id="taskStatusChart" class="bar-chart muted" data-pac-loading="Loading execution health…">Loading execution health…</div></section>
+        <section class="card dashboard-widget" data-dashboard-widget="components"><h2>Critical components</h2><div id="componentHealth" class="health-grid muted" data-pac-loading="Loading component health…">Loading component health…</div></section>
+        <section class="card dashboard-widget" data-dashboard-widget="readiness"><h2>Setup and updates</h2><div id="opsReadiness" class="health-grid muted" data-pac-loading="Loading setup state…">Loading setup state…</div></section>
+        <section class="card dashboard-widget" data-dashboard-widget="events"><h2>Event activity</h2><div id="eventActivityChart" class="spark-chart muted" data-pac-loading="Loading event activity…">Loading event activity…</div></section>
         <section class="card dashboard-widget dashboard-widget-mandatory" data-dashboard-widget="system"><h2>System</h2><div class="status-strip"><span class="pac-loader" aria-label="active"></span><span class="muted">PAC active</span><span class="pill">mandatory</span></div><div id="systemInfo" class="kv"></div></section>
         <section class="card dashboard-widget" data-dashboard-widget="sessions"><h2>Recent sessions</h2><div id="sessions"></div></section>
       </div>
@@ -347,7 +347,7 @@
         <aside class="split-side">
           <section class="card side-panel">
             <h2>Live provider models</h2>
-            <div id="providersLive"><div class="muted small-text">Loading…</div></div>
+            <div id="providersLive"><div class="muted small-text" data-pac-loading="Loading providers…">Loading…</div></div>
           </section>
         </aside>
       </div>
@@ -556,7 +556,7 @@
         <aside class="split-side">
           <section class="card side-panel">
             <h2>Active workspaces</h2>
-            <div id="workspacesActive"><div class="muted small-text">Loading…</div></div>
+            <div id="workspacesActive"><div class="muted small-text" data-pac-loading="Loading active workspaces…">Loading…</div></div>
           </section>
         </aside>
       </div>
@@ -667,6 +667,54 @@
       </section>
     </div>
 
+    <section id="observe-tab" class="tab-panel observe-panel">
+      <div class="observe-hero card wide">
+        <div class="section-heading compact-heading">
+          <div>
+            <h2>Observe</h2>
+            <p class="muted">Controller-local logs, metrics, and traces live here. Events remain available from the Events tab and the bell.</p>
+          </div>
+          <div class="button-row compact-row">
+            <button id="observeRefresh" class="ghost-button" type="button">Refresh</button>
+            <button id="observeOpenEvents" class="ghost-button" type="button">Open events</button>
+          </div>
+        </div>
+        <div id="observeStatusCards" class="observe-status-grid muted" data-pac-loading="Loading observability status…">Loading observability status…</div>
+      </div>
+      <div class="dashboard-grid observe-grid">
+        <section class="card wide observe-card">
+          <div class="section-heading compact-heading">
+            <div><h2>Controller logs</h2><p class="muted">Rotating local logs from this PAC controller.</p></div>
+            <div class="button-row compact-row">
+              <select id="observeLogName" aria-label="Log file"><option value="controller">Controller</option><option value="audit">Audit</option></select>
+              <button id="observeRefreshLogs" class="ghost-button" type="button">Tail log</button>
+            </div>
+          </div>
+          <pre id="observeLogTail" class="observe-log-tail muted">Choose a log to tail.</pre>
+        </section>
+        <section class="card observe-card">
+          <h2>Metrics snapshot</h2>
+          <div id="observeMetrics" class="observe-kv muted" data-pac-loading="Loading metrics…">Loading metrics…</div>
+        </section>
+        <section class="card observe-card">
+          <h2>Model usage</h2>
+          <div id="observeModelUsage" class="observe-kv muted" data-pac-loading="Loading model usage…">Loading model usage…</div>
+        </section>
+        <section class="card observe-card">
+          <h2>Embedded metrics</h2>
+          <div id="observeEmbeddedMetrics" class="observe-kv muted" data-pac-loading="Loading embedded metric store…">Loading embedded metric store…</div>
+        </section>
+        <section class="card observe-card observe-traces-card">
+          <div class="section-heading compact-heading"><div><h2>Recent traces</h2><p class="muted">Lightweight local spans for requests and future agent/endpoint operations.</p></div><button id="observePruneStore" class="ghost-button" type="button">Prune store</button></div>
+          <div id="observeTraces" class="observe-trace-list muted" data-pac-loading="Loading traces…">Loading traces…</div>
+        </section>
+        <section class="card observe-card">
+          <h2>Runtime</h2>
+          <div id="observeRuntime" class="observe-kv muted" data-pac-loading="Loading runtime…">Loading runtime…</div>
+        </section>
+      </div>
+    </section>
+
     <section id="tools-tab" class="tab-panel">
       <div class="dashboard-grid">
         <section class="card">
@@ -715,7 +763,7 @@
       </div>
       <div class="source-workbench">
         <aside class="source-workbench-tree">
-          <div id="sourceTree" class="source-tree source-file-tree muted">Loading sources…</div>
+          <div id="sourceTree" class="source-tree source-file-tree muted" data-pac-loading="Loading sources…">Loading sources…</div>
           <div class="source-tree-footer">
             <button id="openSourceSetupModal" class="ghost-button">Workspace setup</button>
             <button id="openSourceProfileConfig" class="ghost-button">Profile settings</button>
@@ -1278,6 +1326,7 @@
   <footer class="app-footer"><img src="/ui/assets/pac-icon-green-32.png" alt="" /> <span>PAC Control • Orchestrate • Execute</span><span id="buildStamp" class="app-version" title="Backend and UI build information">backend v... • ui ...</span></footer>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="/ui/app/ui_helpers.js"></script>
+  <script src="/ui/app/ui_loading.js"></script>
   <script src="/ui/app/provider_presets.js"></script>
   <script src="/ui/app/providers.js"></script>
   <script src="/ui/app/session_commands.js"></script>
@@ -1285,10 +1334,13 @@
   <script src="/ui/app/sources.js"></script>
   <script src="/ui/app/sessions.js"></script>
   <script src="/ui/app/dashboard_topology.js"></script>
+  <script src="/ui/app/endpoint_cards.js"></script>
+  <script src="/ui/app/endpoint_actions.js"></script>
   <script src="/ui/app/endpoints.js"></script>
   <script src="/ui/app/auth_admin.js"></script>
   <script src="/ui/app/directory_dragdrop.js"></script>
   <script src="/ui/app/directory_access.js"></script>
+  <script src="/ui/app/observe.js"></script>
   <script src="/ui/app/events.js"></script>
   <script src="/ui/app/workspaces_contexts.js"></script>
   <script src="/ui/app/profiles_config.js"></script>

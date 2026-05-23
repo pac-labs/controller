@@ -4,7 +4,7 @@ import os
 import re
 import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
 import json
@@ -88,7 +88,12 @@ def _json_request(url: str, provider: ProviderConfig, payload: dict[str, Any] | 
 
 
 
-def _stream_openai_chat(url: str, provider: ProviderConfig, payload: dict[str, Any]) -> tuple[bool, Any]:
+def _stream_openai_chat(
+    url: str,
+    provider: ProviderConfig,
+    payload: dict[str, Any],
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> tuple[bool, Any]:
     """Read OpenAI-compatible SSE chat streams.
 
     For LM Studio this avoids a single hard request timeout while the model is
@@ -101,8 +106,29 @@ def _stream_openai_chat(url: str, provider: ProviderConfig, payload: dict[str, A
         headers.setdefault("Authorization", f"Bearer {api_key}")
     req = Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
     chunks: list[str] = []
+    emitted_chars = 0
+    last_emit = time.monotonic()
+    def emit_progress(force: bool = False) -> None:
+        nonlocal emitted_chars, last_emit
+        if not progress_callback:
+            return
+        text = "".join(chunks)
+        now = time.monotonic()
+        if not force and len(text) - emitted_chars < 160 and now - last_emit < 1.5:
+            return
+        emitted_chars = len(text)
+        last_emit = now
+        try:
+            progress_callback({
+                "chars": len(text),
+                "preview": text[-900:],
+                "streaming": True,
+            })
+        except Exception:
+            pass
+
     try:
-        with urlopen(req, timeout=max(30, provider.timeout_seconds)) as resp:
+        with urlopen(req, timeout=max(120, provider.timeout_seconds)) as resp:
             for raw in resp:
                 line = raw.decode(errors="replace").strip()
                 if not line or not line.startswith("data:"):
@@ -116,8 +142,10 @@ def _stream_openai_chat(url: str, provider: ProviderConfig, payload: dict[str, A
                     content = delta.get("content")
                     if content:
                         chunks.append(content)
+                        emit_progress()
                 except Exception:
                     continue
+        emit_progress(force=True)
         return True, "".join(chunks)
     except HTTPError as exc:
         return False, {"error": f"HTTP {exc.code}", "body": exc.read().decode(errors="replace")[:1000]}
@@ -125,6 +153,29 @@ def _stream_openai_chat(url: str, provider: ProviderConfig, payload: dict[str, A
         return False, {"error": str(exc.reason)}
     except Exception as exc:
         return False, {"error": str(exc)}
+
+
+def _provider_error_text(body: Any) -> str:
+    if isinstance(body, dict):
+        return str(body.get("error") or body.get("message") or body)
+    return str(body or "")
+
+
+def _looks_like_timeout_response(body: Any) -> bool:
+    text = _provider_error_text(body).lower()
+    return "timed out" in text or "timeout" in text or "read timed out" in text
+
+
+def _should_retry_chat_with_stream(provider: ProviderConfig, model: ModelConfig, payload: dict[str, Any], body: Any) -> bool:
+    if payload.get("stream"):
+        return False
+    if provider.type not in {"openai-compatible", "lmstudio", "vllm"}:
+        return False
+    if getattr(model.capabilities, "supports_streaming", True) is False:
+        return False
+    if model.extra.get("stream") is False:
+        return False
+    return _looks_like_timeout_response(body)
 
 
 def normalize_provider_base_url(provider: ProviderConfig, model: ModelConfig | None = None) -> str:
@@ -571,6 +622,7 @@ def chat_complete(
     messages: list[dict[str, str]],
     max_tokens: int | None = None,
     telemetry: dict[str, Any] | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> str:
     """Small synchronous chat abstraction for Stage 8 agent loop.
 
@@ -599,12 +651,29 @@ def chat_complete(
                 "messages": messages,
                 "max_tokens": min(max_tokens, model.max_output_tokens),
                 "temperature": model.extra.get("temperature", 0.2),
-                "stream": provider.type == "lmstudio",
+                "stream": bool(
+                    getattr(model.capabilities, "supports_streaming", True)
+                    and (provider.type in {"lmstudio", "vllm"} or bool(model.extra.get("stream")))
+                ),
             }
-            if provider.type == "lmstudio":
-                ok, body = _stream_openai_chat(endpoint, provider, payload)
+            if payload.get("stream"):
+                ok, body = _stream_openai_chat(endpoint, provider, payload, progress_callback=progress_callback)
             else:
                 ok, body = _json_request(endpoint, provider, payload)
+                if not ok and _should_retry_chat_with_stream(provider, model, payload, body):
+                    if progress_callback:
+                        try:
+                            progress_callback({
+                                "chars": 0,
+                                "preview": "Provider timed out before returning a non-streaming response; retrying with streaming enabled.",
+                                "streaming": True,
+                                "retry": "timeout_stream",
+                            })
+                        except Exception:
+                            pass
+                    retry_payload = dict(payload)
+                    retry_payload["stream"] = True
+                    ok, body = _stream_openai_chat(endpoint, provider, retry_payload, progress_callback=progress_callback)
             if not ok:
                 duration_ms = int((time.monotonic() - started) * 1000)
                 _record_chat_metric(telemetry=telemetry, model_name=model_name, provider=provider, provider_name=provider_name, provider_model=provider_model, endpoint=endpoint, messages=messages, response_text="", max_tokens=max_tokens, duration_ms=duration_ms, success=False, error=str(body))

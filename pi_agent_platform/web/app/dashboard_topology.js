@@ -1,11 +1,12 @@
-// Dashboard topology, private widgets, and notification-summary helpers.
+// Dashboard widget selection, PAC Component Atlas rendering, and notification summary helpers.
 
 const DASHBOARD_WIDGET_KEY = 'pac-dashboard-widgets-v1';
-const DASHBOARD_TOPOLOGY_LAYOUT_KEY = 'pac-dashboard-topology-layout-inside-out-v2';
+const DASHBOARD_ATLAS_ZOOM_KEY = 'pac-dashboard-atlas-zoom-v1';
+const DASHBOARD_ATLAS_DETAIL_KEY = 'pac-dashboard-atlas-detail-v1';
 const DASHBOARD_DEFAULT_WIDGETS = ['topology', 'overview', 'execution', 'components', 'readiness', 'events', 'sessions'];
 const DASHBOARD_WIDGETS = [
   {id: 'overview', label: 'Operations overview'},
-  {id: 'topology', label: 'Connection map'},
+  {id: 'topology', label: 'PAC Component Atlas'},
   {id: 'execution', label: 'Execution health'},
   {id: 'components', label: 'Critical components'},
   {id: 'readiness', label: 'Setup and updates'},
@@ -14,14 +15,31 @@ const DASHBOARD_WIDGETS = [
   {id: 'system', label: 'System', mandatory: true},
 ];
 
-const TOPOLOGY_KIND_META = {
-  controller: {icon: '⌂', label: 'Controller', ring: 0, order: 0},
-  profile: {icon: '◈', label: 'Profile', ring: 1, order: 0},
-  context: {icon: '▣', label: 'Context', ring: 1, order: 1},
-  workspace: {icon: '▤', label: 'Workspace', ring: 1, order: 2},
-  model: {icon: '✦', label: 'Model', ring: 2, order: 0},
-  endpoint: {icon: '▰', label: 'Endpoint', ring: 2, order: 1},
-  provider: {icon: '◍', label: 'Provider', ring: 3, order: 0},
+const ATLAS_WIDTH = 2240;
+const ATLAS_HEIGHT = 1560;
+const ATLAS_GROUPS = {
+  controller: {label: 'PAC Controller', icon: '⌂', x: 840, y: 560, w: 520, h: 360},
+  agents: {label: 'Agents', icon: '✣', x: 780, y: 80, w: 620, h: 360},
+  providers: {label: 'Providers & models', icon: '◍', x: 1460, y: 90, w: 620, h: 520},
+  endpoints: {label: 'Endpoints', icon: '▰', x: 120, y: 230, w: 600, h: 500},
+  workspaces: {label: 'Workspaces & context', icon: '▤', x: 1460, y: 680, w: 620, h: 430},
+  sessions: {label: 'Sessions', icon: '▶', x: 800, y: 1010, w: 660, h: 430},
+  tools: {label: 'Tools & packages', icon: '⚙', x: 120, y: 800, w: 600, h: 520},
+  plugins: {label: 'Plugins', icon: '◇', x: 80, y: 1340, w: 640, h: 170},
+  profiles: {label: 'Profiles & access', icon: '◈', x: 1540, y: 1160, w: 520, h: 310},
+  observability: {label: 'Observability', icon: '◌', x: 120, y: 40, w: 560, h: 150},
+  artifacts: {label: 'Artifacts', icon: '▧', x: 1500, y: 1490, w: 540, h: 160},
+};
+
+const ATLAS_KIND_META = {
+  controller: {icon: '⌂', label: 'Controller'}, subsystem: {icon: '·', label: 'Controller part'},
+  agent: {icon: '✣', label: 'Agent'}, agent_part: {icon: '•', label: 'Agent part'},
+  provider: {icon: '◍', label: 'Provider'}, model: {icon: '✦', label: 'Model'}, capability: {icon: '+', label: 'Capability'},
+  endpoint: {icon: '▰', label: 'Endpoint'}, runtime: {icon: '↯', label: 'Runtime'},
+  workspace: {icon: '▤', label: 'Workspace'}, context: {icon: '▣', label: 'Context'},
+  session: {icon: '▶', label: 'Session'}, profile: {icon: '◈', label: 'Profile'},
+  tool_package: {icon: '▦', label: 'Tool package'}, tool: {icon: '⚙', label: 'Tool'}, plugin: {icon: '◇', label: 'Plugin'},
+  observability: {icon: '◌', label: 'Signals'}, signal: {icon: '◦', label: 'Signal'}, artifact: {icon: '▧', label: 'Artifact'},
 };
 
 function dashboardSelectedWidgets() {
@@ -33,8 +51,7 @@ function dashboardSelectedWidgets() {
 }
 
 function saveDashboardSelectedWidgets(selected) {
-  const values = [...selected].filter((id) => id !== 'system');
-  try { localStorage.setItem(DASHBOARD_WIDGET_KEY, JSON.stringify(values)); } catch (_) {}
+  try { localStorage.setItem(DASHBOARD_WIDGET_KEY, JSON.stringify([...selected].filter((id) => id !== 'system'))); } catch (_) {}
 }
 
 function applyDashboardWidgetVisibility() {
@@ -51,8 +68,7 @@ function renderDashboardWidgetMenu(selected = dashboardSelectedWidgets()) {
   if (!menu) return;
   menu.innerHTML = DASHBOARD_WIDGETS.map((widget) => {
     const checked = widget.mandatory || selected.has(widget.id);
-    const disabled = widget.mandatory ? ' disabled' : '';
-    return `<label class="dashboard-widget-choice"><input type="checkbox" value="${escapeHtml(widget.id)}"${checked ? ' checked' : ''}${disabled} /> <span>${escapeHtml(widget.label)}</span>${widget.mandatory ? '<small>mandatory</small>' : ''}</label>`;
+    return `<label class="dashboard-widget-choice"><input type="checkbox" value="${escapeHtml(widget.id)}"${checked ? ' checked' : ''}${widget.mandatory ? ' disabled' : ''} /> <span>${escapeHtml(widget.label)}</span>${widget.mandatory ? '<small>mandatory</small>' : ''}</label>`;
   }).join('');
   menu.querySelectorAll('input[type="checkbox"]').forEach((input) => {
     input.onchange = () => {
@@ -72,9 +88,8 @@ function setupDashboardWidgetPicker() {
   applyDashboardWidgetVisibility();
   button.onclick = (ev) => {
     ev.stopPropagation();
-    const open = menu.hidden;
-    menu.hidden = !open;
-    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    menu.hidden = !menu.hidden;
+    button.setAttribute('aria-expanded', menu.hidden ? 'false' : 'true');
   };
   document.addEventListener('click', (ev) => {
     if (menu.hidden) return;
@@ -85,135 +100,132 @@ function setupDashboardWidgetPicker() {
   });
 }
 
-function topologyKindMeta(kind) {
-  return TOPOLOGY_KIND_META[kind] || {icon: '•', label: kind || 'Object', ring: 2, order: 9};
+function atlasZoom() {
+  const value = Number(localStorage.getItem(DASHBOARD_ATLAS_ZOOM_KEY) || '0.82');
+  return Number.isFinite(value) ? Math.max(0.55, Math.min(1.35, value)) : 0.82;
 }
 
-function topologyStatusClass(status) {
+function atlasDetail() {
+  const value = localStorage.getItem(DASHBOARD_ATLAS_DETAIL_KEY) || 'auto';
+  return ['auto', 'overview', 'infrastructure', 'full'].includes(value) ? value : 'auto';
+}
+
+function atlasEffectiveDetail() {
+  const configured = atlasDetail();
+  if (configured !== 'auto') return configured;
+  const z = atlasZoom();
+  if (z < 0.72) return 'overview';
+  if (z < 1.0) return 'infrastructure';
+  return 'full';
+}
+
+function atlasKindMeta(kind) {
+  return ATLAS_KIND_META[kind] || {icon: '•', label: kind || 'Object'};
+}
+
+function atlasStatusClass(status) {
   const s = String(status || '').toLowerCase();
-  if (['online', 'connected', 'available', 'configured', 'enabled'].includes(s)) return 'ok';
-  if (['failed', 'unresolved', 'offline', 'disabled'].includes(s)) return 'warn';
+  if (['online', 'connected', 'available', 'configured', 'enabled', 'active', 'running'].includes(s)) return 'ok';
+  if (['failed', 'unresolved', 'offline', 'disabled', 'stopped'].includes(s)) return 'warn';
   return 'neutral';
 }
 
-function loadTopologyLayout() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(DASHBOARD_TOPOLOGY_LAYOUT_KEY) || '{}');
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch (_) {
-    return {};
-  }
+function atlasNodeVisible(node) {
+  const detail = atlasEffectiveDetail();
+  if (detail === 'full') return true;
+  if (detail === 'infrastructure') return node.depth !== 'subcomponent' || ['model', 'tool', 'context'].includes(node.kind);
+  return ['core', 'instance'].includes(node.depth) && !['capability', 'artifact'].includes(node.kind);
 }
 
-function saveTopologyLayout(layout) {
-  try { localStorage.setItem(DASHBOARD_TOPOLOGY_LAYOUT_KEY, JSON.stringify(layout || {})); } catch (_) {}
+function atlasVisibleGraph(rawGraph) {
+  const nodes = (rawGraph?.nodes || []).filter(atlasNodeVisible);
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges = (rawGraph?.edges || []).filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target));
+  return {nodes, edges, summary: rawGraph?.summary || {}};
 }
 
-function defaultTopologyPositions(nodes, containerWidth = 920) {
-  const width = Math.max(960, containerWidth || 920);
-  const height = Math.max(620, 260 + Math.ceil(Math.max(nodes.length, 1) / 5) * 92);
-  const nodeWidth = 224;
-  const center = {x: Math.max(24, Math.floor(width / 2) - Math.floor(nodeWidth / 2)), y: Math.max(42, Math.floor(height / 2) - 38)};
-  const rings = new Map();
+function atlasLayout(nodes) {
+  const byGroup = new Map();
   nodes.forEach((node) => {
-    const meta = topologyKindMeta(node.kind);
-    const ring = Number.isFinite(Number(meta.ring)) ? Number(meta.ring) : 2;
-    if (!rings.has(ring)) rings.set(ring, []);
-    rings.get(ring).push(node);
+    const group = ATLAS_GROUPS[node.group] ? node.group : 'controller';
+    if (!byGroup.has(group)) byGroup.set(group, []);
+    byGroup.get(group).push(node);
   });
-  for (const items of rings.values()) {
-    items.sort((a, b) => {
-      const ma = topologyKindMeta(a.kind);
-      const mb = topologyKindMeta(b.kind);
-      return (ma.order ?? 9) - (mb.order ?? 9) || String(a.label || a.id).localeCompare(String(b.label || b.id));
-    });
-  }
   const positions = {};
-  const maxRadius = Math.max(220, Math.min(width, height) / 2 - 92);
-  const ringStep = Math.max(148, Math.floor(maxRadius / 3));
-  [...rings.entries()].sort(([a], [b]) => a - b).forEach(([ring, items]) => {
-    if (ring <= 0) {
-      items.forEach((node, idx) => {
-        positions[node.id] = {x: center.x + idx * 18, y: center.y + idx * 18};
-      });
-      return;
-    }
-    const radius = Math.min(maxRadius, ringStep * ring);
-    const angleOffset = ring === 1 ? -Math.PI / 2 : ring === 2 ? -Math.PI / 2 + Math.PI / Math.max(items.length, 3) : -Math.PI / 2 + Math.PI / 6;
-    items.forEach((node, idx) => {
-      const angle = angleOffset + (Math.PI * 2 * idx) / Math.max(items.length, 1);
-      const x = center.x + Math.cos(angle) * radius;
-      const y = center.y + Math.sin(angle) * radius;
-      positions[node.id] = {
-        x: Math.round(Math.max(8, Math.min(width - nodeWidth - 18, x))),
-        y: Math.round(Math.max(48, Math.min(height - 86, y))),
-      };
+  byGroup.forEach((items, groupKey) => {
+    const group = ATLAS_GROUPS[groupKey];
+    const sorted = [...items].sort((a, b) => {
+      const rank = {core: 0, instance: 1, subcomponent: 2};
+      return (rank[a.depth] ?? 3) - (rank[b.depth] ?? 3) || String(a.parent || '').localeCompare(String(b.parent || '')) || String(a.label || a.id).localeCompare(String(b.label || b.id));
+    });
+    const compact = group.h < 220;
+    const cols = compact ? 3 : Math.max(1, Math.floor((group.w - 44) / 220));
+    sorted.forEach((node, index) => {
+      const col = index % cols;
+      const row = Math.floor(index / cols);
+      positions[node.id] = {x: group.x + 22 + col * 220, y: group.y + 58 + row * 92};
     });
   });
   return positions;
 }
 
-function effectiveTopologyPositions(nodes, container) {
-  const saved = loadTopologyLayout();
-  const defaults = defaultTopologyPositions(nodes, container?.clientWidth || 920);
-  const positions = {};
-  nodes.forEach((node) => {
-    const item = saved[node.id];
-    const fallback = defaults[node.id] || {x: 24, y: 64};
-    const x = Number.isFinite(Number(item?.x)) ? Number(item.x) : fallback.x;
-    const y = Number.isFinite(Number(item?.y)) ? Number(item.y) : fallback.y;
-    positions[node.id] = {x: Math.max(0, x), y: Math.max(0, y)};
-  });
-  return positions;
+function atlasNodeHtml(node, pos) {
+  const meta = atlasKindMeta(node.kind);
+  const status = atlasStatusClass(node.status);
+  const active = ['running', 'active', 'queued', 'approval_required'].includes(String(node.status || '').toLowerCase());
+  const loader = active ? '<span class="pac-loader atlas-node-loader" aria-label="active"></span>' : `<span class="atlas-node-icon">${escapeHtml(meta.icon)}</span>`;
+  return `<button type="button" class="atlas-node atlas-node-depth-${escapeHtml(node.depth || 'instance')} atlas-kind-${escapeHtml(node.kind)} status-${status}" data-node-id="${escapeHtml(node.id)}" style="left:${pos.x}px;top:${pos.y}px">${loader}<span class="atlas-node-main"><b>${escapeHtml(node.label || node.id)}</b><small>${escapeHtml(meta.label)}${node.detail ? ` · ${escapeHtml(node.detail)}` : ''}</small></span><i>${escapeHtml(node.status || '')}</i></button>`;
 }
 
-function selectTopologyNode(node, graph) {
-  document.querySelectorAll('.topology-node').forEach((el) => el.classList.toggle('selected', el.dataset.nodeId === node.id));
+function renderAtlasGroups(nodes) {
+  const counts = new Map();
+  nodes.forEach((node) => counts.set(node.group, (counts.get(node.group) || 0) + 1));
+  return Object.entries(ATLAS_GROUPS).map(([key, group]) => `
+    <section class="atlas-group atlas-group-${escapeHtml(key)}" data-atlas-group="${escapeHtml(key)}" style="left:${group.x}px;top:${group.y}px;width:${group.w}px;height:${group.h}px">
+      <header><span>${escapeHtml(group.icon)}</span><b>${escapeHtml(group.label)}</b><small>${counts.get(key) || 0}</small></header>
+    </section>`).join('');
+}
+
+function selectAtlasNode(node, graph) {
+  document.querySelectorAll('.atlas-node').forEach((el) => el.classList.toggle('selected', el.dataset.nodeId === node.id));
   const details = document.getElementById('dashboardTopologyDetails');
   if (!details) return;
   const incoming = (graph.edges || []).filter((edge) => edge.target === node.id);
   const outgoing = (graph.edges || []).filter((edge) => edge.source === node.id);
+  const data = node.data && typeof node.data === 'object' ? node.data : {};
+  const compactData = Object.entries(data).filter(([, value]) => value != null && typeof value !== 'object').slice(0, 10);
   const relatedLine = (edge, reverse = false) => {
     const otherId = reverse ? edge.source : edge.target;
     const other = (graph.nodes || []).find((item) => item.id === otherId);
     return `<li><b>${escapeHtml(edge.label || 'connected')}</b> ${escapeHtml(reverse ? 'from' : 'to')} ${escapeHtml(other?.label || otherId)}</li>`;
   };
-  const meta = topologyKindMeta(node.kind);
-  const data = node.data && typeof node.data === 'object' ? node.data : {};
-  const compactData = Object.entries(data).filter(([_, value]) => value != null && typeof value !== 'object').slice(0, 8);
+  const meta = atlasKindMeta(node.kind);
   details.innerHTML = `
     <div class="topology-detail-head"><span class="topology-icon">${escapeHtml(meta.icon)}</span><div><h3>${escapeHtml(node.label || node.id)}</h3><p>${escapeHtml(meta.label)} · ${escapeHtml(node.status || 'unknown')}</p></div></div>
     ${node.detail ? `<p class="muted small-text">${escapeHtml(node.detail)}</p>` : ''}
-    <div class="topology-detail-section"><h4>Connections</h4>${incoming.length || outgoing.length ? `<ul>${incoming.map((edge) => relatedLine(edge, true)).join('')}${outgoing.map((edge) => relatedLine(edge, false)).join('')}</ul>` : '<p class="muted small-text">No links reported.</p>'}</div>
+    <div class="topology-detail-section"><h4>Atlas position</h4><dl><dt>Group</dt><dd>${escapeHtml(ATLAS_GROUPS[node.group]?.label || node.group || 'PAC')}</dd><dt>Depth</dt><dd>${escapeHtml(node.depth || 'instance')}</dd>${node.parent ? `<dt>Parent</dt><dd>${escapeHtml((graph.nodes || []).find((item) => item.id === node.parent)?.label || node.parent)}</dd>` : ''}</dl></div>
+    <div class="topology-detail-section"><h4>Connections</h4>${incoming.length || outgoing.length ? `<ul>${incoming.map((edge) => relatedLine(edge, true)).join('')}${outgoing.map((edge) => relatedLine(edge, false)).join('')}</ul>` : '<p class="muted small-text">No visible links at this detail level.</p>'}</div>
     ${compactData.length ? `<div class="topology-detail-section"><h4>Details</h4><dl>${compactData.map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(String(value))}</dd>`).join('')}</dl></div>` : ''}
     <div class="muted small-text">Object id: <code>${escapeHtml(node.id)}</code></div>`;
 }
 
-function drawTopologyEdges(container, graph) {
+function drawAtlasEdges(container, graph, positions) {
   const svg = container.querySelector('svg');
   if (!svg) return;
-  const wrap = container.getBoundingClientRect();
-  const nodes = new Map([...container.querySelectorAll('.topology-node')].map((el) => [el.dataset.nodeId, el]));
-  const width = Math.max(1, container.scrollWidth, wrap.width);
-  const height = Math.max(1, container.scrollHeight, wrap.height);
-  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-  svg.setAttribute('width', String(width));
-  svg.setAttribute('height', String(height));
+  svg.setAttribute('viewBox', `0 0 ${ATLAS_WIDTH} ${ATLAS_HEIGHT}`);
   svg.innerHTML = '';
   (graph.edges || []).forEach((edge) => {
-    const source = nodes.get(edge.source);
-    const target = nodes.get(edge.target);
-    if (!source || !target) return;
-    const a = source.getBoundingClientRect();
-    const b = target.getBoundingClientRect();
-    const x1 = a.left + a.width / 2 - wrap.left + container.scrollLeft;
-    const y1 = a.top + a.height / 2 - wrap.top + container.scrollTop;
-    const x2 = b.left + b.width / 2 - wrap.left + container.scrollLeft;
-    const y2 = b.top + b.height / 2 - wrap.top + container.scrollTop;
-    const dx = Math.max(48, Math.abs(x2 - x1) / 2);
+    const a = positions[edge.source];
+    const b = positions[edge.target];
+    if (!a || !b) return;
+    const x1 = a.x + 108;
+    const y1 = a.y + 36;
+    const x2 = b.x + 108;
+    const y2 = b.y + 36;
+    const dx = Math.max(80, Math.abs(x2 - x1) / 2);
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', `M ${x1} ${y1} C ${x1 + (x2 >= x1 ? dx : -dx)} ${y1}, ${x2 - (x2 >= x1 ? dx : -dx)} ${y2}, ${x2} ${y2}`);
-    path.setAttribute('class', `topology-edge topology-edge-${String(edge.kind || 'connected').replace(/[^a-z0-9_-]/gi, '-')}`);
+    path.setAttribute('class', `atlas-edge atlas-edge-${String(edge.kind || 'connected').replace(/[^a-z0-9_-]/gi, '-')}`);
     const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
     title.textContent = edge.label || 'connected';
     path.appendChild(title);
@@ -221,100 +233,44 @@ function drawTopologyEdges(container, graph) {
   });
 }
 
-function saveDraggedTopologyNode(nodeId, x, y) {
-  const layout = loadTopologyLayout();
-  layout[nodeId] = {x: Math.round(x), y: Math.round(y)};
-  saveTopologyLayout(layout);
+function renderAtlasControls(graph) {
+  const zoom = atlasZoom();
+  const detail = atlasDetail();
+  const summary = graph.summary || {};
+  return `<div class="atlas-toolbar">
+    <div class="atlas-summary"><b>${summary.groups || Object.keys(ATLAS_GROUPS).length}</b><span>groups</span><b>${graph.nodes.length}</b><span>nodes</span><b>${graph.edges.length}</b><span>links</span></div>
+    <label>Zoom <input id="atlasZoomRange" type="range" min="0.55" max="1.35" step="0.05" value="${zoom}" /></label>
+    <label>Detail <select id="atlasDetailSelect"><option value="auto"${detail === 'auto' ? ' selected' : ''}>Auto</option><option value="overview"${detail === 'overview' ? ' selected' : ''}>Overview</option><option value="infrastructure"${detail === 'infrastructure' ? ' selected' : ''}>Infrastructure</option><option value="full"${detail === 'full' ? ' selected' : ''}>Full</option></select></label>
+  </div>`;
 }
 
-function setupTopologyNodeDrag(button, node, graph, container) {
-  let start = null;
-  button.addEventListener('pointerdown', (ev) => {
-    if (ev.button !== 0) return;
-    start = {
-      pointerId: ev.pointerId,
-      x: ev.clientX,
-      y: ev.clientY,
-      left: parseFloat(button.style.left || '0'),
-      top: parseFloat(button.style.top || '0'),
-      dragging: false,
-    };
-    button.setPointerCapture?.(ev.pointerId);
-  });
-  button.addEventListener('pointermove', (ev) => {
-    if (!start || start.pointerId !== ev.pointerId) return;
-    const dx = ev.clientX - start.x;
-    const dy = ev.clientY - start.y;
-    if (!start.dragging && Math.hypot(dx, dy) < 4) return;
-    start.dragging = true;
-    button.classList.add('dragging');
-    ev.preventDefault();
-    const maxLeft = Math.max(0, container.scrollWidth - button.offsetWidth - 12);
-    const maxTop = Math.max(0, container.scrollHeight - button.offsetHeight - 12);
-    const left = Math.min(maxLeft, Math.max(8, start.left + dx));
-    const top = Math.min(maxTop, Math.max(42, start.top + dy));
-    button.style.left = `${left}px`;
-    button.style.top = `${top}px`;
-    drawTopologyEdges(container, graph);
-  });
-  button.addEventListener('pointerup', (ev) => {
-    if (!start || start.pointerId !== ev.pointerId) return;
-    const wasDragging = start.dragging;
-    const left = parseFloat(button.style.left || '0');
-    const top = parseFloat(button.style.top || '0');
-    button.releasePointerCapture?.(ev.pointerId);
-    button.classList.remove('dragging');
-    start = null;
-    if (wasDragging) {
-      saveDraggedTopologyNode(node.id, left, top);
-      drawTopologyEdges(container, graph);
-    } else {
-      selectTopologyNode(node, graph);
-    }
-  });
-  button.addEventListener('pointercancel', () => {
-    button.classList.remove('dragging');
-    start = null;
-  });
-}
-
-function renderDashboardTopology(graph) {
+function renderDashboardTopology(rawGraph) {
   const el = document.getElementById('dashboardTopologyMap');
   if (!el) return;
-  const nodes = graph.nodes || [];
-  if (!nodes.length) {
+  const graph = atlasVisibleGraph(rawGraph || {nodes: [], edges: []});
+  if (!graph.nodes.length) {
     el.textContent = 'No topology objects are configured yet.';
     return;
   }
-  const positions = effectiveTopologyPositions(nodes, el);
-  const maxY = Math.max(...Object.values(positions).map((pos) => pos.y), 260) + 110;
-  const maxX = Math.max(...Object.values(positions).map((pos) => pos.x), 720) + 260;
-  const canvasWidth = Math.max(maxX, 960);
-  const canvasHeight = Math.max(maxY, 620);
-  const centerX = Math.round(canvasWidth / 2);
-  const centerY = Math.round(canvasHeight / 2);
-  const ringLabels = [
-    {label: 'PAC control', radius: 86},
-    {label: 'Use layer', radius: Math.max(170, Math.min(canvasWidth, canvasHeight) * .24)},
-    {label: 'Runtime layer', radius: Math.max(300, Math.min(canvasWidth, canvasHeight) * .38)},
-    {label: 'External / infrastructure', radius: Math.max(430, Math.min(canvasWidth, canvasHeight) * .52)},
-  ];
+  const zoom = atlasZoom();
+  const positions = atlasLayout(graph.nodes);
   el.classList.remove('muted');
-  el.innerHTML = `
-    <svg class="topology-lines" aria-hidden="true"></svg>
-    <div class="topology-ring-labels" style="width:${canvasWidth}px; min-height:${canvasHeight}px">${ringLabels.map((ring) => `<span class="topology-ring" style="left:${centerX - ring.radius}px;top:${centerY - ring.radius}px;width:${ring.radius * 2}px;height:${ring.radius * 2}px"><b>${escapeHtml(ring.label)}</b></span>`).join('')}</div>
-    <div class="topology-freeform-layer" style="width:${canvasWidth}px; min-height:${canvasHeight}px">${nodes.map((node) => {
-      const meta = topologyKindMeta(node.kind);
-      const pos = positions[node.id] || {x: 24, y: 64};
-      return `<button type="button" class="topology-node status-${topologyStatusClass(node.status)}" data-node-id="${escapeHtml(node.id)}" style="left:${pos.x}px;top:${pos.y}px"><span class="topology-icon">${escapeHtml(meta.icon)}</span><span class="topology-node-main"><b>${escapeHtml(node.label || node.id)}</b><small>${escapeHtml(meta.label)}${node.detail ? ` · ${escapeHtml(node.detail)}` : ''}</small></span><i>${escapeHtml(node.status || '')}</i></button>`;
-    }).join('')}</div>`;
-  el.querySelectorAll('.topology-node').forEach((btn) => {
-    const node = nodes.find((item) => item.id === btn.dataset.nodeId);
-    if (node) setupTopologyNodeDrag(btn, node, graph, el);
+  el.innerHTML = `${renderAtlasControls(graph)}<div class="atlas-scroll-plane" style="width:${ATLAS_WIDTH * zoom}px;height:${ATLAS_HEIGHT * zoom}px"><div class="atlas-canvas" style="width:${ATLAS_WIDTH}px;height:${ATLAS_HEIGHT}px;transform:scale(${zoom})"><svg class="atlas-lines" aria-hidden="true"></svg>${renderAtlasGroups(graph.nodes)}<div class="atlas-node-layer">${graph.nodes.map((node) => atlasNodeHtml(node, positions[node.id] || {x: 40, y: 40})).join('')}</div></div></div>`;
+  document.getElementById('atlasZoomRange')?.addEventListener('input', (ev) => {
+    localStorage.setItem(DASHBOARD_ATLAS_ZOOM_KEY, String(ev.target.value));
+    renderDashboardTopology(window.__pacDashboardTopology || rawGraph);
   });
-  requestAnimationFrame(() => drawTopologyEdges(el, graph));
-  window.setTimeout(() => drawTopologyEdges(el, graph), 200);
-  if (nodes[0]) selectTopologyNode(nodes[0], graph);
+  document.getElementById('atlasDetailSelect')?.addEventListener('change', (ev) => {
+    localStorage.setItem(DASHBOARD_ATLAS_DETAIL_KEY, String(ev.target.value));
+    renderDashboardTopology(window.__pacDashboardTopology || rawGraph);
+  });
+  el.querySelectorAll('.atlas-node').forEach((btn) => {
+    const node = graph.nodes.find((item) => item.id === btn.dataset.nodeId);
+    if (node) btn.onclick = () => selectAtlasNode(node, graph);
+  });
+  requestAnimationFrame(() => drawAtlasEdges(el, graph, positions));
+  const firstNode = graph.nodes.find((node) => node.id === 'controller:pac') || graph.nodes[0];
+  if (firstNode) selectAtlasNode(firstNode, graph);
 }
 
 async function loadDashboardTopology() {
@@ -324,12 +280,15 @@ async function loadDashboardTopology() {
     window.__pacDashboardTopology = graph;
     renderDashboardTopology(graph || {nodes: [], edges: []});
   } catch (e) {
-    if (el) el.innerHTML = `<div class="muted">Could not load connection map: ${escapeHtml(e.message || e)}</div>`;
+    if (el) el.innerHTML = `<div class="muted">Could not load PAC Component Atlas: ${escapeHtml(e.message || e)}</div>`;
   }
 }
 
 function resetDashboardTopologyLayout() {
-  try { localStorage.removeItem(DASHBOARD_TOPOLOGY_LAYOUT_KEY); } catch (_) {}
+  try {
+    localStorage.removeItem(DASHBOARD_ATLAS_ZOOM_KEY);
+    localStorage.removeItem(DASHBOARD_ATLAS_DETAIL_KEY);
+  } catch (_) {}
   const graph = window.__pacDashboardTopology;
   if (graph) renderDashboardTopology(graph);
 }
@@ -347,11 +306,9 @@ function renderNotificationSummary(summary) {
   const items = summary?.items || [];
   panel.hidden = false;
   const toolbar = `<div class="notification-summary-head"><b>${items.length ? 'Needs attention' : 'Notifications'}</b><span>${count} item${count === 1 ? '' : 's'}</span><button id="notificationCheckNow" class="ghost-button mini-button" type="button">Check now</button></div>`;
-  if (!items.length) {
-    panel.innerHTML = `${toolbar}<div class="notification-empty">No updates, approvals, alerts, or optimization notices need attention.</div>`;
-  } else {
-    panel.innerHTML = `${toolbar}${items.slice(0, 8).map((item) => `<button class="notification-item severity-${escapeHtml(item.severity || 'info')}" type="button" data-target="${escapeHtml(item.target || '')}"><span>${escapeHtml(item.kind || 'notice')}</span><b>${escapeHtml(item.title || 'Notification')}</b><small>${escapeHtml(item.detail || '')}</small></button>`).join('')}`;
-  }
+  panel.innerHTML = items.length
+    ? `${toolbar}${items.slice(0, 8).map((item) => `<button class="notification-item severity-${escapeHtml(item.severity || 'info')}" type="button" data-target="${escapeHtml(item.target || '')}"><span>${escapeHtml(item.kind || 'notice')}</span><b>${escapeHtml(item.title || 'Notification')}</b><small>${escapeHtml(item.detail || '')}</small></button>`).join('')}`
+    : `${toolbar}<div class="notification-empty">No updates, approvals, alerts, or optimization notices need attention.</div>`;
   const checkNow = document.getElementById('notificationCheckNow');
   if (checkNow) checkNow.onclick = () => checkDashboardNotificationsNow(checkNow);
   panel.querySelectorAll('.notification-item').forEach((btn) => {
@@ -381,10 +338,7 @@ async function checkDashboardNotificationsNow(button) {
     button.disabled = true;
     button.textContent = 'Checking…';
   }
-  await Promise.allSettled([
-    api('/v1/updates/check'),
-    api('/v1/sources/online-updates'),
-  ]);
+  await Promise.allSettled([api('/v1/updates/check'), api('/v1/sources/online-updates')]);
   await loadNotificationSummary();
   if (button) {
     button.disabled = false;
@@ -398,9 +352,4 @@ function setupDashboardTopologyUi() {
   if (refresh) refresh.onclick = () => loadDashboardTopology();
   const reset = document.getElementById('dashboardResetTopologyLayout');
   if (reset) reset.onclick = () => resetDashboardTopologyLayout();
-  window.addEventListener('resize', () => {
-    const graph = window.__pacDashboardTopology;
-    const el = document.getElementById('dashboardTopologyMap');
-    if (graph && el && !el.hidden) drawTopologyEdges(el, graph);
-  });
 }

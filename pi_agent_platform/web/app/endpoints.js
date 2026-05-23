@@ -19,6 +19,21 @@ function endpointHardware(r) {
   const gpuRaw = c.gpu?.devices?.length ? c.gpu.devices.map(g => g.name || g.raw || 'GPU').join(', ') : (c.gpu?.raw || (c.gpu?.available ? 'available' : '-'));
   return {cpu, cores, ram, disk, gpu: gpuRaw};
 }
+
+function endpointOsFamily(endpoint) {
+  const values = [endpoint?.metadata?.os_family, endpoint?.metadata?.os, endpoint?.metadata?.onboarding_target, ...(endpoint?.labels || [])].map(v => String(v || '').toLowerCase());
+  if (values.some(v => v.includes('windows') || v === 'win32' || v === 'win64')) return 'windows';
+  if (values.some(v => v.includes('darwin') || v.includes('macos') || v === 'mac')) return 'darwin';
+  if (values.some(v => v.includes('linux'))) return 'linux';
+  return 'unknown';
+}
+function endpointDefaultCommand(endpoint) {
+  return endpointOsFamily(endpoint) === 'windows' ? 'Get-Location; Get-ChildItem -Force | Select-Object -First 20' : 'pwd && ls -la';
+}
+function endpointDefaultWorkspaceForTarget(target) {
+  return String(target || '').toLowerCase().includes('windows') ? 'C:\\PAC\\workspace' : '$HOME/pac-workspace';
+}
+
 function compactContainerLine(c) {
   const names = Array.isArray(c.Names) ? c.Names.join(', ') : (c.Names || c.names || c.Name || c.name || '-');
   const image = c.Image || c.image || '-';
@@ -51,46 +66,18 @@ async function loadRunners() {
     const defaultWorkspace = r.metadata?.default_workspace || Object.entries(config.workspaces || {}).find(([_,w]) => w.endpoint_id === r.id && w.is_default)?.[0] || '-';
     const modelLinks = Object.entries(config.models || {}).filter(([_,m]) => m.runs_on === r.id).map(([k])=>k).join(', ');
     const containers = (r.containers || []).slice(0,4).map(compactContainerLine).join('\n');
-    const card=document.createElement('article'); card.className='endpoint-card';
-    const localBadge = r.metadata?.local_control_plane ? ' <span class="pill">local</span>' : '';
-    const version = r.metadata?.runner_version || r.metadata?.endpoint_version || r.metadata?.agent_runtime?.version || '-';
-    const runtimeLines = endpointRuntimeLines(r);
-    const lastSeen = r.last_seen_at ? new Date(r.last_seen_at).toLocaleString() : 'never';
-    const updateStatus = r.metadata?.update_status ? `<span class="pill">update ${escapeHtml(r.metadata.update_status)}</span>` : '';
-    const maintenanceStatus = r.metadata?.maintenance_status ? `<span class="pill">maint ${escapeHtml(r.metadata.maintenance_status)}</span>` : '';
-    const enablement = r.metadata?.agent_enablement || {};
-    const nodeText = enablement.node_available ? (enablement.node_version || 'available') : 'missing';
-    const wrapperText = enablement.pac_wrapper_available ? 'installed' : 'missing';
-    const agentClass = enablement.status === 'ready' ? 'ok-pill' : (enablement.status === 'blocked' ? 'warn-pill' : '');
-    const piContainer = endpointPiContainer(r);
-    const piMissing = piContainer && !(piContainer.image_available || piContainer.available);
-    const featureChips = endpointFeatureChips(r, effectiveTools);
-    card.innerHTML = `<div class="endpoint-head"><div><h3>${escapeHtml(r.name)}</h3><div class="muted small-text">${escapeHtml(r.id)}</div></div><div><span class="pill ${r.status === 'online' ? 'ok-pill' : ''}">${escapeHtml(r.status)}</span>${localBadge}</div></div>
-      <div class="endpoint-features">${featureChips}</div>
-      <div class="endpoint-meta"><span>execution environment</span><span>v ${escapeHtml(version)}</span><span>${escapeHtml((r.labels||[]).join(', ') || 'no labels')}</span><span>seen ${escapeHtml(lastSeen)}</span></div>
-      <div class="endpoint-meta"><span class="pill ${agentClass}">pi.dev ${escapeHtml(enablement.status || 'disabled')}</span><span>wrapper ${escapeHtml(wrapperText)}</span><span>${enablement.required ? 'required' : 'optional'}</span><span>commands controller-queued</span></div>
-      <div class="hardware-grid"><div><b>CPU</b><span>${escapeHtml(hw.cpu)}</span><small>${escapeHtml(hw.cores)} threads</small></div><div><b>GPU</b><span>${escapeHtml(hw.gpu)}</span></div><div><b>RAM</b><span>${escapeHtml(hw.ram)}</span></div><div><b>Disk</b><span>${escapeHtml(hw.disk)}</span></div></div>
-      <details><summary>Runtime details</summary><pre>${escapeHtml(runtimeLines)}</pre><div class="muted small-text">pi.dev: ${escapeHtml(enablement.detail || '-')}</div><div class="muted small-text">tools: ${escapeHtml(tools)}</div><div class="muted small-text">packages: ${escapeHtml(packages)}</div><div class="muted small-text">workspace: ${escapeHtml(defaultWorkspace)}</div><div class="muted small-text">models: ${escapeHtml(modelLinks || '-')}</div><pre>${escapeHtml(containers || 'No running containers reported.')}</pre></details>
-      <div class="endpoint-state">${updateStatus}${maintenanceStatus}${piMissing ? '<span class="pill warn-pill">pi.dev missing</span>' : ''}</div>`;
-    const actions = document.createElement('div'); actions.className = 'button-row endpoint-actions';
-    const edit=document.createElement('button'); edit.textContent='Edit endpoint'; edit.className='ghost-button'; edit.onclick=()=>openEndpointModal(r.id); actions.appendChild(edit);
-    const cmd=document.createElement('button'); cmd.textContent='Command'; cmd.className='ghost-button'; cmd.disabled = r.status !== 'online' && !r.metadata?.local_control_plane; cmd.onclick=()=>openEndpointCommandModal(r.id); actions.appendChild(cmd);
-    const nodeBtn=document.createElement('button'); nodeBtn.textContent='Install Node.js'; nodeBtn.className='ghost-button'; nodeBtn.disabled = enablement.node_available || (r.status !== 'online' && !r.metadata?.local_control_plane); nodeBtn.onclick=async()=>{ if(confirm(`Install Node.js on ${r.name}?`)){ const res=await api(`/v1/endpoints/${r.id}/install-node`,{method:'POST', body:JSON.stringify({method:'auto'})}); if(localDiscovery) localDiscovery.textContent='Node.js install requested. Details are in Events.'; emitUiEvent('endpoint_node_install_requested', `Node.js install requested: ${r.name}`, res); await loadRunners(); await loadGlobalEvents(true).catch(()=>{}); } }; actions.appendChild(nodeBtn);
-    if (r.metadata?.local_control_plane) { const boot=document.createElement('button'); boot.textContent='Build/install controller pi.dev'; boot.className='ghost-button'; boot.onclick=async()=>{ boot.disabled=true; boot.textContent='Starting…'; const res=await api('/v1/controller-harness/bootstrap',{method:'POST'}); emitUiEvent('controller_pi_dev_bootstrap_requested', 'Controller pi.dev bootstrap started', res); await loadGlobalEvents(true).catch(()=>{}); await loadRunners(); }; actions.appendChild(boot); }
-    const piBtn=document.createElement('button'); piBtn.textContent='Install pi.dev'; piBtn.className='ghost-button'; piBtn.disabled = !piMissing || (r.status !== 'online' && !r.metadata?.local_control_plane); piBtn.onclick=async()=>{ const image = piContainer.image || 'localhost/pi-agent-harness:stage11'; piBtn.disabled=true; piBtn.textContent='Installing pi.dev…'; const res=await api(`/v1/endpoints/${r.id}/install-pi-harness`,{method:'POST', body:JSON.stringify({image, runtime:'auto'})}); if(localDiscovery) localDiscovery.textContent='pi.dev install started. Watch Events for completion or failure.'; emitUiEvent('endpoint_pi_harness_install_requested', `pi.dev install started: ${r.name}`, res); await loadRunners(); await loadGlobalEvents(true).catch(()=>{}); }; actions.appendChild(piBtn);
-    const upd=document.createElement('button'); upd.textContent='Update'; upd.disabled = r.status !== 'online' || !!r.metadata?.local_control_plane;
-    upd.onclick=async()=>{ if(confirm(`Queue software update for ${r.name}?`)){ await api(`/v1/endpoints/${r.id}/update`,{method:'POST', body:JSON.stringify({restart:true})}); await loadRunners(); } };
-    actions.appendChild(upd);
-    const maint=document.createElement('button'); maint.textContent='Maintenance'; maint.disabled = r.status !== 'online'; maint.className='ghost-button';
-    maint.onclick=async()=>{ if(confirm(`Run safe PAC maintenance cleanup on ${r.name}?`)){ await api(`/v1/endpoints/${r.id}/maintenance`,{method:'POST', body:JSON.stringify({max_age_hours:24,dry_run:false,remove_containers:true,remove_workspaces:true,remove_temp_artifacts:true,prune_images:false})}); await loadRunners(); await loadGlobalEvents(true).catch(()=>{}); } };
-    actions.appendChild(maint);
-    const dry=document.createElement('button'); dry.textContent='Dry run'; dry.disabled = r.status !== 'online'; dry.className='ghost-button';
-    dry.onclick=async()=>{ await api(`/v1/endpoints/${r.id}/maintenance`,{method:'POST', body:JSON.stringify({max_age_hours:24,dry_run:true,remove_containers:true,remove_workspaces:true,remove_temp_artifacts:true,prune_images:false})}); await loadRunners(); await loadGlobalEvents(true).catch(()=>{}); };
-    actions.appendChild(dry);
-    const del=document.createElement('button'); del.textContent='Delete'; del.className='danger-button';
-    del.onclick=async()=>{ if(confirm(`Delete endpoint ${r.name}?`)){ await api(`/v1/endpoints/${r.id}`,{method:'DELETE'}); await loadRunners(); } };
-    actions.appendChild(del);
-    card.appendChild(actions);
+    const card = renderEndpointInventoryCard(r, {
+      helpers: {
+        endpointHardware,
+        endpointRuntimeLines,
+        endpointPiContainer,
+        packageNamesForTools,
+        compactContainerLine,
+        defaultWorkspace,
+        modelLinks: modelLinks || '-',
+      },
+      actions: endpointInventoryCardActions(),
+    });
     el.appendChild(card);
   });
   renderModelRecommendations();
@@ -691,17 +678,41 @@ function renderEndpointInstallKit(data) {
   if (notes) notes.textContent = Array.isArray(data.notes) ? data.notes.join('\n') : (data.message || '');
 }
 
+function ensureEndpointCommandModal() {
+  let modal = document.getElementById('endpointCommandModal');
+  if (modal) return modal;
+  modal = document.createElement('div');
+  modal.id = 'endpointCommandModal';
+  modal.className = 'modal-backdrop';
+  modal.hidden = true;
+  modal.innerHTML = `<section class="modal-card endpoint-command-modal" role="dialog" aria-modal="true" aria-labelledby="endpointCommandTitle">
+    <div class="section-heading"><div><h2 id="endpointCommandTitle">Queue endpoint command</h2><p class="muted">Run a scoped command through the endpoint job queue. Progress opens in a live modal after the job is queued.</p></div><button id="closeEndpointCommandModal" class="ghost-button">Close</button></div>
+    <div class="form-grid">
+      <label>Endpoint <input id="endpointCommandTarget" readonly /></label>
+      <label>Mode <select id="endpointCommandMode"><option value="host">Host shell</option><option value="container">Container</option><option value="pi_container">pi.dev container</option></select></label>
+      <label>Container image <input id="endpointCommandImage" placeholder="optional for container mode" /></label>
+      <label>Workspace path <input id="endpointCommandWorkspace" placeholder="optional endpoint workspace" /></label>
+      <label class="wide-label">Command <textarea id="endpointCommandText" rows="8" spellcheck="false"></textarea></label>
+    </div>
+    <div class="button-row"><button id="queueEndpointCommand">Queue command</button><span id="endpointCommandStatus" class="muted"></span></div>
+  </section>`;
+  document.body.appendChild(modal);
+  document.getElementById('closeEndpointCommandModal').onclick = closeEndpointCommandModal;
+  modal.onclick = (ev) => { if (ev.target === modal) closeEndpointCommandModal(); };
+  document.getElementById('queueEndpointCommand').onclick = queueEndpointCommandFromModal;
+  return modal;
+}
 function openEndpointCommandModal(id) {
   commandEndpointId = id;
   const r = (window.__pacEndpoints || []).find(x => x.id === id);
-  const modal = document.getElementById('endpointCommandModal');
+  const modal = ensureEndpointCommandModal();
   if (document.getElementById('endpointCommandTarget')) endpointCommandTarget.value = r ? `${r.name} (${r.id})` : id;
   if (document.getElementById('endpointCommandMode')) endpointCommandMode.value = 'host';
   if (document.getElementById('endpointCommandImage')) endpointCommandImage.value = '';
-  if (document.getElementById('endpointCommandWorkspace')) endpointCommandWorkspace.value = '';
-  if (document.getElementById('endpointCommandText')) endpointCommandText.value = 'pwd && ls -la';
+  if (document.getElementById('endpointCommandWorkspace')) endpointCommandWorkspace.value = r?.metadata?.default_workspace || '';
+  if (document.getElementById('endpointCommandText')) endpointCommandText.value = endpointDefaultCommand(r);
   if (document.getElementById('endpointCommandStatus')) endpointCommandStatus.textContent = '';
-  if (modal) modal.hidden = false;
+  modal.hidden = false;
 }
 function closeEndpointCommandModal() {
   const modal = document.getElementById('endpointCommandModal');
@@ -712,30 +723,35 @@ const closeEndpointBtn = document.getElementById('closeEndpointModal');
 if (closeEndpointBtn) closeEndpointBtn.onclick = closeEndpointModal;
 const endpointModal = document.getElementById('endpointModal');
 if (endpointModal) endpointModal.onclick = (ev) => { if (ev.target === endpointModal) closeEndpointModal(); };
+async function queueEndpointCommandFromModal(){
+  const button = document.getElementById('queueEndpointCommand');
+  const status = document.getElementById('endpointCommandStatus');
+  try {
+    if (button) button.disabled = true;
+    if (status) PACLoading.status(status, 'Queueing…');
+    const mode = document.getElementById('endpointCommandMode')?.value || 'host';
+    const selected = (window.__pacEndpoints || []).find(x => x.id === commandEndpointId);
+    const shell = endpointOsFamily(selected) === 'windows' ? 'powershell' : 'sh';
+    const body = {prompt:'Endpoint command', command:document.getElementById('endpointCommandText')?.value || endpointDefaultCommand(selected), execution_mode:mode, container_image:document.getElementById('endpointCommandImage')?.value || null, workspace_path:document.getElementById('endpointCommandWorkspace')?.value || null, metadata:{source_endpoint_id:'controller', shell}};
+    const job = await api(`/v1/endpoints/${encodeURIComponent(commandEndpointId)}/commands`, {method:'POST', body:JSON.stringify(body)});
+    if (status) PACLoading.status(status, 'Opening progress…');
+    closeEndpointCommandModal();
+    if (typeof watchEndpointJob === 'function') watchEndpointJob(job, {title:'Endpoint command progress', subtitle:selected?.name || commandEndpointId});
+    await loadGlobalEvents(true).catch(()=>{});
+  } catch(e) { if (status) status.textContent = `Failed: ${e.message}`; } finally { if (button) button.disabled = false; }
+}
 const closeEndpointCommandBtn = document.getElementById('closeEndpointCommandModal');
 if (closeEndpointCommandBtn) closeEndpointCommandBtn.onclick = closeEndpointCommandModal;
 const endpointCommandModal = document.getElementById('endpointCommandModal');
 if (endpointCommandModal) endpointCommandModal.onclick = (ev) => { if (ev.target === endpointCommandModal) closeEndpointCommandModal(); };
 const queueEndpointCommandBtn = document.getElementById('queueEndpointCommand');
-if (queueEndpointCommandBtn) queueEndpointCommandBtn.onclick = async()=>{
-  const status = document.getElementById('endpointCommandStatus');
-  try {
-    queueEndpointCommandBtn.disabled = true;
-    if (status) status.textContent = 'Queued…';
-    const mode = document.getElementById('endpointCommandMode')?.value || 'host';
-    const body = {prompt:'Endpoint command', command:document.getElementById('endpointCommandText')?.value || 'pwd', execution_mode:mode, container_image:document.getElementById('endpointCommandImage')?.value || null, workspace_path:document.getElementById('endpointCommandWorkspace')?.value || null, metadata:{source_endpoint_id:'controller'}};
-    await api(`/v1/endpoints/${encodeURIComponent(commandEndpointId)}/commands`, {method:'POST', body:JSON.stringify(body)});
-    if (status) status.textContent = 'Queued.';
-    closeEndpointCommandModal();
-    await loadGlobalEvents(true).catch(()=>{});
-  } catch(e) { if (status) status.textContent = `Failed: ${e.message}`; } finally { queueEndpointCommandBtn.disabled = false; }
-};
+if (queueEndpointCommandBtn) queueEndpointCommandBtn.onclick = queueEndpointCommandFromModal;
 const addRunnerBtn = document.getElementById('addRunner');
 if (addRunnerBtn) addRunnerBtn.onclick = async()=>{
   const status = document.getElementById('endpointModalStatus');
   try {
     addRunnerBtn.disabled = true;
-    if (status) status.textContent = 'Adding…';
+    if (status) PACLoading.status(status, 'Adding endpoint…');
     const chosenTools = selectedRunnerToolNames(); const body={name:runnerName.value || 'remote-endpoint', labels:runnerLabels.value.split(',').map(x=>x.trim()).filter(Boolean), endpoint:runnerEndpoint.value || null, allow_host_execution:true, allow_container_execution:true, agent_enabled:!!document.getElementById('runnerAgentEnabled')?.checked, metadata:{agent_tools:chosenTools, tool_packages:packageNamesForTools(chosenTools), default_workspace:document.getElementById('runnerDefaultWorkspace')?.value || null}};
     const path = editingEndpointId ? `/v1/endpoints/${editingEndpointId}` : '/v1/endpoints';
     const method = editingEndpointId ? 'PUT' : 'POST';
@@ -754,6 +770,18 @@ document.querySelectorAll('#endpointSubnav .subtab').forEach(btn => {
 });
 const switchToEndpointOnboardingBtn = document.getElementById('switchToEndpointOnboarding');
 if (switchToEndpointOnboardingBtn) switchToEndpointOnboardingBtn.onclick = () => switchEndpointPanel('endpointOnboardingPanel');
+const wizardRunnerTargetSelect = document.getElementById('wizardRunnerTarget');
+if (wizardRunnerTargetSelect) wizardRunnerTargetSelect.onchange = () => {
+  const workspace = document.getElementById('wizardRunnerWorkspace');
+  const labels = document.getElementById('wizardRunnerLabels');
+  const target = wizardRunnerTargetSelect.value || 'linux/amd64';
+  if (workspace && !workspace.value.trim()) workspace.value = endpointDefaultWorkspaceForTarget(target);
+  if (labels) {
+    const wanted = target.includes('windows') ? ['windows', 'remote-execution'] : [target.split('/')[0], 'remote-execution'];
+    const existing = labels.value.split(',').map(x => x.trim()).filter(Boolean);
+    labels.value = Array.from(new Set([...existing, ...wanted])).join(', ');
+  }
+};
 const saveWizardEndpointBtn = document.getElementById('saveWizardEndpoint');
 if (saveWizardEndpointBtn) saveWizardEndpointBtn.onclick = async()=> {
   const status = document.getElementById('endpointWizardStatus');

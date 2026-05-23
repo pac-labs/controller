@@ -94,6 +94,8 @@ from pi_agent_platform.core.directory import (
 from pi_agent_platform.core.access_control import can as access_can, effective_grants, explain_access, grant_to_principal, is_system_admin, require as access_require, resource_match
 from pi_agent_platform.core.credentials import credential_expired, hash_token_secret, normalize_certificate_fingerprint, new_token_credential
 from pi_agent_platform.core.directory_identities import sync_directory_identities
+from pi_agent_platform.core.observability import setup_pac_observability
+from pi_agent_platform.core.observability_store import record_http_request, prune_observability_store
 
 NOISY_EVENT_TYPES = {'runner_heartbeat', 'endpoint_heartbeat', 'provider_heartbeat'}
 
@@ -176,6 +178,8 @@ def _read_pac_version() -> str:
 
 config = load_config()
 PAC_VERSION = _read_pac_version()
+setup_pac_observability()
+prune_observability_store()
 SESSION_CAPABLE_PROVIDER_TYPES = {"openai", "openai-codex", "openai-compatible", "lmstudio", "vllm", "groq", "openrouter", "deepseek", "mistral", "ollama"}
 
 
@@ -837,6 +841,22 @@ def _ensure_controller_harness_session() -> dict[str, Any]:
     return {'ok': True, 'enabled': True, 'runner': runner.model_dump(), 'workspace': workspace.model_dump(), 'session': session.model_dump(), 'message': 'Controller pi.dev session created'}
 
 app = FastAPI(title='PAC - Pi Agent Control', version=PAC_VERSION)
+
+
+@app.middleware("http")
+async def _record_observability_request(request: Request, call_next):
+    started = time.perf_counter()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = getattr(response, "status_code", 200)
+        return response
+    finally:
+        path = request.scope.get("route").path if request.scope.get("route") else request.url.path
+        # Static UI/assets are intentionally skipped to keep the embedded store small.
+        if not str(path).startswith("/ui/") and str(path) not in {"/favicon.ico"}:
+            record_http_request(str(path), request.method, int(status_code), (time.perf_counter() - started) * 1000.0)
+
 _MDNS_ZEROCONF = None
 _MDNS_SERVICE_INFO = None
 _MDNS_STATUS: dict[str, Any] = {'state': 'stopped', 'message': 'mDNS has not started yet'}
@@ -2230,15 +2250,92 @@ def _agent_context_to_session_create(item: AgentContext) -> SessionCreate:
     )
 
 
+def _sync_existing_agent_context_session(item: AgentContext, existing: Session, desired: SessionCreate) -> Session:
+    """Keep an agent-context session aligned with the latest context settings.
+
+    Agent contexts are edited independently from their backing session. Returning the
+    previous last_session_id without reconciliation made model changes appear to save
+    but not affect the session. Keep the session object current while preserving its
+    identity and timeline.
+    """
+    changed: list[str] = []
+    if desired.model and existing.model != desired.model:
+        if desired.model not in config.models:
+            raise HTTPException(status_code=400, detail=f'Configured context model is missing: {desired.model}')
+        model_available, model_reason = _model_available(desired.model)
+        if not model_available:
+            raise HTTPException(status_code=400, detail=f'Context model is not available for sessions: {desired.model} ({model_reason})')
+        existing.model = desired.model
+        changed.append('model')
+    if desired.agent_profile != existing.agent_profile:
+        existing.agent_profile = desired.agent_profile
+        changed.append('agent_profile')
+    if desired.permission_profile and desired.permission_profile != existing.permission_profile:
+        existing.permission_profile = desired.permission_profile
+        changed.append('permission_profile')
+    if desired.context_mode and desired.context_mode != existing.context_mode:
+        existing.context_mode = desired.context_mode
+        changed.append('context_mode')
+    if list(desired.tools or []) != list(existing.tools or []):
+        existing.tools = list(desired.tools or [])
+        changed.append('tools')
+    desired_workspace = desired.workspace
+    desired_workspace_path = desired_workspace.path or existing.workspace_path
+    if desired_workspace_path and desired_workspace_path != existing.workspace_path:
+        existing.workspace_path = desired_workspace_path
+        changed.append('workspace_path')
+    # Do not replace an already resolved workspace spec with an unresolved
+    # profile/local request shape. Only update concrete workspace fields that the
+    # context now explicitly owns.
+    workspace_updates: dict[str, Any] = {}
+    for key in ('type', 'profile', 'path', 'url', 'branch'):
+        value = getattr(desired_workspace, key, None)
+        if value:
+            workspace_updates[key] = value
+    if workspace_updates:
+        next_workspace = existing.workspace.model_copy(update=workspace_updates)
+        if next_workspace.model_dump(mode='json') != existing.workspace.model_dump(mode='json'):
+            existing.workspace = next_workspace
+            changed.append('workspace')
+    merged_metadata = dict(existing.metadata or {})
+    for key, value in (desired.metadata or {}).items():
+        if merged_metadata.get(key) != value:
+            merged_metadata[key] = value
+            changed.append(f'metadata.{key}')
+    # Clear model role metadata when a role is removed from the context.
+    for key, value in {
+        'executor_model': item.executor_model,
+        'planner_model': item.planner_model,
+        'reviewer_model': item.reviewer_model,
+        'retrieval_model': item.retrieval_model,
+    }.items():
+        if not value and key in merged_metadata:
+            merged_metadata.pop(key, None)
+            changed.append(f'metadata.{key}')
+    if merged_metadata != existing.metadata:
+        existing.metadata = merged_metadata
+    if changed:
+        existing.touch()
+        store.add_session(existing)
+        store.add_event(Event(
+            session_id=existing.id,
+            type='agent_context_session_synced',
+            message=f'Agent context session synced: {item.name}',
+            data={'context_id': item.id, 'changed': sorted(set(changed)), 'model': existing.model},
+        ))
+    return existing
+
+
 def _ensure_agent_context_session(item: AgentContext, auth: CurrentUser) -> Session:
+    desired = _agent_context_to_session_create(item)
     if item.last_session_id:
         existing = store.get_session(item.last_session_id)
         if existing:
-            return existing
+            return _sync_existing_agent_context_session(item, existing, desired)
     session_creator = session_routes.create_session_for_internal_use
     if session_creator is None:
         raise RuntimeError('Session route creator is not registered')
-    session = session_creator(_agent_context_to_session_create(item), _auth=auth)
+    session = session_creator(desired, _auth=auth)
     item.last_session_id = session.id
     store.add_agent_context(item)
     return session
@@ -3395,10 +3492,44 @@ def _agent_enablement_state(runner: Runner, requested: bool | None = None) -> di
     }
 
 
+def _endpoint_os_family(runner: Runner) -> str:
+    metadata = runner.metadata or {}
+    candidates = [
+        metadata.get('os_family'),
+        metadata.get('os'),
+        metadata.get('host_os'),
+        metadata.get('platform'),
+        metadata.get('onboarding_target'),
+        *(runner.labels or []),
+    ]
+    for value in candidates:
+        text = str(value or '').lower()
+        if 'windows' in text or text in {'win32', 'win64'}:
+            return 'windows'
+        if 'darwin' in text or 'macos' in text or text == 'mac':
+            return 'darwin'
+        if 'linux' in text:
+            return 'linux'
+    return 'unknown'
+
+
 def _normalise_endpoint_metadata(runner: Runner, requested_agent: bool | None = None) -> Runner:
     runner.metadata['endpoint_role'] = 'remote-execution-environment'
     runner.metadata['is_model_host'] = False
-    runner.metadata['command_channel'] = {'mode': 'controller-queued', 'can_send': True, 'can_receive': True}
+    os_family = _endpoint_os_family(runner)
+    runner.metadata['os_family'] = os_family
+    if os_family != 'unknown' and os_family not in (runner.labels or []):
+        runner.labels = sorted(set((runner.labels or []) + [os_family]))
+    remote_shell = 'PowerShell' if os_family == 'windows' else 'POSIX sh'
+    runner.metadata['command_channel'] = {'mode': 'controller-queued', 'can_send': True, 'can_receive': True, 'remote_code_execution': bool(runner.allow_host_execution), 'default_shell': remote_shell}
+    runner.metadata['remote_code_execution'] = {
+        'available': bool(runner.allow_host_execution),
+        'mode': 'controller-queued',
+        'boundary': 'workspace-scoped endpoint job queue',
+        'default_shell': remote_shell,
+        'os_family': os_family,
+    }
+    runner.metadata['workload_platform'] = os_family if os_family != 'unknown' else 'generic'
     runner.metadata['agent_enablement'] = _agent_enablement_state(runner, requested_agent)
     runner.metadata['agent_enabled'] = bool(runner.metadata['agent_enablement'].get('enabled'))
     state = runner.metadata['agent_enablement']['status']
@@ -3409,7 +3540,7 @@ def _normalise_endpoint_metadata(runner: Runner, requested_agent: bool | None = 
     elif state == 'starting':
         runner.metadata['agent_runtime'] = _runtime_agent_state('endpoint-agent', 'starting', runner.metadata['agent_enablement']['detail'], requires=['pac-wrapper', 'pi.dev'])
     else:
-        runner.metadata.setdefault('agent_runtime', _runtime_agent_state('remote-execution', 'available', 'Remote command execution is available.'))
+        runner.metadata.setdefault('agent_runtime', _runtime_agent_state('remote-execution', 'available', f'Remote command execution is available through {remote_shell}.'))
     return runner
 
 def _packages_for_tools(tool_names: list[str]) -> list[str]:

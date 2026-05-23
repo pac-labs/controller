@@ -64,6 +64,59 @@ function normalizeAssistantText(text) {
   return rebuilt.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+
+function sessionEventTimestampMs(event) {
+  const raw = event?.created_at || event?.createdAt || '';
+  const value = raw ? new Date(raw).getTime() : 0;
+  return Number.isFinite(value) && value > 0 ? value : Date.now();
+}
+
+function rememberSessionUserTask(event, text = '') {
+  const taskId = event?.task_id || '';
+  if (!taskId) return;
+  const type = String(event?.type || '').toLowerCase();
+  if (!(type === 'user_message' || type.includes('user_message'))) return;
+  const prompt = String(text || event?.message || '').trim();
+  if (prompt) sessionTaskPrompts.set(taskId, prompt);
+  const existing = sessionUserTaskMeta.get(taskId) || {};
+  sessionUserTaskMeta.set(taskId, {
+    taskId,
+    prompt: prompt || existing.prompt || '',
+    createdAtMs: existing.createdAtMs || sessionEventTimestampMs(event),
+    createdAt: existing.createdAt || event?.created_at || '',
+    sequence: existing.sequence || ++sessionTaskSequence,
+  });
+}
+
+function sessionReplyScopeInfo(event) {
+  const taskId = event?.task_id || '';
+  if (!taskId) return null;
+  const origin = sessionUserTaskMeta.get(taskId);
+  if (!origin) return null;
+  const eventTime = sessionEventTimestampMs(event);
+  const newer = Array.from(sessionUserTaskMeta.values())
+    .filter(item => item.taskId !== taskId && item.createdAtMs > origin.createdAtMs && item.createdAtMs <= eventTime)
+    .sort((a, b) => b.createdAtMs - a.createdAtMs || b.sequence - a.sequence)[0];
+  if (!newer) return null;
+  const prompt = origin.prompt || sessionTaskPrompts.get(taskId) || 'Earlier request';
+  return {
+    taskId,
+    newerTaskId: newer.taskId,
+    label: 'Reply to earlier request',
+    prompt: prompt.length > 140 ? `${prompt.slice(0, 137)}…` : prompt,
+  };
+}
+
+function appendReplyScopeNotice(parent, event) {
+  const info = sessionReplyScopeInfo(event);
+  if (!info) return null;
+  const notice = document.createElement('div');
+  notice.className = 'reply-scope-notice';
+  notice.innerHTML = `<span>${escapeHtml(info.label)}</span><small>${escapeHtml(info.prompt)}</small>`;
+  parent.appendChild(notice);
+  return notice;
+}
+
 function appendChatText(parent, role, text) {
   if (text == null || text === '') return null;
   const normalized = (role === 'assistant' || role === 'system' || role === 'error') ? normalizeAssistantText(text) : String(text);
@@ -314,7 +367,8 @@ function isInternalSessionEvent(event) {
     t.includes('task_rejected') || t.includes('task_resumed') || t.includes('subagent_started') ||
     t.includes('context_compacted') || t.includes('checkpoint') || t.includes('batch_result') ||
     t.includes('model_response_empty') || t.includes('tool_call_parse_failed') || t.includes('action_narration_rejected') ||
-    t.includes('model_response') || t.includes('agent_plan') || t.includes('workspace_indexed') ||
+    t.includes('model_response') || t.includes('model_stream_progress') || t.includes('model_call_') ||
+    t.includes('agent_phase') || t.includes('agent_plan') || t.includes('workspace_indexed') ||
     t.includes('web_search') || t.includes('web_fetch') || t.includes('artifact_saved');
 }
 
@@ -387,7 +441,7 @@ function sessionThinkingSummary(event, block) {
   if (type.includes('agent_intent')) {
     if (data.tool) return `Using ${data.tool}`;
     if (data.command) return `Running ${data.command}`;
-    if (data.action_type === 'final') return '';
+    if (data.action_type === 'final') return 'Prepared a final answer';
     return event?.message || 'Choosing next step';
   }
   if (type.includes('agent_routing')) return event?.message || 'Routing task';
@@ -453,6 +507,13 @@ function sessionIntentSummary(event, block) {
   if (type.includes('approval_required')) return sessionThinkingSummary(event, block);
   if (type.includes('task_failed')) return event?.message || 'Task failed';
   if (type.includes('model_request_config')) return 'Asking the model';
+  if (type.includes('model_stream_progress')) return `Model streaming response (${data.chars || 0} chars)`;
+  if (type.includes('model_call_abandoned')) return 'Provider call timed out; continuing safely';
+  if (type.includes('model_call_late_completed')) return data.success === false ? 'Timed-out provider call later failed' : 'Timed-out provider call later completed';
+  if (type.includes('agent_phase_running')) return `Still ${agentPhaseLabel(data.phase)} (${formatDurationMs(data.elapsed_ms || 0)})`;
+  if (type.includes('agent_phase_started')) return agentPhaseLabel(data.phase);
+  if (type.includes('agent_phase_completed')) return `${agentPhaseLabel(data.phase)} complete`;
+  if (type.includes('agent_phase_slow')) return `${agentPhaseLabel(data.phase)} was slow`;
   if (type.includes('agent_routing')) return event?.message || 'Routing the request';
   if (type.includes('agent_intent')) return sessionThinkingSummary(event, block) || event?.message || 'Working on the request';
   return '';
@@ -460,7 +521,8 @@ function sessionIntentSummary(event, block) {
 
 function modelIntermediateResponseText(event, block = null) {
   const type = String(event?.type || '').toLowerCase();
-  if (!type.includes('model_response')) return '';
+  if (type.includes('model_response_empty')) return '';
+  if (!type.includes('model_response') && !type.includes('model_stream_progress')) return '';
   const data = event?.data && typeof event.data === 'object' ? event.data : {};
   const raw = String(data.preview || data.intermediate || data.message || event?.message || timelineText(event, block) || '').trim();
   if (!raw) return '';
@@ -512,6 +574,41 @@ function taskFinishedEventForThinking(event) {
   return t.includes('task_completed') || t.includes('task_failed') || t === 'result' || t === 'final' || t.includes('assistant_message');
 }
 
+
+function agentPhaseLabel(phase) {
+  const value = String(phase || '').toLowerCase();
+  const labels = {
+    prompt_context: 'preparing context',
+    planning_model: 'planning with the model',
+    decision_model: 'asking the model',
+    context_compaction_check: 'checking context size',
+    tool_execution: 'running a tool',
+  };
+  return labels[value] || prettyEventType(value || 'agent phase');
+}
+
+function latestAgentPhaseRows(events) {
+  const rows = [];
+  const seen = new Set();
+  (events || []).forEach((item) => {
+    const event = item?.event || {};
+    const type = String(event.type || '').toLowerCase();
+    if (!type.includes('agent_phase') && !type.includes('model_stream_progress') && !type.includes('model_call_')) return;
+    const data = event.data && typeof event.data === 'object' ? event.data : {};
+    const phase = data.phase || data.call_type || event.type;
+    const key = `${event.type}:${phase}:${data.step || ''}:${data.elapsed_ms || data.chars || ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    let label = type.includes('agent_phase') ? agentPhaseLabel(phase) : sessionThinkingSummary(event, item?.block);
+    let status = type.includes('completed') || type.includes('late_completed') ? 'done' : type.includes('slow') || type.includes('abandoned') ? 'attention' : 'running';
+    let detail = '';
+    if (data.elapsed_ms != null) detail = formatDurationMs(data.elapsed_ms);
+    if (data.chars != null) detail = `${data.chars} chars`;
+    rows.push({label, status, detail, at: formatEventTime(event.created_at)});
+  });
+  return rows.slice(-10);
+}
+
 function sessionThinkingDetailsHtml(events) {
   const rows = (events || []).filter(item => item?.event && isInternalSessionEvent(item.event));
   if (!rows.length) return '<div class="tool-activity-empty">No internal activity was recorded for this answer.</div>';
@@ -520,10 +617,14 @@ function sessionThinkingDetailsHtml(events) {
   const start = formatEventTime(first?.created_at);
   const end = formatEventTime(last?.created_at);
   const modelNotes = thinkingGroupIntermediateResponses({events: rows}, 6);
+  const phaseRows = latestAgentPhaseRows(rows);
+  const phaseHtml = phaseRows.length
+    ? `<div class="thought-modal-plan"><div class="thought-modal-section-title">Runtime phases</div>${phaseRows.map((phase) => `<div class="thought-modal-plan-item ${escapeHtml(phase.status)}"><span class="thought-modal-plan-index">${escapeHtml(phase.at || '•')}</span><span class="thought-modal-plan-label">${escapeHtml(phase.label)}</span><span class="thought-modal-plan-state">${escapeHtml(phase.detail || phase.status)}</span></div>`).join('')}</div>`
+    : '';
   const notesHtml = modelNotes.length
     ? `<div class="thought-modal-intermediates"><div class="thought-modal-section-title">Model updates shown during the run</div>${modelNotes.map((item, index) => `<div class="thought-modal-intermediate"><span class="thought-modal-plan-index">${index + 1}</span><div class="thought-modal-intermediate-text">${escapeHtml(item.text)}</div></div>`).join('')}</div>`
     : '<div class="tool-activity-empty">No user-facing model updates were produced during this run. Raw model responses remain available in the full session log.</div>';
-  return `${notesHtml}<div class="tool-activity-empty">Tool output, stdout, stderr, and raw diagnostics are kept in the full session log.</div><div class="tool-activity-list"><div class="tool-activity-item"><summary><span class="tool-activity-icon">⌁</span><span class="tool-activity-title">Internal events recorded</span><span class="tool-activity-status">${rows.length}</span><span class="tool-activity-time">${escapeHtml(start)} → ${escapeHtml(end)}</span></summary></div></div>`;
+  return `${phaseHtml}${notesHtml}<div class="tool-activity-empty">Tool output, stdout, stderr, and raw diagnostics are kept in the full session log.</div><div class="tool-activity-list"><div class="tool-activity-item"><summary><span class="tool-activity-icon">⌁</span><span class="tool-activity-title">Internal events recorded</span><span class="tool-activity-status">${rows.length}</span><span class="tool-activity-time">${escapeHtml(start)} → ${escapeHtml(end)}</span></summary></div></div>`;
 }
 
 function openSessionThinkingModal(group) {
@@ -637,19 +738,21 @@ function updateSessionThinkingRow(group) {
   const taskId = event?.task_id || group.taskId || '';
   const headline = group.closed ? `Thought for ${duration}` : `Thinking for ${duration}`;
   const currentIntent = group.summary || sessionIntentSummary(event, null) || '';
-  const latestIntermediate = thinkingGroupLatestIntermediate(group);
+  const latestIntermediate = group.closed ? null : thinkingGroupLatestIntermediate(group);
   const prompt = taskId ? sessionTaskPrompts.get(taskId) : '';
   const fallbackMessage = currentIntent || prompt || (group.closed ? 'Finished working on the request.' : 'Working on the request.');
-  const workMessage = latestIntermediate?.text || fallbackMessage;
+  const workMessage = currentIntent || latestIntermediate?.text || fallbackMessage;
+  const lateScope = sessionReplyScopeInfo(event);
   group.row.className = 'chat-message-row assistant thought-history-row assistant-work-row';
   group.row.innerHTML = '';
   const bubble = document.createElement('div');
   bubble.className = `thought-history-line assistant-work-progress ${group.closed ? 'closed' : 'active'}`;
   bubble.innerHTML = `
+    ${lateScope ? `<div class="reply-scope-notice compact"><span>${escapeHtml(lateScope.label)}</span><small>${escapeHtml(lateScope.prompt)}</small></div>` : ''}
     <div class="assistant-work-message">${escapeHtml(workMessage)}</div>
     ${currentIntent ? `<div class="assistant-work-intent">${escapeHtml(currentIntent)}</div>` : ''}
     <button type="button" class="thought-history-main assistant-work-disclosure" aria-label="Open thought details" title="Open thought details">
-      <span class="thought-history-dot">${group.closed ? '✓' : '<span class="tiny-spinner square" aria-hidden="true"></span>'}</span>
+      <span class="thought-history-dot">${group.closed ? '✓' : (window.pacLoaderIconHtml ? pacLoaderIconHtml('tiny', 'Thinking') : '<span class="tiny-spinner square" aria-hidden="true"></span>')}</span>
       <span class="thought-history-intent">${escapeHtml(headline)}</span>
       <span class="composer-thinking-chevron">›</span>
     </button>
@@ -1118,6 +1221,11 @@ function renderSessionSnapshotFast(snapshot, sessionId) {
   const previousBottomOffset = Math.max(0, timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight);
   timeline.innerHTML = tail.length ? '' : '<div class="empty-timeline">No session events yet.</div>';
   resetSessionTimelineState();
+  tail.forEach((ev) => {
+    const block = normalizeTimelineBlock(ev);
+    const text = timelineText(ev, block);
+    rememberSessionUserTask(ev, text);
+  });
   suppressSessionAutoScroll = true;
   tail.forEach((ev) => renderSessionTimelineEvent(ev));
   suppressSessionAutoScroll = false;
@@ -1212,7 +1320,7 @@ function renderSessionTimelineEvent(event, options = {}) {
   const block = normalizeTimelineBlock(event);
   const role = sessionEventRole(event);
   const text = timelineText(event, block);
-  if (event.type === 'user_message' && event.task_id && text) sessionTaskPrompts.set(event.task_id, String(text));
+  rememberSessionUserTask(event, text);
   const internal = isInternalSessionEvent(event) || looksLikeInternalResultMessage(event, text);
   if (internal && prepend) {
     return;
@@ -1221,7 +1329,7 @@ function renderSessionTimelineEvent(event, options = {}) {
     const group = ensureSessionThinkingGroup(event);
     group.events.push({event, block});
     group.lastEvent = event;
-    if (isSessionIntentEvent(event)) {
+    if (isSessionIntentEvent(event) || typeLower.includes('agent_phase_running') || typeLower.includes('model_stream_progress') || typeLower.includes('model_call_')) {
       const nextSummary = sessionIntentSummary(event, block);
       if (nextSummary) {
         group.summary = nextSummary;
@@ -1254,6 +1362,7 @@ function renderSessionTimelineEvent(event, options = {}) {
     bubble.appendChild(meta);
   }
   if (!text && role === 'assistant' && !block) return;
+  if (role === 'assistant') appendReplyScopeNotice(bubble, event);
   if (text) appendChatText(bubble, role, text);
   if (role === 'assistant') {
     bubble.classList.add('copyable-reply');
@@ -1804,7 +1913,7 @@ function updateComposerChrome() {
     if (!selectedSession) status.textContent = 'Select or create a session to start.';
     else if (stopping) status.textContent = 'Task is running. Stop is available.';
     else if (hasPrompt) status.textContent = 'Ready to send.';
-    else status.textContent = 'Ready. Add context or type a message.';
+    else status.textContent = selectedSession ? 'Ready for a message.' : 'Create or select a session.';
   }
   if (runButton && !stopping) runButton.disabled = !hasPrompt;
 }
@@ -1834,7 +1943,17 @@ function renderComposerAttachmentTray() {
   });
 }
 
+function composerAttachmentKey(label, kind='context') {
+  return `${String(kind || 'context').toLowerCase()}::${String(label || '').trim().toLowerCase()}`;
+}
+
 function rememberComposerAttachment(label, kind='context') {
+  const key = composerAttachmentKey(label, kind);
+  if (composerAttachedItems.some((item) => composerAttachmentKey(item.label, item.kind) === key)) {
+    renderComposerAttachmentTray();
+    updateComposerChrome();
+    return;
+  }
   composerAttachedItems.push({label, kind, addedAt: new Date().toISOString()});
   renderComposerAttachmentTray();
   updateComposerChrome();
@@ -1855,7 +1974,11 @@ function appendPromptContextBlock(label, content) {
 [${label}]
 ${content}
 `;
-  prompt.value = `${prompt.value || ''}${block}`.trimStart();
+  const current = String(prompt.value || '');
+  const trimmedBlock = block.trim();
+  if (!current.includes(trimmedBlock)) {
+    prompt.value = `${current}${block}`.trimStart();
+  }
   autosizeSessionPrompt();
   prompt.focus();
   rememberComposerAttachment(label, 'context');

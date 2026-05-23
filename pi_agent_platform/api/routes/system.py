@@ -13,7 +13,10 @@ ConfigPayloadProvider = Callable[[Any | None], dict[str, Any]]
 NoArgDictProvider = Callable[[], dict[str, Any]]
 NoArgListProvider = Callable[[], list[Any]]
 RunnerAuthProvider = Callable[[str | None, str | None, str | None], Any]
+from pi_agent_platform.core.dashboard_component_atlas import build_dashboard_topology
 from pi_agent_platform.core.model_metrics import model_metrics
+from pi_agent_platform.core.observability import observability_status, tail_log
+from pi_agent_platform.core.observability_store import query_metrics, query_traces, prune_observability_store
 
 
 NOISY_EVENT_TYPES = {'runner_heartbeat', 'endpoint_heartbeat', 'provider_heartbeat'}
@@ -38,114 +41,6 @@ def _event_reports_newer_update(data: dict[str, Any], current_version: str) -> b
         return False
     return _version_tuple(latest) > _version_tuple(current_version)
 
-
-def _node(node_id: str, kind: str, label: str, status: str = "unknown", detail: str = "", data: dict[str, Any] | None = None) -> dict[str, Any]:
-    return {
-        "id": node_id,
-        "kind": kind,
-        "label": label,
-        "status": status or "unknown",
-        "detail": detail or "",
-        "data": data or {},
-    }
-
-
-def _edge(edge_id: str, source: str, target: str, label: str, kind: str = "connected") -> dict[str, Any]:
-    return {"id": edge_id, "source": source, "target": target, "label": label, "kind": kind}
-
-
-def _safe_model_dump(value: Any) -> dict[str, Any]:
-    if value is None:
-        return {}
-    if hasattr(value, "model_dump"):
-        return value.model_dump()
-    if isinstance(value, dict):
-        return value
-    return {}
-
-
-def _build_dashboard_topology(config: dict[str, Any], runners: list[Any]) -> dict[str, Any]:
-    nodes: dict[str, dict[str, Any]] = {}
-    edges: list[dict[str, Any]] = []
-
-    def add(node: dict[str, Any]) -> None:
-        nodes[node["id"]] = node
-
-    add(_node("controller:pac", "controller", "PAC Controller", "online", "control plane"))
-
-    providers = config.get("providers") or {}
-    for provider_id, provider in providers.items():
-        provider = _safe_model_dump(provider)
-        status = provider.get("status") or ("enabled" if provider.get("enabled") else "disabled")
-        add(_node(f"provider:{provider_id}", "provider", str(provider_id), status, provider.get("type") or "provider", provider))
-        edges.append(_edge(f"controller-provider-{provider_id}", "controller:pac", f"provider:{provider_id}", "uses provider", "provider"))
-
-    models = config.get("models") or {}
-    for model_id, model in models.items():
-        model = _safe_model_dump(model)
-        provider_id = model.get("provider") or "unassigned"
-        status = "available" if provider_id in providers else "unresolved"
-        label = model.get("display_name") or model.get("model") or str(model_id)
-        add(_node(f"model:{model_id}", "model", label, status, str(model_id), model))
-        if provider_id in providers:
-            edges.append(_edge(f"model-provider-{model_id}", f"model:{model_id}", f"provider:{provider_id}", "served by", "model-provider"))
-
-    endpoints = {getattr(runner, "id", ""): runner for runner in runners}
-    for runner in runners:
-        endpoint_id = str(getattr(runner, "id", "") or "unknown")
-        status = getattr(getattr(runner, "status", None), "value", None) or str(getattr(runner, "status", "unknown") or "unknown")
-        labels = ", ".join(getattr(runner, "labels", []) or [])
-        detail = labels or getattr(runner, "endpoint", None) or "endpoint"
-        add(_node(f"endpoint:{endpoint_id}", "endpoint", getattr(runner, "name", endpoint_id), status, detail, _safe_model_dump(runner)))
-        edges.append(_edge(f"controller-endpoint-{endpoint_id}", "controller:pac", f"endpoint:{endpoint_id}", "controls", "endpoint"))
-
-    workspaces = config.get("workspaces") or {}
-    for workspace_id, workspace in workspaces.items():
-        workspace = _safe_model_dump(workspace)
-        endpoint_id = workspace.get("endpoint_id") or workspace.get("preferred_endpoint")
-        add(_node(f"workspace:{workspace_id}", "workspace", str(workspace_id), "configured", workspace.get("type") or "workspace", workspace))
-        edges.append(_edge(f"controller-workspace-{workspace_id}", "controller:pac", f"workspace:{workspace_id}", "has workspace", "workspace"))
-        if endpoint_id and endpoint_id in endpoints:
-            edges.append(_edge(f"workspace-endpoint-{workspace_id}-{endpoint_id}", f"workspace:{workspace_id}", f"endpoint:{endpoint_id}", "runs on", "workspace-endpoint"))
-
-    contexts = config.get("source_contexts") or {}
-    for context_id, context in contexts.items():
-        context = _safe_model_dump(context)
-        workspace_id = context.get("workspace_profile")
-        endpoint_id = context.get("preferred_endpoint")
-        add(_node(f"context:{context_id}", "context", str(context_id), "configured", context.get("path_prefix") or "source context", context))
-        if workspace_id and workspace_id in workspaces:
-            edges.append(_edge(f"context-workspace-{context_id}-{workspace_id}", f"context:{context_id}", f"workspace:{workspace_id}", "uses workspace", "context-workspace"))
-        else:
-            edges.append(_edge(f"controller-context-{context_id}", "controller:pac", f"context:{context_id}", "has context", "context"))
-        if endpoint_id and endpoint_id in endpoints:
-            edges.append(_edge(f"context-endpoint-{context_id}-{endpoint_id}", f"context:{context_id}", f"endpoint:{endpoint_id}", "prefers", "context-endpoint"))
-
-    profiles = config.get("agent_profiles") or {}
-    for profile_id, profile in profiles.items():
-        profile = _safe_model_dump(profile)
-        model_id = profile.get("model")
-        workspace_id = profile.get("workspace_profile") or profile.get("default_workspace")
-        add(_node(f"profile:{profile_id}", "profile", profile.get("display_name") or str(profile_id), "available", profile.get("description") or "agent profile", profile))
-        if model_id and model_id in models:
-            edges.append(_edge(f"profile-model-{profile_id}-{model_id}", f"profile:{profile_id}", f"model:{model_id}", "uses model", "profile-model"))
-        else:
-            edges.append(_edge(f"controller-profile-{profile_id}", "controller:pac", f"profile:{profile_id}", "offers profile", "profile"))
-        if workspace_id and workspace_id in workspaces:
-            edges.append(_edge(f"profile-workspace-{profile_id}-{workspace_id}", f"profile:{profile_id}", f"workspace:{workspace_id}", "defaults to", "profile-workspace"))
-
-    return {
-        "nodes": list(nodes.values()),
-        "edges": edges,
-        "summary": {
-            "providers": len(providers),
-            "models": len(models),
-            "endpoints": len(runners),
-            "workspaces": len(workspaces),
-            "contexts": len(contexts),
-            "profiles": len(profiles),
-        },
-    }
 
 
 def _notification_item(kind: str, severity: str, title: str, detail: str = "", action: str | None = None, target: str | None = None, data: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -305,7 +200,9 @@ def create_system_router(
     def dashboard_topology(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
         require_resource_access(_auth, 'diagnostics', 'dashboard', 'read')
         refresh_local_runner_metadata(emit_event=False)
-        return _build_dashboard_topology(config_payload(_auth), list_runners())
+        payload = config_payload(_auth)
+        payload['sessions'] = [session.model_dump(mode='json') for session in list_sessions()]
+        return build_dashboard_topology(payload, list_runners())
 
     @router.get('/v1/notifications/summary')
     def notifications_summary(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
@@ -333,6 +230,45 @@ def create_system_router(
         require_resource_access(_auth, 'diagnostics', 'model-usage', 'read')
         return model_metrics.summarize_usage(since_hours=since_hours, limit=limit)
 
+
+
+    @router.get('/v1/system/observability')
+    def system_observability(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        require_resource_access(_auth, 'diagnostics', 'observability', 'read')
+        return observability_status()
+
+    @router.get('/v1/system/logs/tail')
+    def system_log_tail(
+        name: str = Query(default='controller', pattern='^(controller|audit)$'),
+        limit: int = Query(default=8000, ge=1, le=200000),
+        _auth: Any = Depends(require_auth),
+    ) -> dict[str, Any]:
+        require_resource_access(_auth, 'diagnostics', f'logs:{name}', 'read')
+        return tail_log(name=name, limit=limit)
+
+    @router.get('/v1/observability/metrics')
+    def embedded_observability_metrics(
+        since_hours: int = Query(default=24, ge=1, le=24 * 90),
+        limit: int = Query(default=200, ge=1, le=1000),
+        _auth: Any = Depends(require_auth),
+    ) -> dict[str, Any]:
+        require_resource_access(_auth, 'diagnostics', 'observability:metrics', 'read')
+        return query_metrics(since_hours=since_hours, limit=limit)
+
+    @router.get('/v1/observability/traces')
+    def embedded_observability_traces(
+        since_hours: int = Query(default=24, ge=1, le=24 * 90),
+        limit: int = Query(default=80, ge=1, le=500),
+        trace_id: str | None = Query(default=None),
+        _auth: Any = Depends(require_auth),
+    ) -> dict[str, Any]:
+        require_resource_access(_auth, 'diagnostics', 'observability:traces', 'read')
+        return query_traces(since_hours=since_hours, limit=limit, trace_id=trace_id)
+
+    @router.post('/v1/observability/prune')
+    def embedded_observability_prune(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        require_resource_access(_auth, 'diagnostics', 'observability:prune', 'write')
+        return prune_observability_store()
 
     @router.get('/v1/config')
     def get_config(_auth: Any = Depends(require_auth)) -> dict[str, Any]:

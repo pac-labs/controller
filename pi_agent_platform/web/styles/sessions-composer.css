@@ -1101,3 +1101,37 @@ body:not(.light) .compact-destination-controls select {
 .thought-history-line.closed .assistant-work-intent {
   color: color-mix(in srgb, var(--muted) 80%, transparent);
 }
+
+.reply-scope-notice {
+  border: 1px solid rgba(246, 184, 85, 0.35);
+  background: rgba(246, 184, 85, 0.08);
+  color: var(--text, #eaf2ff);
+  border-radius: 12px;
+  padding: 8px 10px;
+  margin: 0 0 10px 0;
+  display: grid;
+  gap: 3px;
+  max-width: 100%;
+}
+
+.reply-scope-notice span {
+  color: #f6c66b;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.reply-scope-notice small {
+  color: var(--muted, #aab6ca);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reply-scope-notice.compact {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border-radius: 10px;
+}

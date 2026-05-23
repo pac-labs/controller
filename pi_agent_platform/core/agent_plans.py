@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import asyncio
 import json
-from typing import Any
+from typing import Any, Callable
 
 from .config import AppConfig
 from .providers import chat_complete
+from .agent_model_calls import run_blocking_provider_call
 
 
 PLAN_PROMPT = (
@@ -60,6 +60,10 @@ async def generate_plan(
     max_tokens: int = 700,
     session_id: str | None = None,
     task_id: str | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    timeout_seconds: int | None = None,
+    on_abandoned: Callable[[], None] | None = None,
+    on_late_completed: Callable[[bool], None] | None = None,
 ) -> dict[str, Any]:
     messages = [{"role": "system", "content": PLAN_PROMPT}]
     if extra_context:
@@ -69,13 +73,18 @@ async def generate_plan(
                 messages.append({"role": "system", "content": text})
     messages.append({"role": "user", "content": str(prompt or "").strip() or "Plan the current request."})
     try:
-        raw = await asyncio.to_thread(
-            chat_complete,
-            config,
-            model,
-            messages,
-            max_tokens=max_tokens,
-            telemetry={"session_id": session_id, "task_id": task_id, "call_type": "plan"},
+        raw = await run_blocking_provider_call(
+            lambda: chat_complete(
+                config,
+                model,
+                messages,
+                max_tokens=max_tokens,
+                telemetry={"session_id": session_id, "task_id": task_id, "call_type": "plan"},
+                progress_callback=progress_callback,
+            ),
+            timeout_seconds=timeout_seconds,
+            on_abandoned=on_abandoned,
+            on_late_completed=on_late_completed,
         )
     except Exception:
         return fallback_plan(prompt)

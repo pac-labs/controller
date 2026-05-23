@@ -70,8 +70,21 @@ var endpointToolSpecs = []ToolSpec{
 	{Name: "just", Binary: "just", Required: true, Description: "project command runner"},
 }
 
+var windowsEndpointToolSpecs = []ToolSpec{
+	{Name: "powershell", Binary: "powershell.exe", Binaries: []string{"pwsh", "powershell.exe", "powershell"}, Required: true, Description: "PowerShell command execution"},
+	{Name: "git", Binary: "git", Required: false, Description: "repository operations"},
+	{Name: "python", Binary: "python", Binaries: []string{"python", "py"}, Required: false, Description: "Python workloads"},
+}
+
+func endpointToolSpecsForRuntime() []ToolSpec {
+	if runtime.GOOS == "windows" {
+		return windowsEndpointToolSpecs
+	}
+	return endpointToolSpecs
+}
+
 func toolSpecByName(name string) (ToolSpec, bool) {
-	for _, spec := range endpointToolSpecs {
+	for _, spec := range endpointToolSpecsForRuntime() {
 		if spec.Name == name || spec.Binary == name {
 			return spec, true
 		}
@@ -203,14 +216,26 @@ func (c Client) request(ctx context.Context, method, path string, body any) ([]b
 	return data, resp.StatusCode, nil
 }
 
-func commandShell(command string) *exec.Cmd {
-	shell := "/bin/sh"
-	arg := "-lc"
+func commandShell(command string, metadata map[string]any) *exec.Cmd {
+	requested := strings.ToLower(strings.TrimSpace(stringMeta(metadata, "shell")))
 	if runtime.GOOS == "windows" {
-		shell = "cmd"
-		arg = "/C"
+		if requested == "cmd" {
+			return exec.Command("cmd.exe", "/C", command)
+		}
+		if p, err := exec.LookPath("pwsh"); err == nil {
+			return exec.Command(p, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command)
+		}
+		if p, err := exec.LookPath("powershell.exe"); err == nil {
+			return exec.Command(p, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command)
+		}
+		return exec.Command("cmd.exe", "/C", command)
 	}
-	return exec.Command(shell, arg, command)
+	if requested == "powershell" || requested == "pwsh" {
+		if p, err := exec.LookPath("pwsh"); err == nil {
+			return exec.Command(p, "-NoProfile", "-NonInteractive", "-Command", command)
+		}
+	}
+	return exec.Command("/bin/sh", "-lc", command)
 }
 
 func workspaceRoot(job Job) (string, error) {
@@ -237,7 +262,7 @@ func runCommand(job Job) (int, string, string) {
 	if err != nil {
 		return 1, "", err.Error()
 	}
-	cmd := commandShell(job.Command)
+	cmd := commandShell(job.Command, job.Metadata)
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "PAC_WORKSPACE="+root, "PAC_JOB_ID="+job.ID, "PAC_ENDPOINT_VERSION="+version)
 	var out, er bytes.Buffer
@@ -351,7 +376,7 @@ func stdinMeta(m map[string]any) string {
 
 func discoverEndpointTools() map[string]ToolState {
 	tools := map[string]ToolState{}
-	for _, spec := range endpointToolSpecs {
+	for _, spec := range endpointToolSpecsForRuntime() {
 		bins := spec.Binaries
 		if len(bins) == 0 {
 			bins = []string{spec.Binary}
@@ -367,7 +392,7 @@ func discoverEndpointTools() map[string]ToolState {
 		tools[spec.Name] = state
 	}
 	// Keep common runtime names visible too, but do not make them part of the required agent tool set.
-	for _, opt := range []string{"node", "podman", "docker", "bash", "sh"} {
+	for _, opt := range []string{"node", "podman", "docker", "bash", "sh", "powershell.exe", "pwsh", "cmd.exe"} {
 		if p, err := exec.LookPath(opt); err == nil {
 			tools[opt] = ToolState{Available: true, Path: p, Required: false}
 		} else if _, exists := tools[opt]; !exists {
@@ -381,7 +406,7 @@ func requiredToolSummary(tools map[string]ToolState) map[string]any {
 	required := []string{}
 	missing := []string{}
 	available := []string{}
-	for _, spec := range endpointToolSpecs {
+	for _, spec := range endpointToolSpecsForRuntime() {
 		required = append(required, spec.Name)
 		if tools[spec.Name].Available {
 			available = append(available, spec.Name)
@@ -454,6 +479,7 @@ func runtimeCapabilities(runnerEnabled bool) map[string]any {
 		"tools":                 tools,
 		"agent_required_tools":  requiredToolSummary(tools),
 		"tool_execution_bridge": map[string]any{"available": runnerEnabled, "mode": "named-tool", "returns": []string{"stdout", "stderr", "exit_code"}},
+		"remote_code_execution": map[string]any{"available": runnerEnabled, "mode": "controller-queued", "host_shell": map[string]string{"windows": "PowerShell", "default": "POSIX sh"}[map[bool]string{true: "windows", false: "default"}[runtime.GOOS == "windows"]]},
 	}
 	if p, err := exec.LookPath("node"); err == nil {
 		caps["node"] = map[string]any{"available": true, "path": p}
@@ -561,7 +587,7 @@ func main() {
 		labels = append(labels, "runner-disabled")
 	}
 	controllerWrapper := envBool("PAC_CONTROLLER_WRAPPER", false)
-	metadata := map[string]any{"runner_version": version, "runner_embedded": true, "runner_enabled": runnerEnabled, "binary": binaryName, "os": runtime.GOOS, "arch": runtime.GOARCH, "secure_transport": "bearer-token optional-mtls", "self_update": true, "tool_bridge": true, "required_tools": requiredToolSummary(discoverEndpointTools()), "compiled_server_url": defaultServerURL, "controller_id": defaultControllerID, "update_channel": defaultUpdateChannel, "controller_wrapper": controllerWrapper}
+	metadata := map[string]any{"runner_version": version, "runner_embedded": true, "runner_enabled": runnerEnabled, "binary": binaryName, "os": runtime.GOOS, "arch": runtime.GOARCH, "os_family": runtime.GOOS, "remote_code_execution": map[string]any{"available": runnerEnabled, "mode": "controller-queued"}, "secure_transport": "bearer-token optional-mtls", "self_update": true, "tool_bridge": true, "required_tools": requiredToolSummary(discoverEndpointTools()), "compiled_server_url": defaultServerURL, "controller_id": defaultControllerID, "update_channel": defaultUpdateChannel, "controller_wrapper": controllerWrapper}
 	if controllerWrapper {
 		labels = append(labels, "controller", "local", "PAC", "pi.dev")
 		metadata["local_control_plane"] = true
@@ -570,7 +596,7 @@ func main() {
 	reg := map[string]any{"name": name, "labels": labels, "endpoint": "pac-endpoint://" + name, "allow_host_execution": runnerEnabled, "allow_container_execution": runnerEnabled, "agent_enabled": controllerWrapper, "metadata": metadata}
 	r := registerWithRetry(ctx, c, reg, name, runnerEnabled)
 	for {
-		hbMetadata := map[string]any{"command_channel": map[string]any{"available": runnerEnabled, "mode": "controller-queued", "embedded": true}, "runner_enabled": runnerEnabled, "self_update": true, "tool_bridge": true, "required_tools": requiredToolSummary(discoverEndpointTools()), "compiled_server_url": defaultServerURL, "controller_id": defaultControllerID, "update_channel": defaultUpdateChannel, "controller_wrapper": controllerWrapper}
+		hbMetadata := map[string]any{"command_channel": map[string]any{"available": runnerEnabled, "mode": "controller-queued", "embedded": true}, "runner_enabled": runnerEnabled, "os_family": runtime.GOOS, "remote_code_execution": map[string]any{"available": runnerEnabled, "mode": "controller-queued"}, "self_update": true, "tool_bridge": true, "required_tools": requiredToolSummary(discoverEndpointTools()), "compiled_server_url": defaultServerURL, "controller_id": defaultControllerID, "update_channel": defaultUpdateChannel, "controller_wrapper": controllerWrapper}
 		if controllerWrapper {
 			hbMetadata["local_control_plane"] = true
 			hbMetadata["pi_dev_required"] = true

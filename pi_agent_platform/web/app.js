@@ -58,6 +58,8 @@ let sessionHydrationToken = 0;
 let sessionHydrationActiveFor = null;
 let sessionHydrationBufferedEvents = [];
 let sessionTaskPrompts = new Map();
+let sessionUserTaskMeta = new Map();
+let sessionTaskSequence = 0;
 let latestAssistantReplyState = null;
 let sessionAutoScrollPinned = true;
 let providerHealthCache = new Map();
@@ -127,6 +129,7 @@ function setupTabs() {
       {tab: 'runners-tab', label: 'Endpoints'},
     ],
     observe: [
+      {tab: 'observe-tab', label: 'Observability'},
       {tab: 'events-panel-proxy', label: 'Events'},
     ],
   };
@@ -196,6 +199,7 @@ function activateMainTab(tabId) {
   const panel = document.getElementById(tabId);
   if (panel) panel.classList.add('active');
   if (tabId === 'settings-tab') switchSettingsPanel('updates');
+  if (tabId === 'observe-tab' && typeof loadObservePanel === 'function') loadObservePanel().catch(()=>{});
   const overflowMenu = document.getElementById('tabsOverflowMenu');
   const overflowBtn = document.getElementById('tabsOverflowButton');
   if (overflowMenu) overflowMenu.hidden = true;
@@ -349,16 +353,31 @@ function fillSelects() {
   updateWizardToolPackagePreview();
 }
 function emitUiEvent(type, message, data=null) {
-  window.__pacLastUiEvent = {
+  const event = {
     id: `${type}_${Date.now()}_${Math.random()}`,
     type,
     message: message || prettyEventType(type),
     created_at: new Date().toISOString(),
-    session_id: 'system',
+    session_id: selectedSession?.id || 'system',
     data: data ? {details: data, source: 'ui'} : {source: 'ui'},
   };
-  if (document.getElementById('eventsRail') && !document.getElementById('eventsRail')?.hidden) {
-    loadGlobalEvents(true).catch(()=>{});
+  window.__pacLastUiEvent = event;
+  const railOpen = document.getElementById('eventsRail') && !document.getElementById('eventsRail')?.hidden;
+  if (railOpen && typeof renderGlobalEvent === 'function') renderGlobalEvent(event, true);
+  if (typeof api === 'function') {
+    api('/v1/events/ui', {
+      method: 'POST',
+      body: JSON.stringify({
+        type: event.type,
+        message: event.message,
+        session_id: event.session_id,
+        data: event.data,
+      }),
+    }).then((saved) => {
+      if (saved) window.__pacLastUiEvent = saved;
+    }).catch(() => {
+      // Local rendering above keeps the UI responsive when PAC is restarting or auth is not ready.
+    });
   }
 }
 function showInline(id, obj) {

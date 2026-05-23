@@ -1,0 +1,75 @@
+.observe-panel .observe-hero { margin-bottom: 1rem; }
+.observe-grid { align-items: start; }
+.observe-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: .75rem;
+}
+.observe-status-card {
+  border: 1px solid rgba(148, 163, 184, .22);
+  border-radius: 18px;
+  padding: .85rem;
+  background: rgba(15, 23, 42, .42);
+  display: grid;
+  gap: .25rem;
+  min-width: 0;
+}
+.observe-status-card span,
+.observe-kv-row span { color: var(--muted); font-size: .8rem; }
+.observe-status-card b { font-size: 1rem; overflow-wrap: anywhere; }
+.observe-status-card small { color: var(--muted); overflow-wrap: anywhere; }
+.observe-kv { display: grid; gap: .45rem; }
+.observe-kv-row {
+  display: grid;
+  grid-template-columns: minmax(110px, .8fr) minmax(0, 1.2fr);
+  gap: .7rem;
+  align-items: start;
+  padding: .45rem 0;
+  border-bottom: 1px solid rgba(148, 163, 184, .14);
+}
+.observe-kv-row b { font-weight: 650; overflow-wrap: anywhere; }
+.observe-log-tail {
+  min-height: 340px;
+  max-height: 560px;
+  overflow: auto;
+  white-space: pre-wrap;
+  border: 1px solid rgba(148, 163, 184, .22);
+  border-radius: 16px;
+  padding: .85rem;
+  background: rgba(2, 6, 23, .48);
+  font-size: .82rem;
+}
+[data-theme="light"] .observe-status-card,
+:root[data-theme="light"] .observe-status-card {
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, .12);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, .06);
+}
+[data-theme="light"] .observe-log-tail,
+:root[data-theme="light"] .observe-log-tail {
+  background: #f8fafc;
+  border-color: rgba(15, 23, 42, .12);
+  color: #0f172a;
+}
+.observe-trace-list { display:grid; gap:.5rem; }
+.observe-trace-row {
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) auto;
+  gap:.35rem .75rem;
+  align-items:start;
+  border:1px solid rgba(148,163,184,.18);
+  border-radius:14px;
+  padding:.65rem .75rem;
+  background:rgba(15,23,42,.26);
+}
+.observe-trace-row div { min-width:0; }
+.observe-trace-row b,
+.observe-trace-row small { display:block; overflow-wrap:anywhere; }
+.observe-trace-row small { color:var(--muted); }
+.observe-trace-row.danger { border-color:rgba(248,113,113,.45); }
+.observe-kv-row small { display:block; margin-top:.12rem; color:var(--muted); }
+[data-theme="light"] .observe-trace-row,
+:root[data-theme="light"] .observe-trace-row {
+  background:#ffffff;
+  border-color:rgba(15,23,42,.12);
+}

@@ -8,7 +8,7 @@ from .config import AppConfig
 from .models import Session, Task
 from .profiles import profile_instructions
 from .store import store
-from .workspace_index import build_workspace_index
+from .workspace_index_cache import get_workspace_index
 from .workspace_lessons import get_project_memory
 
 
@@ -202,7 +202,8 @@ def build_agent_prompt_context(session: Session, task: Task, config: AppConfig, 
     if runtime_context:
         messages.append({"role": "system", "content": runtime_context})
 
-    workspace_index = build_workspace_index(Path(session.workspace_path), max_files=600)
+    workspace_index, workspace_index_cached = get_workspace_index(Path(session.workspace_path), max_files=600)
+    workspace_index["cached"] = workspace_index_cached
     index_briefing = format_workspace_index_briefing(workspace_index)
     if index_briefing:
         messages.append({"role": "system", "content": index_briefing})
@@ -240,6 +241,7 @@ def workspace_index_event_data(workspace_index: dict[str, Any]) -> dict[str, Any
         "project_type": workspace_index.get("project_type"),
         "file_count": workspace_index.get("tree", {}).get("file_count", 0),
         "projects": [project.get("type") for project in workspace_index.get("projects", [])],
+        "cached": bool(workspace_index.get("cached")),
     }
 
 

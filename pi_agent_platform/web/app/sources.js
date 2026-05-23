@@ -95,7 +95,7 @@ function sourceChildRows(items, depth=0) {
       const cached = sourceTreeCache.get(item.path);
       if (cached?.items?.length) rows.push(...sourceChildRows(cached.items, depth + 1));
       else if (cached) rows.push(`<div class="muted source-empty-folder nested" style="--source-depth:${(depth + 1) * 14}px">No files in this folder.</div>`);
-      else rows.push(`<div class="muted source-empty-folder nested" style="--source-depth:${(depth + 1) * 14}px">Loading…</div>`);
+      else rows.push(`<div class="muted source-empty-folder nested pac-loading-placeholder" style="--source-depth:${(depth + 1) * 14}px">${pacLoadingLineHtml('Loading…', {size:'tiny'})}</div>`);
     }
   });
   return rows;

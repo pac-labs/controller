@@ -52,9 +52,10 @@ def _summarize_model_action(action: dict[str, Any]) -> tuple[str, dict[str, Any]
         inp = action.get("input") or {}
         return _summarize_tool_intent(tool, inp), {"action_type": kind, "tool": tool, "input": inp}
     if kind == "final":
-        message = str(action.get("message") or "").strip()
-        concise = message.splitlines()[0][:180] if message else "Preparing final response"
-        return concise or "Preparing final response", {"action_type": kind}
+        # The visible session timeline already renders the final answer as its own
+        # assistant message. Keep the intent row as process metadata so the UI
+        # does not show the same answer twice as both a status update and a reply.
+        return "Prepared a final answer", {"action_type": kind}
     return "Re-evaluating next step", {"action_type": kind or "unknown"}
 
 
@@ -107,7 +108,8 @@ def _infer_tool_call_from_action_narration(text: str, session: Session, task: Ta
     if not raw:
         return None
 
-    allowed = set((session.allowed_tools or []) or (config.agent.default_tools or []))
+    configured_tools = getattr(session, "tools", None) or list(getattr(config, "tools", {}).keys())
+    allowed = {str(tool) for tool in configured_tools if str(tool or "").strip()}
 
     def can(tool: str) -> bool:
         return not allowed or tool in allowed
@@ -137,6 +139,21 @@ def _infer_tool_call_from_action_narration(text: str, session: Session, task: Ta
         if can("list_files"):
             return {"type": "tool_call", "tool": "list_files", "input": {"path": "."}}
 
+    search_match = re.search(
+        r"\b(?:search|find|grep|ripgrep|look\s+for)\s+(?:for\s+)?[\"'`]?([^\"'`\n.]{2,80})",
+        raw_text,
+        re.IGNORECASE,
+    )
+    if search_match and can("ripgrep"):
+        query = search_match.group(1).strip()
+        query = re.sub(r"\s+(?:in|under|inside|across)\s+(?:the\s+)?(?:workspace|codebase|project|source|files?)$", "", query, flags=re.IGNORECASE).strip()
+        if query:
+            return {"type": "tool_call", "tool": "ripgrep", "input": {"query": query, "path": ".", "max_results": 200}}
+
+    list_match = re.search(r"\b(?:list|show)\s+(?:the\s+)?(?:files|tree|directory|workspace)", raw, re.IGNORECASE)
+    if list_match and can("list_files"):
+        return {"type": "tool_call", "tool": "list_files", "input": {"path": "."}}
+
     if "git status" in raw and can("git_status"):
         return {"type": "tool_call", "tool": "git_status", "input": {}}
     if "git diff" in raw and can("git_diff"):
@@ -146,7 +163,15 @@ def _infer_tool_call_from_action_narration(text: str, session: Session, task: Ta
     if file_match and can("read_file"):
         return {"type": "tool_call", "tool": "read_file", "input": {"path": file_match.group(1)}}
 
-    if session.workspace_path and any(word in raw for word in ("plan", "patch", "modify", "update", "implement", "fix", "configure")):
+    task_text = str(task.prompt or "").lower()
+    actionable_task_words = (
+        "investigate", "debug", "fix", "patch", "change", "update", "implement",
+        "inspect", "look at", "analyze", "why", "slow", "stuck", "broken", "not doing",
+    )
+    if session.workspace_path and (
+        any(word in raw for word in ("plan", "patch", "modify", "update", "implement", "fix", "configure", "do this", "do that", "handle this"))
+        or any(word in task_text for word in actionable_task_words)
+    ):
         if can("workspace_manifest"):
             return {"type": "tool_call", "tool": "workspace_manifest", "input": {"max_files": 300}}
         if can("list_files"):
@@ -195,6 +220,8 @@ def _looks_like_action_narration(text: str) -> bool:
         "i will scan ",
         "i will list ",
         "i will read ",
+        "i will do ",
+        "i'll do ",
         "i need to ",
         "i should ",
         "i can start by ",
@@ -211,6 +238,7 @@ def _looks_like_action_narration(text: str) -> bool:
         "inspect", "read", "list", "open", "search", "scan", "run", "execute",
         "modify", "update", "write", "patch", "create", "apply", "check",
         "plan", "prepare", "implement", "fix", "adjust", "change", "configure",
+        "do", "handle", "proceed", "start", "continue",
         "use consult_model", "consult", "call", "investigate", "review", "look at",
     )
     if any(verb in raw for verb in action_verbs):

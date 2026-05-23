@@ -260,8 +260,14 @@ def create_workspaces_router(
             raise HTTPException(status_code=409, detail='An agent context with that name already exists')
         updated = _agent_context_payload_to_item(item, payload, _auth)
         store.add_agent_context(updated)
-        store.add_event(Event(session_id='system', type='agent_context_updated', message=f'Agent context updated: {updated.name}', data={'context_id': updated.id, 'owner': updated.owner_username}))
-        return {'ok': True, 'context': _public_agent_context(updated)}
+        synced_session = None
+        if updated.last_session_id and store.get_session(updated.last_session_id):
+            synced_session = _ensure_agent_context_session(updated, _auth)
+        store.add_event(Event(session_id='system', type='agent_context_updated', message=f'Agent context updated: {updated.name}', data={'context_id': updated.id, 'owner': updated.owner_username, 'session_synced': bool(synced_session)}))
+        result = {'ok': True, 'context': _public_agent_context(updated)}
+        if synced_session:
+            result['session'] = synced_session.model_dump(mode='json')
+        return result
 
 
     @router.delete('/v1/agent-contexts/{context_id}')

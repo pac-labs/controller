@@ -379,7 +379,7 @@ function renderDirectoryFolderDetail(folderId, detail, title, subtitle) {
 async function renderDirectoryPrincipalDetail(item, detail, title, subtitle) {
   if (title) title.textContent = directoryPrincipalLabel(item);
   if (subtitle) subtitle.textContent = directoryPrincipalSubtitle(item);
-  detail.innerHTML = `<article class="directory-detail-card"><div class="muted small-text">Loading effective access…</div></article>`;
+  detail.innerHTML = `<article class="directory-detail-card"><div class="muted small-text pac-loading-placeholder">${pacLoadingLineHtml('Loading effective access…')}</div></article>`;
   const [access, credentials] = await Promise.all([
     api(`/v1/directory/principals/${encodeURIComponent(item.id)}/effective-access`).catch(() => null),
     api(`/v1/directory/principals/${encodeURIComponent(item.id)}/credentials`).catch(() => []),

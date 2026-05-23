@@ -8,11 +8,12 @@ from typing import Any
 from .config import AppConfig
 from .models import Session, SessionStatus, Task, TaskStatus
 from .providers import chat_complete, effective_context
-from .agent_plans import generate_plan
+from .agent_plans import fallback_plan, generate_plan
 from .runtime import ensure_workspace
 from .store import store
 from .agent_run_lifecycle import AgentRunLifecycle
 from .agent_context_manager import AgentContextManager
+from .agent_loop_timing import AgentLoopTiming
 from .agent_events import AgentEvents
 from .agent_prompt_context import build_agent_prompt_context
 from .profiles import profile_context_name, profile_planner_context_name
@@ -21,6 +22,7 @@ from .agent_response_parser import (
     _looks_like_wrapped_tool_markup,
 )
 from .agent_action_recovery import _summarize_model_action
+from .agent_model_calls import run_blocking_provider_call
 from .agent_final_answer_policy import (
     AcceptFinal,
     ConvertToToolCall,
@@ -52,6 +54,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     context_manager = AgentContextManager(session, task, config, model_name=decision_model, context_profile=context_name)
     full_control = session.permission_profile == "full-control"
     events = AgentEvents(session, task)
+    timing = AgentLoopTiming(events)
     events.agent_started(
         model=session.model,
         decision_model=decision_model,
@@ -73,7 +76,8 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     lifecycle = AgentRunLifecycle(session, task, config, transcript)
 
     try:
-        prompt_context = build_agent_prompt_context(session, task, config, agent=agent)
+        with timing.phase("prompt_context", "Agent prompt/context preparation was slow"):
+            prompt_context = build_agent_prompt_context(session, task, config, agent=agent)
     except Exception as exc:
         task = await lifecycle.fail(f"Agent prompt preparation failed: {exc}")
         return task
@@ -87,14 +91,50 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
 
     if task.metadata.get("always_plan", True) and not task.metadata.get("plan_generated"):
         try:
-            plan = await generate_plan(
-                config,
-                model=planning_model,
-                prompt=task.prompt,
-                extra_context=[controller_guidance or "", controller_context or "", index_briefing or ""],
-                session_id=session.id,
-                task_id=task.id,
-            )
+            planning_timeout_seconds = max(3, int(task.metadata.get("planning_timeout_seconds") or 12))
+            try:
+                plan_abandoned = False
+
+                def plan_progress(update: dict[str, Any]) -> None:
+                    events.model_stream_progress(
+                        model=planning_model,
+                        step=None,
+                        call_type="plan",
+                        chars=int(update.get("chars") or 0),
+                        preview=str(update.get("preview") or ""),
+                    )
+
+                def plan_abandoned_event() -> None:
+                    nonlocal plan_abandoned
+                    plan_abandoned = True
+                    events.agent_plan_timeout(model=planning_model, timeout_seconds=planning_timeout_seconds, fallback=True)
+                    events.model_call_abandoned(model=planning_model, call_type="plan", timeout_seconds=planning_timeout_seconds)
+
+                def plan_late_completed(success: bool) -> None:
+                    events.model_call_late_completed(model=planning_model, call_type="plan", success=success)
+
+                plan = await timing.around_async(
+                    "planning_model",
+                    "Planning model call was slow",
+                    generate_plan(
+                        config,
+                        model=planning_model,
+                        prompt=task.prompt,
+                        extra_context=[controller_guidance or "", controller_context or "", index_briefing or ""],
+                        session_id=session.id,
+                        task_id=task.id,
+                        progress_callback=plan_progress,
+                        timeout_seconds=planning_timeout_seconds,
+                        on_abandoned=plan_abandoned_event,
+                        on_late_completed=plan_late_completed,
+                    ),
+                    {"model": planning_model, "timeout_seconds": planning_timeout_seconds},
+                )
+                if plan_abandoned:
+                    plan = fallback_plan(task.prompt)
+            except asyncio.TimeoutError:
+                events.agent_plan_timeout(model=planning_model, timeout_seconds=planning_timeout_seconds, fallback=True)
+                plan = fallback_plan(task.prompt)
         except Exception as exc:
             task = await lifecycle.fail(f"Planning model call failed: {exc}", messages=messages)
             return task
@@ -115,7 +155,12 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     if pending:
         events.tool_resumed(pending)
         try:
-            observation, paused = await execute_tool(session, task, pending.get("tool", ""), pending.get("input", {}), config)
+            observation, paused = await timing.around_async(
+                "tool_execution",
+                "Resumed tool execution was slow",
+                execute_tool(session, task, pending.get("tool", ""), pending.get("input", {}), config),
+                {"tool": pending.get("tool", "")},
+            )
         except Exception as exc:
             task = await lifecycle.fail(f"Resumed tool failed before producing a result: {exc}", messages=messages)
             return task
@@ -156,7 +201,11 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                 rolling_summary=context_manager.rolling_summary,
             )
             return task
-        messages = await context_manager.maybe_compact(messages, source="threshold")
+        messages = await timing.around_async(
+            "context_compaction_check",
+            "Context compaction/check was slow",
+            context_manager.maybe_compact(messages, source="threshold"),
+        )
 
         remaining_seconds = max(0, int(deadline - time.monotonic()))
         if step == 1 or step % 10 == 0:
@@ -167,13 +216,40 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                 remaining_seconds=remaining_seconds,
             )
         try:
-            raw = await asyncio.to_thread(
-                chat_complete,
-                config,
-                decision_model,
-                messages,
-                max_tokens=min(ctx["reserve_output_tokens"], 4096),
-                telemetry={"session_id": session.id, "task_id": task.id, "call_type": "decision", "step": step},
+            def decision_progress(update: dict[str, Any]) -> None:
+                events.model_stream_progress(
+                    model=decision_model,
+                    step=step,
+                    call_type="decision",
+                    chars=int(update.get("chars") or 0),
+                    preview=str(update.get("preview") or ""),
+                )
+
+            raw = await timing.around_async(
+                "decision_model",
+                "Decision model call was slow",
+                run_blocking_provider_call(
+                    lambda: chat_complete(
+                        config,
+                        decision_model,
+                        messages,
+                        max_tokens=min(ctx["reserve_output_tokens"], 4096),
+                        telemetry={"session_id": session.id, "task_id": task.id, "call_type": "decision", "step": step},
+                        progress_callback=decision_progress,
+                    ),
+                    timeout_seconds=int(task.metadata.get("decision_timeout_seconds") or 0) or None,
+                    on_abandoned=lambda: events.model_call_abandoned(
+                        model=decision_model,
+                        call_type="decision",
+                        timeout_seconds=int(task.metadata.get("decision_timeout_seconds") or 0),
+                    ),
+                    on_late_completed=lambda success: events.model_call_late_completed(
+                        model=decision_model,
+                        call_type="decision",
+                        success=success,
+                    ),
+                ),
+                {"model": decision_model, "step": step},
             )
         except Exception as exc:
             task = await lifecycle.fail(
@@ -293,7 +369,12 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             inp = action.get("input") or {}
             events.tool_call(tool=tool, input=inp)
             try:
-                observation, paused = await execute_tool(session, task, tool, inp, config)
+                observation, paused = await timing.around_async(
+                    "tool_execution",
+                    "Tool execution was slow",
+                    execute_tool(session, task, tool, inp, config),
+                    {"tool": tool, "step": step},
+                )
             except Exception as exc:
                 task = await lifecycle.fail(
                     f"Tool execution failed before producing a result: {tool}: {exc}",

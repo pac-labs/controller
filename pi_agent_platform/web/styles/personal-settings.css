@@ -1,0 +1,234 @@
+/* Coherent My profile settings modal. */
+.personal-profile-modal {
+  width: min(1220px, 96vw) !important;
+  max-width: 1220px !important;
+  max-height: min(92vh, 980px);
+  overflow: hidden;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 24px;
+}
+.personal-profile-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  padding: 1.25rem 1.4rem;
+  border-bottom: 1px solid rgba(148, 163, 184, .18);
+  background: linear-gradient(135deg, rgba(37,99,235,.16), rgba(14,165,233,.08));
+}
+.personal-profile-identity {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  min-width: 0;
+}
+.personal-profile-avatar {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  color: #eff6ff;
+  background: linear-gradient(135deg, #2563eb, #0891b2);
+  box-shadow: 0 18px 40px rgba(37,99,235,.28);
+  flex: 0 0 auto;
+}
+.modal-eyebrow {
+  margin: 0 0 .25rem;
+  text-transform: uppercase;
+  letter-spacing: .11em;
+  font-size: .72rem;
+  font-weight: 800;
+  color: #60a5fa;
+}
+.personal-profile-header h2,
+.personal-profile-header p { margin-top: 0; }
+.personal-profile-header h2 { margin-bottom: .25rem; }
+.personal-profile-body {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  min-height: 620px;
+  overflow: hidden;
+}
+.personal-profile-nav {
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+  padding: 1rem;
+  border-right: 1px solid rgba(148,163,184,.18);
+  background: rgba(15,23,42,.22);
+  overflow-y: auto;
+}
+.personal-profile-card {
+  padding: .85rem;
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius: 18px;
+  background: rgba(15,23,42,.28);
+}
+.identity-card { display: grid; gap: .25rem; margin-bottom: .45rem; }
+.identity-card .identity-label {
+  font-size: .72rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-weight: 800;
+}
+.identity-card strong { font-size: 1rem; color: #f8fafc; overflow-wrap: anywhere; }
+.identity-card code { font-size: .78rem; overflow-wrap: anywhere; }
+.personal-profile-tab {
+  width: 100%;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  padding: .78rem .9rem;
+  background: transparent;
+  color: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  text-align: left;
+}
+.personal-profile-tab:hover {
+  background: rgba(96,165,250,.10);
+  border-color: rgba(96,165,250,.18);
+}
+.personal-profile-tab.is-active {
+  color: #eff6ff;
+  background: linear-gradient(135deg, rgba(37,99,235,.34), rgba(8,145,178,.22));
+  border-color: rgba(96,165,250,.36);
+  box-shadow: inset 3px 0 0 #60a5fa;
+}
+.personal-profile-rule {
+  margin-top: auto;
+  padding: .85rem;
+  border-radius: 16px;
+  border: 1px dashed rgba(96,165,250,.24);
+  background: rgba(37,99,235,.08);
+  display: grid;
+  gap: .3rem;
+}
+.personal-profile-rule span { color: #cbd5e1; font-size: .85rem; }
+.personal-profile-content {
+  padding: 1.2rem;
+  overflow: auto;
+  background: radial-gradient(circle at top right, rgba(37,99,235,.10), transparent 34%), rgba(2,6,23,.10);
+}
+.personal-profile-panel {
+  display: none;
+  min-height: 100%;
+}
+.personal-profile-panel.is-active {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.profile-panel-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: 1rem;
+  border: 1px solid rgba(148,163,184,.16);
+  border-radius: 20px;
+  background: rgba(15,23,42,.28);
+}
+.profile-panel-heading h3 { margin: 0 0 .25rem; }
+.profile-panel-heading p { margin: 0; }
+.profile-form-card,
+.unified-access-summary,
+.credential-list,
+.profile-textarea-label {
+  display: block;
+  padding: 1rem;
+  border: 1px solid rgba(148,163,184,.16);
+  border-radius: 20px;
+  background: rgba(15,23,42,.20);
+}
+.profile-textarea-label textarea,
+.personal-profile-modal textarea {
+  width: 100%;
+  min-height: 360px;
+  resize: vertical;
+}
+.personal-profile-modal #personalPreferences { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.personal-profile-modal .my-access-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: .85rem;
+}
+.personal-profile-modal .my-access-grid section {
+  border: 1px solid rgba(148,163,184,.15);
+  border-radius: 16px;
+  padding: .85rem;
+  background: rgba(2,6,23,.16);
+}
+.personal-profile-modal .my-access-grid h4 { margin: 0 0 .55rem; }
+.personal-profile-modal .compact-scroll-output {
+  max-height: 520px;
+  overflow: auto;
+}
+.compact-token-controls { align-items: end; }
+.compact-token-controls label { min-width: 120px; }
+.compact-token-controls input { max-width: 120px; }
+html[data-theme="light"] .personal-profile-modal {
+  background: #ffffff;
+  color: #0f172a;
+  border-color: rgba(37,99,235,.16);
+}
+html[data-theme="light"] .personal-profile-header {
+  background: linear-gradient(135deg, rgba(219,234,254,.98), rgba(240,249,255,.98));
+  border-color: rgba(37,99,235,.16);
+}
+html[data-theme="light"] .modal-eyebrow { color: #2563eb; }
+html[data-theme="light"] .personal-profile-nav {
+  background: linear-gradient(180deg, #f8fafc, #eef6ff);
+  border-color: rgba(37,99,235,.14);
+}
+html[data-theme="light"] .personal-profile-card,
+html[data-theme="light"] .profile-panel-heading,
+html[data-theme="light"] .profile-form-card,
+html[data-theme="light"] .unified-access-summary,
+html[data-theme="light"] .credential-list,
+html[data-theme="light"] .profile-textarea-label {
+  background: #ffffff;
+  border-color: rgba(37,99,235,.14);
+  box-shadow: 0 12px 30px rgba(15,23,42,.05);
+}
+html[data-theme="light"] .identity-card strong { color: #0f172a; }
+html[data-theme="light"] .identity-card .identity-label { color: #64748b; }
+html[data-theme="light"] .personal-profile-tab:hover {
+  background: rgba(219,234,254,.72);
+  border-color: rgba(37,99,235,.18);
+}
+html[data-theme="light"] .personal-profile-tab.is-active {
+  color: #1e3a8a;
+  background: linear-gradient(135deg, rgba(219,234,254,.98), rgba(224,242,254,.98));
+  border-color: rgba(37,99,235,.24);
+  box-shadow: inset 3px 0 0 #2563eb;
+}
+html[data-theme="light"] .personal-profile-rule {
+  background: rgba(219,234,254,.62);
+  border-color: rgba(37,99,235,.22);
+}
+html[data-theme="light"] .personal-profile-rule span { color: #334155; }
+html[data-theme="light"] .personal-profile-content {
+  background: radial-gradient(circle at top right, rgba(219,234,254,.80), transparent 34%), #f8fafc;
+}
+html[data-theme="light"] .personal-profile-modal .my-access-grid section {
+  background: #f8fafc;
+  border-color: rgba(37,99,235,.12);
+}
+@media (max-width: 920px) {
+  .personal-profile-modal { width: 98vw !important; max-height: 94vh; }
+  .personal-profile-body { grid-template-columns: 1fr; min-height: 0; }
+  .personal-profile-nav { border-right: 0; border-bottom: 1px solid rgba(148,163,184,.18); max-height: 260px; }
+  .personal-profile-content { max-height: 60vh; }
+  .profile-panel-heading { flex-direction: column; }
+  .compact-token-controls { width: 100%; justify-content: flex-start; }
+}

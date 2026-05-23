@@ -1,7 +1,115 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-<defs><linearGradient id="v" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#c084fc"/><stop offset=".55" stop-color="#8b5cf6"/><stop offset="1" stop-color="#5b21b6"/></linearGradient></defs>
-<rect width="128" height="128" fill="none"/>
-<g fill="none" stroke="#3b2a5f" stroke-width="5" stroke-linecap="square"><path d="M64 18 L103 47 L88 94 L40 94 L25 47 Z"/></g>
-<g fill="#08070d" stroke="#6d45d6" stroke-width="5"><circle cx="64" cy="18" r="9"/><circle cx="103" cy="47" r="9"/><circle cx="88" cy="94" r="9"/><circle cx="40" cy="94" r="9"/><circle cx="25" cy="47" r="9"/></g>
-<circle r="6" fill="#d8b4fe"><animateMotion dur="1.35s" repeatCount="indefinite" path="M64 18 L103 47 L88 94 L40 94 L25 47 Z"/></circle>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">PAC loading mark</title>
+  <desc id="desc">The PAC mark lights from the center blip, fills the lower line, traces around the six outer elements, then switches off together.</desc>
+  <style>
+    :root {
+      --pac-loader-dark: #05100c;
+      --pac-loader-panel: #071811;
+      --pac-loader-stroke: #16412b;
+      --pac-loader-stroke-hot: #55f09a;
+      --pac-loader-green: #22c55e;
+      --pac-loader-green-hot: #86efac;
+    }
+    .shell {
+      fill: var(--pac-loader-panel);
+      stroke: var(--pac-loader-stroke);
+      stroke-width: 8;
+      stroke-linejoin: round;
+      filter: url(#idleGlow);
+    }
+    .segment {
+      fill: var(--pac-loader-panel);
+      stroke: var(--pac-loader-stroke);
+      stroke-width: 8;
+      stroke-linejoin: round;
+      animation: pac-segment 6.4s cubic-bezier(.22,.8,.24,1) infinite;
+    }
+    .segment-inner {
+      fill: var(--pac-loader-dark);
+      opacity: .28;
+    }
+    .blip {
+      fill: var(--pac-loader-green-hot);
+      stroke: var(--pac-loader-stroke-hot);
+      stroke-width: 8;
+      opacity: 0;
+      filter: url(#hotGlow);
+      animation: pac-blip 6.4s cubic-bezier(.22,.8,.24,1) infinite;
+    }
+    .drop-track {
+      fill: #071811;
+      stroke: var(--pac-loader-stroke);
+      stroke-width: 8;
+    }
+    .drop-fill {
+      fill: var(--pac-loader-green);
+      stroke: var(--pac-loader-stroke-hot);
+      stroke-width: 8;
+      transform-box: fill-box;
+      transform-origin: 50% 0%;
+      transform: scaleY(0);
+      opacity: 0;
+      animation: pac-drop 6.4s cubic-bezier(.16,.84,.28,1) infinite;
+      filter: url(#hotGlow);
+    }
+    .s1 { animation-delay: 1.45s; }
+    .s2 { animation-delay: 2.00s; }
+    .s3 { animation-delay: 2.55s; }
+    .s4 { animation-delay: 3.10s; }
+    .s5 { animation-delay: 3.65s; }
+    .s6 { animation-delay: 4.20s; }
+    @keyframes pac-segment {
+      0%, 12% { fill: var(--pac-loader-panel); stroke: var(--pac-loader-stroke); filter: url(#idleGlow); }
+      22%, 82% { fill: var(--pac-loader-green); stroke: var(--pac-loader-stroke-hot); filter: url(#hotGlow); }
+      84%, 100% { fill: var(--pac-loader-panel); stroke: var(--pac-loader-stroke); filter: url(#idleGlow); }
+    }
+    @keyframes pac-blip {
+      0%, 7% { opacity: 0; transform: scale(.72); }
+      10%, 82% { opacity: 1; transform: scale(1); }
+      84%, 100% { opacity: 0; transform: scale(.72); }
+    }
+    @keyframes pac-drop {
+      0%, 12% { opacity: 0; transform: scaleY(0); }
+      18% { opacity: 1; transform: scaleY(1); }
+      82% { opacity: 1; transform: scaleY(1); }
+      84%, 100% { opacity: 0; transform: scaleY(0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .segment, .blip, .drop-fill { animation: none; }
+      .segment { fill: var(--pac-loader-green); stroke: var(--pac-loader-stroke-hot); }
+      .blip, .drop-fill { opacity: 1; transform: none; }
+    }
+  </style>
+  <defs>
+    <filter id="idleGlow" x="-24%" y="-24%" width="148%" height="148%">
+      <feGaussianBlur stdDeviation="1.5" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.05 0 0 0 0 0.20 0 0 0 0 0.11 0 0 0 .42 0" result="glow"/>
+      <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="hotGlow" x="-36%" y="-36%" width="172%" height="172%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.10 0 0 0 0 0.86 0 0 0 0 0.40 0 0 0 .72 0" result="glow"/>
+      <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="none"/>
+  <g class="shell" opacity=".2">
+    <path d="M169 45h125l-43 74h-82z"/>
+    <path d="M312 58l108 63-64 37-72-42z"/>
+    <path d="M436 146v129l-72-41V188z"/>
+    <path d="M344 362l-88 51-88-51 43-74h90z"/>
+    <path d="M148 349L76 308V184l72 42z"/>
+    <path d="M156 58v100l-72 42V121z"/>
+  </g>
+  <g>
+    <path class="segment s4" d="M169 45h125l-43 74h-82z"/>
+    <path class="segment s5" d="M312 58l108 63-64 37-72-42z"/>
+    <path class="segment s6" d="M436 146v129l-72-41V188z"/>
+    <path class="segment s1" d="M344 362l-88 51-88-51 43-74h90z"/>
+    <path class="segment s2" d="M148 349L76 308V184l72 42z"/>
+    <path class="segment s3" d="M156 58v100l-72 42V121z"/>
+    <rect class="drop-track" x="236" y="258" width="40" height="84" rx="5"/>
+    <rect class="drop-fill" x="236" y="258" width="40" height="84" rx="5"/>
+    <circle class="blip" cx="256" cy="228" r="36"/>
+  </g>
 </svg>
