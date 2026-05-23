@@ -11,6 +11,7 @@ let selectedIdeWorkspaceId = '';
 let selectedIdeWorkspaceProfile = '';
 let selectedIdeSessionId = '';
 let selectedBinaryArtifactFilter = '';
+let sourceBinaryArtifactProjects = [];
 let sourceOpenTabs = [];
 let sourceFileState = new Map();
 let selectedSourceEntry = '';
@@ -834,6 +835,10 @@ const binaryFolderFilter = document.getElementById('binaryFolderFilter');
 if (binaryFolderFilter) binaryFolderFilter.onchange = () => {
   selectedBinaryArtifactFilter = binaryFolderFilter.value || '';
   loadSourceBinaryArtifacts(selectedBinaryArtifactFilter).catch(e=>paneError('Binary downloads unavailable', e.message));
+};
+const downloadFilterText = document.getElementById('downloadFilterText');
+if (downloadFilterText) downloadFilterText.oninput = () => {
+  renderBinaryDownloads(sourceBinaryArtifactProjects || []);
 };
 
 const openDownloadsModalBtn = document.getElementById('openDownloadsModal');

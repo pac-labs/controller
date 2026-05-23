@@ -264,6 +264,45 @@
 .downloads-modal-card .artifact-list { max-height: 60vh; overflow:auto; }
 .downloads-modal-controls { display:flex; align-items:end; gap:.5rem; flex-wrap:wrap; margin-bottom:.75rem; }
 .downloads-modal-controls .field-label { min-width: 220px; }
+.downloads-summary { margin-bottom: .5rem; }
+.download-version-group {
+  display: grid;
+  gap: .55rem;
+}
+.download-version-head {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.75rem;
+  flex-wrap:wrap;
+}
+.download-version-actions {
+  display:flex;
+  gap:.35rem;
+  flex-wrap:wrap;
+}
+.download-version-meta {
+  color: var(--muted);
+  font-size: .82rem;
+}
+.download-pill-list {
+  display:flex;
+  flex-wrap:wrap;
+  gap:.45rem;
+}
+.download-empty-state {
+  padding: .9rem 1rem;
+  border: 1px dashed rgba(148,163,184,.24);
+  border-radius: .75rem;
+  color: var(--muted);
+}
+.delete-version-group {
+  color: #fca5a5;
+}
+.delete-version-group:hover {
+  color: #fecaca;
+  border-color: rgba(252, 165, 165, .4);
+}
 @media (max-width: 950px) {
   .source-workbench-panel { height:auto; overflow:visible; }
   .source-workbench { grid-template-columns:1fr; height:auto; }
@@ -487,5 +526,4 @@ body {
   .content-area, .tab-panel.active { height: auto; overflow: visible; }
   #sessions-tab.sessions-workspace.active, #sessions-tab .session-chat-card, #sources-tab.source-workbench-panel.active { height: auto !important; }
 }
-
 

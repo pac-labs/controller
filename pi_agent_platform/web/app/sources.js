@@ -397,6 +397,38 @@ function formatBytes(bytes) {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
+function downloadFilterTokens() {
+  const input = document.getElementById('downloadFilterText');
+  return String(input?.value || '').toLowerCase().split(/\s+/).map(token => token.trim()).filter(Boolean);
+}
+function updateDownloadsSummary(groups) {
+  const el = document.getElementById('downloadsSummary');
+  if (!el) return;
+  const list = groups || [];
+  const projectCount = new Set(list.map(group => group.project).filter(Boolean)).size;
+  const versionCount = list.length;
+  const fileCount = list.reduce((sum, group) => sum + (group.artifacts || []).length, 0);
+  const totalBytes = list.reduce((sum, group) => sum + (group.artifacts || []).reduce((n, item) => n + Number(item.size || 0), 0), 0);
+  const filterText = downloadFilterTokens().join(' ');
+  el.textContent = `${projectCount} project${projectCount === 1 ? '' : 's'} • ${versionCount} version group${versionCount === 1 ? '' : 's'} • ${fileCount} file${fileCount === 1 ? '' : 's'} • ${formatBytes(totalBytes)}${filterText ? ` • filtered by "${filterText}"` : ''}`;
+}
+function filteredDownloadGroups(groups) {
+  const tokens = downloadFilterTokens();
+  if (!tokens.length) return groups;
+  return (groups || []).map(group => {
+    const artifacts = (group.artifacts || []).filter(item => {
+      const haystack = [
+        group.project,
+        group.version,
+        group.sourceVersion,
+        item.name,
+        binaryPlatformFromName(item.name, group.project),
+      ].join(' ').toLowerCase();
+      return tokens.every(token => haystack.includes(token));
+    });
+    return artifacts.length ? {...group, artifacts} : null;
+  }).filter(Boolean);
+}
 function renderBinaryDownloads(projects) {
   const el = document.getElementById('sourceBinaryArtifacts');
   if (!el) return;
@@ -414,19 +446,29 @@ function renderBinaryDownloads(projects) {
     if (projectCmp) return projectCmp;
     return b.version.localeCompare(a.version, undefined, {numeric:true});
   });
+  const visibleGroups = filteredDownloadGroups(groups);
+  updateDownloadsSummary(visibleGroups);
   if (!groups.length) {
-    el.innerHTML = '<span class="muted">No downloads available yet for this category. Build binaries from the IDE row.</span>';
+    el.innerHTML = '<div class="download-empty-state">No downloads available yet for this category. Build binaries from the IDE row.</div>';
     return;
   }
-  el.innerHTML = groups.map(group => {
+  if (!visibleGroups.length) {
+    el.innerHTML = '<div class="download-empty-state">No downloads matched the current filter.</div>';
+    return;
+  }
+  el.innerHTML = visibleGroups.map(group => {
     const links = group.artifacts
       .sort((a,b)=>String(a.name).localeCompare(String(b.name), undefined, {numeric:true}))
-      .map(a => `<span class="download-artifact"><a class="download-pill" href="${a.download_url}" download title="${escapeHtml(a.name)}"><span>${escapeHtml(binaryPlatformFromName(a.name, group.project))}</span><small>${escapeHtml(formatBytes(a.size))}</small></a><button class="icon-button delete-artifact" data-project="${escapeHtml(group.project)}" data-filename="${escapeHtml(a.name)}" title="Delete this binary">×</button></span>`)
+      .map(a => `<span class="download-artifact"><a class="download-pill" href="${a.download_url}" download title="${escapeHtml(a.name)}"><span>${escapeHtml(binaryPlatformFromName(a.name, group.project))}</span><small>${escapeHtml(formatBytes(a.size))}</small></a><button class="icon-button delete-artifact" data-project="${escapeHtml(group.project)}" data-filename="${escapeHtml(a.name)}" title="Delete this binary">&times;</button></span>`)
       .join('');
-    return `<div class="download-version-group"><div class="download-version-title"><b>${escapeHtml(group.project)}</b><span>binary v${escapeHtml(group.version)}</span></div><div class="download-pill-list">${links}</div></div>`;
+    const totalSize = group.artifacts.reduce((sum, item) => sum + Number(item.size || 0), 0);
+    return `<div class="download-version-group"><div class="download-version-head"><div><div class="download-version-title"><b>${escapeHtml(group.project)}</b><span>binary v${escapeHtml(group.version)}</span></div><div class="download-version-meta">${escapeHtml(String(group.artifacts.length))} file(s) • ${escapeHtml(formatBytes(totalSize))}${group.sourceVersion ? ` • source ${escapeHtml(group.sourceVersion)}` : ''}</div></div><div class="download-version-actions"><button class="ghost-button delete-version-group" data-project="${escapeHtml(group.project)}" data-version="${escapeHtml(group.version)}" title="Delete all binaries in this version group">Delete version</button></div></div><div class="download-pill-list">${links}</div></div>`;
   }).join('');
   el.querySelectorAll('.delete-artifact').forEach(btn => {
     btn.onclick = () => deleteBinaryArtifact(btn.dataset.project || '', btn.dataset.filename || '').catch(e => paneError('Delete binary failed', e.message));
+  });
+  el.querySelectorAll('.delete-version-group').forEach(btn => {
+    btn.onclick = () => deleteBinaryArtifactVersionGroup(btn.dataset.project || '', btn.dataset.version || '').catch(e => paneError('Delete version failed', e.message));
   });
 }
 
@@ -449,6 +491,26 @@ async function pruneBinaryArtifacts(dryRun=false) {
   await loadSourceBinaryArtifacts(project).catch(()=>{});
   await loadGlobalEvents(true).catch(()=>{});
 }
+async function deleteBinaryArtifactVersionGroup(project, version) {
+  if (!project || !version) return;
+  const data = await api(`/v1/sources/binary-artifacts?project=${encodeURIComponent(project)}`);
+  const projectEntry = (data.projects || []).find(item => String(item.project || '') === String(project));
+  const artifacts = (projectEntry?.artifacts || []).filter(item => {
+    const itemVersion = item.version || (binaryVersionFromName(item.name) === 'unversioned' ? (projectEntry.source_version || 'unversioned') : binaryVersionFromName(item.name));
+    return String(itemVersion) === String(version);
+  });
+  if (!artifacts.length) {
+    setSourceBuildHint(`No binaries found for ${project} v${version}.`, false);
+    return;
+  }
+  if (!confirm(`Delete ${artifacts.length} binary file(s) for ${project} v${version}?`)) return;
+  for (const artifact of artifacts) {
+    await api(`/v1/sources/binary-artifacts/${encodeURIComponent(project)}/${encodeURIComponent(artifact.name)}`, {method:'DELETE'});
+  }
+  setSourceBuildHint(`Deleted ${artifacts.length} binary file(s) for ${project} v${version}.`, false);
+  await loadSourceBinaryArtifacts(selectedBinaryArtifactFilter || '').catch(()=>{});
+  await loadGlobalEvents(true).catch(()=>{});
+}
 async function loadSourceBinaryArtifacts(project='') {
   const el = document.getElementById('sourceBinaryArtifacts');
   if (!el) return;
@@ -457,7 +519,8 @@ async function loadSourceBinaryArtifacts(project='') {
     setBinaryFolderFilterValue(effectiveProject || '');
     const qs = effectiveProject ? `?project=${encodeURIComponent(effectiveProject)}` : '';
     const data = await api(`/v1/sources/binary-artifacts${qs}`);
-    renderBinaryDownloads(data.projects || []);
+    sourceBinaryArtifactProjects = data.projects || [];
+    renderBinaryDownloads(sourceBinaryArtifactProjects);
   } catch(e) { el.textContent = `Could not load downloads: ${e.message}`; }
 }
 function parseJsonObject(text, label) {

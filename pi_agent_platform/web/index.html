@@ -873,13 +873,16 @@
 
     <div id="downloadsModal" class="modal-backdrop" hidden>
       <section class="modal-card wide-modal downloads-modal-card" role="dialog" aria-modal="true" aria-labelledby="downloadsModalTitle">
-        <div class="section-heading"><div><h2 id="downloadsModalTitle">Downloads</h2><p class="muted">Built binaries and generated artifacts.</p></div><button id="closeDownloadsModal" class="ghost-button">Close</button></div>
+        <div class="section-heading"><div><h2 id="downloadsModalTitle">Downloads</h2><p class="muted">Built binaries available for download and cleanup.</p></div><button id="closeDownloadsModal" class="ghost-button">Close</button></div>
         <div class="downloads-modal-controls">
           <label class="field-label" for="binaryFolderFilter">Binary folder</label>
           <select id="binaryFolderFilter" class="binary-folder-filter"><option value="">All binary folders</option></select>
+          <label class="field-label" for="downloadFilterText">Filter downloads</label>
+          <input id="downloadFilterText" class="binary-folder-filter" placeholder="project, version, platform..." />
           <button id="pruneBinaryArtifacts" class="ghost-button">Keep newest only</button>
           <button id="previewPruneBinaryArtifacts" class="ghost-button">Preview prune</button>
         </div>
+        <div id="downloadsSummary" class="muted small-text">No download inventory loaded yet.</div>
         <div id="sourceBuildResult" class="source-build-hint muted">Available downloads are listed by version.</div>
         <div id="sourceBinaryArtifacts" class="artifact-list download-version-list muted">No downloads available yet.</div>
       </section>
