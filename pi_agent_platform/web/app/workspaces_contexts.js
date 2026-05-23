@@ -123,6 +123,8 @@ function selectedSessionContextId() {
   return String(selectedSession?.metadata?.agent_context_id || '').trim();
 }
 
+window.selectedSessionContextId = selectedSessionContextId;
+
 function systemContextWorkspaceLabel(item) {
   return item?.workspace_label || item?.metadata?.workspace_label || 'PAC';
 }

@@ -132,6 +132,8 @@ function updateWizardToolPackagePreview() {
   el.innerHTML = packagePills + toolPills || '<span class="muted">No endpoint tools selected.</span>';
 }
 
+window.updateWizardToolPackagePreview = updateWizardToolPackagePreview;
+
 function fillModelEndpointOptions(endpoints = window.__pacEndpoints || []) {
   const sel = document.getElementById('modelRunsOn');
   if (!sel || sel.tagName !== 'SELECT') return;

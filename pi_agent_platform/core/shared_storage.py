@@ -55,6 +55,13 @@ def shared_storage_binding(storage: SharedStorage, subpath: str | None = None, m
 
 
 def public_shared_storage(storage: SharedStorage) -> dict[str, Any]:
+    def _json_time(value: Any) -> str | None:
+        if value is None:
+            return None
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        return str(value)
+
     return {
         "id": storage.id,
         "name": storage.name,
@@ -68,6 +75,6 @@ def public_shared_storage(storage: SharedStorage) -> dict[str, Any]:
         "writable": bool(storage.writable),
         "default_subpath": storage.default_subpath,
         "metadata": storage.metadata or {},
-        "created_at": storage.created_at.isoformat(),
-        "updated_at": storage.updated_at.isoformat(),
+        "created_at": _json_time(storage.created_at),
+        "updated_at": _json_time(storage.updated_at),
     }

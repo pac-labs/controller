@@ -1571,7 +1571,7 @@ async function selectSession(id) {
   sessionHydrationToken += 1;
   selectedSession = await api(`/v1/sessions/${id}`);
   const preferredEndpoint = selectedSession.metadata?.preferred_endpoint || '';
-  const currentContextId = selectedSessionContextId();
+  const currentContextId = window.selectedSessionContextId?.() || '';
   renderSelectedSessionSummary(selectedSession);
   if (document.getElementById('sessionTopSelect')) sessionTopSelect.value = selectedSession.id;
   if (document.getElementById('composerAgentContext')) composerAgentContext.value = currentContextId || '';
@@ -1755,7 +1755,7 @@ async function sendSessionComposer(){
     return;
   }
   const contextId = (document.getElementById('composerAgentContext')?.value || '').trim();
-  if (contextId && (!selectedSession || selectedSessionContextId() !== contextId)) {
+  if (contextId && (!selectedSession || (window.selectedSessionContextId?.() || '') !== contextId)) {
     const ensured = await api(`/v1/agent-contexts/${encodeURIComponent(contextId)}/session`, {method:'POST'});
     await loadSessions();
     if (ensured.session?.id) await selectSession(ensured.session.id);
@@ -1891,7 +1891,7 @@ function composerEndpointLabel() {
 }
 
 function composerContextLabel() {
-  const contextId = selectedSessionContextId?.() || document.getElementById('composerAgentContext')?.value || '';
+  const contextId = window.selectedSessionContextId?.() || document.getElementById('composerAgentContext')?.value || '';
   if (!contextId) return selectedSession ? 'session' : 'none';
   const contexts = window.__pacAgentContexts || [];
   const context = contexts.find((item) => item.id === contextId || item.name === contextId);

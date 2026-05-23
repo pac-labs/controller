@@ -568,7 +568,7 @@ function renderEndpointConnectionSettings() {
   if (mdnsInput) mdnsInput.checked = config.mdns?.enabled !== false;
 
   // Load letsencrypt status
-  fetch('/v1/server/letsencrypt/status').then(r => r.json()).then(data => {
+  api('/v1/server/letsencrypt/status').then(data => {
     const emailEl = document.getElementById('leEmail');
     if (emailEl) emailEl.value = data.email || '';
     const domainEl = document.getElementById('leDomain');
@@ -847,7 +847,7 @@ if (generateWizardEndpointKitBtn) generateWizardEndpointKitBtn.onclick = async()
 };
 const discoverBtn = document.getElementById('discoverLocal');
 if (discoverBtn) discoverBtn.onclick = async()=>{ const r=await api('/v1/endpoints/local/discover'); if(localDiscovery) localDiscovery.textContent='Local host discovery completed. Details are in Events.'; emitUiEvent('local_endpoint_discovered', 'Local host discovery completed', r); };
-if (document.getElementById('wizardRunnerTools')) wizardRunnerTools.addEventListener('change', updateWizardToolPackagePreview);
+if (document.getElementById('wizardRunnerTools')) wizardRunnerTools.addEventListener('change', () => window.updateWizardToolPackagePreview?.());
 const addLocalBtn = document.getElementById('addLocalRunner');
 if (addLocalBtn) addLocalBtn.onclick = async()=>{ const box=document.getElementById('localDiscovery'); try { if(box) box.textContent='Adding local endpoint…'; const r=await api('/v1/endpoints/local',{method:'POST'}); if(box) box.textContent='Local endpoint added. Details are in Events.'; emitUiEvent('local_endpoint_added', 'Local endpoint added', r); await loadRunners(); await loadGlobalEvents(true).catch(()=>{}); } catch(e){ if(box) box.textContent='Local endpoint could not be added. Details are in Events.'; paneError('Local endpoint could not be added', e.message); } };
 
