@@ -36,6 +36,7 @@ from pi_agent_platform.api.routes.marketplace import create_marketplace_router
 from pi_agent_platform.api.routes.mcp import create_mcp_router
 from pi_agent_platform.api.routes.system import create_system_router
 from pi_agent_platform.api.routes.endpoints import create_endpoints_router
+from pi_agent_platform.api.routes.editor_bridge import create_editor_bridge_router
 from pi_agent_platform.api.routes.providers import create_providers_router
 from pi_agent_platform.api.routes.proxy import create_proxy_router
 from pi_agent_platform.api.routes.server_config import create_server_config_router
@@ -2424,7 +2425,16 @@ def _is_coding_session_metadata(metadata: dict[str, Any] | None) -> bool:
     return bool(
         meta.get('coding_session')
         or meta.get('ide_mode')
-        or origin in {'vscode-extension', 'zed-extension', 'zed', 'ide'}
+        or (
+            origin in {'vscode-extension', 'zed-extension', 'zed', 'ide'}
+            and not meta.get('controller_harness')
+            and not meta.get('system_context')
+            and (
+                meta.get('workspace_trusted')
+                or meta.get('user_workspace_id')
+                or meta.get('agent_context_kind') == 'coding'
+            )
+        )
     )
 
 
@@ -2683,6 +2693,18 @@ app.include_router(create_workspaces_router(
     storage_catalog=_storage_catalog,
     shared_storage_payload_to_item=_shared_storage_payload_to_item,
     public_shared_storage=public_shared_storage,
+))
+
+app.include_router(create_editor_bridge_router(
+    require_auth=require_auth,
+    store=store,
+    session_resource_ref=_session_resource_ref,
+    require_resource_access=_require_resource_access,
+    can_use_agent_context=_can_use_agent_context,
+    ensure_agent_context_session=_ensure_agent_context_session,
+    workspace_owner=_workspace_owner,
+    can_resource_access=_can_resource_access,
+    ensure_user_workspace_session=_ensure_user_workspace_session,
 ))
 
 app.include_router(create_proxy_router(

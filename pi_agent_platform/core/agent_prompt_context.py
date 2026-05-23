@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .config import AppConfig
+from .editor_session_context import build_editor_state_briefing
 from .models import Session, Task
 from .profiles import profile_instructions
 from .store import store
@@ -208,6 +209,10 @@ def build_agent_prompt_context(
     runtime_context = controller_session_runtime_context(session, config)
     if runtime_context:
         messages.append({"role": "system", "content": runtime_context})
+
+    editor_briefing = build_editor_state_briefing(session.workspace_path, session.metadata)
+    if editor_briefing:
+        messages.append({"role": "system", "content": editor_briefing})
 
     workspace_index: dict[str, Any] | None = None
     workspace_index_briefing: str | None = None

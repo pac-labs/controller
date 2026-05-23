@@ -5,7 +5,8 @@
       "command": "C:/tools/pac.exe",
       "args": [
         "--base-url",
-        "https://localhost"
+        "https://localhost",
+        "--insecure"
       ],
       "env": {}
     },

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -116,6 +117,10 @@ func isSafeEnvAssignmentKey(key string) bool {
 func tools() []map[string]any {
 	return []map[string]any{
 		{"name": "pac_version", "description": "Get PAC server version.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{}}},
+		{"name": "pac_list_agent_contexts", "description": "List usable PAC agent contexts for editor sessions.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{}}},
+		{"name": "pac_list_my_workspaces", "description": "List personal PAC workspaces available to the current user.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{}}},
+		{"name": "pac_bootstrap_editor_session", "description": "Bootstrap or attach a PAC editor session from an agent context or workspace and pass current editor state.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"origin": map[string]any{"type": "string"}, "context_id": map[string]any{"type": "string"}, "workspace_id": map[string]any{"type": "string"}, "editor": map[string]any{"type": "string"}, "workspace_root": map[string]any{"type": "string"}, "active_file": map[string]any{"type": "string"}, "open_files": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "selected_text": map[string]any{"type": "string"}, "selection_start_line": map[string]any{"type": "integer"}, "selection_end_line": map[string]any{"type": "integer"}, "language_id": map[string]any{"type": "string"}, "diagnostics": map[string]any{"type": "array", "items": map[string]any{"type": "object"}}}}},
+		{"name": "pac_update_editor_state", "description": "Update active editor state for an existing PAC session.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"session_id": map[string]any{"type": "string"}, "editor": map[string]any{"type": "string"}, "workspace_root": map[string]any{"type": "string"}, "active_file": map[string]any{"type": "string"}, "open_files": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "selected_text": map[string]any{"type": "string"}, "selection_start_line": map[string]any{"type": "integer"}, "selection_end_line": map[string]any{"type": "integer"}, "language_id": map[string]any{"type": "string"}, "diagnostics": map[string]any{"type": "array", "items": map[string]any{"type": "object"}}}, "required": []string{"session_id"}}},
 		{"name": "pac_list_models", "description": "List configured PAC models.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{}}},
 		{"name": "pac_list_providers", "description": "List configured PAC model providers.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{}}},
 		{"name": "pac_list_tools", "description": "List PAC tool configuration.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{}}},
@@ -131,6 +136,43 @@ func toolCall(c *client, name string, args map[string]any) (any, error) {
 	switch name {
 	case "pac_version":
 		return c.req("GET", "/v1/version", nil)
+	case "pac_list_agent_contexts":
+		return c.req("GET", "/v1/agent-contexts", nil)
+	case "pac_list_my_workspaces":
+		return c.req("GET", "/v1/my-workspaces", nil)
+	case "pac_bootstrap_editor_session":
+		body := map[string]any{
+			"origin":               valueOrDefault(args["origin"], "zed"),
+			"context_id":           args["context_id"],
+			"workspace_id":         args["workspace_id"],
+			"editor":               args["editor"],
+			"workspace_root":       args["workspace_root"],
+			"active_file":          args["active_file"],
+			"open_files":           listArg(args["open_files"]),
+			"selected_text":        args["selected_text"],
+			"selection_start_line": args["selection_start_line"],
+			"selection_end_line":   args["selection_end_line"],
+			"language_id":          args["language_id"],
+			"diagnostics":          objectListArg(args["diagnostics"]),
+		}
+		return c.req("POST", "/v1/editor/bootstrap", body)
+	case "pac_update_editor_state":
+		sid, _ := args["session_id"].(string)
+		if sid == "" {
+			return nil, fmt.Errorf("session_id is required")
+		}
+		body := map[string]any{
+			"editor":               args["editor"],
+			"workspace_root":       args["workspace_root"],
+			"active_file":          args["active_file"],
+			"open_files":           listArg(args["open_files"]),
+			"selected_text":        args["selected_text"],
+			"selection_start_line": args["selection_start_line"],
+			"selection_end_line":   args["selection_end_line"],
+			"language_id":          args["language_id"],
+			"diagnostics":          objectListArg(args["diagnostics"]),
+		}
+		return c.req("POST", "/v1/editor/sessions/"+sid+"/state", body)
 	case "pac_list_models":
 		return c.req("GET", "/v1/models", nil)
 	case "pac_list_providers":
@@ -170,14 +212,61 @@ func toolCall(c *client, name string, args map[string]any) (any, error) {
 			return nil, fmt.Errorf("session_id is required")
 		}
 		body := map[string]any{
-			"type": args["type"],
+			"type":    args["type"],
 			"message": args["message"],
-			"data": args["data"],
+			"data":    args["data"],
 		}
 		return c.req("POST", "/v1/sessions/"+sid+"/events", body)
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", name)
 	}
+}
+
+func valueOrDefault(value any, fallback string) string {
+	if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
+		return strings.TrimSpace(text)
+	}
+	return fallback
+}
+
+func listArg(value any) []string {
+	if value == nil {
+		return []string{}
+	}
+	if typed, ok := value.([]string); ok {
+		return typed
+	}
+	raw, ok := value.([]any)
+	if !ok {
+		return []string{}
+	}
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
+			out = append(out, strings.TrimSpace(text))
+		}
+	}
+	return out
+}
+
+func objectListArg(value any) []map[string]any {
+	if value == nil {
+		return []map[string]any{}
+	}
+	if typed, ok := value.([]map[string]any); ok {
+		return typed
+	}
+	raw, ok := value.([]any)
+	if !ok {
+		return []map[string]any{}
+	}
+	out := make([]map[string]any, 0, len(raw))
+	for _, item := range raw {
+		if obj, ok := item.(map[string]any); ok {
+			out = append(out, obj)
+		}
+	}
+	return out
 }
 
 func main() {
@@ -188,9 +277,15 @@ func main() {
 	}
 	base := flag.String("base-url", baseDefault, "PAC base URL")
 	token := flag.String("token", os.Getenv("PAC_TOKEN"), "PAC bearer token")
+	insecureDefault := strings.EqualFold(strings.TrimSpace(os.Getenv("PAC_INSECURE")), "1") || strings.EqualFold(strings.TrimSpace(os.Getenv("PAC_INSECURE")), "true")
+	insecure := flag.Bool("insecure", insecureDefault, "skip TLS certificate verification when connecting to PAC")
 	check := flag.Bool("check", false, "check PAC connectivity and exit")
 	flag.Parse()
-	c := &client{base: strings.TrimRight(*base, "/"), token: *token, http: &http.Client{Timeout: 20 * time.Second}}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if *insecure {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+	c := &client{base: strings.TrimRight(*base, "/"), token: *token, http: &http.Client{Timeout: 20 * time.Second, Transport: transport}}
 	if *check {
 		res, err := c.req("GET", "/v1/version", nil)
 		if err != nil {

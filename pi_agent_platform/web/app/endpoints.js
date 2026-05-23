@@ -291,7 +291,7 @@ function renderZedConfigExamples() {
       pac: {
         source: 'custom',
         command: 'C:/tools/pac.exe',
-        args: ['--base-url', publicUrl],
+        args: ['--base-url', publicUrl, '--insecure'],
         env: {}
       }
     }
