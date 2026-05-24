@@ -254,6 +254,41 @@ body[data-theme="light"] .session-sidebar-meta{
   width:100%;
   text-align:left;
 }
+.tabs.tabs-compact-mode{
+  align-items:flex-start;
+}
+.tabs.tabs-compact-mode .tabs-subnav{
+  justify-content:flex-start;
+}
+.compact-nav-trigger{
+  min-width:180px;
+  text-align:left;
+}
+.compact-nav-section{
+  display:grid;
+  gap:.35rem;
+  padding:.2rem 0;
+}
+.compact-nav-section + .compact-nav-section{
+  border-top:1px solid rgba(148,163,184,.12);
+  padding-top:.55rem;
+  margin-top:.2rem;
+}
+.compact-nav-header{
+  font-size:.76rem;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:rgba(148,163,184,.72);
+  padding:.1rem .2rem;
+}
+.compact-nav-items{
+  display:grid;
+  gap:.3rem;
+}
+.compact-nav-item{
+  width:100%;
+  text-align:left;
+}
 .tab{
   box-shadow:inset 0 1px 0 rgba(148,163,184,.28);
 }

@@ -134,6 +134,38 @@ function setupTabs() {
       {tab: 'events-panel-proxy', label: 'Events'},
     ],
   };
+  function labelForTab(tabId='') {
+    for (const items of Object.values(NAV_GROUPS)) {
+      const found = items.find((item) => item.tab === tabId);
+      if (found) return found.label;
+    }
+    return tabId;
+  }
+  function renderCompactNavMenu(activeTab='dashboard') {
+    const wrap = document.getElementById('tabsOverflowWrap');
+    const menu = document.getElementById('tabsOverflowMenu');
+    const button = document.getElementById('tabsOverflowButton');
+    if (!wrap || !menu || !button) return;
+    const sections = Object.entries(NAV_GROUPS).map(([groupName, items]) => {
+      const header = groupName.charAt(0).toUpperCase() + groupName.slice(1);
+      const rows = items.map((item) => {
+        const active = item.tab === activeTab ? ' active' : '';
+        return `<button class="tab compact-nav-item${active}" data-tab="${escapeHtml(item.tab)}" type="button">${escapeHtml(item.label)}</button>`;
+      }).join('');
+      return `<section class="compact-nav-section"><div class="compact-nav-header">${escapeHtml(header)}</div><div class="compact-nav-items">${rows}</div></section>`;
+    }).join('');
+    menu.innerHTML = sections;
+    menu.querySelectorAll('[data-tab]').forEach((btn) => {
+      btn.onclick = () => {
+        const tabId = btn.dataset.tab || '';
+        if (tabId === 'events-panel-proxy') showRail();
+        else activateMainTab(tabId);
+      };
+    });
+    wrap.hidden = false;
+    button.textContent = `Menu · ${labelForTab(activeTab)}`;
+    button.classList.add('compact-nav-trigger');
+  }
   const TAB_TO_GROUP = {};
   Object.entries(NAV_GROUPS).forEach(([group, items]) => items.forEach((item) => { TAB_TO_GROUP[item.tab] = group; }));
   TAB_TO_GROUP['settings-tab'] = 'admin';
@@ -211,14 +243,30 @@ function activateMainTab(tabId) {
 function updateTabsOverflow() {
   const nav = document.querySelector('.tabs');
   const primary = document.getElementById('tabsPrimary');
+  const groups = document.getElementById('tabsGroups');
   const wrap = document.getElementById('tabsOverflowWrap');
   const menu = document.getElementById('tabsOverflowMenu');
-  if (!nav || !primary || !wrap || !menu) return;
+  const overflowBtn = document.getElementById('tabsOverflowButton');
+  if (!nav || !primary || !groups || !wrap || !menu || !overflowBtn) return;
   const tabs = Array.from(primary.querySelectorAll('.tab[data-tab]'));
   tabs.forEach((tab) => { tab.hidden = false; });
+  groups.hidden = false;
+  primary.hidden = false;
   wrap.hidden = true;
   menu.hidden = true;
   menu.innerHTML = '';
+  nav.classList.remove('tabs-compact-mode');
+  overflowBtn.textContent = 'More';
+  overflowBtn.classList.remove('compact-nav-trigger');
+  const activeTab = tabs.find((tab) => tab.classList.contains('active'))?.dataset.tab || 'dashboard';
+  const requiredForTwoRows = (groups.scrollWidth || 0) + (primary.scrollWidth || 0) + 120;
+  if (requiredForTwoRows > nav.clientWidth) {
+    nav.classList.add('tabs-compact-mode');
+    groups.hidden = true;
+    primary.hidden = true;
+    renderCompactNavMenu(activeTab);
+    return;
+  }
   const navStyles = getComputedStyle(nav);
   const gap = parseFloat(navStyles.columnGap || navStyles.gap || '0') || 0;
   const reserve = 104;
