@@ -564,8 +564,29 @@ def _safe_name(value: str) -> str:
     return name
 
 
+_BINARY_PROJECT_ALIASES = {
+    'pac-zed': 'zed-binary',
+}
+
+
+def _canonical_binary_project(project: str | None) -> str | None:
+    if project is None:
+        return None
+    safe = _safe_name(project)
+    return _BINARY_PROJECT_ALIASES.get(safe, safe)
+
+
 def _artifact_version(name: str, fallback: str | None = None) -> str:
-    match = re.search(r'(?:^|[-_])v?(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?)(?=$|[-_])', name or '')
+    text = Path(name or '').name
+    if text.lower().endswith('.exe'):
+        text = text[:-4]
+    text = re.sub(
+        r'-(linux|darwin|windows|freebsd|openbsd|netbsd)-(amd64|arm64|arm|386|ppc64le|s390x)$',
+        '',
+        text,
+        flags=re.IGNORECASE,
+    )
+    match = re.search(r'(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._]+)?)', text)
     return match.group(1) if match else (fallback or 'unversioned')
 
 
@@ -741,7 +762,7 @@ def list_binary_artifacts(project: str | None = None) -> dict[str, Any]:
 
     def _project_names() -> list[str]:
         if project:
-            return [_safe_name(project)]
+            return [_canonical_binary_project(project)]
         names = {p.name for p in source_base.iterdir() if p.is_dir() and not p.name.startswith('.')}
         names.update(p.name for p in base.iterdir() if p.is_dir() and not p.name.startswith('.'))
         return sorted(names, key=str.lower)
@@ -782,7 +803,7 @@ def list_binary_artifacts(project: str | None = None) -> dict[str, Any]:
 
 
 def binary_artifact_path(project: str, filename: str) -> Path:
-    project = _safe_name(project)
+    project = _canonical_binary_project(project)
     filename = Path(filename).name
     target = (pacp_path('source-builds', 'binaries', project) / filename).resolve()
     root = pacp_path('source-builds', 'binaries', project).resolve()
@@ -795,7 +816,7 @@ def delete_binary_artifact(project: str, filename: str) -> dict[str, Any]:
     target = binary_artifact_path(project, filename)
     size = target.stat().st_size
     target.unlink()
-    return {'ok': True, 'project': _safe_name(project), 'deleted': target.name, 'bytes': size}
+    return {'ok': True, 'project': _canonical_binary_project(project), 'deleted': target.name, 'bytes': size}
 
 
 def prune_binary_artifacts(project: str | None = None, keep_versions: int = 1, dry_run: bool = False) -> dict[str, Any]:
