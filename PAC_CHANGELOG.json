@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "version": "1.0.353",
+      "date": "2026-05-24T18:05:00Z",
+      "summary": "Validated the release-bundled controller wrapper update path on a live PAC host.",
+      "changes": [
+        "Published a follow-up release from the same bundled-binary updater code so PAC could verify the release install path on a runtime already containing the new updater logic.",
+        "Confirmed the release package structure continues to include the prebuilt pac-endpoint wrapper binaries used by controller updates."
+      ]
+    },
+    {
       "version": "1.0.352",
       "date": "2026-05-24T09:40:00Z",
       "summary": "Bundled controller wrapper binaries into GitHub releases and taught the updater to install them before restart.",
@@ -313,5 +322,5 @@
       }
     }
   ],
-  "current_version": "1.0.352"
+  "current_version": "1.0.353"
 }
