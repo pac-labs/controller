@@ -921,6 +921,24 @@ def _install_wrapper_artifact(project: str, artifact: Path) -> dict[str, Any]:
     return {'installed': True, 'project': project, 'source': str(artifact), 'path': str(target), 'size': target.stat().st_size}
 
 
+def _find_bundled_binary_in_package(package_root: Path, project: str, target: str, binary_name: str) -> Path | None:
+    goos, goarch = target.split('/', 1)
+    ext = '.exe' if goos == 'windows' else ''
+    candidates = [
+        package_root / 'release-binaries' / project / f'{goos}-{goarch}' / f'{binary_name}{ext}',
+        package_root / 'release-binaries' / project / f'{goos}-{goarch}' / f'{project}{ext}',
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    target_dir = package_root / 'release-binaries' / project / f'{goos}-{goarch}'
+    if target_dir.is_dir():
+        matches = sorted(path for path in target_dir.iterdir() if path.is_file())
+        if matches:
+            return matches[0]
+    return None
+
+
 def _ensure_controller_wrapper(allow_build: bool = True, force_rebuild: bool = False) -> dict[str, Any]:
     settings = config.controller_harness
     project = settings.wrapper_binary_project or 'pac-endpoint'
@@ -950,6 +968,31 @@ def _ensure_controller_wrapper(allow_build: bool = True, force_rebuild: bool = F
         installed = _install_wrapper_artifact(project, artifact)
         return {'ok': True, 'status': 'rebuilt_installed' if force_rebuild else 'built_installed', 'target': target, 'build': result, 'message': 'PAC wrapper rebuilt and installed.' if force_rebuild else 'PAC wrapper built and installed.', **installed}
     return {'ok': False, 'status': 'build_failed', 'target': target, 'build': result, 'message': 'PAC wrapper rebuild did not produce a host binary.' if force_rebuild else 'PAC wrapper build did not produce a host binary.'}
+
+
+def _install_bundled_controller_wrapper(package_root: Path) -> dict[str, Any]:
+    settings = config.controller_harness
+    project = settings.wrapper_binary_project or 'pac-endpoint'
+    target = _host_binary_target()
+    binary_name = settings.wrapper_binary_name or 'pac-endpoint'
+    bundled = _find_bundled_binary_in_package(package_root, project, target, binary_name)
+    if not bundled:
+        return {
+            'ok': False,
+            'status': 'bundled_missing',
+            'project': project,
+            'target': target,
+            'message': 'Release package does not include a matching bundled PAC wrapper binary.',
+        }
+    installed = _install_wrapper_artifact(project, bundled)
+    return {
+        'ok': True,
+        'status': 'bundled_installed',
+        'project': project,
+        'target': target,
+        'message': 'PAC wrapper installed from bundled release binary.',
+        **installed,
+    }
 
 
 def _required_tool_state() -> dict[str, Any]:
@@ -3417,7 +3460,9 @@ def _apply_version_package_from_path(package_path: Path, filename: str, restart_
     copied = _copy_package_tree(package_root, app_dir)
     pip_result = _pip_install_editable(app_dir)
     run_script_result = _write_runtime_run_script(app_dir)
-    wrapper_result = _ensure_controller_wrapper(allow_build=True, force_rebuild=True)
+    wrapper_result = _install_bundled_controller_wrapper(package_root)
+    if not wrapper_result.get('ok'):
+        wrapper_result = _ensure_controller_wrapper(allow_build=True, force_rebuild=True)
     wrapper_restart_result = _restart_controller_wrapper() if wrapper_result.get('ok') else {'ok': False, 'status': 'skipped', 'message': 'Wrapper restart skipped because wrapper update did not succeed.'}
     try:
         _refresh_local_runner_metadata()

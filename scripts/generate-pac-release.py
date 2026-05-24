@@ -70,6 +70,22 @@ INCLUDE_FILES = [
     "requirements.txt",
 ]
 
+RELEASE_BINARY_TARGETS = [
+    ("linux", "amd64"),
+    ("linux", "arm64"),
+    ("darwin", "amd64"),
+    ("darwin", "arm64"),
+    ("windows", "amd64"),
+]
+
+RELEASE_BINARY_PROJECTS = [
+    {
+        "project": "pac-endpoint",
+        "binary_name": "pac-endpoint",
+        "source_dir": ROOT / "binaries" / "pac-endpoint",
+    },
+]
+
 
 def run(cmd: list[str], *, check: bool = True) -> str:
     proc = subprocess.run(cmd, cwd=ROOT, text=True, capture_output=True)
@@ -219,11 +235,65 @@ def ensure_changelog(ver: str) -> dict:
     return data
 
 
-def write_zip(out: Path) -> None:
+def _build_release_binaries(ver: str) -> tuple[Path, list[dict[str, str]]]:
+    out_root = DIST / "release-binaries"
+    if out_root.exists():
+        shutil.rmtree(out_root)
+    out_root.mkdir(parents=True, exist_ok=True)
+    built: list[dict[str, str]] = []
+    for spec in RELEASE_BINARY_PROJECTS:
+        source_dir = Path(spec["source_dir"])
+        project = str(spec["project"])
+        binary_name = str(spec["binary_name"])
+        if not source_dir.is_dir():
+            raise SystemExit(f"release binary source missing: {source_dir}")
+        for goos, goarch in RELEASE_BINARY_TARGETS:
+            target_dir = out_root / project / f"{goos}-{goarch}"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            ext = ".exe" if goos == "windows" else ""
+            output = target_dir / f"{binary_name}{ext}"
+            ldflags = (
+                f"-s -w -X main.version={ver} "
+                f"-X main.defaultServerURL= "
+                f"-X main.defaultControllerID= "
+                f"-X main.defaultUpdateChannel=stable "
+                f"-X main.defaultEndpointName= "
+                f"-X main.defaultRunnerEnabled=true "
+                f"-X main.defaultWorkspaceRoot="
+            )
+            env = os.environ.copy()
+            env.update({
+                "GOOS": goos,
+                "GOARCH": goarch,
+                "CGO_ENABLED": "0",
+            })
+            proc = subprocess.run(
+                ["go", "build", "-trimpath", "-ldflags", ldflags, "-o", str(output), "."],
+                cwd=source_dir,
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+            if proc.returncode != 0:
+                raise SystemExit(
+                    f"release binary build failed for {project} {goos}/{goarch}\n"
+                    f"{proc.stdout}\n{proc.stderr}"
+                )
+            built.append({
+                "project": project,
+                "target": f"{goos}/{goarch}",
+                "path": output.relative_to(DIST).as_posix(),
+            })
+    return out_root, built
+
+
+def write_zip(out: Path, extra_files: list[tuple[Path, str]] | None = None) -> None:
     files = sorted(iter_package_files(), key=lambda p: p.relative_to(ROOT).as_posix())
     with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         for p in files:
             zf.write(p, p.relative_to(ROOT).as_posix())
+        for src_path, arcname in extra_files or []:
+            zf.write(src_path, arcname)
     # Validate it can be opened and has the PAC app root markers.
     with zipfile.ZipFile(out) as zf:
         names = set(zf.namelist())
@@ -233,6 +303,8 @@ def write_zip(out: Path) -> None:
             raise SystemExit(f"{out.name} missing required entries: {missing}")
         if not any(name.startswith("pi_agent_platform/") for name in names):
             raise SystemExit(f"{out.name} missing pi_agent_platform/")
+        if not any(name.startswith("release-binaries/pac-endpoint/") for name in names):
+            raise SystemExit(f"{out.name} missing bundled controller binaries")
 
 
 def write_packages_seed_zip(ver: str) -> Path:
@@ -268,10 +340,16 @@ def main() -> int:
     changelog = ensure_changelog(ver)
 
     DIST.mkdir(exist_ok=True)
+    release_binaries_root, bundled_binaries = _build_release_binaries(ver)
+    extra_files = [
+        (path, path.relative_to(DIST).as_posix())
+        for path in sorted(release_binaries_root.rglob("*"))
+        if path.is_file()
+    ]
     full = DIST / "pac-full.zip"
     patch = DIST / "pac-patch.zip"
-    write_zip(full)
-    write_zip(patch)
+    write_zip(full, extra_files=extra_files)
+    write_zip(patch, extra_files=extra_files)
     packages_seed = write_packages_seed_zip(ver)
     update_diff = write_update_diff(ver, previous_ref)
 
@@ -287,6 +365,7 @@ def main() -> int:
             "packages_seed": packages_seed.name,
             "update_diff": update_diff.name,
         },
+        "bundled_binaries": bundled_binaries,
         "changed_files": changed,
         "changelog_entry": next((e for e in changelog.get("entries", []) if isinstance(e, dict) and str(e.get("version")) == ver), None),
     }
