@@ -134,6 +134,9 @@ function looksLikeInternalResultMessage(event, text = '') {
   const type = String(event?.type || '').toLowerCase();
   if (!(type.includes('result') || type.includes('assistant_message') || type === 'final')) return false;
   const data = event?.data && typeof event.data === 'object' ? event.data : {};
+  if (data.internal === true) return true;
+  if (String(data.role || '').toLowerCase() === 'system') return true;
+  if (data.visibility === 'internal' || data.hidden === true) return true;
   if (data.exit_code != null || data.tool || data.command) return true;
   if (type.includes('task_completed')) return true;
   const normalized = normalizeAssistantText(text).trim();
@@ -1322,6 +1325,7 @@ function renderSessionTimelineEvent(event, options = {}) {
   const text = timelineText(event, block);
   rememberSessionUserTask(event, text);
   const internal = isInternalSessionEvent(event) || looksLikeInternalResultMessage(event, text);
+  const hiddenSystemMessage = !internal && String(event?.data?.role || '').toLowerCase() === 'system';
   if (internal && prepend) {
     return;
   }
@@ -1347,6 +1351,7 @@ function renderSessionTimelineEvent(event, options = {}) {
     scrollSessionToBottom();
     return;
   }
+  if (hiddenSystemMessage) return;
   if (sessionLifecycleEventIsNoise(event)) return;
   flushSessionThinkingGroup(event);
   refreshComposerThinkingStatusForTask(event.task_id || '');
