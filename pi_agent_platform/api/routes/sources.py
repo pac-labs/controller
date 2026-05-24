@@ -8,7 +8,7 @@ from typing import Any, Callable
 import zipfile
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Header, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from pi_agent_platform.core.config import SourceContextConfig, load_config, save_config
@@ -687,8 +687,8 @@ def create_sources_router(
     def list_source_binary_artifacts(project: str | None = None, _auth: None = Depends(require_auth)) -> dict[str, Any]:
         return source_list_binary_artifacts(project)
 
-    @router.get('/v1/sources/binary-artifacts/{project}/{filename}')
-    def download_source_binary_artifact(project: str, filename: str, format: str | None = Query(default=None), _auth: None = Depends(require_auth)) -> FileResponse | StreamingResponse:
+    @router.get('/v1/sources/binary-artifacts/{project}/{filename}', response_model=None)
+    def download_source_binary_artifact(project: str, filename: str, format: str | None = Query(default=None), _auth: None = Depends(require_auth)) -> Response:
         try:
             path = source_binary_artifact_path(project, filename)
         except FileNotFoundError:
