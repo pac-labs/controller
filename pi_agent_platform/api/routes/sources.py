@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 import zipfile
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -702,6 +702,81 @@ def create_sources_router(
             headers = {'Content-Disposition': f'attachment; filename="{zip_name}"'}
             return StreamingResponse(buffer, media_type='application/zip', headers=headers)
         return FileResponse(path, filename=path.name)
+
+    @router.get('/v1/sources/binary-artifacts/{project}/{filename}/install.ps1', response_model=None)
+    def download_source_binary_install_script(project: str, filename: str, request: Request, _auth: None = Depends(require_auth)) -> Response:
+        try:
+            path = source_binary_artifact_path(project, filename)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail='Binary artifact not found')
+        if not path.name.lower().endswith('.exe'):
+            raise HTTPException(status_code=400, detail='Install script is only available for Windows executable artifacts')
+        base_url = str(request.base_url).rstrip('/')
+        project = str(project).strip()
+        filename = path.name
+        zip_url = f'{base_url}/v1/sources/binary-artifacts/{project}/{filename}?format=zip'
+        safe_filename = filename.replace("'", "''")
+        script = f"""param(
+    [string]$PacUrl = "{base_url}",
+    [string]$Token = "",
+    [string]$InstallDir = "$env:LOCALAPPDATA\\PAC\\bin",
+    [switch]$Insecure,
+    [switch]$AddToUserPath
+)
+
+$ErrorActionPreference = "Stop"
+$artifactName = '{safe_filename}'
+$zipUrl = ($PacUrl.TrimEnd('/') + '/v1/sources/binary-artifacts/{project}/{filename}?format=zip')
+$tmpRoot = Join-Path $env:TEMP ("pac-install-" + [guid]::NewGuid().ToString("N"))
+$zipPath = Join-Path $tmpRoot ($artifactName + ".zip")
+$extractDir = Join-Path $tmpRoot "extract"
+
+New-Item -ItemType Directory -Force -Path $tmpRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+
+$headers = @()
+if ($Token) {{
+    $headers += @('-H', "Authorization: Bearer $Token")
+}}
+$curlArgs = @('-L', '-o', $zipPath)
+if ($Insecure) {{
+    $curlArgs += '-k'
+}}
+$curlArgs += $headers
+$curlArgs += $zipUrl
+
+& curl.exe @curlArgs
+if ($LASTEXITCODE -ne 0) {{
+    throw "Download failed for $zipUrl"
+}}
+
+Expand-Archive -LiteralPath $zipPath -DestinationPath $extractDir -Force
+$sourceExe = Join-Path $extractDir $artifactName
+if (-not (Test-Path -LiteralPath $sourceExe)) {{
+    throw "Expected extracted file not found: $sourceExe"
+}}
+$targetExe = Join-Path $InstallDir $artifactName
+Copy-Item -LiteralPath $sourceExe -Destination $targetExe -Force
+try {{
+    Unblock-File -LiteralPath $targetExe -ErrorAction SilentlyContinue
+}} catch {{}}
+
+if ($AddToUserPath) {{
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $parts = @($userPath -split ';' | Where-Object {{ $_ }})
+    if ($parts -notcontains $InstallDir) {{
+        $newPath = (($parts + $InstallDir) -join ';')
+        [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+        Write-Host "Added to user PATH: $InstallDir"
+    }}
+}}
+
+Write-Host "Installed $artifactName to $targetExe"
+Write-Host "ZIP source: $zipUrl"
+"""
+        headers = {'Content-Disposition': f'attachment; filename="{path.stem}-install.ps1"'}
+        return Response(content=script, media_type='text/plain; charset=utf-8', headers=headers)
 
     @router.delete('/v1/sources/binary-artifacts/{project}/{filename}')
     def delete_source_binary_artifact(project: str, filename: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:

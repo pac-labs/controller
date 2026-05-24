@@ -791,6 +791,7 @@ def list_binary_artifacts(project: str | None = None) -> dict[str, Any]:
                         artifact['raw_download_url'] = raw_download_url
                         artifact['download_url'] = f'{raw_download_url}?format=zip'
                         artifact['download_format'] = 'zip'
+                        artifact['install_script_url'] = f'/v1/sources/binary-artifacts/{name}/{item.name}/install.ps1'
                     artifacts.append(artifact)
                     group = versions.setdefault(version, {'version': version, 'artifact_count': 0, 'bytes': 0})
                     group['artifact_count'] += 1
