@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import io
 import shutil
 import uuid
 from pathlib import Path
 from typing import Any, Callable
+import zipfile
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Header, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from pi_agent_platform.core.config import SourceContextConfig, load_config, save_config
@@ -686,11 +688,19 @@ def create_sources_router(
         return source_list_binary_artifacts(project)
 
     @router.get('/v1/sources/binary-artifacts/{project}/{filename}')
-    def download_source_binary_artifact(project: str, filename: str, _auth: None = Depends(require_auth)) -> FileResponse:
+    def download_source_binary_artifact(project: str, filename: str, format: str | None = Query(default=None), _auth: None = Depends(require_auth)) -> FileResponse | StreamingResponse:
         try:
             path = source_binary_artifact_path(project, filename)
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail='Binary artifact not found')
+        if str(format or '').strip().lower() == 'zip':
+            zip_name = f'{path.name}.zip'
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, mode='w', compression=zipfile.ZIP_DEFLATED) as zf:
+                zf.write(path, arcname=path.name)
+            buffer.seek(0)
+            headers = {'Content-Disposition': f'attachment; filename="{zip_name}"'}
+            return StreamingResponse(buffer, media_type='application/zip', headers=headers)
         return FileResponse(path, filename=path.name)
 
     @router.delete('/v1/sources/binary-artifacts/{project}/{filename}')

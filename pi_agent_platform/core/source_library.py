@@ -778,13 +778,19 @@ def list_binary_artifacts(project: str | None = None) -> dict[str, Any]:
             for item in sorted(root.iterdir()):
                 if item.is_file():
                     version = _artifact_version(item.name, source_version)
+                    raw_download_url = f'/v1/sources/binary-artifacts/{name}/{item.name}'
+                    download_url = raw_download_url
                     artifact = {
                         'name': item.name,
                         'size': item.stat().st_size,
                         'version': version,
-                        'download_url': f'/v1/sources/binary-artifacts/{name}/{item.name}',
+                        'download_url': download_url,
                         'delete_url': f'/v1/sources/binary-artifacts/{name}/{item.name}',
                     }
+                    if item.name.lower().endswith('.exe'):
+                        artifact['raw_download_url'] = raw_download_url
+                        artifact['download_url'] = f'{raw_download_url}?format=zip'
+                        artifact['download_format'] = 'zip'
                     artifacts.append(artifact)
                     group = versions.setdefault(version, {'version': version, 'artifact_count': 0, 'bytes': 0})
                     group['artifact_count'] += 1
