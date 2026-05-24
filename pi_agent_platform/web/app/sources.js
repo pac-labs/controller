@@ -459,7 +459,12 @@ function renderBinaryDownloads(projects) {
   el.innerHTML = visibleGroups.map(group => {
     const links = group.artifacts
       .sort((a,b)=>String(a.name).localeCompare(String(b.name), undefined, {numeric:true}))
-      .map(a => `<span class="download-artifact"><a class="download-pill" href="${a.download_url}" download title="${escapeHtml(a.name)}"><span>${escapeHtml(binaryPlatformFromName(a.name, group.project))}</span><small>${escapeHtml(formatBytes(a.size))}</small></a><button class="icon-button delete-artifact" data-project="${escapeHtml(group.project)}" data-filename="${escapeHtml(a.name)}" title="Delete this binary">&times;</button></span>`)
+      .map(a => {
+        const installLink = a.install_script_url
+          ? `<a class="download-pill download-pill-secondary" href="${a.install_script_url}" download title="Download PowerShell install/update script for ${escapeHtml(a.name)}"><span>install script</span><small>.ps1</small></a>`
+          : '';
+        return `<span class="download-artifact"><a class="download-pill" href="${a.download_url}" download title="${escapeHtml(a.name)}"><span>${escapeHtml(binaryPlatformFromName(a.name, group.project))}</span><small>${escapeHtml(formatBytes(a.size))}</small></a>${installLink}<button class="icon-button delete-artifact" data-project="${escapeHtml(group.project)}" data-filename="${escapeHtml(a.name)}" title="Delete this binary">&times;</button></span>`;
+      })
       .join('');
     const totalSize = group.artifacts.reduce((sum, item) => sum + Number(item.size || 0), 0);
     return `<div class="download-version-group"><div class="download-version-head"><div><div class="download-version-title"><b>${escapeHtml(group.project)}</b><span>binary v${escapeHtml(group.version)}</span></div><div class="download-version-meta">${escapeHtml(String(group.artifacts.length))} file(s) • ${escapeHtml(formatBytes(totalSize))}${group.sourceVersion ? ` • source ${escapeHtml(group.sourceVersion)}` : ''}</div></div><div class="download-version-actions"><button class="ghost-button delete-version-group" data-project="${escapeHtml(group.project)}" data-version="${escapeHtml(group.version)}" title="Delete all binaries in this version group">Delete version</button></div></div><div class="download-pill-list">${links}</div></div>`;

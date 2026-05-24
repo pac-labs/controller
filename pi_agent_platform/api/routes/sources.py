@@ -777,7 +777,7 @@ Write-Host "Installed $artifactName to $targetExe"
 Write-Host "ZIP source: $zipUrl"
 """
         headers = {'Content-Disposition': f'attachment; filename="{path.stem}-install.ps1"'}
-        return Response(content=script, media_type='text/plain; charset=utf-8', headers=headers)
+        return Response(content=script, media_type='application/octet-stream', headers=headers)
 
     @router.delete('/v1/sources/binary-artifacts/{project}/{filename}')
     def delete_source_binary_artifact(project: str, filename: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
