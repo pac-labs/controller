@@ -711,7 +711,8 @@ def create_sources_router(
             raise HTTPException(status_code=404, detail='Binary artifact not found')
         if not path.name.lower().endswith('.exe'):
             raise HTTPException(status_code=400, detail='Install script is only available for Windows executable artifacts')
-        base_url = str(request.base_url).rstrip('/')
+        configured_public_url = str(getattr(get_config().server, 'public_url', '') or '').strip().rstrip('/')
+        base_url = configured_public_url or str(request.base_url).rstrip('/')
         project = str(project).strip()
         filename = path.name
         zip_url = f'{base_url}/v1/sources/binary-artifacts/{project}/{filename}?format=zip'
