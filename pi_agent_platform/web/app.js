@@ -85,7 +85,7 @@ async function loadVersion(){
   } catch (_) {}
 }
 function applyThemeMode(mode = 'system') {
-  pacThemeMode = ['system', 'dark', 'light'].includes(String(mode)) ? String(mode) : 'system';
+  pacThemeMode = ['system', 'dark', 'light', 'terminal', 'dusk'].includes(String(mode)) ? String(mode) : 'system';
   const root = document.documentElement;
   const body = document.body;
   if (pacThemeMode === 'system') {
@@ -109,117 +109,11 @@ function loadThemeMode() {
 
 
 function setupTabs() {
-  const NAV_GROUPS = {
-    operate: [
-      {tab: 'dashboard', label: 'Dashboard'},
-      {tab: 'sessions-tab', label: 'Sessions'},
-    ],
-    build: [
-      {tab: 'sources-tab', label: 'IDE'},
-    ],
-    agents: [
-      {tab: 'contexts-tab', label: 'Contexts'},
-      {tab: 'models-tab', label: 'Models'},
-      {tab: 'profiles-tab', label: 'Profiles'},
-      {tab: 'workspaces-tab', label: 'Workspaces'},
-      {tab: 'tools-tab', label: 'Tools'},
-    ],
-    admin: [
-      {tab: 'settings-tab', label: 'Settings'},
-      {tab: 'providers-tab', label: 'Providers'},
-      {tab: 'runners-tab', label: 'Endpoints'},
-    ],
-    observe: [
-      {tab: 'observe-tab', label: 'Observability'},
-      {tab: 'events-panel-proxy', label: 'Events'},
-    ],
-  };
-  function labelForTab(tabId='') {
-    for (const items of Object.values(NAV_GROUPS)) {
-      const found = items.find((item) => item.tab === tabId);
-      if (found) return found.label;
-    }
-    return tabId;
+  if (window.PacShellNav?.setupTabs) {
+    window.PacShellNav.setupTabs(activateMainTab, typeof showRail === 'function' ? showRail : null);
+    return;
   }
-  function renderCompactNavMenu(activeTab='dashboard') {
-    const wrap = document.getElementById('tabsOverflowWrap');
-    const menu = document.getElementById('tabsOverflowMenu');
-    const button = document.getElementById('tabsOverflowButton');
-    if (!wrap || !menu || !button) return;
-    const sections = Object.entries(NAV_GROUPS).map(([groupName, items]) => {
-      const header = groupName.charAt(0).toUpperCase() + groupName.slice(1);
-      const rows = items.map((item) => {
-        const active = item.tab === activeTab ? ' active' : '';
-        return `<button class="tab compact-nav-item${active}" data-tab="${escapeHtml(item.tab)}" type="button">${escapeHtml(item.label)}</button>`;
-      }).join('');
-      return `<section class="compact-nav-section"><div class="compact-nav-header">${escapeHtml(header)}</div><div class="compact-nav-items">${rows}</div></section>`;
-    }).join('');
-    menu.innerHTML = sections;
-    menu.querySelectorAll('[data-tab]').forEach((btn) => {
-      btn.onclick = () => {
-        const tabId = btn.dataset.tab || '';
-        if (tabId === 'events-panel-proxy') showRail();
-        else activateMainTab(tabId);
-      };
-    });
-    wrap.hidden = false;
-    button.textContent = `Menu · ${labelForTab(activeTab)}`;
-    button.classList.add('compact-nav-trigger');
-  }
-  const TAB_TO_GROUP = {};
-  Object.entries(NAV_GROUPS).forEach(([group, items]) => items.forEach((item) => { TAB_TO_GROUP[item.tab] = group; }));
-  TAB_TO_GROUP['settings-tab'] = 'admin';
-  const primary = document.getElementById('tabsPrimary');
-  const groupsEl = document.getElementById('tabsGroups');
-  function renderGroup(groupName, activeTab = '') {
-    if (!primary) return;
-    const items = NAV_GROUPS[groupName] || [];
-    primary.hidden = items.length === 0;
-    primary.innerHTML = items.map((item) => `<button class="tab${item.tab === activeTab ? ' active' : ''}" data-tab="${escapeHtml(item.tab)}" type="button">${escapeHtml(item.label)}</button>`).join('');
-    primary.querySelectorAll('.tab[data-tab]').forEach((btn) => {
-      btn.onclick = () => {
-        const tabId = btn.dataset.tab || '';
-        if (tabId === 'events-panel-proxy') {
-          showRail();
-          return;
-        }
-        activateMainTab(tabId);
-      };
-    });
-    groupsEl?.querySelectorAll('.nav-group-btn').forEach((btn) => btn.classList.toggle('active', btn.dataset.navGroup === groupName));
-  }
-  window.__pacTabGroups = {NAV_GROUPS, TAB_TO_GROUP, renderGroup, renderCompactNavMenu};
-  groupsEl?.querySelectorAll('.nav-group-btn').forEach((btn) => {
-    btn.onclick = () => {
-      const groupName = btn.dataset.navGroup || 'operate';
-      const items = NAV_GROUPS[groupName] || [];
-      const firstReal = items.find((item) => item.tab !== 'events-panel-proxy');
-      renderGroup(groupName, firstReal?.tab || '');
-      if (firstReal?.tab) activateMainTab(firstReal.tab);
-      else if (groupName === 'observe') showRail();
-    };
-  });
-  renderGroup('operate', 'dashboard');
-  const overflowBtn = document.getElementById('tabsOverflowButton');
-  const overflowMenu = document.getElementById('tabsOverflowMenu');
-  if (overflowBtn && overflowMenu) {
-    overflowBtn.onclick = (ev) => {
-      ev.stopPropagation();
-      const open = overflowMenu.hidden;
-      overflowMenu.hidden = !open ? true : false;
-      overflowBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    };
-    document.addEventListener('click', (ev) => {
-      const wrap = document.getElementById('tabsOverflowWrap');
-      if (!wrap || wrap.hidden) return;
-      if (!wrap.contains(ev.target)) {
-        overflowMenu.hidden = true;
-        overflowBtn.setAttribute('aria-expanded', 'false');
-      }
-    });
-  }
-  window.addEventListener('resize', updateTabsOverflow);
-  setTimeout(updateTabsOverflow, 0);
+  window.__pacTabGroups = {NAV_GROUPS: {}, TAB_TO_GROUP: {}, renderGroup: () => {}};
 }
 
 function activateMainTab(tabId) {
@@ -231,7 +125,7 @@ function activateMainTab(tabId) {
   document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
   const panel = document.getElementById(tabId);
   if (panel) panel.classList.add('active');
-  if (tabId === 'settings-tab') switchSettingsPanel('updates');
+  if (tabId === 'settings-tab') switchSettingsPanel(window.__pacActiveSettingsPanel || 'updates');
   if (tabId === 'observe-tab' && typeof loadObservePanel === 'function') loadObservePanel().catch(()=>{});
   const overflowMenu = document.getElementById('tabsOverflowMenu');
   const overflowBtn = document.getElementById('tabsOverflowButton');
@@ -264,7 +158,7 @@ function updateTabsOverflow() {
     nav.classList.add('tabs-compact-mode');
     groups.hidden = true;
     primary.hidden = true;
-    window.__pacTabGroups?.renderCompactNavMenu?.(activeTab);
+    renderCompactNavMenu(activeTab);
     return;
   }
   const navStyles = getComputedStyle(nav);
@@ -293,29 +187,6 @@ function updateTabsOverflow() {
     menu.appendChild(clone);
   });
   wrap.hidden = false;
-}
-
-function switchSettingsPanel(name) {
-  document.querySelectorAll('.settings-panel').forEach((panel) => { panel.style.display = 'none'; panel.classList.remove('active'); });
-  document.querySelectorAll('.settings-sub-btn').forEach((btn) => btn.classList.remove('active'));
-  const panel = document.getElementById('settings-' + name);
-  if (panel) {
-    panel.style.display = 'block';
-    panel.classList.add('active');
-  }
-  const btn = document.querySelector(`.settings-sub-btn[data-settings-panel="${name}"]`);
-  if (btn) btn.classList.add('active');
-  if (name === 'approvals') loadApprovals().catch(()=>{});
-  if (name === 'users') { loadUsersList().catch(()=>{}); loadGroupsList().catch(()=>{}); }
-  if (name === 'pi-dev') renderControllerHarnessSettings();
-  if (name === 'endpoint') renderEndpointConnectionSettings();
-  if (name === 'service') renderServiceMode();
-  if (name === 'tls') renderTlsInfo();
-  if (name === 'config') {
-    const editor = document.getElementById('configEditor');
-    if (editor) editor.value = JSON.stringify(config, null, 2);
-    renderSystemInfo();
-  }
 }
 
 function tokenHeaders() {
@@ -516,7 +387,6 @@ let _modelSyncData = [];
 
 
 // ---- Proxy Routes UI ----
-let _proxyRoutesCache = [];
 
 
 

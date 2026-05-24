@@ -1,0 +1,212 @@
+/* Extra PAC theme modes. The brand banner/header intentionally keeps the same dark PAC identity in every mode. */
+html[data-theme="terminal"]{
+  --bg:#030807;
+  --panel:#07110d;
+  --panel-2:#0b1d14;
+  --panel-3:#10251a;
+  --accent:#3cff8f;
+  --accent-strong:#00d462;
+  --border:#126339;
+  --muted:#8fd7ac;
+  --ok:#3cff8f;
+  --warn:#fde047;
+  --danger:#fb7185;
+}
+html[data-theme="dusk"]{
+  --bg:#0b0816;
+  --panel:#151024;
+  --panel-2:#1e1735;
+  --panel-3:#261d45;
+  --accent:#38bdf8;
+  --accent-strong:#22d3ee;
+  --border:#31557a;
+  --muted:#b8bdd7;
+  --ok:#34d399;
+  --warn:#fbbf24;
+  --danger:#fb7185;
+}
+html[data-theme="light"] .app-header,
+body[data-theme="light"] .app-header,
+html[data-theme="terminal"] .app-header,
+body[data-theme="terminal"] .app-header,
+html[data-theme="dusk"] .app-header,
+body[data-theme="dusk"] .app-header{
+  background:#071018 !important;
+  border-bottom-color:rgba(36,195,107,.22) !important;
+  color:#e5eefb !important;
+}
+html[data-theme="light"] .top-actions select,
+html[data-theme="light"] .top-actions button,
+body[data-theme="light"] .top-actions select,
+body[data-theme="light"] .top-actions button{
+  background:#0f172a !important;
+  border-color:rgba(96,165,250,.28) !important;
+  color:#e5eefb !important;
+}
+html[data-theme="terminal"] body,
+body[data-theme="terminal"],
+html[data-theme="dusk"] body,
+body[data-theme="dusk"]{
+  background:var(--bg) !important;
+  color:#eaf6ff;
+}
+html[data-theme="terminal"] .content-area,
+body[data-theme="terminal"] .content-area,
+html[data-theme="terminal"] .card,
+body[data-theme="terminal"] .card{
+  background:linear-gradient(180deg,rgba(7,17,13,.98),rgba(3,8,7,.98)) !important;
+  border-color:rgba(60,255,143,.18) !important;
+}
+html[data-theme="dusk"] .content-area,
+body[data-theme="dusk"] .content-area,
+html[data-theme="dusk"] .card,
+body[data-theme="dusk"] .card{
+  background:linear-gradient(180deg,rgba(21,16,36,.98),rgba(11,8,22,.98)) !important;
+  border-color:rgba(56,189,248,.18) !important;
+}
+html[data-theme="terminal"] input,
+html[data-theme="terminal"] select,
+html[data-theme="terminal"] textarea,
+body[data-theme="terminal"] input,
+body[data-theme="terminal"] select,
+body[data-theme="terminal"] textarea{
+  background:#06100c !important;
+  border-color:rgba(60,255,143,.26) !important;
+  color:#ecfff3 !important;
+}
+html[data-theme="dusk"] input,
+html[data-theme="dusk"] select,
+html[data-theme="dusk"] textarea,
+body[data-theme="dusk"] input,
+body[data-theme="dusk"] select,
+body[data-theme="dusk"] textarea{
+  background:#111827 !important;
+  border-color:rgba(56,189,248,.24) !important;
+  color:#f4f7ff !important;
+}
+html[data-theme="terminal"] .muted,
+body[data-theme="terminal"] .muted{ color:#8fd7ac !important; }
+html[data-theme="dusk"] .muted,
+body[data-theme="dusk"] .muted{ color:#b8bdd7 !important; }
+html[data-theme="terminal"] button,
+body[data-theme="terminal"] button{
+  border-color:rgba(60,255,143,.25) !important;
+}
+html[data-theme="dusk"] button,
+body[data-theme="dusk"] button{
+  border-color:rgba(56,189,248,.25) !important;
+}
+
+/* PAC shell theme extensions extracted from the navigation rail. */
+/* PAC shell navigation redesign: persistent left rail under the existing banner. */
+html[data-theme="terminal"]{
+  --bg:#030807;
+  --panel:#07110d;
+  --panel-2:#0b1d14;
+  --panel-3:#10251a;
+  --accent:#3cff8f;
+  --accent-strong:#00d462;
+  --border:#126339;
+  --muted:#8fd7ac;
+  --ok:#3cff8f;
+  --warn:#fde047;
+  --danger:#fb7185;
+  color:#ecfff3;
+  background:#030807;
+}
+html[data-theme="dusk"]{
+  --bg:#0b0816;
+  --panel:#151024;
+  --panel-2:#1e1735;
+  --panel-3:#261d45;
+  --accent:#38bdf8;
+  --accent-strong:#22d3ee;
+  --border:#31557a;
+  --muted:#b8bdd7;
+  --ok:#34d399;
+  --warn:#fbbf24;
+  --danger:#fb7185;
+  color:#f4f7ff;
+  background:#0b0816;
+}
+html[data-theme="terminal"] body,
+body[data-theme="terminal"],
+html[data-theme="dusk"] body,
+body[data-theme="dusk"]{
+  background:var(--bg);
+  color:inherit;
+}
+
+html[data-theme="light"] .shell-nav,
+body[data-theme="light"] .shell-nav{
+  background:linear-gradient(180deg,#ffffff,#f7fbff);
+  border-color:rgba(148,163,184,.34);
+  box-shadow:0 18px 40px rgba(15,23,42,.08);
+}
+html[data-theme="light"] .shell-nav-section-title,
+body[data-theme="light"] .shell-nav-section-title{
+  color:#64748b;
+}
+html[data-theme="light"] .shell-nav-section-description,
+html[data-theme="light"] .shell-nav-item-description,
+body[data-theme="light"] .shell-nav-section-description,
+body[data-theme="light"] .shell-nav-item-description{
+  color:#667085;
+}
+html[data-theme="light"] .shell-nav-item,
+body[data-theme="light"] .shell-nav-item{
+  color:#0f172a !important;
+}
+html[data-theme="light"] .shell-nav-section-toggle:hover,
+body[data-theme="light"] .shell-nav-section-toggle:hover,
+html[data-theme="light"] .shell-nav-item:hover,
+body[data-theme="light"] .shell-nav-item:hover{
+  background:#eef7f1 !important;
+  border-color:#bbf7d0 !important;
+}
+html[data-theme="light"] .shell-nav-item.active,
+body[data-theme="light"] .shell-nav-item.active{
+  background:linear-gradient(90deg,#dcfce7,#ffffff) !important;
+  border-color:#22c55e !important;
+}
+html[data-theme="light"] .shell-nav-icon,
+body[data-theme="light"] .shell-nav-icon{
+  background:#f8fafc;
+  border-color:#dbe7ef;
+  color:#16a34a;
+}
+html[data-theme="terminal"] .shell-nav-item.active,
+body[data-theme="terminal"] .shell-nav-item.active{
+  background:linear-gradient(90deg, rgba(60,255,143,.18), rgba(3,8,7,.68)) !important;
+  border-color:#3cff8f !important;
+}
+html[data-theme="dusk"] .shell-nav-item.active,
+body[data-theme="dusk"] .shell-nav-item.active{
+  background:linear-gradient(90deg, rgba(56,189,248,.20), rgba(15,23,42,.62)) !important;
+  border-color:#38bdf8 !important;
+}
+html[data-theme="light"] .shell-nav-search-wrap,
+body[data-theme="light"] .shell-nav-search-wrap{
+  background:#f8fafc;
+  border-color:#dbe7ef;
+}
+html[data-theme="light"] .shell-nav-search,
+body[data-theme="light"] .shell-nav-search{
+  color:#0f172a !important;
+}
+html[data-theme="light"] .shell-nav-tool-button,
+body[data-theme="light"] .shell-nav-tool-button{
+  background:#ffffff !important;
+  border-color:#dbe7ef !important;
+  color:#475569 !important;
+}
+html[data-theme="terminal"] .shell-nav-search-wrap,
+body[data-theme="terminal"] .shell-nav-search-wrap{
+  border-color:rgba(60,255,143,.24);
+  background:rgba(3,8,7,.72);
+}
+html[data-theme="dusk"] .shell-nav-search-wrap,
+body[data-theme="dusk"] .shell-nav-search-wrap{
+  border-color:rgba(56,189,248,.22);
+  background:rgba(11,8,22,.62);
+}

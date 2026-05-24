@@ -1,0 +1,100 @@
+.app-footer { display: flex; }
+
+#sessions-tab.sessions-workspace.active {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden !important;
+}
+#sessions-tab .session-chat-card {
+  height: 100%;
+  min-height: 0;
+  padding: .75rem;
+  border-radius: 0 !important;
+}
+#sessions-tab .session-chat-head {
+  flex: 0 0 auto;
+  margin-bottom: .6rem;
+}
+#sessions-tab .session-chat-layout,
+#sessions-tab .session-chat-layout.single {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex !important;
+}
+#sessions-tab .session-chat-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-radius: 0 !important;
+}
+#sessions-tab .chat-timeline {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none !important;
+  overflow: auto !important;
+}
+#sessions-tab .session-composer,
+#sessions-tab .composer-input-shell,
+#sessions-tab .composer-controls.integrated.editor-like,
+.session-composer textarea#taskPrompt,
+#sessions-tab .session-top-select,
+#sessions-tab .session-plus-button,
+#sessions-tab .composer-icon-button.square,
+#sessions-tab .composer-send-button.square {
+  border-radius: 0 !important;
+}
+
+#sources-tab.source-workbench-panel.active {
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+.source-workbench-panel {
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+.source-workbench-toolbar,
+.source-workbench,
+.source-tab,
+.source-row,
+.source-row-wrap,
+.source-toolbar-icon,
+.source-menu-button,
+.source-file-menu,
+.source-context-menu,
+.source-code-editor {
+  border-radius: 0 !important;
+}
+.source-workbench {
+  height: calc(100% - 42px) !important;
+  min-height: 0 !important;
+}
+.source-workbench-tree,
+.source-workbench-editor,
+.source-file-tree,
+.source-code-editor {
+  min-height: 0 !important;
+}
+.source-workbench-tree,
+.source-file-tree,
+.source-code-editor {
+  overflow: auto !important;
+}
+.source-workbench-editor { overflow: hidden !important; }
+.source-tabs { flex: 0 0 36px; }
+
+.events-rail { border-radius: 0 !important; }
+.events-rail-header,
+.event-card,
+.event-chip,
+.ghost-button.events-pin-button { border-radius: 0 !important; }
+.events-rail.pinned { box-shadow: 0 0 0 1px rgba(36,195,107,.45), 0 18px 55px rgba(0,0,0,.5); }
+.events-pin-button[aria-pressed="true"] { background: #372065; border-color: var(--accent); color: #fff; }
+
+@media (max-width: 950px) {
+  body { overflow: auto; }
+  .app-shell { height: auto !important; overflow: visible !important; }
+  .content-area, .tab-panel.active { height: auto; overflow: visible; }
+  #sessions-tab.sessions-workspace.active, #sessions-tab .session-chat-card, #sources-tab.source-workbench-panel.active { height: auto !important; }
+}
+

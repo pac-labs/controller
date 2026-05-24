@@ -1,0 +1,38 @@
+/* v1.0.289: Composer thinking strip mirrors active intent only; detailed steps live in the full log. */
+.composer-thinking-status .composer-thinking-plan {
+  display: none !important;
+}
+
+/* v1.0.290: Assistant replies read as open conversation content, not boxed cards. */
+.chat-message-row.assistant:not(.thought-history-row) {
+  justify-content: flex-start;
+}
+.chat-message-row.assistant:not(.thought-history-row) .chat-bubble {
+  max-width: min(860px, 88%);
+  border: 0;
+  border-radius: 0;
+  padding: .35rem .25rem .45rem;
+  background: transparent;
+  box-shadow: none;
+}
+.chat-message-row.assistant:not(.thought-history-row) .chat-bubble.copyable-reply:hover {
+  border-color: transparent;
+  background: transparent;
+}
+.chat-message-row.assistant:not(.thought-history-row) .chat-bubble-text {
+  color: var(--text);
+  font-size: .95rem;
+  line-height: 1.6;
+}
+.chat-message-row.assistant:not(.thought-history-row) .inline-link-button {
+  margin-top: .45rem;
+  opacity: .55;
+}
+.chat-message-row.assistant:not(.thought-history-row) .reply-action-row {
+  margin-top: .55rem;
+  opacity: .78;
+}
+.chat-message-row.assistant:not(.thought-history-row):hover .reply-action-row,
+.chat-message-row.assistant:not(.thought-history-row):hover .inline-link-button {
+  opacity: 1;
+}

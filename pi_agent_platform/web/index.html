@@ -8,7 +8,8 @@
     (() => {
       try {
         const saved = localStorage.getItem('pac-theme') || 'system';
-        if (saved === 'dark' || saved === 'light') document.documentElement.setAttribute('data-theme', saved);
+        const themes = ['dark', 'light', 'terminal', 'dusk'];
+        if (themes.includes(saved)) document.documentElement.setAttribute('data-theme', saved);
       } catch (_) {}
     })();
   </script>
@@ -28,6 +29,8 @@
           <option value="system">Theme: System</option>
           <option value="dark">Theme: Dark</option>
           <option value="light">Theme: Light</option>
+          <option value="terminal">Theme: Terminal</option>
+          <option value="dusk">Theme: Dusk</option>
         </select>
       </div>
       <div class="user-menu-wrap">
@@ -64,24 +67,16 @@
       </div>
     </section>
   </div>
-  <nav class="tabs" aria-label="Main navigation">
-    <div id="tabsGroups" class="tabs-groups">
-      <button class="tab nav-group-btn active" data-nav-group="operate" type="button">Operate</button>
-      <button class="tab nav-group-btn" data-nav-group="build" type="button">Build</button>
-      <button class="tab nav-group-btn" data-nav-group="agents" type="button">Agents</button>
-      <button class="tab nav-group-btn" data-nav-group="admin" type="button">Admin</button>
-      <button class="tab nav-group-btn" data-nav-group="observe" type="button">Observe</button>
+  <div class="shell-context-bar" aria-label="Current PAC location">
+    <div>
+      <div id="pacShellBreadcrumb" class="shell-breadcrumb">Operate / Dashboard</div>
+      <div id="pacShellContext" class="shell-context-copy">Overview and system status.</div>
     </div>
-    <div class="tabs-subnav">
-      <div id="tabsPrimary" class="tabs-primary"></div>
-      <div id="tabsOverflowWrap" class="tabs-overflow-wrap" hidden>
-        <button id="tabsOverflowButton" class="tab tabs-overflow-button" type="button" aria-haspopup="menu" aria-expanded="false">More</button>
-        <div id="tabsOverflowMenu" class="tabs-overflow-menu" hidden></div>
-      </div>
-    </div>
-  </nav>
+    <select id="pacShellMobileSelect" class="shell-mobile-select" aria-label="Main navigation"></select>
+  </div>
 
   <div class="app-shell">
+  <aside id="pacShellNav" class="shell-nav" aria-label="Primary navigation"></aside>
   <main class="content-area">
     <section id="dashboard" class="tab-panel active">
       <div class="dashboard-private-head">
@@ -895,6 +890,7 @@
     <section id="settings-tab" class="tab-panel">
       <div class="settings-subnav">
         <button class="settings-sub-btn active" data-settings-panel="updates">Updates</button>
+        <button class="settings-sub-btn" data-settings-panel="credentials">Credentials</button>
         <button class="settings-sub-btn" data-settings-panel="approvals">Approvals</button>
         <button class="settings-sub-btn" data-settings-panel="users">Users</button>
         <button class="settings-sub-btn" data-settings-panel="pi-dev">pi.dev</button>
@@ -903,6 +899,58 @@
         <button class="settings-sub-btn" data-settings-panel="tls">TLS / CA</button>
         <button class="settings-sub-btn" data-settings-panel="proxy-routes">Proxy Routes</button>
         <button class="settings-sub-btn" data-settings-panel="config">Config</button>
+      </div>
+
+
+      <div id="settings-credentials" class="settings-panel" style="display:none">
+        <div class="settings-panel-inner settings-panel-single">
+          <div class="settings-main config-credentials-page">
+            <section class="card wide config-page-hero">
+              <div class="section-heading">
+                <div>
+                  <h2>Credentials</h2>
+                  <p class="muted">Manage workspace variables and secret references used by PAC contexts, endpoints, and coding sessions.</p>
+                </div>
+                <div class="button-row">
+                  <button id="openConfigVariableWizard" class="ghost-button" type="button">Add variable</button>
+                  <button id="openConfigSecretWizard" type="button">Add secret</button>
+                </div>
+              </div>
+              <div id="configCredentialsSummary" class="config-summary-grid" data-pac-loading="Loading credentials…">Loading credentials…</div>
+            </section>
+            <section class="config-credential-grid">
+              <article class="card config-credential-column">
+                <div class="section-heading compact-heading">
+                  <div>
+                    <h3>Workspace variables</h3>
+                    <p class="muted">Plain configuration fragments that can be resolved into trusted workspaces.</p>
+                  </div>
+                  <button id="refreshConfigVariables" class="ghost-button" type="button">Refresh</button>
+                </div>
+                <div id="configVariablesList" class="config-credential-list muted">No variables loaded.</div>
+              </article>
+              <article class="card config-credential-column">
+                <div class="section-heading compact-heading">
+                  <div>
+                    <h3>Secrets</h3>
+                    <p class="muted">Secret values are write-only here; PAC shows IDs, metadata, and audit activity.</p>
+                  </div>
+                  <button id="refreshConfigSecrets" class="ghost-button" type="button">Refresh</button>
+                </div>
+                <div id="configSecretsList" class="config-credential-list muted">No secrets loaded.</div>
+              </article>
+            </section>
+            <section class="card wide config-audit-card">
+              <div class="section-heading compact-heading">
+                <div>
+                  <h3>Recent secret activity</h3>
+                  <p class="muted">Audit trail for changes made to stored secret references.</p>
+                </div>
+              </div>
+              <pre id="configCredentialAudit" class="inline-result compact-result">No secret audit events loaded yet.</pre>
+            </section>
+          </div>
+        </div>
       </div>
 
       <div id="settings-approvals" class="settings-panel" hidden>
@@ -1056,16 +1104,16 @@
                   <button id="closeDirectoryCreateModal" class="ghost-button" type="button">Close</button>
                 </div>
                 <div class="directory-wizard-steps" aria-label="Creation steps">
-                  <span class="active">1. Choose</span>
-                  <span>2. Details</span>
-                  <span>3. Review</span>
+                  <span data-directory-step="choose" class="active">1. Choose</span>
+                  <span data-directory-step="details">2. Details</span>
+                  <span data-directory-step="review">3. Review</span>
                 </div>
-                <div class="directory-create-choice" aria-label="Object type">
+                <div id="directoryCreateChoice" class="directory-create-choice" aria-label="Object type">
                   <button class="directory-create-type" data-create-type="person" type="button"><span class="directory-kind-icon user" aria-hidden="true"></span><b>Person</b><small>Interactive user with username and password.</small></button>
                   <button class="directory-create-type" data-create-type="group" type="button"><span class="directory-kind-icon group" aria-hidden="true"></span><b>Group</b><small>Nested membership and access grants.</small></button>
                   <button class="directory-create-type" data-create-type="service_account" type="button"><span class="directory-kind-icon service_account" aria-hidden="true"></span><b>Service account</b><small>Automation identity without interactive login.</small></button>
                 </div>
-                <div class="directory-create-form-shell">
+                <div id="directoryCreateFormShell" class="directory-create-form-shell">
                   <div class="directory-create-form" data-create-panel="person">
                     <div class="form-grid compact-form">
                       <label>Username <input id="newUsername" placeholder="developer" /></label>
@@ -1098,6 +1146,13 @@
                     <div class="button-row"><button id="createServiceAccountBtn">Create service account</button></div>
                     <pre id="serviceAccountsResult" class="inline-result compact-result"></pre>
                   </div>
+                </div>
+                <section id="directoryCreateReview" class="directory-create-review" hidden></section>
+                <div class="button-row directory-create-wizard-actions">
+                  <button id="directoryCreateBack" class="ghost-button" type="button">Back</button>
+                  <button id="directoryCreateNext" type="button">Next</button>
+                  <button id="directoryCreateSubmit" type="button" hidden>Create</button>
+                  <span id="directoryCreateWizardStatus" class="muted small-text"></span>
                 </div>
               </section>
             </div>
@@ -1262,6 +1317,7 @@
             <h2>Proxy Routes</h2>
             <p class="muted">Expose services behind PAC as authenticated reverse proxy endpoints.</p>
             <div class="button-row"><button id="openProxyRouteModal" class="session-plus-button" title="Create proxy route" aria-label="Create proxy route">+</button></div>
+            <div id="proxyRoutesSummary" class="config-summary-grid compact-config-summary"><span><b>0</b> routes</span><span><b>0</b> open to all profiles</span></div>
             <div id="proxyRoutesList" class="provider-grid"></div>
             <div id="proxyRouteFormResult" class="inline-result" hidden></div>
             <div id="proxyRouteModal" class="modal-backdrop" hidden>
@@ -1301,6 +1357,40 @@
     </div>
     <div id="globalEvents" class="events-list"><div class="empty-events">No events yet.</div></div>
   </aside>
+
+  <div id="configCredentialModal" class="modal-backdrop" hidden>
+    <section class="modal-card config-credential-modal" role="dialog" aria-modal="true" aria-labelledby="configCredentialModalTitle">
+      <div class="section-heading">
+        <div>
+          <h2 id="configCredentialModalTitle">Add credential</h2>
+          <p id="configCredentialModalCopy" class="muted">Create a workspace variable or a write-only secret reference.</p>
+        </div>
+        <button id="closeConfigCredentialModal" class="ghost-button" type="button">Close</button>
+      </div>
+      <div class="wizard-progress config-credential-progress" aria-label="Credential creation flow">
+        <button class="ghost-button active" type="button" data-credential-step="identify" aria-current="step" disabled>1. Identify</button>
+        <button class="ghost-button" type="button" data-credential-step="value" disabled>2. Value</button>
+        <button class="ghost-button" type="button" data-credential-step="review" disabled>3. Review</button>
+      </div>
+      <input id="configCredentialKind" type="hidden" value="secret" />
+      <div id="configCredentialFields" class="config-credential-form-grid" data-credential-step="identify">
+        <label>ID <input id="configCredentialId" placeholder="github/pat" autocomplete="off" /></label>
+        <label id="configCredentialDescriptionWrap">Description <input id="configCredentialDescription" placeholder="Default Git identity for project work" /></label>
+        <label id="configCredentialTagsWrap">Tags <input id="configCredentialTags" placeholder="git,customer-a,ide" /></label>
+        <label id="configCredentialMetaWrap">Meta JSON <textarea id="configCredentialMeta" spellcheck="false" placeholder="{&#10;  &quot;scope&quot;: &quot;git&quot;&#10;}"></textarea></label>
+        <label class="config-credential-value-field">Value <textarea id="configCredentialValue" spellcheck="false" placeholder="Paste the value here. Secret values are not displayed after saving."></textarea></label>
+      </div>
+      <section id="configCredentialReview" class="directory-create-review" hidden></section>
+      <div id="configCredentialModalResult" class="inline-result compact-result" hidden></div>
+      <div class="button-row">
+        <button id="backConfigCredential" class="ghost-button" type="button" hidden>Back</button>
+        <button id="nextConfigCredential" type="button">Next</button>
+        <button id="saveConfigCredential" type="button" hidden>Save credential</button>
+        <button id="cancelConfigCredential" class="ghost-button" type="button">Cancel</button>
+      </div>
+    </section>
+  </div>
+
   <div id="updateConfirmOverlay" class="modal-backdrop blackout-overlay" hidden>
     <section class="modal-card blackout-card" role="dialog" aria-modal="true" aria-labelledby="updateConfirmTitle">
       <div class="section-heading">
@@ -1329,31 +1419,111 @@
   <footer class="app-footer"><img src="/ui/assets/pac-icon-green-32.png" alt="" /> <span>PAC Control • Orchestrate • Execute</span><span id="buildStamp" class="app-version" title="Backend and UI build information">backend v... • ui ...</span></footer>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="/ui/app/ui_helpers.js"></script>
+  <script src="/ui/app/app_nav_config.js"></script>
+  <script src="/ui/app/app_shell_nav_state.js"></script>
+  <script src="/ui/app/app_shell_nav_tools.js"></script>
+  <script src="/ui/app/app_shell_nav.js"></script>
   <script src="/ui/app/ui_loading.js"></script>
   <script src="/ui/app/provider_presets.js"></script>
+  <script src="/ui/app/provider_model_helpers.js"></script>
+  <script src="/ui/app/provider_actions.js"></script>
+  <script src="/ui/app/provider_runtime_fields.js"></script>
+  <script src="/ui/app/provider_cards.js"></script>
+  <script src="/ui/app/provider_insights.js"></script>
+  <script src="/ui/app/provider_model_cards.js"></script>
   <script src="/ui/app/providers.js"></script>
   <script src="/ui/app/session_commands.js"></script>
-    <script src="/ui/app/setup_wizard.js"></script>
-    <script src="/ui/app/sources.js"></script>
-    <script src="/ui/app/sessions.js"></script>
-    <script src="/ui/app/dashboard_atlas_layout.js"></script>
-    <script src="/ui/app/dashboard_atlas_interactions.js"></script>
-    <script src="/ui/app/dashboard_topology.js"></script>
-    <script src="/ui/app/endpoint_cards.js"></script>
+  <script src="/ui/app/setup_wizard.js"></script>
+  <script src="/ui/app/source_tree.js"></script>
+  <script src="/ui/app/source_downloads.js"></script>
+  <script src="/ui/app/source_contexts.js"></script>
+  <script src="/ui/app/source_ide_context.js"></script>
+  <script src="/ui/app/source_tools.js"></script>
+  <script src="/ui/app/source_coding_activity.js"></script>
+  <script src="/ui/app/source_secrets_variables.js"></script>
+  <script src="/ui/app/source_marketplace.js"></script>
+  <script src="/ui/app/source_build_actions.js"></script>
+  <script src="/ui/app/sources.js"></script>
+  <script src="/ui/app/session_text_rendering.js"></script>
+  <script src="/ui/app/session_reply_actions.js"></script>
+  <script src="/ui/app/session_timeline_classifiers.js"></script>
+  <script src="/ui/app/session_thinking_summaries.js"></script>
+  <script src="/ui/app/session_thinking_modal.js"></script>
+  <script src="/ui/app/session_timeline_core.js"></script>
+  <script src="/ui/app/session_timeline_stream.js"></script>
+  <script src="/ui/app/session_create_modal.js"></script>
+  <script src="/ui/app/session_runtime.js"></script>
+  <script src="/ui/app/session_shell_bindings.js"></script>
+  <script src="/ui/app/session_composer_controls.js"></script>
+  <script src="/ui/app/session_task_controls.js"></script>
+  <script src="/ui/app/session_source_bootstrap.js"></script>
+  <script src="/ui/app/session_approvals.js"></script>
+  <script src="/ui/app/sessions.js"></script>
+  <script src="/ui/app/dashboard_atlas_layout.js"></script>
+  <script src="/ui/app/dashboard_atlas_interactions.js"></script>
+  <script src="/ui/app/dashboard_atlas_page.js"></script>
+  <script src="/ui/app/dashboard_topology.js"></script>
+  <script src="/ui/app/endpoint_cards.js"></script>
   <script src="/ui/app/endpoint_actions.js"></script>
+  <script src="/ui/app/endpoint_target_helpers.js"></script>
+  <script src="/ui/app/dashboard_health.js"></script>
+  <script src="/ui/app/controller_harness.js"></script>
+  <script src="/ui/app/endpoint_service_trust.js"></script>
   <script src="/ui/app/endpoints.js"></script>
+  <script src="/ui/app/endpoint_command_modal.js"></script>
+  <script src="/ui/app/endpoint_onboarding.js"></script>
+  <script src="/ui/app/auth_session.js"></script>
+  <script src="/ui/app/auth_status_panel.js"></script>
+  <script src="/ui/app/auth_personal_account.js"></script>
+  <script src="/ui/app/auth_directory_state.js"></script>
+  <script src="/ui/app/auth_directory_tree.js"></script>
+  <script src="/ui/app/auth_directory_user_detail.js"></script>
+  <script src="/ui/app/auth_directory_group_detail.js"></script>
+  <script src="/ui/app/auth_directory_loader.js"></script>
   <script src="/ui/app/auth_admin.js"></script>
   <script src="/ui/app/directory_dragdrop.js"></script>
+  <script src="/ui/app/directory_api.js"></script>
+  <script src="/ui/app/directory_access_state.js"></script>
+  <script src="/ui/app/directory_grants.js"></script>
+  <script src="/ui/app/directory_create_modal.js"></script>
+  <script src="/ui/app/directory_helpers.js"></script>
+  <script src="/ui/app/directory_credentials.js"></script>
+  <script src="/ui/app/directory_detail_renderers.js"></script>
+  <script src="/ui/app/directory_tree.js"></script>
   <script src="/ui/app/directory_access.js"></script>
   <script src="/ui/app/observe.js"></script>
   <script src="/ui/app/events.js"></script>
+  <script src="/ui/app/workspace_form_helpers.js"></script>
+  <script src="/ui/app/workspace_shared_storage.js"></script>
+  <script src="/ui/app/agent_context_helpers.js"></script>
+  <script src="/ui/app/agent_context_forms.js"></script>
+  <script src="/ui/app/agent_context_wizard.js"></script>
+  <script src="/ui/app/agent_contexts.js"></script>
+  <script src="/ui/app/session_sidebar.js"></script>
+  <script src="/ui/app/user_workspaces.js"></script>
   <script src="/ui/app/workspaces_contexts.js"></script>
+  <script src="/ui/app/profile_tool_config.js"></script>
+  <script src="/ui/app/profile_endpoint_helpers.js"></script>
+  <script src="/ui/app/profile_modal_helpers.js"></script>
+  <script src="/ui/app/profile_model_sync.js"></script>
+  <script src="/ui/app/profile_provider_forms.js"></script>
+  <script src="/ui/app/profile_model_forms.js"></script>
+  <script src="/ui/app/profile_lmstudio_actions.js"></script>
   <script src="/ui/app/profiles_config.js"></script>
   <script src="/ui/app/profiles_page.js"></script>
+  <script src="/ui/app/config_proxy_routes.js"></script>
+  <script src="/ui/app/config_update_archives.js"></script>
   <script src="/ui/app/admin_updates.js"></script>
   <script src="/ui/app/marketplace.js"></script>
   <script src="/ui/app/personal_settings.js"></script>
+  <script src="/ui/app/config_credentials.js"></script>
+  <script src="/ui/app/config_directory_page.js"></script>
+  <script src="/ui/app/config_runtime_page.js"></script>
+  <script src="/ui/app/config_service_trust_page.js"></script>
+  <script src="/ui/app/configuration_page_shell.js"></script>
+  <script src="/ui/app/settings_panel_router.js"></script>
   <script src="/ui/app/composer_status.js"></script>
   <script src="/ui/app.js"></script>
+  <script src="/ui/app/config_raw_editor.js"></script>
 </body>
 </html>

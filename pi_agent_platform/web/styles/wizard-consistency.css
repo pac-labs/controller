@@ -1,0 +1,39 @@
+/* Shared wizard conventions for add/create flows. */
+.wizard-progress{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.45rem;
+  align-items:center;
+}
+.wizard-progress > button{
+  position:relative;
+  min-height:34px;
+  border-radius:999px !important;
+  opacity:.72;
+}
+.wizard-progress > button.active,
+.wizard-progress > button[aria-current="step"]{
+  opacity:1;
+  background:linear-gradient(90deg, rgba(34,197,94,.22), rgba(56,189,248,.12)) !important;
+  border-color:rgba(34,197,94,.62) !important;
+  color:#f8fafc !important;
+}
+.wizard-progress > button:disabled{
+  cursor:default;
+}
+.config-credential-modal .config-credential-form-grid{
+  margin-top:.8rem;
+}
+.config-credential-modal .directory-create-review{
+  margin-top:.8rem;
+}
+.config-credential-modal .config-credential-value-field textarea{
+  min-height:150px;
+}
+html[data-theme="light"] .wizard-progress > button.active,
+body[data-theme="light"] .wizard-progress > button.active,
+html[data-theme="light"] .wizard-progress > button[aria-current="step"],
+body[data-theme="light"] .wizard-progress > button[aria-current="step"]{
+  color:#064e3b !important;
+  background:linear-gradient(90deg,#dcfce7,#eff6ff) !important;
+}

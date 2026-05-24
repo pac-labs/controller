@@ -1,0 +1,271 @@
+/* v1.0.289: Conversation-history thought rows track intent/timing only. */
+.thought-history-row {
+  justify-content: flex-start;
+}
+.thought-history-bubble {
+  max-width: min(760px, 82%);
+  border-color: rgba(148,163,184,.18);
+  background: rgba(31,41,55,.78);
+}
+.thought-history-bubble.active {
+  border-color: rgba(36,195,107,.34);
+}
+.thought-history-main {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  border: 0;
+  background: transparent;
+  color: #e5e7eb;
+  padding: .18rem 0 0;
+  text-align: left;
+  cursor: pointer;
+}
+.thought-history-main:hover .thought-history-intent {
+  text-decoration: underline;
+}
+.thought-history-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1rem;
+  color: #24c36b;
+}
+.thought-history-intent {
+  flex: 1;
+  min-width: 0;
+  font-weight: 650;
+}
+.thought-history-note {
+  margin-top: .35rem;
+  color: #facc15;
+  font-size: .8rem;
+}
+
+/* v1.0.290: Thought/intent rows are compact status lines in the conversation. */
+.thought-history-row {
+  justify-content: flex-start;
+}
+.thought-history-bubble,
+.thought-history-bubble.active {
+  max-width: min(760px, 82%);
+  border: 0;
+  border-radius: 0;
+  padding: .2rem .25rem;
+  background: transparent;
+  box-shadow: none;
+}
+.thought-history-main {
+  width: auto;
+  max-width: 100%;
+  padding: .15rem 0;
+  color: var(--muted);
+  font-size: .88rem;
+}
+.thought-history-main:hover .thought-history-intent {
+  color: var(--text);
+  text-decoration: none;
+}
+.thought-history-dot {
+  color: #24c36b;
+}
+.thought-history-intent {
+  font-weight: 650;
+}
+.thought-history-note {
+  margin-left: 1.6rem;
+  font-size: .78rem;
+}
+
+/* v1.0.291: ChatGPT-style thought disclosure line, without bubble chrome. */
+.thought-history-row {
+  justify-content: flex-start;
+  margin: .15rem 0 .35rem;
+}
+.thought-history-line {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: min(760px, 82%);
+  padding: .1rem .2rem;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.thought-history-line .thought-history-main {
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: .42rem;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+  font-size: .9rem;
+  text-align: left;
+  cursor: pointer;
+}
+.thought-history-line .thought-history-main:hover .thought-history-intent,
+.thought-history-line .thought-history-main:focus-visible .thought-history-intent {
+  color: var(--text);
+  text-decoration: none;
+}
+.thought-history-line .thought-history-main:focus-visible {
+  outline: 1px solid rgba(96,165,250,.55);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+.thought-history-line .thought-history-dot {
+  min-width: .9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #24c36b;
+}
+.thought-history-line .thought-history-intent {
+  font-weight: 650;
+}
+.thought-history-line .thought-history-note {
+  margin: .2rem 0 0 1.35rem;
+  color: var(--muted);
+  font-size: .78rem;
+}
+.thought-history-line .thought-history-note.attention {
+  color: #facc15;
+}
+
+
+.thought-history-line .thought-history-intermediate {
+  margin: .38rem 0 0 1.35rem;
+  max-width: min(720px, 100%);
+  color: var(--text);
+  font-size: .88rem;
+  line-height: 1.45;
+  background: color-mix(in srgb, var(--surface-2) 78%, transparent);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: .55rem .7rem;
+  white-space: pre-wrap;
+}
+.thought-history-line .thought-history-intermediate-label {
+  display: block;
+  margin-bottom: .25rem;
+  color: var(--muted);
+  font-size: .68rem;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.composer-thinking-update {
+  display: block;
+  margin-top: .35rem;
+  max-width: 68rem;
+  color: var(--text);
+  font-size: .82rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+.composer-thinking-update > span {
+  display: inline-block;
+  margin-right: .45rem;
+  color: var(--muted);
+  font-size: .68rem;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.thought-modal-intermediates {
+  display: grid;
+  gap: .55rem;
+  margin: .75rem 0;
+}
+.thought-modal-section-title {
+  color: var(--muted);
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.thought-modal-intermediate {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .65rem;
+  align-items: start;
+  padding: .65rem .75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-2) 82%, transparent);
+}
+.thought-modal-intermediate-text {
+  color: var(--text);
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+
+/* v1.0.296: assistant-style live work message with mutable intent subline. */
+.chat-message-row.assistant-work-row {
+  justify-content: flex-start;
+  margin: .45rem 0 .75rem;
+}
+.thought-history-line.assistant-work-progress {
+  max-width: min(860px, 82%);
+  color: var(--text);
+}
+.assistant-work-message {
+  color: var(--text);
+  font-size: .94rem;
+  font-weight: 560;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.assistant-work-intent {
+  margin-top: .65rem;
+  color: var(--muted);
+  font-size: .88rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.thought-history-line .assistant-work-disclosure {
+  margin-top: .7rem;
+  opacity: .85;
+  font-size: .82rem;
+}
+.thought-history-line.closed .assistant-work-intent {
+  color: color-mix(in srgb, var(--muted) 80%, transparent);
+}
+
+.reply-scope-notice {
+  border: 1px solid rgba(246, 184, 85, 0.35);
+  background: rgba(246, 184, 85, 0.08);
+  color: var(--text, #eaf2ff);
+  border-radius: 12px;
+  padding: 8px 10px;
+  margin: 0 0 10px 0;
+  display: grid;
+  gap: 3px;
+  max-width: 100%;
+}
+
+.reply-scope-notice span {
+  color: #f6c66b;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.reply-scope-notice small {
+  color: var(--muted, #aab6ca);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reply-scope-notice.compact {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border-radius: 10px;
+}

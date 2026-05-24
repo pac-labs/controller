@@ -1,0 +1,213 @@
+/* PAC UI consistency polish.
+   Loaded after the design system to make legacy pages follow the same surface rhythm
+   without changing backend APIs or page data contracts. */
+:root{
+  --pac-toolbar-bg:color-mix(in srgb,var(--panel) 76%,#020617);
+  --pac-toolbar-border:color-mix(in srgb,var(--border) 70%,transparent);
+  --pac-focus-ring:0 0 0 3px color-mix(in srgb,var(--accent) 30%,transparent);
+}
+
+.content-area .tab-panel.active{
+  animation:pac-route-in .16s ease-out;
+}
+@keyframes pac-route-in{
+  from{ opacity:.72; transform:translateY(4px); }
+  to{ opacity:1; transform:translateY(0); }
+}
+
+.content-area .section-heading > div,
+.content-area .provider-title-block,
+.content-area .dashboard-private-head > div,
+.content-area .endpoint-card-header > div{
+  min-width:0;
+}
+.content-area .section-heading p,
+.content-area .dashboard-private-head p,
+.content-area .provider-title-block p{
+  max-width:72ch;
+}
+
+.content-area .button-row:empty,
+.content-area .compact-actions:empty,
+.content-area .provider-actions:empty,
+.content-area .endpoint-card-actions:empty{
+  display:none;
+}
+
+.content-area .button-row,
+.content-area .compact-actions,
+.content-area .provider-actions,
+.content-area .endpoint-card-actions,
+.session-quick-controls,
+.composer-left-actions,
+.composer-right-actions{
+  align-items:center;
+}
+
+.content-area .toolbar,
+.content-area .filter-row,
+.content-area .source-toolbar,
+.content-area .settings-toolbar,
+.content-area .directory-toolbar,
+.content-area .profile-toolbar{
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:var(--pac-space-2);
+  padding:var(--pac-space-3);
+  border:1px solid var(--pac-toolbar-border);
+  border-radius:var(--pac-radius-card);
+  background:var(--pac-toolbar-bg);
+}
+
+.content-area .form-grid{
+  gap:var(--pac-space-3) !important;
+}
+.content-area .form-grid label,
+.modal-card .form-grid label{
+  display:grid;
+  gap:.28rem;
+  color:color-mix(in srgb,var(--pac-text-strong) 88%,var(--muted));
+  font-weight:750;
+}
+.content-area .form-grid label small,
+.modal-card .form-grid label small{
+  font-weight:500;
+  line-height:1.35;
+}
+
+.content-area input:focus,
+.content-area select:focus,
+.content-area textarea:focus,
+.modal-card input:focus,
+.modal-card select:focus,
+.modal-card textarea:focus,
+.content-area button:focus-visible,
+.modal-card button:focus-visible{
+  outline:none !important;
+  box-shadow:var(--pac-focus-ring) !important;
+}
+
+.content-area .empty-state,
+.content-area .empty-timeline,
+.content-area .empty-card,
+.content-area [data-pac-loading],
+.stacked-output:empty::before{
+  border:1px dashed color-mix(in srgb,var(--border) 76%,transparent);
+  border-radius:var(--pac-radius-card);
+  background:color-mix(in srgb,var(--pac-surface-inset) 84%,transparent);
+  color:var(--pac-text-muted) !important;
+  padding:var(--pac-space-4);
+}
+.stacked-output:empty::before{
+  content:"No details available yet.";
+  display:block;
+}
+
+.content-area .stats-grid,
+.content-area .health-grid,
+.config-summary-grid,
+.directory-summary-grid,
+.runtime-summary-grid,
+.service-summary-grid{
+  gap:var(--pac-space-3) !important;
+}
+.content-area .metric,
+.content-area .health-section,
+.config-summary-tile,
+.directory-summary-tile,
+.runtime-summary-tile,
+.service-summary-tile{
+  border:1px solid var(--pac-line-subtle) !important;
+  border-radius:var(--pac-radius-card) !important;
+  background:var(--pac-surface-inset) !important;
+}
+
+.content-area details{
+  border-radius:var(--pac-radius-card);
+}
+.content-area summary{
+  border-radius:var(--pac-radius-control);
+}
+.content-area summary:focus-visible{
+  outline:none;
+  box-shadow:var(--pac-focus-ring);
+}
+
+.modal-backdrop[hidden],
+.user-menu-dropdown[hidden],
+.composer-context-menu[hidden],
+.session-wizard-pane[hidden]{
+  display:none !important;
+}
+.modal-card .wizard-stepper,
+.modal-card .pac-wizard-stepper{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+  gap:var(--pac-space-2);
+  margin:0 0 var(--pac-space-4);
+}
+.modal-card .wizard-step,
+.modal-card .pac-wizard-step{
+  min-height:38px;
+  display:grid;
+  place-items:center;
+  border:1px solid var(--pac-line-subtle);
+  border-radius:999px;
+  background:var(--pac-surface-inset);
+  color:var(--pac-text-muted);
+  font-weight:800;
+}
+.modal-card .wizard-step.active,
+.modal-card .pac-wizard-step.active,
+.modal-card .pac-wizard-step[aria-current="step"]{
+  border-color:var(--accent);
+  color:var(--pac-text-strong);
+  box-shadow:inset 0 -3px 0 var(--accent);
+}
+
+.content-area .card.compact,
+.content-area .compact-card{
+  padding:var(--pac-space-3) !important;
+}
+.content-area .card.compact h2,
+.content-area .compact-card h2,
+.content-area .card.compact h3,
+.content-area .compact-card h3{
+  margin-top:0;
+}
+
+@media(max-width:900px){
+  .content-area .toolbar,
+  .content-area .filter-row,
+  .content-area .source-toolbar,
+  .content-area .settings-toolbar,
+  .content-area .directory-toolbar,
+  .content-area .profile-toolbar,
+  .session-quick-controls{
+    align-items:stretch;
+    flex-direction:column;
+  }
+  .content-area .toolbar > *,
+  .content-area .filter-row > *,
+  .content-area .button-row > button,
+  .modal-card .button-row > button{
+    width:100%;
+  }
+}
+
+html[data-theme="light"]{
+  --pac-toolbar-bg:#ffffff;
+  --pac-toolbar-border:#dbe7ef;
+  --pac-focus-ring:0 0 0 3px rgba(34,197,94,.22);
+}
+html[data-theme="terminal"]{
+  --pac-toolbar-bg:#030807;
+  --pac-toolbar-border:rgba(60,255,143,.20);
+  --pac-focus-ring:0 0 0 3px rgba(60,255,143,.20);
+}
+html[data-theme="dusk"]{
+  --pac-toolbar-bg:#111827;
+  --pac-toolbar-border:rgba(56,189,248,.22);
+  --pac-focus-ring:0 0 0 3px rgba(56,189,248,.20);
+}

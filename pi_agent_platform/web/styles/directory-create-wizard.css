@@ -1,0 +1,55 @@
+/* Directory guided create wizard, review screen, and stepper states. */
+/* v1.0.326 guided create/access refinements */
+.directory-grant-builder {
+  border: 1px solid rgba(88, 166, 255, 0.28);
+  border-radius: 14px;
+  padding: .8rem;
+  background: rgba(10, 18, 32, 0.48);
+  display: grid;
+  gap: .7rem;
+}
+.directory-grant-builder-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: .8rem;
+}
+.directory-grant-rows {
+  display: grid;
+  gap: .45rem;
+}
+.directory-grant-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 160px) 1fr minmax(100px, 130px) auto;
+  gap: .45rem;
+  align-items: center;
+}
+.directory-grant-row input,
+.directory-grant-row select,
+.directory-grant-builder select {
+  width: 100%;
+}
+.directory-remove-drop-zone {
+  border: 1px dashed rgba(255, 118, 117, 0.55);
+  border-radius: 12px;
+  padding: .65rem;
+  margin-top: .75rem;
+  color: var(--muted);
+  background: rgba(255, 118, 117, 0.08);
+  text-align: center;
+}
+.directory-remove-drop-zone.directory-drop-over {
+  color: #ffd9d9;
+  border-color: rgba(255, 118, 117, 0.9);
+  background: rgba(255, 118, 117, 0.18);
+}
+.subtle-card {
+  margin: .6rem 0;
+}
+@media (max-width: 840px) {
+  .directory-grant-builder-head,
+  .directory-grant-row {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+}

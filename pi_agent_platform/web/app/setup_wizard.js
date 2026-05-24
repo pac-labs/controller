@@ -365,7 +365,7 @@ function renderSetupWizard() {
   const step = setupWizardSteps[setupWizardStepIndex];
   if (title) title.textContent = step?.title || 'Finish PAC setup';
   if (meta) meta.textContent = `${issues.length} required item(s) and ${warnings.length} warning(s). Configure the core platform settings directly here.`;
-  if (progress) progress.innerHTML = setupWizardSteps.map((item, index) => `<button type="button" class="ghost-button ${index === setupWizardStepIndex ? 'active' : ''}" data-setup-step="${index}">${escapeHtml(item.label)}</button>`).join('');
+  if (progress) progress.innerHTML = setupWizardSteps.map((item, index) => `<button type="button" class="ghost-button ${index === setupWizardStepIndex ? 'active' : ''}" data-setup-step="${index}" ${index === setupWizardStepIndex ? 'aria-current="step"' : ''}>${escapeHtml(item.label)}</button>`).join('');
   body.innerHTML = step.render();
   progress?.querySelectorAll('[data-setup-step]').forEach(btn => btn.addEventListener('click', () => {
     setupWizardStepIndex = Number(btn.dataset.setupStep || 0);

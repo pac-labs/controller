@@ -1,0 +1,286 @@
+/* Directory & Access console layout, folder tree, details, and grant surfaces. */
+/* Directory & Access visual refresh: directory-console layout and theme-correct surfaces. */
+.directory-hero-card,
+.directory-sidebar-pane,
+.directory-detail-pane{
+  border-color:rgba(79,229,159,.18);
+}
+.directory-access-layout{
+  grid-template-columns:minmax(310px,380px) minmax(0,1fr);
+}
+.directory-sidebar-pane{
+  position:sticky;
+  top:.75rem;
+}
+.directory-tree-shell{
+  border-radius:.9rem;
+  border:1px solid rgba(79,229,159,.18);
+  background:rgba(5,12,20,.86);
+  padding:.55rem;
+}
+.directory-root{
+  margin:0 0 .35rem;
+  border:0;
+  border-radius:.45rem;
+  background:transparent;
+}
+.directory-root summary{
+  min-height:2rem;
+  padding:.4rem .55rem;
+  border:1px solid transparent;
+  border-radius:.45rem;
+  color:#d9fbe8;
+}
+.directory-root summary:hover{
+  border-color:rgba(79,229,159,.22);
+  background:rgba(79,229,159,.08);
+}
+.directory-folder.active,
+.directory-node.active{
+  border-color:rgba(79,229,159,.48);
+  background:rgba(79,229,159,.16);
+  box-shadow:inset 3px 0 0 rgba(79,229,159,.85);
+}
+.directory-children{
+  position:relative;
+  gap:.18rem;
+  margin-left:.72rem;
+  padding:.1rem 0 .25rem .8rem;
+  border-left:1px solid rgba(148,163,184,.22);
+}
+.directory-children.nested{
+  margin-left:.65rem;
+  padding:.1rem 0 .15rem .75rem;
+}
+.directory-node{
+  min-height:2rem;
+  border-radius:.4rem;
+  padding:.38rem .52rem;
+  background:transparent;
+  color:#dbeafe;
+}
+.directory-node:hover{
+  border-color:rgba(79,229,159,.22);
+  background:rgba(79,229,159,.08);
+}
+.directory-node-label{
+  min-width:0;
+}
+.directory-node-meta,
+.directory-count{
+  color:#99f6c9;
+}
+.directory-label-with-icon{
+  display:inline-flex;
+  align-items:center;
+  gap:.45rem;
+  min-width:0;
+}
+.directory-kind-icon{
+  position:relative;
+  width:1rem;
+  height:1rem;
+  flex:0 0 1rem;
+  border:1px solid rgba(79,229,159,.5);
+  background:rgba(79,229,159,.14);
+}
+.directory-kind-icon.folder{
+  height:.82rem;
+  margin-top:.1rem;
+  border-radius:.12rem;
+  background:linear-gradient(180deg,rgba(134,239,172,.26),rgba(21,128,61,.18));
+}
+.directory-kind-icon.folder::before{
+  content:"";
+  position:absolute;
+  left:.08rem;
+  top:-.28rem;
+  width:.55rem;
+  height:.28rem;
+  border:1px solid rgba(79,229,159,.45);
+  border-bottom:0;
+  border-radius:.12rem .12rem 0 0;
+  background:rgba(79,229,159,.24);
+}
+.directory-kind-icon.user,
+.directory-kind-icon.service_account,
+.directory-kind-icon.endpoint,
+.directory-kind-icon.provider,
+.directory-kind-icon.certificate_identity{
+  border-radius:999px;
+}
+.directory-kind-icon.user::before,
+.directory-kind-icon.service_account::before,
+.directory-kind-icon.endpoint::before,
+.directory-kind-icon.provider::before,
+.directory-kind-icon.certificate_identity::before{
+  content:"";
+  position:absolute;
+  left:.29rem;
+  top:.16rem;
+  width:.34rem;
+  height:.34rem;
+  border-radius:999px;
+  background:rgba(79,229,159,.8);
+}
+.directory-kind-icon.user::after,
+.directory-kind-icon.service_account::after,
+.directory-kind-icon.endpoint::after,
+.directory-kind-icon.provider::after,
+.directory-kind-icon.certificate_identity::after{
+  content:"";
+  position:absolute;
+  left:.2rem;
+  bottom:.14rem;
+  width:.52rem;
+  height:.28rem;
+  border-radius:.4rem .4rem .12rem .12rem;
+  background:rgba(79,229,159,.55);
+}
+.directory-kind-icon.group{
+  border-radius:.2rem;
+}
+.directory-kind-icon.group::before,
+.directory-kind-icon.group::after{
+  content:"";
+  position:absolute;
+  width:.42rem;
+  height:.42rem;
+  border-radius:999px;
+  background:rgba(79,229,159,.75);
+}
+.directory-kind-icon.group::before{left:.12rem;top:.18rem;}
+.directory-kind-icon.group::after{right:.12rem;bottom:.18rem;}
+.directory-kind-icon.credential{
+  border-radius:.16rem;
+}
+.directory-kind-icon.credential::after{
+  content:"";
+  position:absolute;
+  right:-.25rem;
+  top:.36rem;
+  width:.34rem;
+  height:.16rem;
+  border-top:2px solid rgba(79,229,159,.78);
+  border-right:2px solid rgba(79,229,159,.78);
+}
+.directory-detail-shell{
+  min-height:34rem;
+  border-color:rgba(79,229,159,.18);
+  border-radius:.9rem;
+  background:rgba(5,12,20,.92);
+  padding:0;
+  overflow:hidden;
+}
+.directory-detail-card{
+  padding:1rem;
+}
+.directory-console{
+  gap:0;
+  padding:0;
+}
+.directory-console-toolbar{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:1rem;
+  padding:.85rem 1rem;
+  border-bottom:1px solid rgba(79,229,159,.16);
+  background:rgba(2,6,23,.42);
+}
+.directory-console-toolbar h3{
+  margin:0 .2rem .15rem 0;
+}
+.directory-path-pill{
+  white-space:nowrap;
+  padding:.28rem .5rem;
+  border:1px solid rgba(79,229,159,.2);
+  border-radius:999px;
+  color:#bbf7d0;
+  background:rgba(79,229,159,.08);
+  font-size:.74rem;
+  font-weight:800;
+}
+.directory-table-wrap{
+  overflow:auto;
+}
+.directory-object-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:.86rem;
+}
+.directory-object-table th{
+  position:sticky;
+  top:0;
+  z-index:1;
+  padding:.55rem .7rem;
+  border-bottom:1px solid rgba(79,229,159,.16);
+  background:#07111d;
+  color:#9fe9c1;
+  font-size:.74rem;
+  text-align:left;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+.directory-object-table td{
+  padding:.6rem .7rem;
+  border-bottom:1px solid rgba(148,163,184,.11);
+  color:#dbeafe;
+}
+.directory-object-row{
+  cursor:pointer;
+}
+.directory-object-row:hover td{
+  background:rgba(79,229,159,.08);
+}
+.directory-empty-cell{
+  color:#94a3b8!important;
+  text-align:center;
+  padding:1.2rem!important;
+}
+.directory-status-pill{
+  display:inline-flex;
+  padding:.12rem .42rem;
+  border:1px solid rgba(79,229,159,.22);
+  border-radius:999px;
+  color:#bbf7d0;
+  background:rgba(79,229,159,.08);
+  font-size:.72rem;
+  font-weight:800;
+}
+.directory-tabs-grid section,
+.my-access-grid section{
+  border-color:rgba(79,229,159,.14);
+  background:rgba(2,6,23,.26);
+}
+.directory-property-list{
+  display:grid;
+  gap:.35rem;
+  margin:.25rem 0 .65rem;
+}
+.directory-property-list div{
+  display:grid;
+  grid-template-columns:7rem minmax(0,1fr);
+  gap:.65rem;
+  border-bottom:1px solid rgba(148,163,184,.12);
+  padding:.25rem 0;
+}
+.directory-property-list dt{
+  color:#9fe9c1;
+  font-weight:800;
+}
+.directory-property-list dd{
+  margin:0;
+  color:#dbeafe;
+}
+.directory-member-list{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.4rem;
+}
+@media (max-width:900px){
+  .directory-sidebar-pane{position:static;}
+  .directory-console-toolbar{display:grid;}
+  .directory-path-pill{justify-self:start;}
+}
+

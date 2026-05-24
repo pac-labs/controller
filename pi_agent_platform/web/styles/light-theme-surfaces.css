@@ -1,0 +1,198 @@
+/* Light theme tokens and shared panel/list/code surface normalization. */
+/* PAC v1.0.284 CSS split: Shared light-mode surface system for cards, lists, pills, detail panels, forms, and modals.
+   Source range from the former monolithic styles.css: lines 4291-4752. */
+
+/* v1.0.151: shared light-mode surface system across cards, lists, pills, and detail panels */
+html[data-theme="light"],
+body[data-theme="light"]{
+  --light-panel:#ffffff;
+  --light-panel-soft:#f8fafc;
+  --light-panel-muted:#f1f5f9;
+  --light-border:rgba(148,163,184,.24);
+  --light-border-strong:rgba(100,116,139,.34);
+  --light-text:#0f172a;
+  --light-text-soft:#334155;
+  --light-text-muted:#64748b;
+  --light-hover:#ecfdf5;
+  --light-green:#16a34a;
+  --light-green-soft:#22c55e;
+  --light-warn:#d97706;
+  --light-danger:#dc2626;
+}
+html[data-theme="light"] .card,
+html[data-theme="light"] .endpoint-card,
+html[data-theme="light"] .workspace-card,
+html[data-theme="light"] .remote-provider,
+html[data-theme="light"] .marketplace-card,
+html[data-theme="light"] .source-sidecard,
+html[data-theme="light"] .runtime-panel,
+html[data-theme="light"] .download-version-group,
+html[data-theme="light"] .update-archive-row,
+html[data-theme="light"] .tool-activity-item,
+body[data-theme="light"] .card,
+body[data-theme="light"] .endpoint-card,
+body[data-theme="light"] .workspace-card,
+body[data-theme="light"] .remote-provider,
+body[data-theme="light"] .marketplace-card,
+body[data-theme="light"] .source-sidecard,
+body[data-theme="light"] .runtime-panel,
+body[data-theme="light"] .download-version-group,
+body[data-theme="light"] .update-archive-row,
+body[data-theme="light"] .tool-activity-item{
+  background:linear-gradient(180deg,var(--light-panel),var(--light-panel-soft)) !important;
+  color:var(--light-text) !important;
+  border-color:var(--light-border) !important;
+  box-shadow:0 10px 24px rgba(15,23,42,.06) !important;
+}
+html[data-theme="light"] .row,
+html[data-theme="light"] .workspace-card-grid div,
+html[data-theme="light"] .hardware-grid div,
+html[data-theme="light"] .event-card,
+html[data-theme="light"] .source-build-card .artifact-list,
+html[data-theme="light"] .source-side-result,
+html[data-theme="light"] .source-secret-audit,
+html[data-theme="light"] .source-marketplace-results,
+body[data-theme="light"] .row,
+body[data-theme="light"] .workspace-card-grid div,
+body[data-theme="light"] .hardware-grid div,
+body[data-theme="light"] .event-card,
+body[data-theme="light"] .source-build-card .artifact-list,
+body[data-theme="light"] .source-side-result,
+body[data-theme="light"] .source-secret-audit,
+body[data-theme="light"] .source-marketplace-results{
+  background:var(--light-panel-soft) !important;
+  color:var(--light-text) !important;
+  border-color:var(--light-border) !important;
+}
+html[data-theme="light"] .model-card,
+html[data-theme="light"] .workspace-card,
+html[data-theme="light"] .clickable-row,
+html[data-theme="light"] .provider-row,
+body[data-theme="light"] .model-card,
+body[data-theme="light"] .workspace-card,
+body[data-theme="light"] .clickable-row,
+body[data-theme="light"] .provider-row{
+  color:var(--light-text) !important;
+  border-color:var(--light-border) !important;
+}
+html[data-theme="light"] .model-overview-card,
+body[data-theme="light"] .model-overview-card{
+  background:var(--light-panel) !important;
+  box-shadow:0 12px 24px rgba(15,23,42,.08) !important;
+}
+html[data-theme="light"] .model-card-subline,
+body[data-theme="light"] .model-card-subline{
+  color:var(--light-text-soft) !important;
+}
+html[data-theme="light"] .model-runtime-strip,
+body[data-theme="light"] .model-runtime-strip{
+  background:var(--light-panel-muted) !important;
+  color:var(--light-text-soft) !important;
+  border-color:var(--light-border) !important;
+}
+html[data-theme="light"] .model-runtime-strip span:first-child,
+body[data-theme="light"] .model-runtime-strip span:first-child{
+  color:var(--light-text) !important;
+}
+html[data-theme="light"] .updates-detail-panel,
+html[data-theme="light"] .update-delta-list,
+html[data-theme="light"] .update-archive-row,
+body[data-theme="light"] .updates-detail-panel,
+body[data-theme="light"] .update-delta-list,
+body[data-theme="light"] .update-archive-row{
+  background:var(--light-panel) !important;
+  color:var(--light-text) !important;
+  border-color:var(--light-border) !important;
+}
+html[data-theme="light"] .updates-detail-header,
+body[data-theme="light"] .updates-detail-header{
+  border-color:var(--light-border) !important;
+}
+html[data-theme="light"] .pac-status-version,
+html[data-theme="light"] .update-delta-title,
+body[data-theme="light"] .pac-status-version,
+body[data-theme="light"] .update-delta-title{
+  color:var(--light-text) !important;
+}
+html[data-theme="light"] .pac-status-label,
+body[data-theme="light"] .pac-status-label{
+  color:var(--light-text-soft) !important;
+}
+html[data-theme="light"] .clickable-row:hover,
+html[data-theme="light"] .model-card:hover,
+html[data-theme="light"] .workspace-card:hover,
+html[data-theme="light"] .provider-row:hover,
+html[data-theme="light"] .update-archive-row:hover,
+html[data-theme="light"] .marketplace-card-button:hover,
+html[data-theme="light"] .download-pill:hover,
+body[data-theme="light"] .clickable-row:hover,
+body[data-theme="light"] .model-card:hover,
+body[data-theme="light"] .workspace-card:hover,
+body[data-theme="light"] .provider-row:hover,
+body[data-theme="light"] .update-archive-row:hover,
+body[data-theme="light"] .marketplace-card-button:hover,
+body[data-theme="light"] .download-pill:hover{
+  background:var(--light-hover) !important;
+  border-color:rgba(34,197,94,.26) !important;
+  color:var(--light-text) !important;
+}
+html[data-theme="light"] .endpoint-card details,
+html[data-theme="light"] .tool-activity-item pre,
+html[data-theme="light"] .event-details pre,
+html[data-theme="light"] .endpoint-card pre,
+html[data-theme="light"] .workspace-card code,
+html[data-theme="light"] #profiles code,
+html[data-theme="light"] #models code,
+body[data-theme="light"] .endpoint-card details,
+body[data-theme="light"] .tool-activity-item pre,
+body[data-theme="light"] .event-details pre,
+body[data-theme="light"] .endpoint-card pre,
+body[data-theme="light"] .workspace-card code,
+body[data-theme="light"] #profiles code,
+body[data-theme="light"] #models code{
+  background:var(--light-panel-muted) !important;
+  color:var(--light-text) !important;
+  border-color:var(--light-border) !important;
+}
+html[data-theme="light"] .endpoint-card summary,
+html[data-theme="light"] .tool-activity-item summary,
+body[data-theme="light"] .endpoint-card summary,
+body[data-theme="light"] .tool-activity-item summary{
+  color:var(--light-text) !important;
+}
+html[data-theme="light"] .tool-activity-item summary:hover,
+body[data-theme="light"] .tool-activity-item summary:hover{
+  background:rgba(34,197,94,.08) !important;
+}
+html[data-theme="light"] .tool-activity-status,
+html[data-theme="light"] .tool-activity-time,
+html[data-theme="light"] .event-kind,
+html[data-theme="light"] .workspace-card-title span,
+html[data-theme="light"] .source-version-pill,
+html[data-theme="light"] .source-kind-pill,
+body[data-theme="light"] .tool-activity-status,
+body[data-theme="light"] .tool-activity-time,
+body[data-theme="light"] .event-kind,
+body[data-theme="light"] .workspace-card-title span,
+body[data-theme="light"] .source-version-pill,
+body[data-theme="light"] .source-kind-pill{
+  color:var(--light-text-soft) !important;
+}
+html[data-theme="light"] .metric b,
+body[data-theme="light"] .metric b{
+  color:var(--light-green) !important;
+}
+html[data-theme="light"] .metric span,
+html[data-theme="light"] .metric small,
+html[data-theme="light"] .spark-col span,
+html[data-theme="light"] .hardware-grid small,
+html[data-theme="light"] .endpoint-meta,
+html[data-theme="light"] .download-pill small,
+body[data-theme="light"] .metric span,
+body[data-theme="light"] .metric small,
+body[data-theme="light"] .spark-col span,
+body[data-theme="light"] .hardware-grid small,
+body[data-theme="light"] .endpoint-meta,
+body[data-theme="light"] .download-pill small{
+  color:var(--light-text-muted) !important;
+}

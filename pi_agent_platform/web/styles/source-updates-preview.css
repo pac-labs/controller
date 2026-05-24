@@ -1,0 +1,112 @@
+/* v1.0.88: update previews show changelog deltas from PAC_CHANGELOG.json. */
+.update-delta-heading{margin-top:.75rem;font-weight:800;color:#dbeafe;letter-spacing:.02em}
+.update-delta-list{margin-top:.45rem;display:grid;gap:.55rem;max-height:260px;overflow:auto;border:1px solid rgba(96,165,250,.22);background:rgba(7,12,24,.45);padding:.65rem}
+.update-delta-version{border-left:3px solid #60a5fa;padding-left:.65rem}
+.update-delta-title{font-weight:800;color:#eff6ff;margin-bottom:.25rem}
+.update-delta-version ul{margin:.2rem 0 .1rem 1.1rem;padding:0;color:#cbd5e1}
+.update-delta-version li{margin:.2rem 0;line-height:1.35}
+.updates-layout{
+  display:grid;
+  grid-template-columns:minmax(0,1.45fr) minmax(280px,.95fr);
+  gap:1rem;
+  align-items:stretch;
+  margin-top:.75rem;
+  min-height:calc(100vh - 280px);
+  height:100%;
+}
+html[data-theme="dark"] main,
+body[data-theme="dark"] main,
+html[data-theme="dark"] .content-area,
+body[data-theme="dark"] .content-area,
+html[data-theme="dark"] #sessions-tab.sessions-workspace.active,
+body[data-theme="dark"] #sessions-tab.sessions-workspace.active,
+html[data-theme="dark"] #settings-tab,
+body[data-theme="dark"] #settings-tab{
+  background:#080f14 !important;
+  background-image:none !important;
+}
+html[data-theme="dark"] .events-rail,
+body[data-theme="dark"] .events-rail{
+  background:#080f14 !important;
+  background-image:none !important;
+}
+.updates-main{
+  display:grid;
+  gap:.85rem;
+  align-content:start;
+  min-width:0;
+  min-height:100%;
+}
+.updates-main > div{margin-bottom:0;}
+.updates-pac-status{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;}
+.pac-status-line{display:flex;gap:.45rem;align-items:center;}
+.pac-status-label{font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;}
+.pac-status-version{font-weight:700;color:#e2e8f0;}
+.pac-status-badge{
+  display:inline-flex;
+  align-items:center;
+  padding:.16rem .5rem;
+  border:1px solid rgba(96,165,250,.22);
+  background:rgba(15,23,42,.6);
+  color:#dbeafe;
+}
+.current-badge{background:rgba(22,101,52,.32);border-color:rgba(74,222,128,.32);}
+.updates-archive-section{margin-top:.75rem;}
+.update-archive-row{
+  display:flex;
+  flex-direction:column;
+  gap:.2rem;
+  width:100%;
+  text-align:left;
+  padding:.6rem .7rem;
+  border:1px solid rgba(96,165,250,.14);
+  background:rgba(9,14,28,.9);
+  color:#e2e8f0;
+}
+.update-archive-row:hover{background:rgba(20,32,58,.95);}
+.updates-detail-panel{
+  border:1px solid rgba(96,165,250,.18);
+  background:linear-gradient(180deg, rgba(9,14,28,.96), rgba(7,12,24,.96));
+  min-height:100%;
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+}
+.updates-detail-header{
+  display:flex;
+  justify-content:space-between;
+  gap:.6rem;
+  align-items:center;
+  padding:.8rem .9rem;
+  border-bottom:1px solid rgba(96,165,250,.14);
+}
+.updates-detail-body{
+  padding:.9rem;
+  max-height:none;
+  flex:1 1 auto;
+  overflow:auto;
+  color:#e2e8f0;
+  line-height:1.5;
+}
+.updates-detail-body a{color:#86efac;text-decoration:underline;}
+.updates-detail-body .muted{color:#cbd5e1;}
+.updates-main .feature-pack-preview{
+  max-height:none;
+  overflow:visible;
+}
+.updates-main .update-delta-list{
+  max-height:180px;
+}
+.backups-modal-layout{
+  min-height:560px;
+}
+.marketplace-card-button{
+  display:block;
+  width:100%;
+  text-align:left;
+  color:inherit;
+}
+@media (max-width: 1100px) {
+  .updates-layout{grid-template-columns:1fr;}
+}
+

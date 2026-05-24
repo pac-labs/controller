@@ -1,0 +1,219 @@
+/* v1.0.287: ChatGPT-like PAC session composer shell. */
+.session-composer.chatgpt-composer {
+  padding:.75rem .75rem .6rem;
+  border-top:1px solid rgba(148,163,184,.16);
+  background:linear-gradient(180deg, rgba(9,14,26,.58), rgba(9,14,26,.92));
+}
+.session-composer .composer-panel {
+  width:min(980px, 100%);
+  margin:0 auto;
+  border:1px solid rgba(148,163,184,.22);
+  border-radius:22px;
+  background:linear-gradient(180deg, rgba(23,31,48,.96), rgba(13,18,31,.98));
+  box-shadow:0 18px 46px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.04);
+  overflow:visible;
+}
+.composer-context-strip {
+  display:flex;
+  align-items:center;
+  gap:.45rem;
+  flex-wrap:wrap;
+  padding:.62rem .75rem .2rem;
+}
+.composer-pill {
+  display:inline-flex;
+  align-items:center;
+  max-width:18rem;
+  min-height:1.45rem;
+  padding:.22rem .55rem;
+  border:1px solid rgba(148,163,184,.16);
+  border-radius:999px;
+  background:rgba(15,23,42,.68);
+  color:#b7c0d1;
+  font-size:.72rem;
+  font-weight:700;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.composer-pill.strong {
+  color:#dcfce7;
+  border-color:rgba(34,197,94,.28);
+  background:rgba(22,101,52,.18);
+}
+.composer-attachment-tray {
+  display:flex;
+  flex-wrap:wrap;
+  gap:.4rem;
+  padding:.45rem .75rem .1rem;
+}
+.composer-attachment-chip {
+  display:inline-flex;
+  align-items:center;
+  gap:.35rem;
+  max-width:18rem;
+  padding:.32rem .42rem .32rem .6rem;
+  border:1px solid rgba(96,165,250,.24);
+  border-radius:999px;
+  background:rgba(30,41,59,.74);
+  color:#dbeafe;
+  font-size:.76rem;
+  overflow:hidden;
+}
+.composer-attachment-chip span {
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.composer-attachment-chip button {
+  width:1.15rem;
+  height:1.15rem;
+  display:inline-grid;
+  place-items:center;
+  border:0;
+  border-radius:999px;
+  padding:0;
+  background:rgba(148,163,184,.16);
+  color:#e5e7eb;
+  box-shadow:none;
+}
+.composer-attachment-chip button:hover { background:rgba(239,68,68,.24); color:#fecaca; }
+.session-composer .composer-input-shell {
+  border:0;
+  border-radius:0;
+  padding:.35rem .78rem .2rem;
+  background:transparent;
+}
+.session-composer textarea#taskPrompt {
+  width:100%;
+  min-height:56px;
+  max-height:220px;
+  resize:none;
+  border:0;
+  outline:0;
+  box-shadow:none;
+  padding:.35rem .15rem;
+  background:transparent;
+  color:#f8fafc;
+  font-size:.98rem;
+  line-height:1.45;
+}
+.session-composer textarea#taskPrompt::placeholder { color:#94a3b8; }
+.session-composer .composer-controls.integrated.editor-like {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.75rem;
+  border:0;
+  border-radius:0 0 22px 22px;
+  background:transparent;
+  padding:.42rem .65rem .65rem;
+}
+.composer-left-actions,
+.composer-right-actions {
+  display:flex;
+  align-items:center;
+  gap:.42rem;
+  min-width:0;
+}
+.composer-right-actions { margin-left:auto; }
+.composer-footer-status {
+  min-width:0;
+  flex:1 1 auto;
+  color:#94a3b8;
+  font-size:.76rem;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.composer-shortcut-hint {
+  color:#64748b;
+  font-size:.72rem;
+  white-space:nowrap;
+}
+.session-composer .composer-icon-button.square.composer-round-action,
+.session-composer .composer-send-button.square.composer-send-round,
+.composer-mini-button {
+  height:2.15rem;
+  min-height:2.15rem;
+  border-radius:999px;
+  border:1px solid rgba(148,163,184,.20);
+  background:rgba(15,23,42,.86);
+  color:#e5e7eb;
+  box-shadow:none;
+}
+.session-composer .composer-icon-button.square.composer-round-action,
+.session-composer .composer-send-button.square.composer-send-round {
+  width:2.15rem;
+  min-width:2.15rem;
+  padding:0;
+}
+.composer-mini-button {
+  width:auto;
+  padding:0 .72rem;
+  font-size:.78rem;
+  font-weight:700;
+}
+.session-composer .composer-send-button.square.composer-send-round {
+  background:linear-gradient(180deg, rgba(34,197,94,.95), rgba(22,163,74,.92));
+  color:#04130a;
+  border-color:rgba(134,239,172,.62);
+}
+.session-composer .composer-send-button.square.composer-send-round:disabled {
+  opacity:.48;
+  cursor:not-allowed;
+  background:rgba(71,85,105,.42);
+  color:#94a3b8;
+  border-color:rgba(148,163,184,.12);
+}
+.composer-mini-button:hover,
+.session-composer .composer-icon-button.square.composer-round-action:hover {
+  background:rgba(30,41,59,.96);
+  color:#fff;
+}
+.composer-context-menu {
+  min-width:260px;
+  border-radius:16px;
+  background:rgba(15,23,42,.98);
+  color:#e5e7eb;
+  border-color:rgba(148,163,184,.22);
+}
+.composer-context-menu b { color:#cbd5e1; }
+.composer-context-menu button { color:#e5e7eb; border-radius:10px; }
+.composer-context-menu button:hover { background:rgba(59,130,246,.16); }
+.composer-permission-select {
+  width:auto !important;
+  max-width:9rem;
+  min-height:2.15rem !important;
+  height:2.15rem !important;
+  border-radius:999px !important;
+}
+#applySessionPermission.composer-mini-button {
+  min-height:2.15rem;
+  height:2.15rem;
+}
+.session-composer .composer-hint,
+#sessionEndpointLock.composer-hint {
+  width:min(980px, 100%);
+  margin:.35rem auto 0;
+  color:#7c8799;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+@media(max-width:900px){
+  .composer-context-strip { gap:.32rem; }
+  .composer-pill { max-width:12rem; }
+  .session-composer .composer-controls.integrated.editor-like { align-items:stretch; flex-wrap:wrap; }
+  .composer-footer-status { order:3; flex-basis:100%; }
+  .composer-shortcut-hint { display:none; }
+}
+@media(max-width:620px){
+  .session-composer.chatgpt-composer { padding:.55rem .45rem; }
+  .session-composer .composer-panel { border-radius:18px; }
+  .composer-pill { max-width:100%; }
+  .composer-left-actions { flex-wrap:wrap; }
+  .composer-mini-button#composerDestinationButton { display:none; }
+}
+

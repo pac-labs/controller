@@ -1,0 +1,75 @@
+/* Model recommendation and inventory card layout. */
+.recommendation-summary{
+  padding:.65rem .25rem 0;
+}
+#modelsRecommendationsPanel{
+  max-height:520px;
+  overflow:auto;
+}
+.model-card-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
+  gap:1rem;
+  align-items:start;
+}
+.models-side{
+  grid-template-columns:minmax(260px,340px);
+}
+.models-recommendations-panel{
+  position:sticky;
+  top:1rem;
+}
+.model-overview-card{
+  border:1px solid rgba(36,195,107,.16);
+  border-radius:var(--radius);
+  padding:.9rem;
+  background:linear-gradient(180deg,#0e1511,#090d0b);
+  box-shadow:0 12px 28px rgba(2,6,23,.16);
+  display:grid;
+  gap:.75rem;
+  min-width:0;
+}
+.model-card-subline{
+  margin-top:-.25rem;
+  color:var(--muted);
+  font-size:.76rem;
+  line-height:1.35;
+  overflow-wrap:anywhere;
+}
+.model-cap-list{
+  gap:.4rem;
+  margin-top:-.15rem;
+}
+.model-cap-pill{
+  margin:0;
+  font-size:.72rem;
+  letter-spacing:.02em;
+}
+.model-stats-grid{
+  margin-bottom:0;
+}
+.model-runtime-strip{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.35rem;
+  align-items:center;
+  padding:.55rem .65rem;
+  border:1px solid rgba(148,163,184,.16);
+  border-radius:.55rem;
+  background:rgba(15,23,42,.28);
+  color:var(--muted);
+  font-size:.76rem;
+}
+.model-runtime-strip span:first-child{
+  color:#f8fafc;
+  font-weight:700;
+}
+.model-card-actions{
+  margin-top:.1rem;
+  margin-bottom:0;
+}
+@media(max-width:900px){
+  .model-card-grid{
+    grid-template-columns:1fr;
+  }
+}

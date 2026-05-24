@@ -1,0 +1,45 @@
+/* Final Atlas page polish: standalone route help, viewport helpers, and route-scale controls. */
+.atlas-toolbar-actions{
+  display:inline-flex;
+  align-items:center;
+  gap:.35rem;
+  flex-wrap:wrap;
+}
+.atlas-route-help{
+  z-index:7;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.75rem;
+  padding:.55rem .75rem;
+  border-bottom:1px solid rgba(148,163,184,.14);
+  background:rgba(15,23,42,.55);
+  color:#cbd5e1;
+  font-size:.78rem;
+}
+.atlas-route-help div{
+  display:grid;
+  gap:.1rem;
+}
+.atlas-route-help b{
+  color:#e5eefb;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  font-size:.68rem;
+}
+.atlas-route-help span{color:var(--muted);}
+body.shell-route-atlas .atlas-toolbar{
+  gap:.55rem;
+  flex-wrap:wrap;
+}
+body.shell-route-atlas .atlas-summary{
+  flex:0 0 auto;
+}
+html[data-theme="light"] .atlas-route-help,
+body[data-theme="light"] .atlas-route-help{
+  background:rgba(248,250,252,.88);
+  border-bottom-color:rgba(148,163,184,.24);
+  color:#0f172a;
+}
+html[data-theme="light"] .atlas-route-help b,
+body[data-theme="light"] .atlas-route-help b{color:#0f172a;}

@@ -1,0 +1,283 @@
+/* PAC interface design system.
+   This file is intentionally loaded last so older page-specific CSS inherits one surface, spacing, and button language.
+   The PAC banner/header is not styled here; it remains stable across theme modes. */
+:root{
+  --pac-space-1:.35rem;
+  --pac-space-2:.55rem;
+  --pac-space-3:.75rem;
+  --pac-space-4:1rem;
+  --pac-space-5:1.35rem;
+  --pac-space-6:1.75rem;
+  --pac-radius-panel:10px;
+  --pac-radius-card:8px;
+  --pac-radius-control:6px;
+  --pac-surface-panel:linear-gradient(180deg,color-mix(in srgb,var(--panel) 92%,#020617),color-mix(in srgb,var(--bg) 88%,#020617));
+  --pac-surface-card:linear-gradient(180deg,color-mix(in srgb,var(--panel-2) 82%,#020617),color-mix(in srgb,var(--panel) 78%,#020617));
+  --pac-surface-card-hover:linear-gradient(180deg,color-mix(in srgb,var(--panel-2) 90%,var(--accent) 5%),color-mix(in srgb,var(--panel) 86%,#020617));
+  --pac-surface-inset:color-mix(in srgb,var(--bg) 82%,#020617);
+  --pac-line-subtle:color-mix(in srgb,var(--border) 64%,transparent);
+  --pac-line-strong:color-mix(in srgb,var(--accent) 42%,var(--border));
+  --pac-text-strong:#f8fafc;
+  --pac-text-body:#e5e7eb;
+  --pac-text-muted:var(--muted);
+  --pac-shadow-card:0 16px 38px rgba(0,0,0,.28);
+  --pac-shadow-soft:0 10px 28px rgba(0,0,0,.20);
+}
+
+/* Panels are full-width work areas; cards are focused objects inside them. */
+.content-area .tab-panel.active,
+.content-area .settings-layout,
+.content-area .dashboard-grid,
+.content-area .sessions-workspace{
+  gap:var(--pac-space-4);
+}
+
+.content-area .card,
+.content-area .provider-card,
+.content-area .endpoint-inventory-card,
+.content-area .workspace-card,
+.content-area .marketplace-card,
+.content-area .observe-status-card,
+.content-area .profile-card,
+.content-area .model-overview-card,
+.modal-card,
+.update-box{
+  background:var(--pac-surface-card) !important;
+  border:1px solid var(--pac-line-subtle) !important;
+  border-radius:var(--pac-radius-card) !important;
+  box-shadow:var(--pac-shadow-card) !important;
+  color:var(--pac-text-body);
+}
+
+.content-area .card,
+.content-area .provider-card,
+.content-area .endpoint-inventory-card,
+.content-area .workspace-card,
+.content-area .marketplace-card,
+.content-area .observe-status-card,
+.content-area .profile-card,
+.content-area .model-overview-card,
+.update-box{
+  padding:var(--pac-space-4) !important;
+}
+
+.content-area .card:hover,
+.content-area .provider-card:hover,
+.content-area .endpoint-inventory-card:hover,
+.content-area .workspace-card:hover,
+.content-area .marketplace-card-button:hover,
+.content-area .profile-card:hover{
+  background:var(--pac-surface-card-hover) !important;
+  border-color:var(--pac-line-strong) !important;
+}
+
+.content-area .card.wide,
+.content-area .wide,
+.content-area .session-chat-card,
+.content-area .dashboard-topology-card{
+  grid-column:1 / -1;
+}
+
+.content-area .card.wide,
+.content-area .session-chat-card,
+.content-area .dashboard-topology-card{
+  border-radius:var(--pac-radius-panel) !important;
+  padding:var(--pac-space-5) !important;
+}
+
+.content-area .hero,
+.content-area .dashboard-topology-card,
+.content-area .session-chat-card{
+  background:var(--pac-surface-panel) !important;
+  border-color:var(--pac-line-strong) !important;
+}
+
+.section-heading,
+.provider-card-head,
+.endpoint-card-header,
+.dashboard-private-head,
+.events-rail-header,
+.personal-profile-header{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:var(--pac-space-4);
+  padding-bottom:var(--pac-space-3);
+  margin-bottom:var(--pac-space-3);
+  border-bottom:1px solid color-mix(in srgb,var(--pac-line-subtle) 70%,transparent);
+}
+
+.section-heading h2,
+.section-heading h3,
+.dashboard-private-head h2,
+.provider-title-block h3,
+.endpoint-card-header h3{
+  margin:0;
+  color:var(--pac-text-strong);
+  letter-spacing:.01em;
+}
+
+.content-area .muted,
+.modal-card .muted,
+.content-area small{
+  color:var(--pac-text-muted) !important;
+}
+
+/* Buttons: primary is action, ghost is secondary, danger is destructive. */
+.content-area button:not(.shell-nav-item):not(.shell-nav-section-toggle):not(.shell-nav-tool-button),
+.modal-card button,
+.events-rail button{
+  border-radius:var(--pac-radius-control) !important;
+  min-height:34px;
+  border:1px solid color-mix(in srgb,var(--accent) 44%,var(--border)) !important;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 26%,#0b1b14),color-mix(in srgb,var(--accent-strong) 18%,#08120d)) !important;
+  color:#f8fafc !important;
+  box-shadow:0 8px 20px rgba(0,0,0,.18);
+}
+
+.content-area button:not(.shell-nav-item):not(.shell-nav-section-toggle):not(.shell-nav-tool-button):hover,
+.modal-card button:hover,
+.events-rail button:hover{
+  border-color:var(--accent) !important;
+  transform:translateY(-1px);
+}
+
+.content-area .ghost-button,
+.modal-card .ghost-button,
+.events-rail .ghost-button{
+  background:color-mix(in srgb,var(--panel) 72%,#020617) !important;
+  border-color:var(--pac-line-subtle) !important;
+  color:color-mix(in srgb,var(--pac-text-strong) 82%,var(--muted)) !important;
+  box-shadow:none !important;
+}
+
+.content-area .danger-button,
+.modal-card .danger-button{
+  background:linear-gradient(180deg,rgba(127,29,29,.38),rgba(69,10,10,.42)) !important;
+  border-color:rgba(248,113,113,.55) !important;
+  color:#fecaca !important;
+}
+
+.button-row,
+.compact-actions,
+.endpoint-card-actions,
+.workspace-card-actions,
+.provider-actions{
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:var(--pac-space-2);
+}
+
+/* Forms and inset blocks should read as inputs inside a card, not separate panels. */
+.content-area input,
+.content-area select,
+.content-area textarea,
+.modal-card input,
+.modal-card select,
+.modal-card textarea{
+  border-radius:var(--pac-radius-control) !important;
+  background:var(--pac-surface-inset) !important;
+  border-color:var(--pac-line-subtle) !important;
+}
+
+.inline-result,
+.pack-summary,
+.endpoint-technical,
+.dashboard-topology-details,
+.remote-provider,
+.provider-device-panel,
+.endpoint-card-summary > div,
+.endpoint-hardware-strip > div,
+.workspace-card-grid div{
+  background:var(--pac-surface-inset) !important;
+  border:1px solid var(--pac-line-subtle) !important;
+  border-radius:var(--pac-radius-control) !important;
+}
+
+.pack-summary,
+.remote-provider,
+.provider-device-panel{
+  padding:var(--pac-space-3) !important;
+}
+
+.pill,
+.endpoint-status-badge,
+.provider-capability-pill,
+.endpoint-alert-chip,
+.workspace-card-title span{
+  border-radius:999px !important;
+  font-weight:800;
+}
+
+/* Wizards use an explicit progress rail, body, and footer action row. */
+.modal-backdrop{
+  backdrop-filter:blur(12px);
+}
+.modal-card{
+  width:min(980px,calc(100vw - 2rem));
+  max-height:calc(100vh - 2rem);
+  padding:var(--pac-space-5) !important;
+  overflow:auto;
+}
+.wizard-progress{
+  display:grid !important;
+  grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+  gap:var(--pac-space-2) !important;
+  margin:0 0 var(--pac-space-4) !important;
+}
+.wizard-progress .ghost-button{
+  justify-content:center;
+  min-height:38px;
+  position:relative;
+}
+.wizard-progress .ghost-button.active{
+  background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 22%,var(--panel)),color-mix(in srgb,var(--accent-strong) 14%,var(--panel))) !important;
+  border-color:var(--accent) !important;
+  color:var(--pac-text-strong) !important;
+  box-shadow:inset 0 -3px 0 var(--accent) !important;
+}
+
+@media(max-width:900px){
+  .section-heading,
+  .provider-card-head,
+  .endpoint-card-header,
+  .dashboard-private-head{
+    flex-direction:column;
+  }
+  .content-area .card.wide,
+  .content-area .session-chat-card,
+  .content-area .dashboard-topology-card,
+  .modal-card{
+    padding:var(--pac-space-4) !important;
+  }
+}
+
+html[data-theme="light"]{
+  --pac-surface-panel:linear-gradient(180deg,#ffffff,#f8fafc);
+  --pac-surface-card:linear-gradient(180deg,#ffffff,#f8fafc);
+  --pac-surface-card-hover:linear-gradient(180deg,#f0fdf4,#ffffff);
+  --pac-surface-inset:#f8fafc;
+  --pac-line-subtle:#dbe7ef;
+  --pac-line-strong:#22c55e;
+  --pac-text-strong:#0f172a;
+  --pac-text-body:#1f2937;
+  --pac-shadow-card:0 14px 34px rgba(15,23,42,.10);
+  --pac-shadow-soft:0 8px 22px rgba(15,23,42,.08);
+}
+html[data-theme="terminal"]{
+  --pac-surface-panel:linear-gradient(180deg,#07110d,#030807);
+  --pac-surface-card:linear-gradient(180deg,#0b1d14,#06100c);
+  --pac-surface-card-hover:linear-gradient(180deg,#10251a,#07110d);
+  --pac-surface-inset:#030807;
+  --pac-line-subtle:rgba(60,255,143,.20);
+  --pac-line-strong:rgba(60,255,143,.48);
+}
+html[data-theme="dusk"]{
+  --pac-surface-panel:linear-gradient(180deg,#151024,#0b0816);
+  --pac-surface-card:linear-gradient(180deg,#1e1735,#111827);
+  --pac-surface-card-hover:linear-gradient(180deg,#261d45,#151024);
+  --pac-surface-inset:#0f172a;
+  --pac-line-subtle:rgba(56,189,248,.20);
+  --pac-line-strong:rgba(56,189,248,.48);
+}

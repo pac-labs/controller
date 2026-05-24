@@ -176,18 +176,17 @@ body[data-theme="light"] .directory-wizard-steps span{
   background:#f8fafc;
 }
 html[data-theme="light"] .directory-wizard-steps span.active,
-html[data-theme="light"] .directory-wizard-steps span:nth-child(2),
-html[data-theme="light"] .directory-wizard-steps span:nth-child(3),
-body[data-theme="light"] .directory-wizard-steps span.active,
-body[data-theme="light"] .directory-wizard-steps span:nth-child(2),
-body[data-theme="light"] .directory-wizard-steps span:nth-child(3){
+body[data-theme="light"] .directory-wizard-steps span.active{
   color:#14532d;
   background:#ecfdf5;
+  border-color:rgba(22,101,52,.34);
 }
 html[data-theme="light"] .directory-create-type,
 body[data-theme="light"] .directory-create-type,
 html[data-theme="light"] .directory-create-form-shell,
-body[data-theme="light"] .directory-create-form-shell{
+body[data-theme="light"] .directory-create-form-shell,
+html[data-theme="light"] .directory-create-review,
+body[data-theme="light"] .directory-create-review{
   border-color:rgba(22,101,52,.14);
   background:#f8fafc;
   color:#0f172a;

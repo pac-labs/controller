@@ -220,6 +220,7 @@ function renderAtlasControls(graph) {
     <div class="atlas-summary"><b>${summary.groups || Object.keys(ATLAS_GROUPS).length}</b><span>groups</span><b>${graph.nodes.length}</b><span>nodes</span><b>${graph.edges.length}</b><span>links</span></div>
     <label>Zoom <input id="atlasZoomRange" type="range" min="0.55" max="1.35" step="0.05" value="${zoom}" /></label>
     <label>Detail <select id="atlasDetailSelect"><option value="auto"${detail === 'auto' ? ' selected' : ''}>Auto</option><option value="overview"${detail === 'overview' ? ' selected' : ''}>Overview</option><option value="infrastructure"${detail === 'infrastructure' ? ' selected' : ''}>Infrastructure</option><option value="full"${detail === 'full' ? ' selected' : ''}>Full</option></select></label>
+    <div class="atlas-toolbar-actions"><button id="atlasFitView" class="ghost-button mini-button" type="button">Fit</button><button id="atlasCenterView" class="ghost-button mini-button" type="button">Center</button></div>
   </div>`;
 }
 
@@ -244,6 +245,14 @@ function renderDashboardTopology(rawGraph) {
     localStorage.setItem(DASHBOARD_ATLAS_DETAIL_KEY, String(ev.target.value));
     renderDashboardTopology(window.__pacDashboardTopology || rawGraph);
   });
+  document.getElementById('atlasFitView')?.addEventListener('click', () => {
+    fitAtlasViewport(el);
+    window.setTimeout(() => renderDashboardTopology(window.__pacDashboardTopology || rawGraph), 0);
+  });
+  document.getElementById('atlasCenterView')?.addEventListener('click', () => {
+    centerAtlasViewport(el);
+    window.setTimeout(() => renderDashboardTopology(window.__pacDashboardTopology || rawGraph), 0);
+  });
   el.querySelectorAll('.atlas-node').forEach((btn) => {
     const node = graph.nodes.find((item) => item.id === btn.dataset.nodeId);
     if (node) btn.onclick = () => selectAtlasNode(node, graph);
@@ -257,6 +266,7 @@ function renderDashboardTopology(rawGraph) {
     },
   });
   requestAnimationFrame(() => drawAtlasEdges(el, graph, positions, {width: layout.width, height: layout.height}));
+  window.PacDashboardAtlasPage?.afterRender?.(el);
   const firstNode = graph.nodes.find((node) => node.id === 'controller:pac') || graph.nodes[0];
   if (firstNode) selectAtlasNode(firstNode, graph);
 }

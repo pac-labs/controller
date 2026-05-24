@@ -1,0 +1,156 @@
+/* Settings panel layout and controller health status cards. */
+.settings-subnav{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.4rem;
+  margin-bottom:1rem;
+  padding-bottom:.8rem;
+  border-bottom:1px solid rgba(96,165,250,.18);
+  align-items:center;
+  overflow:visible;
+}
+.settings-sub-btn{
+  min-height:2.2rem;
+  padding:.5rem .85rem;
+  line-height:1.15;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  overflow:visible;
+}
+.settings-panel{
+  display:block;
+  min-height:0;
+  flex:1 1 auto;
+}
+.settings-panel-inner{
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:1rem;
+  align-items:start;
+  min-height:100%;
+}
+.settings-panel-single .settings-main{
+  min-width:0;
+  min-height:100%;
+}
+.settings-main{
+  display:grid;
+  gap:1rem;
+  min-width:0;
+  min-height:100%;
+  align-content:start;
+}
+#settings-tab.active{
+  display:flex;
+  flex-direction:column;
+  min-height:calc(100vh - 176px);
+  height:100%;
+  overflow:hidden;
+}
+#settings-tab .settings-panel{
+  min-height:100%;
+  display:flex;
+  flex:1 1 auto;
+  overflow:hidden;
+}
+#settings-tab .settings-panel-inner,
+#settings-tab .settings-main{
+  min-height:100%;
+  height:100%;
+}
+#settings-tab .setting-cube.wide{
+  min-height:100%;
+  max-height:none;
+  overflow:visible;
+}
+#settings-updates .setting-cube.wide{
+  display:flex;
+  flex-direction:column;
+}
+#settings-updates .updates-layout{
+  flex:1 1 auto;
+}
+.health-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:.7rem;
+}
+.health-section{
+  border:1px solid #241a3b;
+  background:#0a0810;
+  padding:.75rem;
+  display:grid;
+  gap:.4rem;
+}
+.health-section h3{
+  margin:0 0 .2rem;
+  font-size:.8rem;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:#c8c1dc;
+}
+.health-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:.6rem;
+  align-items:center;
+  padding:.28rem 0;
+  border-top:1px solid rgba(36,195,107,.1);
+}
+.health-row:first-of-type{border-top:0}
+.health-row span{color:var(--muted);font-size:.78rem}
+.health-row b{color:#fff;font-size:.82rem;text-align:right;word-break:break-word}
+.health-row.tone-ok b{color:#86efac}
+.health-row.tone-warn b{color:#fcd34d}
+.health-row.tone-danger b{color:#fda4af}
+@media(max-width:1100px){.health-grid{grid-template-columns:1fr}}
+@media(max-width:1180px){
+  .admin-summary-grid,
+  .admin-directory-grid,
+  .admin-management-grid,
+  .admin-inline-grid{
+    grid-template-columns:1fr;
+  }
+}
+
+html[data-theme="light"] .build-stamp,
+body[data-theme="light"] .build-stamp{
+  background:rgba(255,255,255,.9);
+  border-color:rgba(37,99,235,.18);
+  color:#1e3a8a;
+}
+html[data-theme="light"] .header-control-box,
+body[data-theme="light"] .header-control-box{
+  background:rgba(255,255,255,.92);
+  border-color:rgba(37,99,235,.16);
+  color:#0f172a;
+}
+html[data-theme="light"] .header-control-label,
+body[data-theme="light"] .header-control-label{
+  color:#1d4ed8;
+}
+html[data-theme="light"] .header-control-badge,
+body[data-theme="light"] .header-control-badge{
+  background:rgba(241,245,249,.95);
+  color:#334155;
+  border-color:rgba(37,99,235,.14);
+}
+html[data-theme="light"] .health-section,
+body[data-theme="light"] .health-section{
+  background:rgba(255,255,255,.92);
+  border-color:rgba(37,99,235,.12);
+}
+html[data-theme="light"] .health-section h3,
+body[data-theme="light"] .health-section h3{
+  color:#334155;
+}
+html[data-theme="light"] .health-row,
+body[data-theme="light"] .health-row{
+  border-top-color:rgba(37,99,235,.08);
+}
+html[data-theme="light"] .health-row b,
+body[data-theme="light"] .health-row b{
+  color:#0f172a;
+}
+

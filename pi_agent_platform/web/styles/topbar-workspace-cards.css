@@ -1,0 +1,133 @@
+/* Monochrome top bar icons, workspace cards, and agent context cards. */
+/* PAC v1.0.284 CSS split: Top-bar icons, workspace cards, provider discovery, model inventory, and explicit theme controls.
+   Source range from the former monolithic styles.css: lines 2699-3149. */
+
+/* v1.0.89: monochrome top-bar icons. Green stays in brand surfaces; utility icons follow light/dark text color. */
+.monochrome-icon{color:var(--text);}
+.monochrome-icon svg{width:1.15rem;height:1.15rem;display:block;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.monochrome-icon:hover{color:#fff;background:rgba(255,255,255,.08);}
+
+/* v1.0.90: cleaner monochrome top icons and movable/data-backed workspace cards. */
+.monochrome-icon svg { display:none !important; }
+.monochrome-icon span {
+  width: 1.08rem;
+  height: 1.08rem;
+  display: inline-block;
+  background: currentColor;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+.clean-download-icon span {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M11 3h2v10.2l3.6-3.6L18 11l-6 6-6-6 1.4-1.4 3.6 3.6V3ZM5 19h14v2H5v-2Z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M11 3h2v10.2l3.6-3.6L18 11l-6 6-6-6 1.4-1.4 3.6 3.6V3ZM5 19h14v2H5v-2Z'/%3E%3C/svg%3E");
+}
+.clean-bell-icon span {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M12 22a2.8 2.8 0 0 0 2.65-2h-5.3A2.8 2.8 0 0 0 12 22Zm7-5h-2V9a5 5 0 0 0-10 0v8H5c1.1-1.4 1.7-3.1 1.7-5.1V9a5.3 5.3 0 0 1 10.6 0v2.9c0 2 .6 3.7 1.7 5.1Z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M12 22a2.8 2.8 0 0 0 2.65-2h-5.3A2.8 2.8 0 0 0 12 22Zm7-5h-2V9a5 5 0 0 0-10 0v8H5c1.1-1.4 1.7-3.1 1.7-5.1V9a5.3 5.3 0 0 1 10.6 0v2.9c0 2 .6 3.7 1.7 5.1Z'/%3E%3C/svg%3E");
+}
+.workspace-manager { overflow:hidden; }
+.workspace-form { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.workspace-list { display:grid; gap:.75rem; margin-top:1rem; }
+.workspace-card-grid-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:.9rem; margin-top:1rem; }
+.workspace-card {
+  border:1px solid rgba(96,165,250,.18);
+  background: linear-gradient(180deg, rgba(12,25,48,.88), rgba(9,15,28,.88));
+  border-radius: .55rem;
+  padding: .8rem;
+}
+.workspace-card:hover { border-color: rgba(96,165,250,.38); background: rgba(30,64,175,.18); }
+.workspace-card-title { display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-bottom:.65rem; }
+.workspace-card-title b { color:#eff6ff; }
+.workspace-card-title span { color:#bfdbfe; font-size:.78rem; font-weight:800; border:1px solid rgba(96,165,250,.25); padding:.15rem .45rem; border-radius:.35rem; }
+.workspace-card-badges { display:flex; flex-wrap:wrap; gap:.35rem; justify-content:flex-end; }
+.workspace-card-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:.5rem; margin-bottom:.65rem; }
+.workspace-card-grid div { border:1px solid rgba(148,163,184,.12); background:rgba(15,23,42,.45); padding:.45rem; border-radius:.4rem; min-width:0; }
+.workspace-card-grid small { display:block; color:var(--muted); text-transform:uppercase; font-size:.68rem; letter-spacing:.06em; }
+.workspace-card-grid b { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.84rem; }
+.workspace-card code { display:block; white-space:pre-wrap; overflow-wrap:anywhere; color:#dbeafe; }
+.workspace-card-actions { display:flex; flex-wrap:wrap; gap:.45rem; margin-top:.8rem; }
+.agent-context-step { min-height:340px; }
+.agent-context-card{
+  border:1px solid rgba(96,165,250,.16);
+  background:linear-gradient(180deg, rgba(14,22,38,.96), rgba(8,14,26,.96));
+  border-radius:.7rem;
+  padding:.9rem;
+  display:grid;
+  gap:.75rem;
+  min-width:0;
+  box-shadow:0 16px 32px rgba(0,0,0,.22);
+}
+.agent-context-card.selected{ border-color:rgba(34,197,94,.68); box-shadow:0 0 0 1px rgba(34,197,94,.22), 0 16px 32px rgba(0,0,0,.24); }
+.agent-context-card-head{ display:flex; justify-content:space-between; gap:.9rem; align-items:flex-start; }
+.agent-context-card-head h3{ margin:0; color:#f8fafc; }
+.agent-context-card-badges{ display:flex; flex-wrap:wrap; gap:.35rem; justify-content:flex-end; }
+.agent-context-chip{
+  display:inline-flex;
+  align-items:center;
+  padding:.18rem .45rem;
+  border-radius:999px;
+  border:1px solid rgba(148,163,184,.22);
+  background:rgba(15,23,42,.62);
+  color:#dbeafe;
+  font-size:.72rem;
+  font-weight:700;
+  text-transform:lowercase;
+}
+.agent-context-chip.system{
+  border-color:rgba(34,197,94,.35);
+  background:rgba(20,83,45,.36);
+  color:#bbf7d0;
+}
+.agent-context-stat-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+  gap:.55rem;
+}
+.agent-context-stat-grid div{
+  border:1px solid rgba(148,163,184,.12);
+  background:rgba(15,23,42,.42);
+  border-radius:.5rem;
+  padding:.5rem .55rem;
+  min-width:0;
+}
+.agent-context-stat-grid small{
+  display:block;
+  color:var(--muted);
+  text-transform:uppercase;
+  font-size:.67rem;
+  letter-spacing:.06em;
+}
+.agent-context-stat-grid b{
+  display:block;
+  color:#f8fafc;
+  font-size:.84rem;
+  line-height:1.35;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.agent-context-card-footer{
+  display:flex;
+  justify-content:space-between;
+  gap:.8rem;
+  flex-wrap:wrap;
+  padding-top:.1rem;
+}
+@media (prefers-color-scheme: light) {
+  .workspace-card { background: linear-gradient(180deg, rgba(239,246,255,.96), rgba(255,255,255,.96)); border-color: rgba(37,99,235,.18); }
+  .workspace-card:hover { background: rgba(219,234,254,.72); }
+  .workspace-card-title b { color:#0f172a; }
+  .workspace-card-title span { color:#1d4ed8; border-color: rgba(37,99,235,.22); }
+  .workspace-card code { color:#1e3a8a; }
+  .agent-context-card{ background:linear-gradient(180deg, rgba(239,246,255,.98), rgba(255,255,255,.98)); border-color:rgba(37,99,235,.16); }
+  .agent-context-card-head h3,
+  .agent-context-stat-grid b{ color:#0f172a; }
+  .agent-context-chip{ background:rgba(239,246,255,.92); color:#1e3a8a; border-color:rgba(37,99,235,.16); }
+  .agent-context-chip.system{ background:rgba(220,252,231,.95); color:#166534; border-color:rgba(34,197,94,.28); }
+  .agent-context-stat-grid div{ background:rgba(248,250,252,.96); border-color:rgba(148,163,184,.18); }
+}
+

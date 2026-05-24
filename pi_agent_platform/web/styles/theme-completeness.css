@@ -1,0 +1,63 @@
+/* Theme completion pass for shared surfaces that used to lean on dark-only values. */
+html[data-theme="light"] .modal-card,
+body[data-theme="light"] .modal-card,
+html[data-theme="light"] .wide-modal,
+body[data-theme="light"] .wide-modal{
+  background:linear-gradient(180deg,#ffffff,#f8fafc) !important;
+  border-color:rgba(148,163,184,.32) !important;
+  color:#0f172a !important;
+}
+html[data-theme="terminal"] .modal-card,
+body[data-theme="terminal"] .modal-card,
+html[data-theme="dusk"] .modal-card,
+body[data-theme="dusk"] .modal-card{
+  background:linear-gradient(180deg,var(--panel),var(--bg)) !important;
+  border-color:color-mix(in srgb, var(--accent) 26%, transparent) !important;
+}
+html[data-theme="light"] pre,
+html[data-theme="light"] code,
+html[data-theme="light"] .inline-result,
+body[data-theme="light"] pre,
+body[data-theme="light"] code,
+body[data-theme="light"] .inline-result{
+  background:#f8fafc !important;
+  border-color:#dbe7ef !important;
+  color:#0f172a !important;
+}
+html[data-theme="terminal"] pre,
+html[data-theme="terminal"] code,
+html[data-theme="terminal"] .inline-result,
+body[data-theme="terminal"] pre,
+body[data-theme="terminal"] code,
+body[data-theme="terminal"] .inline-result{
+  background:#06100c !important;
+  border-color:rgba(60,255,143,.2) !important;
+  color:#ecfff3 !important;
+}
+html[data-theme="dusk"] pre,
+html[data-theme="dusk"] code,
+html[data-theme="dusk"] .inline-result,
+body[data-theme="dusk"] pre,
+body[data-theme="dusk"] code,
+body[data-theme="dusk"] .inline-result{
+  background:#111827 !important;
+  border-color:rgba(56,189,248,.2) !important;
+  color:#f4f7ff !important;
+}
+html[data-theme="light"] table,
+body[data-theme="light"] table{
+  color:#0f172a;
+}
+html[data-theme="light"] .pill,
+body[data-theme="light"] .pill{
+  background:#f1f5f9;
+  border-color:#dbe7ef;
+  color:#334155;
+}
+html[data-theme="terminal"] .pill,
+body[data-theme="terminal"] .pill,
+html[data-theme="dusk"] .pill,
+body[data-theme="dusk"] .pill{
+  background:color-mix(in srgb, var(--accent) 10%, var(--panel));
+  border-color:color-mix(in srgb, var(--accent) 24%, transparent);
+}

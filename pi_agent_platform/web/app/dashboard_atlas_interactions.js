@@ -23,6 +23,12 @@ function saveAtlasPan(x, y) {
   try { localStorage.setItem(DASHBOARD_ATLAS_PAN_KEY, JSON.stringify({x, y})); } catch (_) {}
 }
 
+function setAtlasPanValue(x, y) {
+  const next = {x: Number.isFinite(Number(x)) ? Number(x) : 0, y: Number.isFinite(Number(y)) ? Number(y) : 0};
+  saveAtlasPan(next.x, next.y);
+  return next;
+}
+
 function setAtlasZoomValue(zoom) {
   const nextZoom = atlasClampZoom(zoom);
   try { localStorage.setItem(ATLAS_INTERACTION_ZOOM_KEY, String(nextZoom)); } catch (_) {}
@@ -33,6 +39,54 @@ function applyAtlasTransform(viewport, pan, zoom) {
   const canvas = viewport?.querySelector('.atlas-canvas');
   if (!canvas) return;
   canvas.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`;
+}
+
+function atlasCanvasBounds(viewport) {
+  const canvas = viewport?.querySelector('.atlas-canvas');
+  if (!viewport || !canvas) return null;
+  return {
+    viewportWidth: Math.max(1, viewport.clientWidth || 1),
+    viewportHeight: Math.max(1, viewport.clientHeight || 1),
+    canvasWidth: Math.max(1, Number.parseFloat(canvas.style.width || canvas.dataset.atlasWidth || '1')),
+    canvasHeight: Math.max(1, Number.parseFloat(canvas.style.height || canvas.dataset.atlasHeight || '1')),
+  };
+}
+
+function applyAtlasViewportState(container, zoom, pan) {
+  const viewport = container?.querySelector('.atlas-viewport');
+  if (!viewport) return;
+  const nextZoom = setAtlasZoomValue(zoom);
+  const nextPan = setAtlasPanValue(pan?.x || 0, pan?.y || 0);
+  const range = document.getElementById('atlasZoomRange');
+  if (range) range.value = String(nextZoom);
+  applyAtlasTransform(viewport, nextPan, nextZoom);
+}
+
+function centerAtlasViewport(container) {
+  const viewport = container?.querySelector('.atlas-viewport');
+  const bounds = atlasCanvasBounds(viewport);
+  if (!bounds) return;
+  const zoom = atlasClampZoom(localStorage.getItem(ATLAS_INTERACTION_ZOOM_KEY) || '0.82');
+  const pan = {
+    x: (bounds.viewportWidth - bounds.canvasWidth * zoom) / 2,
+    y: Math.min(24, (bounds.viewportHeight - bounds.canvasHeight * zoom) / 2),
+  };
+  applyAtlasViewportState(container, zoom, pan);
+}
+
+function fitAtlasViewport(container) {
+  const viewport = container?.querySelector('.atlas-viewport');
+  const bounds = atlasCanvasBounds(viewport);
+  if (!bounds) return;
+  const nextZoom = atlasClampZoom(Math.min(ATLAS_MAX_ZOOM, Math.max(ATLAS_MIN_ZOOM, Math.min(
+    (bounds.viewportWidth - 48) / bounds.canvasWidth,
+    (bounds.viewportHeight - 48) / bounds.canvasHeight,
+  ))));
+  const pan = {
+    x: (bounds.viewportWidth - bounds.canvasWidth * nextZoom) / 2,
+    y: (bounds.viewportHeight - bounds.canvasHeight * nextZoom) / 2,
+  };
+  applyAtlasViewportState(container, nextZoom, pan);
 }
 
 function setupAtlasViewport(container, options = {}) {

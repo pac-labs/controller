@@ -1,0 +1,35 @@
+/* Release apply overlay and solid dark header surface. */
+/* PAC v1.0.284 CSS split: Release apply overlay, mobile usability rules, session mobile layout, and destructive button states.
+   Source range from the former monolithic styles.css: lines 4753-5119. */
+
+/* v1.0.176: solid dark header surface and release-apply blackout overlay */
+.blackout-overlay{
+  background:rgba(0,0,0,.94) !important;
+  backdrop-filter:none !important;
+  z-index:240 !important;
+}
+.blackout-card{
+  width:min(720px,92vw);
+  max-height:none;
+  overflow:visible;
+  background:#080f14 !important;
+  border:1px solid rgba(148,163,184,.24);
+  box-shadow:0 28px 80px rgba(0,0,0,.72);
+}
+.blackout-card .button-row{
+  justify-content:flex-end;
+  margin-top:1rem;
+}
+html[data-theme="dark"],
+body[data-theme="dark"],
+html[data-theme="dark"] .app-header,
+html[data-theme="dark"] .tabs,
+html[data-theme="dark"] .tabs-wrap,
+body[data-theme="dark"] .app-header,
+body[data-theme="dark"] .tabs,
+body[data-theme="dark"] .tabs-wrap{
+  background:#080f14 !important;
+  background-image:none !important;
+  box-shadow:none !important;
+}
+

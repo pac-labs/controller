@@ -1,0 +1,130 @@
+/* Focused configuration pages that use the PAC design-system primitives without growing legacy settings CSS. */
+.config-credentials-page{
+  display:grid;
+  gap:var(--pac-space-4,1rem);
+}
+
+.config-page-hero .section-heading{
+  margin-bottom:var(--pac-space-4,.9rem);
+}
+
+.config-summary-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:var(--pac-space-3,.75rem);
+}
+
+.config-summary-tile{
+  min-height:80px;
+  padding:var(--pac-space-4,1rem);
+  border:1px solid var(--pac-line-subtle,rgba(148,163,184,.22));
+  border-radius:var(--pac-radius-card,8px);
+  background:var(--pac-surface-inset,rgba(2,6,23,.55));
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:.25rem;
+}
+
+.config-summary-tile strong{
+  color:var(--pac-text-strong,#f8fafc);
+  font-size:1.55rem;
+  line-height:1;
+}
+
+.config-summary-tile span{
+  color:var(--pac-text-muted,var(--muted));
+  font-size:.82rem;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+
+.config-credential-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:var(--pac-space-4,1rem);
+}
+
+.config-credential-column{
+  min-width:0;
+}
+
+.config-credential-list{
+  display:grid;
+  gap:var(--pac-space-3,.75rem);
+}
+
+.config-credential-item{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:var(--pac-space-3,.75rem);
+  padding:var(--pac-space-3,.75rem);
+  border:1px solid var(--pac-line-subtle,rgba(148,163,184,.22));
+  border-radius:var(--pac-radius-card,8px);
+  background:var(--pac-surface-inset,rgba(2,6,23,.55));
+}
+
+.config-credential-item h4{
+  margin:0 0 .25rem;
+  color:var(--pac-text-strong,#f8fafc);
+}
+
+.config-credential-pills{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.35rem;
+  margin-top:.35rem;
+}
+
+.config-credential-pill{
+  display:inline-flex;
+  padding:.15rem .45rem;
+  border:1px solid var(--pac-line-subtle,rgba(148,163,184,.22));
+  color:var(--pac-text-muted,var(--muted));
+  background:color-mix(in srgb,var(--pac-surface-inset) 75%,transparent);
+}
+
+.config-empty-state{
+  padding:var(--pac-space-4,1rem);
+  border:1px dashed var(--pac-line-subtle,rgba(148,163,184,.22));
+  border-radius:var(--pac-radius-card,8px);
+  color:var(--pac-text-muted,var(--muted));
+  text-align:center;
+}
+
+.config-audit-card pre{
+  max-height:220px;
+  overflow:auto;
+}
+
+.config-credential-modal textarea{
+  min-height:94px;
+}
+
+.config-credential-form-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:var(--pac-space-3,.75rem);
+}
+
+.config-credential-value-field,
+#configCredentialMetaWrap{
+  grid-column:1 / -1;
+}
+
+.config-credential-progress .ghost-button[disabled]{
+  opacity:.62;
+  cursor:default;
+}
+
+@media(max-width:980px){
+  .config-credential-grid,
+  .config-credential-form-grid{
+    grid-template-columns:1fr;
+  }
+  .config-credential-item{
+    flex-direction:column;
+  }
+}

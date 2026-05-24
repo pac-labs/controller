@@ -1,0 +1,83 @@
+.config-route-surface {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.config-route-card {
+  border-color: color-mix(in srgb, var(--pac-accent, #74f2b3) 20%, var(--border, rgba(255,255,255,.12)));
+}
+
+.config-route-card > .section-heading {
+  align-items: flex-start;
+}
+
+.config-route-grid,
+.config-shortcut-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.config-route-tile,
+.config-shortcut-card {
+  border: 1px solid var(--card-border, rgba(255,255,255,.12));
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface-elevated, #101827) 82%, transparent);
+  padding: 14px;
+  min-height: 98px;
+  box-shadow: var(--pac-card-shadow, 0 16px 40px rgba(0,0,0,.18));
+}
+
+.config-route-tile b,
+.config-shortcut-card b {
+  display: block;
+  font-size: 1.25rem;
+  line-height: 1.1;
+  color: var(--text, #f7fbff);
+}
+
+.config-route-tile span,
+.config-shortcut-card span {
+  display: block;
+  margin-top: 6px;
+  font-weight: 700;
+}
+
+.config-route-tile small {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted, #9fb0c7);
+  line-height: 1.35;
+}
+
+.config-route-tile.ok {
+  border-color: color-mix(in srgb, #70f0a2 42%, var(--card-border, rgba(255,255,255,.12)));
+}
+
+.config-route-tile.warn {
+  border-color: color-mix(in srgb, #f6c86f 48%, var(--card-border, rgba(255,255,255,.12)));
+}
+
+.config-shortcut-card {
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+
+.config-shortcut-card:hover,
+.config-shortcut-card:focus-visible {
+  border-color: var(--pac-accent, #74f2b3);
+  transform: translateY(-1px);
+}
+
+.directory-count-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+html[data-theme="light"] .config-route-tile,
+body[data-theme="light"] .config-route-tile,
+html[data-theme="light"] .config-shortcut-card,
+body[data-theme="light"] .config-shortcut-card {
+  background: rgba(255,255,255,.86);
+}
