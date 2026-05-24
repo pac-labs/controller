@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import hashlib
 import json
 import os
@@ -123,6 +124,15 @@ def _acquire_single_instance_lock() -> object:
     """Prevent two PAC servers from using the same ~/.pacp state."""
     home = ensure_pacp_layout()
     lock_path = pacp_path('run', 'server.lock')
+    cache_name = '_PAC_SINGLE_INSTANCE_LOCKS'
+    cached_locks = getattr(builtins, cache_name, None)
+    if not isinstance(cached_locks, dict):
+        cached_locks = {}
+        setattr(builtins, cache_name, cached_locks)
+    cached_key = str(lock_path.resolve())
+    cached_lock = cached_locks.get(cached_key)
+    if cached_lock is not None and not getattr(cached_lock, 'closed', False):
+        return cached_lock
     lock_file = lock_path.open('w')
     try:
         import fcntl
@@ -137,6 +147,7 @@ def _acquire_single_instance_lock() -> object:
     lock_file.truncate()
     lock_file.write(f'pid={os.getpid()}\nhome={home}\n')
     lock_file.flush()
+    cached_locks[cached_key] = lock_file
     return lock_file
 
 
