@@ -3,6 +3,7 @@
 const DASHBOARD_WIDGET_KEY = 'pac-dashboard-widgets-v1';
 const DASHBOARD_ATLAS_ZOOM_KEY = 'pac-dashboard-atlas-zoom-v1';
 const DASHBOARD_ATLAS_DETAIL_KEY = 'pac-dashboard-atlas-detail-v1';
+let dashboardAtlasWheelRenderTimer = null;
 const DASHBOARD_DEFAULT_WIDGETS = ['topology', 'overview', 'execution', 'components', 'readiness', 'events', 'sessions'];
 const DASHBOARD_WIDGETS = [
   {id: 'overview', label: 'Operations overview'},
@@ -144,31 +145,6 @@ function atlasVisibleGraph(rawGraph) {
   return {nodes, edges, summary: rawGraph?.summary || {}};
 }
 
-function atlasLayout(nodes) {
-  const byGroup = new Map();
-  nodes.forEach((node) => {
-    const group = ATLAS_GROUPS[node.group] ? node.group : 'controller';
-    if (!byGroup.has(group)) byGroup.set(group, []);
-    byGroup.get(group).push(node);
-  });
-  const positions = {};
-  byGroup.forEach((items, groupKey) => {
-    const group = ATLAS_GROUPS[groupKey];
-    const sorted = [...items].sort((a, b) => {
-      const rank = {core: 0, instance: 1, subcomponent: 2};
-      return (rank[a.depth] ?? 3) - (rank[b.depth] ?? 3) || String(a.parent || '').localeCompare(String(b.parent || '')) || String(a.label || a.id).localeCompare(String(b.label || b.id));
-    });
-    const compact = group.h < 220;
-    const cols = compact ? 3 : Math.max(1, Math.floor((group.w - 44) / 220));
-    sorted.forEach((node, index) => {
-      const col = index % cols;
-      const row = Math.floor(index / cols);
-      positions[node.id] = {x: group.x + 22 + col * 220, y: group.y + 58 + row * 92};
-    });
-  });
-  return positions;
-}
-
 function atlasNodeHtml(node, pos) {
   const meta = atlasKindMeta(node.kind);
   const status = atlasStatusClass(node.status);
@@ -177,10 +153,13 @@ function atlasNodeHtml(node, pos) {
   return `<button type="button" class="atlas-node atlas-node-depth-${escapeHtml(node.depth || 'instance')} atlas-kind-${escapeHtml(node.kind)} status-${status}" data-node-id="${escapeHtml(node.id)}" style="left:${pos.x}px;top:${pos.y}px">${loader}<span class="atlas-node-main"><b>${escapeHtml(node.label || node.id)}</b><small>${escapeHtml(meta.label)}${node.detail ? ` · ${escapeHtml(node.detail)}` : ''}</small></span><i>${escapeHtml(node.status || '')}</i></button>`;
 }
 
-function renderAtlasGroups(nodes) {
+function renderAtlasGroups(nodes, groups = ATLAS_GROUPS) {
   const counts = new Map();
-  nodes.forEach((node) => counts.set(node.group, (counts.get(node.group) || 0) + 1));
-  return Object.entries(ATLAS_GROUPS).map(([key, group]) => `
+  nodes.forEach((node) => {
+    const groupKey = groups[node.group] ? node.group : 'controller';
+    counts.set(groupKey, (counts.get(groupKey) || 0) + 1);
+  });
+  return Object.entries(groups).map(([key, group]) => `
     <section class="atlas-group atlas-group-${escapeHtml(key)}" data-atlas-group="${escapeHtml(key)}" style="left:${group.x}px;top:${group.y}px;width:${group.w}px;height:${group.h}px">
       <header><span>${escapeHtml(group.icon)}</span><b>${escapeHtml(group.label)}</b><small>${counts.get(key) || 0}</small></header>
     </section>`).join('');
@@ -209,19 +188,19 @@ function selectAtlasNode(node, graph) {
     <div class="muted small-text">Object id: <code>${escapeHtml(node.id)}</code></div>`;
 }
 
-function drawAtlasEdges(container, graph, positions) {
+function drawAtlasEdges(container, graph, positions, size = {width: ATLAS_WIDTH, height: ATLAS_HEIGHT}) {
   const svg = container.querySelector('svg');
   if (!svg) return;
-  svg.setAttribute('viewBox', `0 0 ${ATLAS_WIDTH} ${ATLAS_HEIGHT}`);
+  svg.setAttribute('viewBox', `0 0 ${size.width} ${size.height}`);
   svg.innerHTML = '';
   (graph.edges || []).forEach((edge) => {
     const a = positions[edge.source];
     const b = positions[edge.target];
     if (!a || !b) return;
-    const x1 = a.x + 108;
-    const y1 = a.y + 36;
-    const x2 = b.x + 108;
-    const y2 = b.y + 36;
+    const x1 = a.x + ((a.w || 204) / 2);
+    const y1 = a.y + ((a.h || 72) / 2);
+    const x2 = b.x + ((b.w || 204) / 2);
+    const y2 = b.y + ((b.h || 72) / 2);
     const dx = Math.max(80, Math.abs(x2 - x1) / 2);
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', `M ${x1} ${y1} C ${x1 + (x2 >= x1 ? dx : -dx)} ${y1}, ${x2 - (x2 >= x1 ? dx : -dx)} ${y2}, ${x2} ${y2}`);
@@ -253,11 +232,12 @@ function renderDashboardTopology(rawGraph) {
     return;
   }
   const zoom = atlasZoom();
-  const positions = atlasLayout(graph.nodes);
+  const layout = atlasResolveGroups(graph.nodes, ATLAS_GROUPS);
+  const positions = layout.positions;
   el.classList.remove('muted');
-  el.innerHTML = `${renderAtlasControls(graph)}<div class="atlas-scroll-plane" style="width:${ATLAS_WIDTH * zoom}px;height:${ATLAS_HEIGHT * zoom}px"><div class="atlas-canvas" style="width:${ATLAS_WIDTH}px;height:${ATLAS_HEIGHT}px;transform:scale(${zoom})"><svg class="atlas-lines" aria-hidden="true"></svg>${renderAtlasGroups(graph.nodes)}<div class="atlas-node-layer">${graph.nodes.map((node) => atlasNodeHtml(node, positions[node.id] || {x: 40, y: 40})).join('')}</div></div></div>`;
+  el.innerHTML = `${renderAtlasControls(graph)}<div class="atlas-viewport" aria-label="PAC Component Atlas map. Use mouse wheel to zoom and drag empty space to pan."><div class="atlas-scroll-plane" style="width:${layout.width}px;height:${layout.height}px"><div class="atlas-canvas" style="width:${layout.width}px;height:${layout.height}px"><svg class="atlas-lines" aria-hidden="true"></svg>${renderAtlasGroups(graph.nodes, layout.groups)}<div class="atlas-node-layer">${graph.nodes.map((node) => atlasNodeHtml(node, positions[node.id] || {x: 40, y: 40})).join('')}</div></div></div></div>`;
   document.getElementById('atlasZoomRange')?.addEventListener('input', (ev) => {
-    localStorage.setItem(DASHBOARD_ATLAS_ZOOM_KEY, String(ev.target.value));
+    setAtlasZoomValue(ev.target.value);
     renderDashboardTopology(window.__pacDashboardTopology || rawGraph);
   });
   document.getElementById('atlasDetailSelect')?.addEventListener('change', (ev) => {
@@ -268,7 +248,15 @@ function renderDashboardTopology(rawGraph) {
     const node = graph.nodes.find((item) => item.id === btn.dataset.nodeId);
     if (node) btn.onclick = () => selectAtlasNode(node, graph);
   });
-  requestAnimationFrame(() => drawAtlasEdges(el, graph, positions));
+  setupAtlasViewport(el, {
+    zoom,
+    onZoom: () => {
+      if (atlasDetail() !== 'auto') return;
+      window.clearTimeout(dashboardAtlasWheelRenderTimer);
+      dashboardAtlasWheelRenderTimer = window.setTimeout(() => renderDashboardTopology(window.__pacDashboardTopology || rawGraph), 90);
+    },
+  });
+  requestAnimationFrame(() => drawAtlasEdges(el, graph, positions, {width: layout.width, height: layout.height}));
   const firstNode = graph.nodes.find((node) => node.id === 'controller:pac') || graph.nodes[0];
   if (firstNode) selectAtlasNode(firstNode, graph);
 }
@@ -288,6 +276,7 @@ function resetDashboardTopologyLayout() {
   try {
     localStorage.removeItem(DASHBOARD_ATLAS_ZOOM_KEY);
     localStorage.removeItem(DASHBOARD_ATLAS_DETAIL_KEY);
+    resetAtlasViewportState();
   } catch (_) {}
   const graph = window.__pacDashboardTopology;
   if (graph) renderDashboardTopology(graph);

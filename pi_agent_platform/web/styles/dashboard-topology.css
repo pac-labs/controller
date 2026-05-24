@@ -42,7 +42,9 @@
 .dashboard-topology-map {
   position: relative;
   min-height: 540px;
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   border: 1px solid rgba(148, 163, 184, .22);
   border-radius: 22px;
   background:
@@ -92,13 +94,24 @@
   font-size: .8rem;
 }
 .atlas-summary b { color: #86efac; font-size: .95rem; }
+.atlas-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 480px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+.atlas-viewport.is-panning { cursor: grabbing; }
 .atlas-scroll-plane { position: relative; }
 .atlas-canvas {
   position: absolute;
   left: 0;
   top: 0;
   transform-origin: 0 0;
+  will-change: transform;
 }
+.atlas-viewport .atlas-node { cursor: pointer; }
 .atlas-lines {
   position: absolute;
   inset: 0;
