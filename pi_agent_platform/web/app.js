@@ -188,7 +188,7 @@ function setupTabs() {
     });
     groupsEl?.querySelectorAll('.nav-group-btn').forEach((btn) => btn.classList.toggle('active', btn.dataset.navGroup === groupName));
   }
-  window.__pacTabGroups = {NAV_GROUPS, TAB_TO_GROUP, renderGroup};
+  window.__pacTabGroups = {NAV_GROUPS, TAB_TO_GROUP, renderGroup, renderCompactNavMenu};
   groupsEl?.querySelectorAll('.nav-group-btn').forEach((btn) => {
     btn.onclick = () => {
       const groupName = btn.dataset.navGroup || 'operate';
@@ -264,7 +264,7 @@ function updateTabsOverflow() {
     nav.classList.add('tabs-compact-mode');
     groups.hidden = true;
     primary.hidden = true;
-    renderCompactNavMenu(activeTab);
+    window.__pacTabGroups?.renderCompactNavMenu?.(activeTab);
     return;
   }
   const navStyles = getComputedStyle(nav);

@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "version": "1.0.355",
+      "date": "2026-05-24T19:55:00Z",
+      "summary": "Fixed the compact navigation boot regression that broke session and admin interactions.",
+      "changes": [
+        "Exported the compact navigation renderer through the shared tab-group state so the overflow logic no longer crashes on page load.",
+        "Verified session selection and the PAC update check flow end to end in a browser session against the live 0.7 host."
+      ]
+    },
+    {
       "version": "1.0.354",
       "date": "2026-05-24T18:20:00Z",
       "summary": "Improved the PAC Component Atlas with zoom, pan, and collision-aware layout.",
@@ -333,5 +342,5 @@
       }
     }
   ],
-  "current_version": "1.0.354"
+  "current_version": "1.0.355"
 }
