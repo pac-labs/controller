@@ -1,3 +1,3 @@
 # PAC Version
 
-Current release: 1.0.353
+Current release: 1.0.354

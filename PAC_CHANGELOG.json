@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "1.0.354",
+      "date": "2026-05-24T18:20:00Z",
+      "summary": "Improved the PAC Component Atlas with zoom, pan, and collision-aware layout.",
+      "changes": [
+        "Added wheel-zoom and drag-pan interactions for the dashboard atlas viewport.",
+        "Split atlas-specific interaction and layout logic into dedicated dashboard modules to keep the topology renderer focused.",
+        "Changed atlas layout to size groups dynamically and avoid overlapping lanes as the graph grows.",
+        "Updated atlas edge routing to use the actual laid-out node dimensions rather than fixed centers."
+      ]
+    },
+    {
       "version": "1.0.353",
       "date": "2026-05-24T18:05:00Z",
       "summary": "Validated the release-bundled controller wrapper update path on a live PAC host.",
@@ -322,5 +333,5 @@
       }
     }
   ],
-  "current_version": "1.0.353"
+  "current_version": "1.0.354"
 }
