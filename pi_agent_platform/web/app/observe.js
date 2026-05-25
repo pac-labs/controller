@@ -181,8 +181,12 @@ function setupObservePanel() {
   if (select) select.onchange = () => loadObserveLogs().catch(() => {});
   const openEvents = document.getElementById('observeOpenEvents');
   if (openEvents) openEvents.onclick = () => {
-    if (typeof window.openEventsRail === 'function') window.openEventsRail();
-    else document.getElementById('openEventsPanel')?.click();
+    const navButton = document.querySelector('[data-shell-route="events"]');
+    if (navButton) {
+      navButton.click();
+      return;
+    }
+    if (typeof activateTab === 'function') activateTab('events-tab');
   };
   const prune = document.getElementById('observePruneStore');
   if (prune) prune.onclick = async () => {

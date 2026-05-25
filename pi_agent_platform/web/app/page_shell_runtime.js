@@ -67,6 +67,12 @@
     'proxy-routes': {actions: [{label: 'Create route', target: 'openProxyRouteModal'}], toolbar: {search: {placeholder: 'Search proxy routes…', target: '#proxyRoutesList'}}},
     'raw-config': {actions: [{label: 'Save config', target: 'saveConfig'}, {label: 'Validate JSON', event: 'pac:validate-config', subtle: true}]},
     observability: {toolbar: {search: {placeholder: 'Search observability panels…', target: '#observe-tab'}}},
+    events: {
+      title: 'Events',
+      description: 'Alerting and event hub for controller, agent, endpoint, release, approval, and UI activity.',
+      actions: [{label: 'Reload events', target: 'eventsHubReload'}, {label: 'Critical only', target: 'eventsHubCriticalOnly', subtle: true}],
+      toolbar: {search: {placeholder: 'Search events…', target: '#events-tab'}, actions: [{label: 'Export visible', target: 'eventsHubExport'}]},
+    },
   };
 
   function esc(value) {

@@ -1,0 +1,267 @@
+/* OpenShift layout pass: make light and dark pages use the same admin-console rhythm.
+   This pass does not change the PAC banner or navigation identity; it only makes
+   the content workspace, masthead, toolbars, panels, and detail lists read as one
+   coherent surface system. */
+:root{
+  --pac-workspace-max-width: none;
+  --pac-workspace-gap: 1rem;
+  --pac-admin-panel-radius: 8px;
+  --pac-admin-panel-border: color-mix(in srgb, var(--border) 68%, transparent);
+  --pac-admin-panel-bg: var(--pac-surface-card, var(--panel));
+  --pac-admin-inset-bg: var(--pac-surface-inset, var(--panel-2));
+  --pac-admin-shadow: 0 1px 2px rgba(0,0,0,.16);
+  --pac-admin-header-bg: color-mix(in srgb, var(--pac-admin-panel-bg) 92%, #020617);
+}
+
+/* The page should feel like one workspace below the fixed shell, not a set of
+   unrelated floating cards. */
+.content-area{
+  display: flex;
+  flex-direction: column;
+  gap: var(--pac-workspace-gap);
+  padding: 0 1rem 1.25rem !important;
+  overflow: auto;
+}
+.content-area > .tab-panel.active{
+  width: 100%;
+  max-width: var(--pac-workspace-max-width);
+  margin: 0 auto;
+}
+.content-area .tab-panel.active > .card:first-child,
+.content-area .tab-panel.active > .setting-cube:first-child,
+.content-area .tab-panel.active > .config-route-card:first-child{
+  margin-top: 0;
+}
+
+/* Masthead and toolbar are a pair: flat, full-width, and separated from the
+   scrollable body by borders instead of heavy shadows. */
+.page-masthead{
+  margin: 0 -1rem !important;
+  border-radius: 0 !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  box-shadow: none !important;
+}
+.page-masthead .page-masthead-inner{
+  max-width: var(--pac-workspace-max-width);
+  margin: 0 auto;
+}
+.page-toolbar{
+  max-width: var(--pac-workspace-max-width);
+  width: 100%;
+  margin: 0 auto .1rem !important;
+  border-radius: var(--pac-admin-panel-radius) !important;
+  box-shadow: var(--pac-admin-shadow) !important;
+}
+
+/* Shared panel anatomy.  Legacy pages use many class names, so normalize the
+   common panel-like blocks without forcing each page to be rewritten at once. */
+.content-area .card,
+.content-area .setting-cube,
+.content-area .config-route-card,
+.content-area .updates-detail-panel,
+.content-area .runtime-panel,
+.content-area .source-sidecard,
+.content-area .event-card,
+.content-area .provider-card,
+.content-area .endpoint-card,
+.content-area .workspace-card,
+.content-area .profile-card,
+.content-area .directory-panel,
+.content-area .observe-panel,
+.content-area .download-version-group{
+  border-radius: var(--pac-admin-panel-radius) !important;
+  border: 1px solid var(--pac-admin-panel-border) !important;
+  background: var(--pac-admin-panel-bg) !important;
+  box-shadow: var(--pac-admin-shadow) !important;
+}
+.content-area .card,
+.content-area .setting-cube,
+.content-area .config-route-card,
+.content-area .updates-detail-panel,
+.content-area .runtime-panel,
+.content-area .source-sidecard,
+.content-area .event-card,
+.content-area .directory-panel,
+.content-area .observe-panel{
+  padding: 1rem !important;
+}
+.content-area .section-heading,
+.content-area .provider-card-head,
+.content-area .endpoint-card-header,
+.content-area .download-version-head,
+.content-area .dashboard-private-head,
+.content-area .events-rail-header{
+  margin: -1rem -1rem 1rem !important;
+  padding: .85rem 1rem !important;
+  border-bottom: 1px solid var(--pac-panel-header-border, var(--pac-admin-panel-border)) !important;
+  background: var(--pac-admin-header-bg) !important;
+  border-radius: calc(var(--pac-admin-panel-radius) - 1px) calc(var(--pac-admin-panel-radius) - 1px) 0 0 !important;
+}
+.content-area .section-heading.compact-heading{
+  align-items: center !important;
+}
+.content-area .section-heading h2,
+.content-area .section-heading h3{
+  margin: 0 .3rem .18rem 0 !important;
+}
+.content-area .section-heading p{
+  margin: .12rem 0 0 !important;
+}
+
+/* Metric and summary cards should be flat insets inside panels. */
+.content-area .metric,
+.content-area .health-section,
+.content-area .config-route-tile,
+.content-area .config-shortcut-card,
+.content-area .update-summary-card,
+.content-area .config-summary-tile,
+.content-area .directory-summary-tile,
+.content-area .runtime-summary-tile,
+.content-area .service-summary-tile,
+.content-area .download-pill{
+  border-radius: 7px !important;
+  background: var(--pac-admin-inset-bg) !important;
+  box-shadow: none !important;
+}
+.content-area .config-route-grid,
+.content-area .config-shortcut-grid,
+.content-area .update-center-summary-grid,
+.content-area .stats-grid,
+.content-area .health-grid,
+.content-area .config-summary-grid,
+.content-area .directory-summary-grid,
+.content-area .runtime-summary-grid,
+.content-area .service-summary-grid{
+  gap: .75rem !important;
+}
+
+/* Configuration pages need equal-width panels, but small detail panels should not
+   stretch into tall empty blocks. */
+body[class*="config-panel-"] #settings-tab .settings-main{
+  grid-auto-rows: min-content !important;
+  align-items: start !important;
+}
+body[class*="config-panel-"] #settings-tab .setting-cube,
+body[class*="config-panel-"] #settings-tab .config-route-card{
+  min-height: 0 !important;
+  height: auto !important;
+}
+body.config-panel-service #settings-service .settings-main,
+body.config-panel-tls #settings-tls .settings-main,
+body.config-panel-config #settings-config .settings-main{
+  grid-template-columns: minmax(360px, 1fr) minmax(360px, 1fr) !important;
+}
+.config-route-surface + .setting-cube,
+.config-route-surface + .config-route-card{
+  margin-top: 0 !important;
+}
+
+/* Detail lists should read like OpenShift resource details, not terminal output. */
+.compact-kv div,
+.content-area .kv-row{
+  min-height: 2.15rem;
+}
+.content-area pre,
+.content-area code,
+.content-area .inline-result{
+  border-radius: 7px !important;
+}
+
+html[data-theme="light"],
+body[data-theme="light"]{
+  --pac-admin-panel-border: #d5dde7;
+  --pac-admin-panel-bg: #ffffff;
+  --pac-admin-inset-bg: #f7f9fb;
+  --pac-admin-shadow: 0 1px 2px rgba(15,23,42,.08);
+  --pac-admin-header-bg: #ffffff;
+}
+html[data-theme="light"] .content-area,
+body[data-theme="light"] .content-area{
+  background: #eef2f6 !important;
+}
+html[data-theme="light"] .page-masthead,
+body[data-theme="light"] .page-masthead{
+  background: #ffffff !important;
+  border-color: #d5dde7 !important;
+  color: #0f172a !important;
+}
+html[data-theme="light"] .page-masthead p,
+body[data-theme="light"] .page-masthead p,
+html[data-theme="light"] .page-toolbar,
+body[data-theme="light"] .page-toolbar{
+  color: #475569 !important;
+}
+html[data-theme="light"] .page-toolbar,
+body[data-theme="light"] .page-toolbar,
+html[data-theme="light"] .configuration-page-shell,
+body[data-theme="light"] .configuration-page-shell{
+  background: #ffffff !important;
+  border-color: #d5dde7 !important;
+}
+html[data-theme="light"] .content-area .section-heading,
+html[data-theme="light"] .content-area .provider-card-head,
+html[data-theme="light"] .content-area .endpoint-card-header,
+html[data-theme="light"] .content-area .download-version-head,
+html[data-theme="light"] .content-area .dashboard-private-head,
+html[data-theme="light"] .content-area .events-rail-header,
+body[data-theme="light"] .content-area .section-heading,
+body[data-theme="light"] .content-area .provider-card-head,
+body[data-theme="light"] .content-area .endpoint-card-header,
+body[data-theme="light"] .content-area .download-version-head,
+body[data-theme="light"] .content-area .dashboard-private-head,
+body[data-theme="light"] .content-area .events-rail-header{
+  background: #ffffff !important;
+  border-bottom-color: #e2e8f0 !important;
+}
+html[data-theme="light"] .content-area .config-route-tile,
+html[data-theme="light"] .content-area .config-shortcut-card,
+html[data-theme="light"] .content-area .metric,
+html[data-theme="light"] .content-area .health-section,
+html[data-theme="light"] .content-area .update-summary-card,
+body[data-theme="light"] .content-area .config-route-tile,
+body[data-theme="light"] .content-area .config-shortcut-card,
+body[data-theme="light"] .content-area .metric,
+body[data-theme="light"] .content-area .health-section,
+body[data-theme="light"] .content-area .update-summary-card{
+  background: #f7f9fb !important;
+  border-color: #e2e8f0 !important;
+}
+
+@media(max-width: 980px){
+  body.config-panel-service #settings-service .settings-main,
+  body.config-panel-tls #settings-tls .settings-main,
+  body.config-panel-config #settings-config .settings-main{
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.release-assets-panel {
+  border: 1px solid var(--panel-border, rgba(148, 163, 184, .28));
+  border-radius: 12px;
+  background: var(--panel-surface, rgba(15, 23, 42, .025));
+  padding: .9rem;
+}
+.release-assets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: .65rem;
+}
+.release-asset-link {
+  display: grid;
+  gap: .2rem;
+  padding: .75rem .85rem;
+  border: 1px solid var(--panel-border, rgba(148, 163, 184, .28));
+  border-radius: 10px;
+  background: var(--card-bg, #fff);
+  text-decoration: none;
+  color: inherit;
+}
+.release-asset-link:hover {
+  border-color: var(--accent, #2563eb);
+}
+.release-asset-link span {
+  color: var(--muted);
+  font-size: .78rem;
+  overflow-wrap: anywhere;
+}

@@ -54,7 +54,7 @@
       description: 'Runtime visibility and event activity.',
       items: [
         {id: 'observability', tab: 'observe-tab', label: 'Observability', icon: '◉', aliases: ['observe', 'metrics', 'logs', 'traces'], description: 'Metrics, logs, traces, and stores.'},
-        {id: 'events', tab: 'events-panel-proxy', label: 'Events', icon: '✦', aliases: ['notifications', 'activity', 'event rail'], description: 'Open the live events rail.'},
+        {id: 'events', tab: 'events-tab', label: 'Events', icon: '✦', aliases: ['alerts', 'activity', 'event hub'], description: 'Alerting and controller event hub.', mastheadMode: 'sticky'},
       ],
     },
   ];

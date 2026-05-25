@@ -1,0 +1,240 @@
+/* OpenShift-inspired surface pass.
+   Keeps the PAC brand banner dark, but normalizes the content workspace, panels,
+   summary cards, route cards, and light-mode service/configuration pages. */
+:root{
+  --pac-panel-radius: 8px;
+  --pac-panel-border: color-mix(in srgb, var(--border) 62%, transparent);
+  --pac-panel-shadow: 0 10px 22px rgba(0,0,0,.16);
+  --pac-panel-bg: var(--pac-surface-card);
+  --pac-panel-inset: var(--pac-surface-inset);
+  --pac-panel-header-border: color-mix(in srgb, var(--pac-line-subtle) 76%, transparent);
+}
+
+.content-area{
+  background: color-mix(in srgb, var(--bg) 84%, #020617) !important;
+}
+
+/* One panel language for cards, configuration cubes, Update Center summaries,
+   route tiles, and legacy panels that are still being migrated. */
+.content-area .card,
+.content-area .setting-cube,
+.content-area .config-route-card,
+.content-area .config-route-tile,
+.content-area .config-shortcut-card,
+.content-area .update-summary-card,
+.content-area .updates-detail-panel,
+.content-area .update-delta-list,
+.content-area .runtime-panel,
+.content-area .source-sidecard,
+.content-area .event-card,
+.modal-card{
+  border: 1px solid var(--pac-panel-border) !important;
+  border-radius: var(--pac-panel-radius) !important;
+  background: var(--pac-panel-bg) !important;
+  box-shadow: var(--pac-panel-shadow) !important;
+  color: var(--pac-text-body) !important;
+}
+
+/* Summary cards should be compact objects inside a panel, not floating bright tiles. */
+.content-area .config-route-tile,
+.content-area .config-shortcut-card,
+.content-area .update-summary-card,
+.content-area .metric,
+.content-area .health-section,
+.content-area .config-summary-tile,
+.content-area .directory-summary-tile,
+.content-area .runtime-summary-tile,
+.content-area .service-summary-tile{
+  background: var(--pac-panel-inset) !important;
+  box-shadow: none !important;
+}
+
+.content-area .section-heading,
+.content-area .provider-card-head,
+.content-area .endpoint-card-header,
+.content-area .dashboard-private-head,
+.content-area .events-rail-header,
+.content-area .personal-profile-header{
+  border-bottom-color: var(--pac-panel-header-border) !important;
+}
+
+/* Configuration pages should not stretch small cards into tall blank panels. */
+body[class*="config-panel-"] #settings-tab .settings-main{
+  min-height: 0 !important;
+  height: auto !important;
+  align-items: start !important;
+  align-content: start !important;
+}
+body.config-panel-service #settings-service .settings-main,
+body.config-panel-tls #settings-tls .settings-main,
+body.config-panel-config #settings-config .settings-main{
+  align-items: start !important;
+}
+body.config-panel-service #settings-service .setting-cube,
+body.config-panel-tls #settings-tls .setting-cube,
+body.config-panel-config #settings-config .setting-cube,
+body[class*="config-panel-"] .config-route-card{
+  min-height: 0 !important;
+  height: auto !important;
+  align-self: start !important;
+}
+body[class*="config-panel-"] #settings-tab .setting-cube.wide{
+  min-height: 0 !important;
+}
+
+.config-route-card > .section-heading,
+.setting-cube > .section-heading{
+  margin-bottom: .9rem;
+}
+.setting-cube > h2:first-child,
+.config-route-card h2:first-child{
+  margin-top: 0;
+}
+.setting-cube > h2:first-child{
+  padding-bottom: .65rem;
+  margin-bottom: .65rem;
+  border-bottom: 1px solid var(--pac-panel-header-border);
+}
+
+.config-route-grid,
+.config-shortcut-grid{
+  gap: .75rem !important;
+}
+.config-route-tile,
+.config-shortcut-card{
+  min-height: 86px !important;
+  padding: .8rem !important;
+}
+.config-route-tile b,
+.config-shortcut-card b{
+  font-size: 1.05rem !important;
+}
+
+/* Make the service mode key/value table read as a compact admin detail list. */
+.compact-kv{
+  border-top: 1px solid var(--pac-panel-header-border);
+  margin-top: .75rem;
+}
+.compact-kv div{
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) minmax(0, 1fr) !important;
+  gap: .75rem;
+  align-items: center;
+  padding: .48rem 0;
+  border-bottom: 1px solid var(--pac-panel-header-border) !important;
+}
+.compact-kv span{
+  color: var(--pac-text-muted) !important;
+  font-weight: 750;
+}
+.compact-kv b,
+.compact-kv code{
+  color: var(--pac-text-strong) !important;
+  word-break: break-word;
+}
+
+/* Light mode: OpenShift-like work area with flatter panels, clear borders,
+   and reduced shadows. */
+html[data-theme="light"]{
+  --pac-panel-border: #d6dee8;
+  --pac-panel-shadow: 0 1px 2px rgba(15,23,42,.08);
+  --pac-panel-bg: #ffffff;
+  --pac-panel-inset: #f8fafc;
+  --pac-panel-header-border: #e2e8f0;
+  --pac-text-muted: #64748b;
+}
+html[data-theme="light"] body,
+body[data-theme="light"]{
+  background: #eef2f6 !important;
+}
+html[data-theme="light"] .content-area,
+body[data-theme="light"] .content-area{
+  background: #eef2f6 !important;
+}
+html[data-theme="light"] .content-area .card,
+html[data-theme="light"] .content-area .setting-cube,
+html[data-theme="light"] .content-area .config-route-card,
+html[data-theme="light"] .content-area .config-route-tile,
+html[data-theme="light"] .content-area .config-shortcut-card,
+html[data-theme="light"] .content-area .update-summary-card,
+html[data-theme="light"] .content-area .updates-detail-panel,
+html[data-theme="light"] .content-area .update-delta-list,
+html[data-theme="light"] .content-area .runtime-panel,
+html[data-theme="light"] .content-area .source-sidecard,
+html[data-theme="light"] .content-area .event-card,
+body[data-theme="light"] .content-area .card,
+body[data-theme="light"] .content-area .setting-cube,
+body[data-theme="light"] .content-area .config-route-card,
+body[data-theme="light"] .content-area .config-route-tile,
+body[data-theme="light"] .content-area .config-shortcut-card,
+body[data-theme="light"] .content-area .update-summary-card,
+body[data-theme="light"] .content-area .updates-detail-panel,
+body[data-theme="light"] .content-area .update-delta-list,
+body[data-theme="light"] .content-area .runtime-panel,
+body[data-theme="light"] .content-area .source-sidecard,
+body[data-theme="light"] .content-area .event-card{
+  background: #ffffff !important;
+  border-color: var(--pac-panel-border) !important;
+  color: #0f172a !important;
+  box-shadow: var(--pac-panel-shadow) !important;
+}
+html[data-theme="light"] .content-area .config-route-tile,
+html[data-theme="light"] .content-area .config-shortcut-card,
+html[data-theme="light"] .content-area .update-summary-card,
+html[data-theme="light"] .content-area .metric,
+html[data-theme="light"] .content-area .health-section,
+html[data-theme="light"] .content-area .config-summary-tile,
+html[data-theme="light"] .content-area .directory-summary-tile,
+html[data-theme="light"] .content-area .runtime-summary-tile,
+html[data-theme="light"] .content-area .service-summary-tile,
+body[data-theme="light"] .content-area .config-route-tile,
+body[data-theme="light"] .content-area .config-shortcut-card,
+body[data-theme="light"] .content-area .update-summary-card,
+body[data-theme="light"] .content-area .metric,
+body[data-theme="light"] .content-area .health-section,
+body[data-theme="light"] .content-area .config-summary-tile,
+body[data-theme="light"] .content-area .directory-summary-tile,
+body[data-theme="light"] .content-area .runtime-summary-tile,
+body[data-theme="light"] .content-area .service-summary-tile{
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: none !important;
+}
+html[data-theme="light"] .content-area .section-heading h2,
+html[data-theme="light"] .content-area .section-heading h3,
+html[data-theme="light"] .content-area .setting-cube > h2:first-child,
+html[data-theme="light"] .content-area .config-route-card h2,
+body[data-theme="light"] .content-area .section-heading h2,
+body[data-theme="light"] .content-area .section-heading h3,
+body[data-theme="light"] .content-area .setting-cube > h2:first-child,
+body[data-theme="light"] .content-area .config-route-card h2{
+  color: #0f172a !important;
+}
+html[data-theme="light"] .content-area .muted,
+html[data-theme="light"] .content-area small,
+body[data-theme="light"] .content-area .muted,
+body[data-theme="light"] .content-area small{
+  color: #64748b !important;
+}
+html[data-theme="light"] .inline-result,
+html[data-theme="light"] pre.inline-result,
+body[data-theme="light"] .inline-result,
+body[data-theme="light"] pre.inline-result{
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+html[data-theme="light"] .page-toolbar,
+html[data-theme="light"] .configuration-page-shell,
+body[data-theme="light"] .page-toolbar,
+body[data-theme="light"] .configuration-page-shell{
+  border-color: #d6dee8 !important;
+  box-shadow: 0 1px 2px rgba(15,23,42,.08) !important;
+}
+
+@media(max-width: 900px){
+  .compact-kv div{
+    grid-template-columns: 1fr !important;
+    gap: .2rem;
+  }
+}

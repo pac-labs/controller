@@ -110,3 +110,31 @@ body[data-theme="dark"] .events-rail{
   .updates-layout{grid-template-columns:1fr;}
 }
 
+
+.release-binary-manifest {
+  margin-top: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-inset, rgba(15, 23, 42, 0.035));
+  padding: 0.75rem;
+}
+.release-binary-manifest-grid {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  margin-top: 0.55rem;
+}
+.release-binary-manifest-card {
+  border: 1px solid var(--pac-border-muted, rgba(148, 163, 184, 0.35));
+  border-radius: 10px;
+  background: var(--panel, #fff);
+  padding: 0.65rem;
+}
+.release-binary-manifest-card b,
+.release-binary-manifest-card span {
+  display: block;
+}
+.release-binary-manifest-card span {
+  margin-top: 0.25rem;
+  color: var(--muted);
+}

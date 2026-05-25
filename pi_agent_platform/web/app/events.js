@@ -39,88 +39,69 @@ function eventTone(type) {
   return 'info';
 }
 
-function openUpdateConfirmOverlay(meta) {
-  const overlay = document.getElementById('updateConfirmOverlay');
-  if (!overlay) return;
-  const title = document.getElementById('updateConfirmTitle');
-  const message = document.getElementById('updateConfirmMessage');
-  const body = document.getElementById('updateConfirmBody');
-  const proceed = document.getElementById('updateConfirmProceed');
-  const cancel = document.getElementById('updateConfirmCancel');
-  const currentVersion = String(meta?.current_version || config?.version || config?.setup_status?.version || '-');
-  const nextVersion = String(meta?.latest_version || '').trim();
-  if (title) title.textContent = 'Apply PAC release';
-  if (message) message.textContent = `Install ${nextVersion ? `v${nextVersion}` : 'the latest release'} and restart PAC?`;
-  if (body) {
-    const bullets = Array.isArray(meta?.compare_changes) ? meta.compare_changes.slice(0, 8) : [];
-    body.innerHTML = `
-      <div class="updates-detail-copy">
-        <div>Current version: <b>v${escapeHtml(currentVersion)}</b></div>
-        <div>Target version: <b>${escapeHtml(nextVersion ? `v${nextVersion}` : 'latest')}</b></div>
-        ${bullets.length ? `<div style="margin-top:.65rem"><b>Included changes</b></div><ul>${bullets.map((change) => `<li>${escapeHtml(String(change))}</li>`).join('')}</ul>` : ''}
-      </div>`;
-  }
-  if (proceed) {
-    proceed.disabled = false;
-    proceed.textContent = 'Apply and restart';
-  }
-  if (cancel) cancel.hidden = false;
-  overlay.hidden = false;
-  delete overlay.dataset.locked;
-}
-
-function closeUpdateConfirmOverlay(force = false) {
-  const overlay = document.getElementById('updateConfirmOverlay');
-  if (!overlay) return;
-  if (force || !overlay.dataset.locked) {
-    overlay.hidden = true;
-    delete overlay.dataset.locked;
-  }
-}
-
-function setUpdateConfirmOverlayRestarting(version, seconds = 18) {
-  const overlay = document.getElementById('updateConfirmOverlay');
-  if (!overlay) return;
-  const title = document.getElementById('updateConfirmTitle');
-  const message = document.getElementById('updateConfirmMessage');
-  const body = document.getElementById('updateConfirmBody');
-  const proceed = document.getElementById('updateConfirmProceed');
-  const cancel = document.getElementById('updateConfirmCancel');
-  overlay.hidden = false;
-  overlay.dataset.locked = 'true';
-  if (title) title.textContent = 'Restarting PAC';
-  if (message) message.textContent = `${version ? `v${version}` : 'The release'} is being applied.`;
-  if (body) {
-    body.innerHTML = `<div class="updates-detail-copy"><div>PAC is restarting.</div><div>Refresh when the UI returns.</div></div>`;
-  }
-  if (proceed) {
-    proceed.disabled = true;
-    proceed.textContent = 'Restarting…';
-  }
-  if (cancel) cancel.hidden = true;
-}
-
 function endpointDisplayName(endpointId) {
   if (!endpointId) return '';
   const found = (window.__pacEndpoints || []).find(e => e.id === endpointId);
   return found?.name || endpointId;
 }
 
-function renderGlobalEvent(event, prepend=false) {
-  const list = document.getElementById('globalEvents');
-  if (!list || !event) return;
-  if (shouldSuppressGlobalEvent(event)) return;
-  if (event.id && globalEventSeen.has(event.id)) return;
-  if (event.id) globalEventSeen.add(event.id);
-  const cat = eventCategory(event.type);
-  if (globalEventFilter !== 'all' && globalEventFilter !== cat && !(globalEventFilter === 'attention' && cat === 'failed')) return;
-  const empty = list.querySelector('.empty-events');
-  if (empty) empty.remove();
-  const card = document.createElement('div');
-  card.className = `event-card ${cat}`;
+
+let eventsHubSeen = new Set();
+let eventsHubFilter = 'all';
+let eventsHubPoll = null;
+let eventsHubLastEvents = [];
+let eventsHubSearch = '';
+let eventsHubSource = 'all';
+let eventsHubFacetKind = '';
+let eventsHubFacetLabel = '';
+
+function isEmergencyEvent(event) {
+  const type = String(event?.type || '').toLowerCase();
+  const severity = String(event?.severity || event?.data?.severity || event?.data?.level || '').toLowerCase();
+  const category = eventCategory(type);
+  return category === 'failed'
+    || category === 'attention'
+    || ['critical', 'error', 'warning', 'warn', 'danger', 'alert'].includes(severity)
+    || type.includes('failed')
+    || type.includes('error')
+    || type.includes('rejected')
+    || type.includes('unavailable')
+    || type.includes('approval')
+    || type.includes('security')
+    || type.includes('denied');
+}
+
+function eventMatchesFilter(event, filter, emergencyOnly=false) {
+  if (shouldSuppressGlobalEvent(event)) return false;
+  if (emergencyOnly && !isEmergencyEvent(event)) return false;
+  const cat = eventCategory(event?.type);
+  const query = String(eventsHubSearch || '').toLowerCase().trim();
+  const source = String(eventsHubSource || 'all');
+  if (query && !`${event?.type || ''} ${event?.message || ''} ${event?.session_id || ''} ${event?.task_id || ''}`.toLowerCase().includes(query)) return false;
+  if (source !== 'all') {
+    const sourceKind = String(event?.source?.kind || (event?.session_id && event.session_id !== 'system' ? 'session' : 'system'));
+    if (source === 'system' && sourceKind !== 'system') return false;
+    if (source === 'sessions' && sourceKind !== 'session') return false;
+    if (source === 'endpoints' && sourceKind !== 'endpoint') return false;
+    if (source === 'workspaces' && sourceKind !== 'workspace') return false;
+    if (source === 'components' && !String(event?.source?.component || '').trim()) return false;
+  }
+  if (!filter || filter === 'all') return true;
+  if (filter === 'emergency') return isEmergencyEvent(event);
+  if (filter === 'failed') return cat === 'failed';
+  if (filter === 'attention') return cat === 'attention' || cat === 'failed';
+  return filter === cat;
+}
+
+function eventMetaText(event) {
   const details = event.data && typeof event.data === 'object' ? event.data : {};
-  const metaParts = [event.session_id, event.task_id, details.build_id ? `build ${details.build_id}` : null].filter(Boolean);
-  const meta = metaParts.join(' · ');
+  const source = event.source || {};
+  const sourceLabel = source.label ? `${source.kind || 'source'}: ${source.label}` : null;
+  return [sourceLabel, event.session_id, event.task_id, details.build_id ? `build ${details.build_id}` : null].filter(Boolean).join(' · ');
+}
+
+function eventDetailText(event) {
+  const details = event.data && typeof event.data === 'object' ? event.data : {};
   const formatDetails = (value, prefix='') => {
     if (value == null) return [];
     if (typeof value === 'string') return value ? [value] : [];
@@ -137,24 +118,171 @@ function renderGlobalEvent(event, prepend=false) {
     }
     return [`${prefix}${String(value)}`];
   };
-  const logChunks = [];
-  if (Array.isArray(details.logs)) logChunks.push(details.logs.filter(Boolean).join('\n---\n'));
-  if (details.stdout) logChunks.push(`stdout\n${details.stdout}`);
-  if (details.stderr) logChunks.push(`stderr\n${details.stderr}`);
-  if (details.error) logChunks.push(`error: ${details.error}`);
-  if (details.output_tail) logChunks.push(details.output_tail);
-  if (details.pi_container) logChunks.push(formatDetails(details.pi_container).join('\n'));
-  if (details.details) logChunks.push(formatDetails(details.details).join('\n'));
-  const logText = logChunks.filter(Boolean).join('\n---\n');
-  card.innerHTML = `<div class="event-card-header"><span class="event-kind"><span class="event-dot"></span>${prettyEventType(event.type)}</span><span class="event-time">${formatEventTime(event.created_at)}</span></div><div class="event-message"></div>${meta ? `<div class="event-meta"></div>` : ''}${logText ? '<details class="event-details"><summary>Details</summary><pre></pre></details>' : ''}`;
+  const chunks = [];
+  if (Array.isArray(details.logs)) chunks.push(details.logs.filter(Boolean).join('\n---\n'));
+  if (details.stdout) chunks.push(`stdout\n${details.stdout}`);
+  if (details.stderr) chunks.push(`stderr\n${details.stderr}`);
+  if (details.error) chunks.push(`error: ${details.error}`);
+  if (details.output_tail) chunks.push(details.output_tail);
+  if (details.pi_container) chunks.push(formatDetails(details.pi_container).join('\n'));
+  if (details.details) chunks.push(formatDetails(details.details).join('\n'));
+  return chunks.filter(Boolean).join('\n---\n');
+}
+
+async function acknowledgeEvent(eventId) {
+  if (!isServerBackedEventId(eventId)) return false;
+  await api('/v1/events/acknowledge', {method:'POST', body:JSON.stringify({event_ids:[eventId]})});
+  eventsHubLastEvents = eventsHubLastEvents.map((event) => event.id === eventId ? {...event, ui_state:{...(event.ui_state || {}), read:true, acknowledged:true}} : event);
+  await loadGlobalEvents(true).catch(()=>{});
+  if (document.body?.dataset.shellRoute === 'events') renderEventsHub(eventsHubLastEvents, true);
+  if (typeof loadNotificationSummary === 'function') await loadNotificationSummary().catch(()=>{});
+  return true;
+}
+
+async function acknowledgeAllUrgentEvents() {
+  await api('/v1/events/urgent/acknowledge-all', {method:'POST'});
+  globalEventSeen = new Set();
+  await loadGlobalEvents(true).catch(()=>{});
+  if (document.body?.dataset.shellRoute === 'events') await loadEventsHub(true).catch(()=>{});
+  if (typeof loadNotificationSummary === 'function') await loadNotificationSummary().catch(()=>{});
+}
+
+function renderEventCardIntoList(event, options={}) {
+  const list = document.getElementById(options.listId || 'globalEvents');
+  if (!list || !event) return false;
+  if (!eventMatchesFilter(event, options.filter || 'all', Boolean(options.emergencyOnly))) return false;
+  const seen = options.seenSet;
+  if (seen && event.id && seen.has(event.id)) return false;
+  if (seen && event.id) seen.add(event.id);
+  const empty = list.querySelector('.empty-events');
+  if (empty) empty.remove();
+  const cat = eventCategory(event.type);
+  const meta = eventMetaText(event);
+  const logText = eventDetailText(event);
+  const card = document.createElement('div');
+  card.className = `event-card ${cat}`;
+  if (event?.ui_state?.acknowledged) card.classList.add('acknowledged');
+  card.dataset.eventType = String(event.type || 'event');
+  if (event.id) card.dataset.eventId = String(event.id);
+  const ackAction = options.allowAcknowledge && isServerBackedEventId(event.id) && !event?.ui_state?.acknowledged
+    ? '<button class="event-ack-button ghost-button mini-button" type="button">Acknowledge</button>'
+    : '';
+  card.innerHTML = `<div class="event-card-header"><span class="event-kind"><span class="event-dot"></span>${prettyEventType(event.type)}</span><span class="event-card-actions">${ackAction}<span class="event-time">${formatEventTime(event.created_at)}</span></span></div><div class="event-message"></div>${meta ? `<div class="event-meta"></div>` : ''}${logText ? '<details class="event-details"><summary>Details</summary><pre></pre></details>' : ''}`;
   card.querySelector('.event-message').textContent = event.message || '';
   const metaEl = card.querySelector('.event-meta');
   if (metaEl) metaEl.textContent = meta;
   const pre = card.querySelector('.event-details pre');
   if (pre) pre.textContent = logText;
-  if (list.firstChild) list.insertBefore(card, list.firstChild); else list.appendChild(card);
-  while (list.children.length > 120) list.removeChild(list.lastChild);
-  list.scrollTop = 0;
+  card.querySelector('.event-ack-button')?.addEventListener('click', async (ev) => {
+    ev.stopPropagation();
+    const btn = ev.currentTarget;
+    btn.disabled = true;
+    btn.textContent = 'Acknowledging…';
+    try { await acknowledgeEvent(event.id); } catch (err) { btn.textContent = 'Failed'; btn.title = String(err?.message || err); btn.disabled = false; }
+  });
+  if (options.prepend !== false && list.firstChild) list.insertBefore(card, list.firstChild); else list.appendChild(card);
+  const max = Number(options.maxItems || 160);
+  while (list.children.length > max) list.removeChild(list.lastChild);
+  if (options.scrollTop !== false) list.scrollTop = 0;
+  return true;
+}
+
+function renderGlobalEvent(event, prepend=false) {
+  return renderEventCardIntoList(event, {
+    listId: 'globalEvents',
+    prepend,
+    filter: globalEventFilter || 'emergency',
+    seenSet: globalEventSeen,
+    emergencyOnly: true,
+    allowAcknowledge: true,
+    maxItems: 80,
+  });
+}
+
+function renderEventsHubGroups(summary=null, facets=null) {
+  const el = document.getElementById('eventsHubGroups');
+  if (!el) return;
+  const sourceLabels = facets?.source_labels || {};
+  const groups = Object.keys(sourceLabels).length ? {...sourceLabels, component: facets?.components || []} : (summary?.groups || {});
+  const order = [['endpoint', 'Endpoints'], ['workspace', 'Workspaces'], ['session', 'Sessions'], ['component', 'Components'], ['system', 'System']];
+  const blocks = order.map(([kind, label]) => {
+    const items = groups[kind] || [];
+    if (!items.length) return '';
+    const entries = items.slice(0, 7).map((item) => {
+      const sourceLabel = item.label || kind;
+      const active = eventsHubFacetKind === kind && eventsHubFacetLabel === sourceLabel;
+      return `<button class="events-group-row ${active ? 'active' : ''}" type="button" data-events-source-kind="${escapeHtml(kind)}" data-events-source-label="${escapeHtml(sourceLabel)}"><span>${escapeHtml(sourceLabel)}</span><strong>${Number(item.count || 0)}</strong></button>`;
+    }).join('');
+    return `<div class="events-group-block"><b>${escapeHtml(label)}</b>${entries}</div>`;
+  }).filter(Boolean);
+  el.innerHTML = blocks.length ? blocks.join('') : '<div class="muted small-text">No source groups in the current event window.</div>';
+}
+
+function renderEventsHubActiveFacet() {
+  const el = document.getElementById('eventsHubActiveFacet');
+  if (!el) return;
+  if (!eventsHubFacetKind || !eventsHubFacetLabel) {
+    el.innerHTML = '<span class="muted small-text">Showing the selected event window. Pick a source group to drill down.</span>';
+    return;
+  }
+  el.innerHTML = `<span>Drill-down: <b>${escapeHtml(eventsHubFacetKind)}</b> · ${escapeHtml(eventsHubFacetLabel)}</span><button id="eventsHubClearFacet" class="ghost-button mini-button" type="button">Clear drill-down</button>`;
+  el.querySelector('#eventsHubClearFacet')?.addEventListener('click', () => {
+    eventsHubFacetKind = '';
+    eventsHubFacetLabel = '';
+    loadEventsHub(true).catch(()=>{});
+  });
+}
+
+function renderEventsHubSummary(events, summary=null) {
+  const el = document.getElementById('eventsHubSummary');
+  if (!el) return;
+  const visible = (events || []).filter(e => !shouldSuppressGlobalEvent(e));
+  const categoryCounts = summary?.categories || {};
+  const counts = {failed: 0, attention: 0, running: 0, completed: 0, emergency: Number(summary?.emergency || 0)};
+  if (summary) {
+    counts.failed = Number(categoryCounts.failed || 0);
+    counts.attention = Number(categoryCounts.attention || 0);
+    counts.running = Number(categoryCounts.running || 0);
+    counts.completed = Number(categoryCounts.completed || 0);
+  } else {
+    visible.forEach((event) => {
+      const cat = eventCategory(event.type);
+      counts[cat] = (counts[cat] || 0) + 1;
+      if (isEmergencyEvent(event)) counts.emergency += 1;
+    });
+  }
+  const sources = summary?.sources || {};
+  el.classList.remove('muted');
+  renderEventsHubGroups(summary, window.__pacEventsHubFacets || null);
+  renderEventsHubActiveFacet();
+  el.innerHTML = [
+    ['Urgent', counts.emergency, 'Critical or attention-worthy notifications'],
+    ['Needs attention', counts.attention, 'Warnings, approvals, reconnects, or unavailable services'],
+    ['Running', counts.running, 'Active task and model/tool activity'],
+    ['Completed', counts.completed, `Finished work across ${Number(sources.sessions || 0)} session source(s)`],
+  ].map(([label, value, detail]) => `<div class="status-card compact"><span>${escapeHtml(label)}</span><strong>${value}</strong><small>${escapeHtml(detail)}</small></div>`).join('');
+}
+
+function renderEventsHub(events, reset=true) {
+  const list = document.getElementById('eventsHubList');
+  if (!list) return;
+  if (reset) {
+    eventsHubSeen = new Set();
+    list.innerHTML = '<div class="empty-events">No matching events.</div>';
+  }
+  const ordered = [...(events || [])].reverse();
+  ordered.forEach((event) => renderEventCardIntoList(event, {
+    listId: 'eventsHubList',
+    prepend: false,
+    filter: eventsHubFilter,
+    seenSet: eventsHubSeen,
+    emergencyOnly: false,
+    maxItems: 220,
+    scrollTop: false,
+  }));
+  if (!list.querySelector('.event-card')) {
+    list.innerHTML = '<div class="empty-events"><b>No matching events.</b><br><span>Change the filter or reload the event hub.</span></div>';
+  }
 }
 
 function shouldSuppressGlobalEvent(event) {
@@ -162,12 +290,31 @@ function shouldSuppressGlobalEvent(event) {
   return type === 'runner_heartbeat' || type === 'endpoint_heartbeat' || type === 'provider_heartbeat';
 }
 
+async function loadEventsHub(reset=true) {
+  const list = document.getElementById('eventsHubList');
+  if (!list) return;
+  if (reset) list.innerHTML = '<div class="empty-events">Loading events…</div>';
+  try {
+    const params = new URLSearchParams({limit: '260'});
+    if (eventsHubFacetKind) params.set('source_kind', eventsHubFacetKind);
+    if (eventsHubFacetLabel) params.set('source_label', eventsHubFacetLabel);
+    const payload = await api(`/v1/events/summary?${params.toString()}`);
+    eventsHubLastEvents = Array.isArray(payload) ? payload : (payload.events || []);
+    window.__pacEventsHubFacets = payload.facets || null;
+    renderEventsHubSummary(eventsHubLastEvents, payload.summary || null);
+    renderEventsHub(eventsHubLastEvents, true);
+  } catch (e) {
+    list.innerHTML = `<div class="empty-events">Could not load events: ${escapeHtml(e.message || String(e))}</div>`;
+  }
+}
+
 async function loadGlobalEvents(reset=false) {
   const list = document.getElementById('globalEvents');
   if (!list) return;
-  if (reset) { globalEventSeen = new Set(); list.innerHTML = '<div class="empty-events">No events yet.</div>'; }
+  if (reset) { globalEventSeen = new Set(); list.innerHTML = '<div class="empty-events">No urgent notifications.</div>'; }
   try {
-    const events = await api('/v1/events/recent?limit=100');
+    const payload = await api('/v1/events/urgent?limit=80');
+    const events = Array.isArray(payload) ? payload : (payload.events || []);
     eventsFetchFailureCount = 0;
     eventsFetchLastNotice = null;
     const existing = list.querySelector('.events-fetch-error');
@@ -175,8 +322,8 @@ async function loadGlobalEvents(reset=false) {
     if (reset) list.innerHTML = '';
     [...events].reverse().forEach(e => renderGlobalEvent(e));
     if (window.__pacLastUiEvent) renderGlobalEvent(window.__pacLastUiEvent);
-    if (!list.children.length) {
-      list.innerHTML = '<div class="empty-events"><b>No visible events yet.</b><br><span>Actions you run from the UI are recorded here now. Controller logs and traces remain under Observe.</span></div>';
+    if (!list.querySelector('.event-card')) {
+      list.innerHTML = '<div class="empty-events"><b>No urgent notifications.</b><br><span>Use Observe → Events for the full event stream.</span></div>';
     }
   } catch (e) {
     eventsFetchFailureCount += 1;
@@ -214,6 +361,7 @@ function setupEventsRail() {
     await loadGlobalEvents(true).catch(()=>{});
   };
   window.openEventsRail = showRail;
+  window.openNotificationDrawer = showRail;
   const hideRail = () => {
     if (!rail) return;
     rail.classList.remove('open');
@@ -226,7 +374,7 @@ function setupEventsRail() {
     eventsRailPinned = !eventsRailPinned;
     rail.classList.toggle('pinned', eventsRailPinned);
     pin.setAttribute('aria-pressed', eventsRailPinned ? 'true' : 'false');
-    pin.title = eventsRailPinned ? 'Events pinned open' : 'Keep events open';
+    pin.title = eventsRailPinned ? 'Notifications pinned open' : 'Keep notifications open';
   };
   document.addEventListener('pointerdown', (ev) => {
     if (!rail || rail.hidden || eventsRailPinned) return;
@@ -236,16 +384,62 @@ function setupEventsRail() {
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && rail && !rail.hidden && !eventsRailPinned) hideRail();
   });
-  document.querySelectorAll('.event-chip').forEach(chip => {
+  document.querySelectorAll('.notification-drawer .event-chip').forEach(chip => {
     chip.onclick = async () => {
-      document.querySelectorAll('.event-chip').forEach(c => c.classList.remove('active'));
+      document.querySelectorAll('.notification-drawer .event-chip').forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
-      globalEventFilter = chip.dataset.eventFilter || 'all';
+      globalEventFilter = chip.dataset.eventFilter || 'emergency';
       await loadGlobalEvents(true);
     };
   });
+  document.querySelectorAll('[data-events-hub-filter]').forEach(chip => {
+    chip.onclick = async () => {
+      document.querySelectorAll('[data-events-hub-filter]').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      eventsHubFilter = chip.dataset.eventsHubFilter || 'all';
+      renderEventsHub(eventsHubLastEvents, true);
+    };
+  });
   const clear = document.getElementById('clearEventPanel');
-  if (clear) clear.onclick = () => { globalEventSeen = new Set(); const list=document.getElementById('globalEvents'); if(list) list.innerHTML='<div class="empty-events">Cleared visible events.</div>'; };
-  if (!globalEventPoll) globalEventPoll = setInterval(() => { loadGlobalEvents(false).catch(()=>{}); if (typeof loadNotificationSummary === 'function') loadNotificationSummary().catch(()=>{}); }, 3500);
+  if (clear) clear.onclick = () => { acknowledgeAllUrgentEvents().catch((err)=>{ const list=document.getElementById('globalEvents'); if(list) list.innerHTML=`<div class="empty-events">Could not acknowledge notifications: ${escapeHtml(err.message || String(err))}</div>`; }); };
+  document.getElementById('eventsHubGroups')?.addEventListener('click', (event) => {
+    const row = event.target.closest('[data-events-source-kind]');
+    if (!row) return;
+    eventsHubFacetKind = row.dataset.eventsSourceKind || '';
+    eventsHubFacetLabel = row.dataset.eventsSourceLabel || '';
+    loadEventsHub(true).catch(()=>{});
+  });
+  document.getElementById('eventsHubReload')?.addEventListener('click', () => loadEventsHub(true).catch(()=>{}));
+  document.getElementById('eventsHubCriticalOnly')?.addEventListener('click', () => {
+    eventsHubFilter = eventsHubFilter === 'failed' ? 'all' : 'failed';
+    document.querySelectorAll('[data-events-hub-filter]').forEach(c => c.classList.toggle('active', (c.dataset.eventsHubFilter || 'all') === eventsHubFilter));
+    renderEventsHub(eventsHubLastEvents, true);
+  });
+  document.getElementById('eventsHubSearch')?.addEventListener('input', (event) => {
+    eventsHubSearch = event.target.value || '';
+    renderEventsHub(eventsHubLastEvents, true);
+  });
+  document.querySelectorAll('[data-events-hub-source]').forEach(chip => {
+    chip.onclick = () => {
+      document.querySelectorAll('[data-events-hub-source]').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      eventsHubSource = chip.dataset.eventsHubSource || 'all';
+      renderEventsHub(eventsHubLastEvents, true);
+    };
+  });
+  document.getElementById('eventsHubExport')?.addEventListener('click', () => {
+    const lines = Array.from(document.querySelectorAll('#eventsHubList .event-card')).map((card) => card.innerText.trim()).filter(Boolean).join('\n---\n');
+    const blob = new Blob([lines || 'No visible events.'], {type: 'text/plain'});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `pac-events-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  });
+  if (!globalEventPoll) globalEventPoll = setInterval(() => { loadGlobalEvents(false).catch(()=>{}); if (typeof loadNotificationSummary === 'function') loadNotificationSummary().catch(()=>{}); }, 5000);
+  if (!eventsHubPoll) eventsHubPoll = setInterval(() => { if (document.body?.dataset.shellRoute === 'events') loadEventsHub(false).catch(()=>{}); }, 7000);
+  loadEventsHub(false).catch(()=>{});
 }
-

@@ -68,3 +68,7 @@
 @import url("/ui/styles/atlas-final.css");
 @import url("/ui/styles/wizard-consistency.css");
 @import url("/ui/styles/theme-completeness.css");
+@import url("/ui/styles/open-shift-surface-pass.css");
+@import url("/ui/styles/open-shift-layout-pass.css");
+
+@import url("/ui/styles/events-hub-standard.css");

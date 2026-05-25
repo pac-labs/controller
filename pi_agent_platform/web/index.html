@@ -23,7 +23,7 @@
       </div>
     <div class="top-actions global-utility-bar" aria-label="Global utility bar">
       <button id="openDownloadsModal" class="top-icon-button monochrome-icon clean-download-icon" title="Documentation and downloads" aria-label="Documentation and downloads"><span aria-hidden="true"></span></button>
-      <button id="openEventsPanel" class="top-icon-button monochrome-icon clean-bell-icon notification-button" title="Notifications and events" aria-label="Notifications and events"><span aria-hidden="true"></span><b id="notificationBadge" class="notification-badge" hidden>0</b></button>
+      <button id="openEventsPanel" class="top-icon-button monochrome-icon clean-bell-icon notification-button" title="Emergency notifications" aria-label="Emergency notifications"><span aria-hidden="true"></span><b id="notificationBadge" class="notification-badge" hidden>0</b></button>
       <div class="global-create-wrap">
         <button id="globalCreateButton" class="top-icon-button global-create-button" type="button" title="Create resource" aria-label="Create resource" aria-haspopup="menu" aria-expanded="false">+</button>
         <div id="globalCreateMenu" class="global-create-menu" role="menu" hidden></div>
@@ -678,11 +678,11 @@
         <div class="section-heading compact-heading">
           <div>
             <h2>Observe</h2>
-            <p class="muted">Controller-local logs, metrics, and traces live here. Events remain available from the Events tab and the bell.</p>
+            <p class="muted">Controller-local logs, metrics, and traces live here. The Events hub is the first-class alerting and event page; the bell only shows urgent notifications.</p>
           </div>
           <div class="button-row compact-row">
             <button id="observeRefresh" class="ghost-button" type="button">Refresh</button>
-            <button id="observeOpenEvents" class="ghost-button" type="button">Open events</button>
+            <button id="observeOpenEvents" class="ghost-button" type="button">Open Events hub</button>
           </div>
         </div>
         <div id="observeStatusCards" class="observe-status-grid muted" data-pac-loading="Loading observability status…">Loading observability status…</div>
@@ -717,6 +717,50 @@
         <section class="card observe-card">
           <h2>Runtime</h2>
           <div id="observeRuntime" class="observe-kv muted" data-pac-loading="Loading runtime…">Loading runtime…</div>
+        </section>
+      </div>
+    </section>
+
+
+    <section id="events-tab" class="tab-panel events-hub-panel">
+      <div class="events-hub-grid">
+        <section class="card events-hub-summary-card">
+          <div class="section-heading compact-heading">
+            <div><h2>Event posture</h2><p class="muted">Recent controller activity grouped by operational severity.</p></div>
+            <div class="button-row compact-row">
+              <button id="eventsHubReload" class="ghost-button" type="button">Reload events</button>
+              <button id="eventsHubCriticalOnly" class="ghost-button" type="button">Critical only</button>
+            </div>
+          </div>
+          <div id="eventsHubSummary" class="observe-status-grid events-hub-summary muted">Loading events…</div>
+          <div id="eventsHubGroups" class="events-hub-groups muted">Loading event groups…</div>
+          <div id="eventsHubActiveFacet" class="events-hub-active-facet muted small-text">Showing the selected event window.</div>
+        </section>
+        <section class="card wide events-hub-list-card">
+          <div class="section-heading compact-heading">
+            <div><h2>Alerting and events</h2><p class="muted">Full event stream for troubleshooting, auditing, and controller health. Use the bell for urgent notifications only.</p></div>
+            <button id="eventsHubExport" class="ghost-button" type="button">Export visible</button>
+          </div>
+          <div class="events-hub-tools">
+            <label class="toolbar-search events-hub-search"><span>Search events</span><input id="eventsHubSearch" type="search" placeholder="Search type, message, session, task…"></label>
+            <div class="events-hub-filter-row" role="group" aria-label="Event filters">
+              <button class="event-chip active" type="button" data-events-hub-filter="all">All</button>
+              <button class="event-chip" type="button" data-events-hub-filter="emergency">Urgent</button>
+              <button class="event-chip" type="button" data-events-hub-filter="failed">Critical</button>
+              <button class="event-chip" type="button" data-events-hub-filter="attention">Attention</button>
+              <button class="event-chip" type="button" data-events-hub-filter="running">Running</button>
+              <button class="event-chip" type="button" data-events-hub-filter="completed">Done</button>
+            </div>
+            <div class="events-hub-filter-row source-filter-row" role="group" aria-label="Event source filters">
+              <button class="event-chip active" type="button" data-events-hub-source="all">All sources</button>
+              <button class="event-chip" type="button" data-events-hub-source="system">System</button>
+              <button class="event-chip" type="button" data-events-hub-source="sessions">Sessions</button>
+              <button class="event-chip" type="button" data-events-hub-source="endpoints">Endpoints</button>
+              <button class="event-chip" type="button" data-events-hub-source="workspaces">Workspaces</button>
+              <button class="event-chip" type="button" data-events-hub-source="components">Components</button>
+            </div>
+          </div>
+          <div id="eventsHubList" class="events-list events-hub-list"><div class="empty-events">No events loaded yet.</div></div>
         </section>
       </div>
     </section>
@@ -1012,6 +1056,21 @@
                     <button id="applyFeaturePack" class="ghost-button" disabled>Apply update</button>
                   </div>
                   <div id="featurePackPreview" class="feature-pack-preview muted">Choose a PAC update or feature pack zip to preview.</div>
+                  <div class="updates-archive-section release-assets-panel">
+                    <div class="section-heading compact-heading">
+                      <div><h3>Release artifacts</h3><p class="muted">Server update zips stay small. Endpoint binaries and release JSON are published as GitHub Release assets.</p></div>
+                      <button id="reloadReleaseAssets" class="ghost-button mini-button" type="button">Reload assets</button>
+                    </div>
+                    <div id="releaseAssetsList" class="release-assets-list muted small-text">Release assets have not been loaded yet.</div>
+                    <div id="releaseBinaryManifest" class="release-binary-manifest muted small-text">Binary manifest has not been loaded yet.</div>
+                  </div>
+                  <div class="updates-archive-section storage-health-panel">
+                    <div class="section-heading compact-heading">
+                      <div><h3>Storage health</h3><p class="muted">Embedded stores, release cache, artifacts, and configuration storage used by this controller.</p></div>
+                      <button id="reloadStorageHealth" class="ghost-button mini-button" type="button">Reload storage</button>
+                    </div>
+                    <div id="storageHealthList" class="release-binary-manifest muted small-text">Storage health has not been loaded yet.</div>
+                  </div>
                   <div class="online-source-updates">
                     <div class="button-row"><button id="checkSourceUpdates" class="ghost-button">Check source modules online</button><span id="sourceUpdateStatus" class="muted small-text"></span></div>
                     <div id="sourceOnlineUpdates" class="feature-pack-preview muted">Online source module updates have not been checked yet.</div>
@@ -1369,22 +1428,21 @@
     </section>
     </section>
   </main>
-  <aside id="eventsRail" class="events-rail" aria-label="Events" hidden>
+  <aside id="eventsRail" class="events-rail notification-drawer" aria-label="Emergency notifications" hidden>
     <div class="events-rail-header">
       <div>
-        <h2>Events</h2>
-        <p>Live activity</p>
+        <h2>Notifications</h2>
+        <p>Urgent events only</p>
       </div>
-      <div class="events-header-actions"><button id="pinEventsPanel" class="ghost-button events-pin-button" title="Keep events open" aria-pressed="false">📌</button><button id="clearEventPanel" class="ghost-button" title="Clear visible events">Clear</button><button id="closeEventsPanel" class="ghost-button" title="Close events">Close</button></div>
+      <div class="events-header-actions"><button id="pinEventsPanel" class="ghost-button events-pin-button" title="Keep events open" aria-pressed="false">📌</button><button id="clearEventPanel" class="ghost-button" title="Acknowledge current urgent notifications">Acknowledge all</button><button id="closeEventsPanel" class="ghost-button" title="Close events">Close</button></div>
     </div>
     <div id="notificationSummary" class="notification-summary" hidden></div>
     <div class="events-filter-row">
-      <span class="event-chip active" data-event-filter="all">All</span>
-      <span class="event-chip" data-event-filter="running">Running</span>
-      <span class="event-chip" data-event-filter="completed">Done</span>
+      <span class="event-chip active" data-event-filter="emergency">Urgent</span>
+      <span class="event-chip" data-event-filter="failed">Critical</span>
       <span class="event-chip" data-event-filter="attention">Attention</span>
     </div>
-    <div id="globalEvents" class="events-list"><div class="empty-events">No events yet.</div></div>
+    <div id="globalEvents" class="events-list"><div class="empty-events">No urgent notifications.</div></div>
   </aside>
 
   <div id="configCredentialModal" class="modal-backdrop" hidden>
@@ -1523,6 +1581,7 @@
   <script src="/ui/app/directory_access.js"></script>
   <script src="/ui/app/observe.js"></script>
   <script src="/ui/app/events.js"></script>
+  <script src="/ui/app/update_confirm_overlay.js"></script>
   <script src="/ui/app/workspace_form_helpers.js"></script>
   <script src="/ui/app/workspace_shared_storage.js"></script>
   <script src="/ui/app/agent_context_helpers.js"></script>

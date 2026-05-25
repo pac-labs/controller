@@ -197,12 +197,6 @@
     const route = routeFor(item);
     window.__pacActiveShellRoute = route;
     saveRoute(route);
-    if (item.tab === 'events-panel-proxy') {
-      renderGroup(item.group.id, item.tab);
-      const opener = typeof showRail === 'function' ? showRail : window.openEventsRail;
-      if (typeof opener === 'function') opener();
-      return;
-    }
     window.__pacActiveSettingsPanel = item.settingsPanel || '';
     if (typeof activateMainTab === 'function') activateMainTab(item.tab || DEFAULT_ROUTE);
     renderGroup(item.group.id, item.tab || DEFAULT_ROUTE);
