@@ -1,10 +1,10 @@
 // Dashboard widget selection, PAC Component Atlas rendering, and notification summary helpers.
 
-const DASHBOARD_WIDGET_KEY = 'pac-dashboard-widgets-v1';
+const DASHBOARD_WIDGET_KEY = 'pac-dashboard-widgets-v2';
 const DASHBOARD_ATLAS_ZOOM_KEY = 'pac-dashboard-atlas-zoom-v1';
 const DASHBOARD_ATLAS_DETAIL_KEY = 'pac-dashboard-atlas-detail-v1';
 let dashboardAtlasWheelRenderTimer = null;
-const DASHBOARD_DEFAULT_WIDGETS = ['topology', 'overview', 'execution', 'components', 'readiness', 'events', 'sessions'];
+const DASHBOARD_DEFAULT_WIDGETS = ['overview', 'components', 'events', 'execution', 'readiness', 'sessions', 'topology'];
 const DASHBOARD_WIDGETS = [
   {id: 'overview', label: 'Operations overview'},
   {id: 'topology', label: 'PAC Component Atlas'},
@@ -21,7 +21,7 @@ const ATLAS_HEIGHT = 1560;
 const ATLAS_GROUPS = {
   controller: {label: 'PAC Controller', icon: '⌂', x: 840, y: 560, w: 520, h: 360},
   agents: {label: 'Agents', icon: '✣', x: 780, y: 80, w: 620, h: 360},
-  providers: {label: 'Providers & models', icon: '◍', x: 1460, y: 90, w: 620, h: 520},
+  providers: {label: 'Providers & models', icon: '◍', x: 1420, y: 90, w: 760, h: 560},
   endpoints: {label: 'Endpoints', icon: '▰', x: 120, y: 230, w: 600, h: 500},
   workspaces: {label: 'Workspaces & context', icon: '▤', x: 1460, y: 680, w: 620, h: 430},
   sessions: {label: 'Sessions', icon: '▶', x: 800, y: 1010, w: 660, h: 430},

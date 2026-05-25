@@ -231,14 +231,26 @@ async function applyFeaturePack() {
 
 function scheduleHiddenReloadAfterRestart(seconds = 18) {
   window.__pacRestartReloadTimer = window.__pacRestartReloadTimer || null;
+  window.__pacRestartCountdownTimer = window.__pacRestartCountdownTimer || null;
   if (window.__pacRestartReloadTimer) clearTimeout(window.__pacRestartReloadTimer);
+  if (window.__pacRestartCountdownTimer) clearInterval(window.__pacRestartCountdownTimer);
+  const totalSeconds = Math.max(5, Number(seconds) || 18);
   const result = document.getElementById('stagePackageResult');
   if (result) result.textContent += `
 
-PAC is restarting. This page will refresh automatically in ${seconds} seconds.`;
+PAC is restarting. This page will refresh automatically in ${totalSeconds} seconds.`;
   const meta = window.__pacReleaseMeta || {};
-  setUpdateConfirmOverlayRestarting(meta.latest_version || config?.version || config?.setup_status?.version || '', seconds);
-  window.__pacRestartReloadTimer = setTimeout(() => window.location.reload(), seconds * 1000);
+  setUpdateConfirmOverlayRestarting(meta.latest_version || config?.version || config?.setup_status?.version || '', totalSeconds);
+  const start = Date.now();
+  updateRestartCountdown(totalSeconds);
+  window.__pacRestartCountdownTimer = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - start) / 1000);
+    updateRestartCountdown(Math.max(0, totalSeconds - elapsed));
+  }, 1000);
+  window.__pacRestartReloadTimer = setTimeout(() => {
+    if (window.__pacRestartCountdownTimer) clearInterval(window.__pacRestartCountdownTimer);
+    window.location.reload();
+  }, totalSeconds * 1000);
 }
 
 async function uploadStagePackageFromForm() {

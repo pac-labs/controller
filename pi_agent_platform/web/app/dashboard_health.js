@@ -146,6 +146,82 @@ function renderEventActivity(points) {
   const max = Math.max(...rows.map(p => Number(p.count) || 0), 1);
   el.innerHTML = `<div class="spark-bars">${rows.map(p => `<div class="spark-col" title="${escapeHtml(p.date)}: ${p.count}"><i style="height:${Math.max(8, Math.round((Number(p.count || 0)/max)*100))}%"></i><span>${escapeHtml(String(p.date || '').slice(5))}</span></div>`).join('')}</div>`;
 }
+
+function formatDashboardBytes(bytes) {
+  const value = Number(bytes || 0);
+  if (!value) return '—';
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KiB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MiB`;
+  return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
+}
+function utilizationTone(value) {
+  const number = Number(value || 0);
+  if (number >= 90) return 'danger';
+  if (number >= 75) return 'warn';
+  return 'ok';
+}
+function pushUsageSample(usage) {
+  window.__pacDashboardUsageSamples = window.__pacDashboardUsageSamples || [];
+  const sample = {
+    at: new Date(),
+    cpu: Number(usage?.cpu_percent || 0),
+    memory: Number(usage?.memory?.percent || 0),
+    disk: Number(usage?.disk?.percent || 0),
+  };
+  window.__pacDashboardUsageSamples.push(sample);
+  window.__pacDashboardUsageSamples = window.__pacDashboardUsageSamples.slice(-18);
+  return window.__pacDashboardUsageSamples;
+}
+function normalizeUsageHistory(history) {
+  return (Array.isArray(history) ? history : [])
+    .map((item) => ({
+      at: item.ts ? new Date(item.ts) : new Date(),
+      cpu: Number(item.cpu ?? 0),
+      memory: Number(item.memory ?? 0),
+      disk: Number(item.disk ?? 0),
+    }))
+    .filter((item) => Number.isFinite(item.cpu) || Number.isFinite(item.memory) || Number.isFinite(item.disk))
+    .slice(-48);
+}
+function renderUsageSeries(samples) {
+  const rows = samples && samples.length ? samples : [];
+  if (!rows.length) return '<div class="muted small-text">Integrated time-series history will appear after samples are collected.</div>';
+  const max = Math.max(100, ...rows.flatMap((item) => [item.cpu, item.memory, item.disk]));
+  const time = (item) => item.at instanceof Date && !Number.isNaN(item.at.getTime()) ? item.at.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '';
+  const bar = (value, label, item) => `<i title="${escapeHtml(label)} ${Math.round(value)}% · ${escapeHtml(time(item))}" style="height:${Math.max(5, Math.round((Number(value || 0) / max) * 100))}%"></i>`;
+  return `<div class="utilization-timeseries" aria-label="Controller usage time series">${rows.map((item) => `<span>${bar(item.cpu, 'CPU', item)}${bar(item.memory, 'Memory', item)}${bar(item.disk, 'Disk', item)}</span>`).join('')}</div>`;
+}
+function renderUtilizationMeter(label, value, detail) {
+  const pct = Number(value || 0);
+  const tone = utilizationTone(pct);
+  return `<div class="utilization-meter" data-state="${tone}"><div><b>${escapeHtml(label)}</b><span>${escapeHtml(detail || '')}</span></div><strong>${Number.isFinite(pct) ? `${pct.toFixed(1)}%` : '—'}</strong><div class="utilization-track"><i style="width:${Math.max(2, Math.min(100, pct))}%"></i></div></div>`;
+}
+function renderControllerUtilization(metrics) {
+  const el = document.getElementById('controllerUtilization');
+  if (!el) return;
+  const usage = metrics?.controller_usage || {};
+  const memory = usage.memory || {};
+  const disk = usage.disk || {};
+  const persistedSamples = normalizeUsageHistory(metrics?.controller_usage_history);
+  const samples = persistedSamples.length ? persistedSamples : pushUsageSample(usage);
+  const sampleHint = persistedSamples.length ? `${persistedSamples.length} persisted sample${persistedSamples.length === 1 ? '' : 's'} from integrated time-series` : 'Waiting for integrated time-series samples';
+  el.innerHTML = `<div class="utilization-meters">
+    ${renderUtilizationMeter('CPU load', usage.cpu_percent, '1 minute load / logical cores')}
+    ${renderUtilizationMeter('Memory', memory.percent, `${formatDashboardBytes(memory.used_bytes)} of ${formatDashboardBytes(memory.total_bytes)}`)}
+    ${renderUtilizationMeter('Filesystem', disk.percent, `${formatDashboardBytes(disk.used_bytes)} of ${formatDashboardBytes(disk.total_bytes)}`)}
+  </div>${renderUsageSeries(samples)}<div class="muted small-text">${escapeHtml(sampleHint)}</div>`;
+}
+function bindDashboardRouteActions() {
+  document.querySelectorAll('[data-route-target="observe-events"]').forEach((button) => {
+    if (button.dataset.boundRouteTarget === '1') return;
+    button.dataset.boundRouteTarget = '1';
+    button.addEventListener('click', () => {
+      if (typeof activateMainTab === 'function') activateMainTab('events-tab');
+    });
+  });
+}
+
 async function loadDashboardMetrics() {
   try {
     const metrics = await api('/v1/metrics/summary');
@@ -154,12 +230,16 @@ async function loadDashboardMetrics() {
     renderEventActivity(metrics.events_by_day);
     renderCriticalComponentHealth(metrics);
     renderOpsReadiness(metrics);
+    renderControllerUtilization(metrics);
+    bindDashboardRouteActions();
     if (typeof loadNotificationSummary === 'function') loadNotificationSummary();
   } catch (e) {
     const el = document.getElementById('dashboardStats');
     if (el) el.innerHTML = `<div class="muted">Could not load metrics: ${escapeHtml(e.message)}</div>`;
     const component = document.getElementById('componentHealth');
     if (component) component.innerHTML = `<div class="muted">Could not load component health: ${escapeHtml(e.message)}</div>`;
+    const usage = document.getElementById('controllerUtilization');
+    if (usage) usage.innerHTML = `<div class="muted">Could not load controller utilization: ${escapeHtml(e.message)}</div>`;
     const readiness = document.getElementById('opsReadiness');
     if (readiness) readiness.innerHTML = `<div class="muted">Could not load setup state: ${escapeHtml(e.message)}</div>`;
   }

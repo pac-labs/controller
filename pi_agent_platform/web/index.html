@@ -100,26 +100,28 @@
           <div id="dashboardWidgetMenu" class="dashboard-widget-menu" hidden></div>
         </div>
       </div>
-      <div class="dashboard-grid dashboard-metrics private-dashboard-grid">
-        <section class="card wide dashboard-widget dashboard-topology-card" data-dashboard-widget="topology">
-          <div class="section-heading dashboard-map-heading"><div><h2>PAC Component Atlas</h2><p class="muted">Zoomable system overview centered on PAC: controller, PAC agent, pi.dev agent, endpoints, workspaces, sessions, providers, models, tools, plugins, observability, and artifacts.</p></div><div class="button-row compact-row"><button id="dashboardResetTopologyLayout" class="ghost-button" type="button">Reset atlas</button><button id="dashboardRefreshTopology" class="ghost-button" type="button">Refresh atlas</button></div></div>
+      <div class="dashboard-grid dashboard-metrics private-dashboard-grid dashboard-operations-grid">
+        <section class="card hero wide dashboard-widget dashboard-widget-summary" data-dashboard-widget="overview">
+          <div class="section-heading dashboard-overview-heading">
+            <div class="hero-title"><img class="hero-mark" src="/ui/assets/pac-icon-green-128.png" alt="" /><div><h2>Controller overview</h2><p class="eyebrow">Sessions • Endpoints • Providers • Alerts</p></div></div>
+            <div class="button-row compact-row"><button id="dashboardNewSession">New session</button><button id="dashboardRefreshMetrics" class="ghost-button">Refresh metrics</button></div>
+          </div>
+          <p class="muted dashboard-overview-copy">Current PAC posture across controller runtime, active work, endpoint capacity, providers, models, and urgent events.</p>
+          <div id="dashboardStats" class="stats-grid dashboard-summary-cards"><div class="metric"><b>—</b><span>loading</span></div></div>
+        </section>
+        <section class="card dashboard-widget dashboard-widget-status" data-dashboard-widget="components"><div class="section-heading"><div><h2>Status</h2><p class="muted">Core controller dependencies and connected resources.</p></div></div><div id="componentHealth" class="health-grid muted" data-pac-loading="Loading component health…">Loading component health…</div></section>
+        <section class="card dashboard-widget dashboard-widget-activity" data-dashboard-widget="events"><div class="section-heading"><div><h2>Activity</h2><p class="muted">Recent operational events over time.</p></div><button class="ghost-button mini-button" type="button" data-route-target="observe-events">View events</button></div><div id="eventActivityChart" class="spark-chart muted" data-pac-loading="Loading event activity…">Loading event activity…</div></section>
+        <section class="card dashboard-widget dashboard-widget-utilization" data-dashboard-widget="execution"><div class="section-heading"><div><h2>Controller utilization</h2><p class="muted">Embedded controller usage and task throughput.</p></div></div><div id="controllerUtilization" class="controller-utilization" data-pac-loading="Loading controller utilization…">Loading controller utilization…</div><div class="dashboard-subsection"><h3>Execution health</h3><div id="taskStatusChart" class="bar-chart muted" data-pac-loading="Loading execution health…">Loading execution health…</div></div></section>
+        <section class="card dashboard-widget dashboard-widget-readiness" data-dashboard-widget="readiness"><div class="section-heading"><div><h2>Readiness</h2><p class="muted">Setup, secrets, source state, and update posture.</p></div></div><div id="opsReadiness" class="health-grid muted" data-pac-loading="Loading setup state…">Loading setup state…</div></section>
+        <section class="card dashboard-widget dashboard-widget-mandatory dashboard-widget-system" data-dashboard-widget="system"><div class="section-heading"><div><h2>System details</h2><p class="muted">Controller identity and runtime information.</p></div><span class="pill">mandatory</span></div><div class="status-strip"><span class="pac-loader" aria-label="active"></span><span class="muted">PAC active</span></div><div id="systemInfo" class="kv"></div></section>
+        <section class="card dashboard-widget dashboard-widget-sessions" data-dashboard-widget="sessions"><div class="section-heading"><div><h2>Recent sessions</h2><p class="muted">Latest controller conversations and task runs.</p></div></div><div id="sessions"></div></section>
+        <section class="card wide dashboard-widget dashboard-topology-card dashboard-atlas-secondary" data-dashboard-widget="topology">
+          <div class="section-heading dashboard-map-heading"><div><h2>PAC Component Atlas</h2><p class="muted">Detailed dependency map for controller, agents, endpoints, workspaces, providers, models, tools, observability, and artifacts.</p></div><div class="button-row compact-row"><button id="dashboardResetTopologyLayout" class="ghost-button" type="button">Reset atlas</button><button id="dashboardRefreshTopology" class="ghost-button" type="button">Refresh atlas</button></div></div>
           <div class="dashboard-map-layout">
             <div id="dashboardTopologyMap" class="dashboard-topology-map muted" data-pac-loading="Loading PAC Component Atlas…">Loading PAC Component Atlas…</div>
             <aside id="dashboardTopologyDetails" class="dashboard-topology-details"><h3>Select an object</h3><p class="muted small-text">Click a component to inspect its PAC role, parent, details, and visible connections.</p></aside>
           </div>
         </section>
-        <section class="card hero wide dashboard-widget" data-dashboard-widget="overview">
-          <div class="hero-title"><img class="hero-mark" src="/ui/assets/pac-icon-green-128.png" alt="" /><div><h2>Operations overview</h2><p class="eyebrow">Real activity • Sessions • Endpoints</p></div></div>
-          <p class="muted">Current PAC state across sessions, endpoints, providers, controller runtime, and recent events.</p>
-          <div id="dashboardStats" class="stats-grid"><div class="metric"><b>—</b><span>loading</span></div></div>
-          <div class="button-row"><button id="dashboardNewSession">New session</button><button id="dashboardRefreshMetrics" class="ghost-button">Refresh metrics</button></div>
-        </section>
-        <section class="card dashboard-widget" data-dashboard-widget="execution"><h2>Execution health</h2><div id="taskStatusChart" class="bar-chart muted" data-pac-loading="Loading execution health…">Loading execution health…</div></section>
-        <section class="card dashboard-widget" data-dashboard-widget="components"><h2>Critical components</h2><div id="componentHealth" class="health-grid muted" data-pac-loading="Loading component health…">Loading component health…</div></section>
-        <section class="card dashboard-widget" data-dashboard-widget="readiness"><h2>Setup and updates</h2><div id="opsReadiness" class="health-grid muted" data-pac-loading="Loading setup state…">Loading setup state…</div></section>
-        <section class="card dashboard-widget" data-dashboard-widget="events"><h2>Event activity</h2><div id="eventActivityChart" class="spark-chart muted" data-pac-loading="Loading event activity…">Loading event activity…</div></section>
-        <section class="card dashboard-widget dashboard-widget-mandatory" data-dashboard-widget="system"><h2>System</h2><div class="status-strip"><span class="pac-loader" aria-label="active"></span><span class="muted">PAC active</span><span class="pill">mandatory</span></div><div id="systemInfo" class="kv"></div></section>
-        <section class="card dashboard-widget" data-dashboard-widget="sessions"><h2>Recent sessions</h2><div id="sessions"></div></section>
       </div>
     </section>
 

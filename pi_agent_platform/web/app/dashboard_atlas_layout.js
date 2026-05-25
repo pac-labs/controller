@@ -3,6 +3,8 @@
 const ATLAS_NODE_GAP_X = 28;
 const ATLAS_NODE_GAP_Y = 20;
 const ATLAS_GROUP_MARGIN_X = 22;
+const ATLAS_NODE_COLLISION_PAD_X = 18;
+const ATLAS_NODE_COLLISION_PAD_Y = 14;
 const ATLAS_GROUP_HEADER_Y = 58;
 const ATLAS_MIN_CANVAS_PAD = 80;
 const ATLAS_BASE_WIDTH = 2240;
@@ -75,10 +77,11 @@ function atlasProviderClusterRows(items) {
 function atlasProviderClusterSize(cluster) {
   const modelCount = cluster.models.length;
   const capabilityCount = cluster.capabilities?.length || 0;
-  const totalOrbit = modelCount + Math.min(capabilityCount, 6);
+  const visibleCapabilityCount = Math.min(capabilityCount, 8);
+  const wideOrbit = modelCount > 3 || visibleCapabilityCount > 4;
   return {
-    w: totalOrbit > 5 ? 354 : 312,
-    h: totalOrbit > 5 ? 278 : 238,
+    w: wideOrbit ? 650 : 560,
+    h: wideOrbit ? 390 : 330,
   };
 }
 
@@ -132,8 +135,8 @@ function atlasLayOutProviderGroup(items, group) {
     }
 
     const orbitNodes = [...cluster.models];
-    const radiusX = size.w * 0.36;
-    const radiusY = size.h * 0.33;
+    const radiusX = Math.max(205, size.w * 0.36);
+    const radiusY = Math.max(128, size.h * 0.34);
     orbitNodes.forEach((node, index) => {
       const nodeSize = atlasNodeSize(node);
       const angle = (-Math.PI / 2) + ((Math.PI * 2 * index) / Math.max(1, orbitNodes.length));
@@ -149,10 +152,11 @@ function atlasLayOutProviderGroup(items, group) {
       const parent = cluster.models[index % Math.max(1, cluster.models.length)];
       const parentPos = positions[parent?.id] || {x: centerX, y: centerY, w: 0, h: 0};
       const nodeSize = atlasNodeSize(node);
+      const lane = Math.floor(index / Math.max(1, cluster.models.length));
       const side = index % 2 === 0 ? 1 : -1;
       positions[node.id] = {
-        x: parentPos.x + parentPos.w + 8,
-        y: parentPos.y + side * 34,
+        x: parentPos.x + parentPos.w + 14 + lane * 18,
+        y: parentPos.y + side * (42 + lane * 18),
         w: nodeSize.w,
         h: nodeSize.h,
       };
@@ -201,19 +205,115 @@ function atlasResolveGroups(nodes, groups) {
   });
 
   const resolvedGroups = Object.fromEntries(Object.entries(groups).map(([key, group]) => [key, {...group, key}]));
-  byGroup.forEach((items, groupKey) => {
-    resolvedGroups[groupKey].h = atlasRequiredGroupHeight(items, resolvedGroups[groupKey]);
-  });
-  atlasResolveGroupCollisions(resolvedGroups);
+  for (let pass = 0; pass < 4; pass += 1) {
+    byGroup.forEach((items, groupKey) => {
+      resolvedGroups[groupKey].h = Math.max(resolvedGroups[groupKey].h, atlasRequiredGroupHeight(items, resolvedGroups[groupKey]));
+    });
+    atlasResolveGroupCollisions(resolvedGroups);
+    const positions = atlasLayOutAllGroups(byGroup, resolvedGroups);
+    const nodeCollisionChanged = atlasResolveNodeCollisions(nodes, positions, resolvedGroups);
+    const expanded = atlasExpandGroupsToFitNodes(nodes, positions, resolvedGroups);
+    if (!nodeCollisionChanged && !expanded) {
+      const extents = atlasGraphExtents(resolvedGroups, positions);
+      return {groups: resolvedGroups, positions, width: extents.width, height: extents.height};
+    }
+  }
 
+  atlasResolveGroupCollisions(resolvedGroups);
+  const positions = atlasLayOutAllGroups(byGroup, resolvedGroups);
+  atlasResolveNodeCollisions(nodes, positions, resolvedGroups);
+  atlasExpandGroupsToFitNodes(nodes, positions, resolvedGroups);
+  atlasResolveGroupCollisions(resolvedGroups);
+  const finalPositions = atlasLayOutAllGroups(byGroup, resolvedGroups);
+  atlasResolveNodeCollisions(nodes, finalPositions, resolvedGroups);
+  atlasExpandGroupsToFitNodes(nodes, finalPositions, resolvedGroups);
+  const extents = atlasGraphExtents(resolvedGroups, finalPositions);
+  return {groups: resolvedGroups, positions: finalPositions, width: extents.width, height: extents.height};
+}
+
+function atlasLayOutAllGroups(byGroup, resolvedGroups) {
   const positions = {};
   byGroup.forEach((items, groupKey) => {
     const layout = atlasLayOutGroup(items, resolvedGroups[groupKey]);
     Object.assign(positions, layout.positions);
   });
+  return positions;
+}
 
-  const extents = atlasGraphExtents(resolvedGroups, positions);
-  return {groups: resolvedGroups, positions, width: extents.width, height: extents.height};
+function atlasResolveNodeCollisions(nodes, positions, groups) {
+  let changed = false;
+  const byGroup = new Map();
+  nodes.forEach((node) => {
+    const groupKey = groups[node.group] ? node.group : 'controller';
+    if (!positions[node.id]) return;
+    if (!byGroup.has(groupKey)) byGroup.set(groupKey, []);
+    byGroup.get(groupKey).push(node);
+  });
+
+  byGroup.forEach((items, groupKey) => {
+    const group = groups[groupKey];
+    const ordered = [...items].sort((a, b) => atlasNodeCollisionRank(a, b, positions));
+    for (let pass = 0; pass < 10; pass += 1) {
+      let moved = false;
+      for (let i = 0; i < ordered.length; i += 1) {
+        const currentNode = ordered[i];
+        const current = positions[currentNode.id];
+        for (let j = 0; j < i; j += 1) {
+          const previousNode = ordered[j];
+          const previous = positions[previousNode.id];
+          if (!atlasNodeRectsOverlap(current, previous)) continue;
+          const nextY = previous.y + previous.h + ATLAS_NODE_COLLISION_PAD_Y;
+          const nextX = Math.min(
+            Math.max(group.x + ATLAS_GROUP_MARGIN_X, current.x + ATLAS_NODE_COLLISION_PAD_X),
+            group.x + group.w - current.w - ATLAS_GROUP_MARGIN_X,
+          );
+          if (nextY > current.y) {
+            current.y = nextY;
+            current.x = nextX;
+          } else {
+            current.x = nextX;
+          }
+          moved = true;
+          changed = true;
+        }
+      }
+      if (!moved) break;
+      ordered.sort((a, b) => atlasNodeCollisionRank(a, b, positions));
+    }
+  });
+  return changed;
+}
+
+function atlasNodeCollisionRank(a, b, positions) {
+  const kindRank = {provider: 0, controller: 0, agent: 1, endpoint: 1, workspace: 1, session: 1, model: 2, capability: 3};
+  const ap = positions[a.id] || {x: 0, y: 0};
+  const bp = positions[b.id] || {x: 0, y: 0};
+  return (kindRank[a.kind] ?? 2) - (kindRank[b.kind] ?? 2)
+    || ap.y - bp.y
+    || ap.x - bp.x
+    || String(a.label || a.id).localeCompare(String(b.label || b.id));
+}
+
+function atlasNodeRectsOverlap(a, b) {
+  return a.x < b.x + b.w + ATLAS_NODE_COLLISION_PAD_X
+    && a.x + a.w + ATLAS_NODE_COLLISION_PAD_X > b.x
+    && a.y < b.y + b.h + ATLAS_NODE_COLLISION_PAD_Y
+    && a.y + a.h + ATLAS_NODE_COLLISION_PAD_Y > b.y;
+}
+
+function atlasExpandGroupsToFitNodes(nodes, positions, groups) {
+  let changed = false;
+  Object.entries(groups).forEach(([groupKey, group]) => {
+    const groupNodes = nodes.filter((node) => (groups[node.group] ? node.group : 'controller') === groupKey && positions[node.id]);
+    if (!groupNodes.length) return;
+    const maxBottom = Math.max(...groupNodes.map((node) => positions[node.id].y + positions[node.id].h));
+    const requiredHeight = Math.ceil(maxBottom - group.y + ATLAS_GROUP_MARGIN_X);
+    if (requiredHeight > group.h) {
+      group.h = requiredHeight;
+      changed = true;
+    }
+  });
+  return changed;
 }
 
 function atlasResolveGroupCollisions(groups) {

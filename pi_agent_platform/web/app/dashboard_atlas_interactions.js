@@ -98,6 +98,13 @@ function setupAtlasViewport(container, options = {}) {
   let dragging = null;
   applyAtlasTransform(viewport, pan, zoom);
 
+  viewport.addEventListener('selectstart', (ev) => {
+    if (dragging || ev.target.closest('.atlas-canvas')) ev.preventDefault();
+  });
+  viewport.addEventListener('dragstart', (ev) => {
+    if (ev.target.closest('.atlas-canvas')) ev.preventDefault();
+  });
+
   viewport.addEventListener('wheel', (ev) => {
     ev.preventDefault();
     const rect = viewport.getBoundingClientRect();
@@ -135,6 +142,8 @@ function setupAtlasViewport(container, options = {}) {
 
   const finishDrag = (ev) => {
     if (!dragging) return;
+    ev?.preventDefault?.();
+    try { document.getSelection()?.removeAllRanges(); } catch (_) {}
     dragging = null;
     viewport.classList.remove('is-panning');
     try { viewport.releasePointerCapture(ev.pointerId); } catch (_) {}
