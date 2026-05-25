@@ -38,6 +38,7 @@ from pi_agent_platform.api.routes.mcp import create_mcp_router
 from pi_agent_platform.api.routes.system import create_system_router
 from pi_agent_platform.api.routes.endpoints import create_endpoints_router
 from pi_agent_platform.api.routes.editor_bridge import create_editor_bridge_router
+from pi_agent_platform.api.routes.events_retention import create_events_retention_router
 from pi_agent_platform.api.routes.providers import create_providers_router
 from pi_agent_platform.api.routes.proxy import create_proxy_router
 from pi_agent_platform.api.routes.server_config import create_server_config_router
@@ -192,6 +193,11 @@ config = load_config()
 PAC_VERSION = _read_pac_version()
 setup_pac_observability()
 prune_observability_store()
+try:
+    if store.get_event_retention_policy().get('prune_on_startup', True):
+        store.prune_events_by_retention()
+except Exception:
+    pass
 SESSION_CAPABLE_PROVIDER_TYPES = {"openai", "openai-codex", "openai-compatible", "lmstudio", "vllm", "groq", "openrouter", "deepseek", "mistral", "ollama"}
 
 
@@ -3751,6 +3757,12 @@ app.include_router(create_system_router(
     slash_help_text=slash_help_text,
     require_admin_or_runner=_require_admin_or_runner,
     require_resource_access=_require_resource_access,
+))
+
+
+app.include_router(create_events_retention_router(
+    require_auth=require_auth,
+    store=store,
 ))
 
 

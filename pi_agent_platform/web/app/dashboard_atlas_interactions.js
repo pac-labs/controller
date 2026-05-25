@@ -118,6 +118,8 @@ function setupAtlasViewport(container, options = {}) {
 
   viewport.addEventListener('pointerdown', (ev) => {
     if (ev.button !== 0 || ev.target.closest('.atlas-node')) return;
+    ev.preventDefault();
+    try { document.getSelection()?.removeAllRanges(); } catch (_) {}
     dragging = {x: ev.clientX, y: ev.clientY, panX: pan.x, panY: pan.y};
     viewport.classList.add('is-panning');
     viewport.setPointerCapture(ev.pointerId);
@@ -125,6 +127,7 @@ function setupAtlasViewport(container, options = {}) {
 
   viewport.addEventListener('pointermove', (ev) => {
     if (!dragging) return;
+    ev.preventDefault();
     pan = {x: dragging.panX + ev.clientX - dragging.x, y: dragging.panY + ev.clientY - dragging.y};
     saveAtlasPan(pan.x, pan.y);
     applyAtlasTransform(viewport, pan, zoom);

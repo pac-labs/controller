@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import timedelta
 from pathlib import Path
 from threading import Lock
 from typing import Iterable
@@ -9,6 +10,7 @@ from typing import Iterable
 from .models import AccessRequest, AgentContext, DirectoryCredential, DirectoryPrincipal, Event, Group, Session, Task, Runner, RunnerJob, RunnerJobStatus, User, UserWorkspace, now_utc
 from .shared_storage import SharedStorage
 from .config import ProxyRoute
+from .event_retention import is_emergency_event, normalize_event_retention_policy
 from .platform_home import pacp_path
 
 
@@ -56,6 +58,7 @@ class SQLiteStore:
             conn.execute('create table if not exists shared_storages (id text primary key, name text not null, payload text not null, updated_at text not null)')
             conn.execute('create index if not exists idx_shared_storages_name on shared_storages(name)')
             conn.execute('create table if not exists proxy_routes (id text primary key, payload text not null, updated_at text not null)')
+            conn.execute('create table if not exists controller_settings (key text primary key, value text not null, updated_at text not null)')
 
     def add_session(self, session: Session) -> Session:
         session.touch()
@@ -148,6 +151,99 @@ class SQLiteStore:
             if len(items) >= limit:
                 break
         return items
+
+    def get_controller_setting(self, key: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute('select value from controller_settings where key = ?', (str(key),)).fetchone()
+        if not row:
+            return None
+        try:
+            value = json.loads(row['value'])
+        except Exception:
+            return None
+        return value if isinstance(value, dict) else None
+
+    def set_controller_setting(self, key: str, value: dict) -> dict:
+        payload = json.dumps(value, sort_keys=True)
+        updated_at = now_utc().isoformat()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'insert or replace into controller_settings(key, value, updated_at) values (?, ?, ?)',
+                (str(key), payload, updated_at),
+            )
+        return value
+
+    def get_event_retention_policy(self) -> dict:
+        return normalize_event_retention_policy(self.get_controller_setting('event_retention_policy'))
+
+    def set_event_retention_policy(self, policy: dict[str, object]) -> dict:
+        normalized = normalize_event_retention_policy(policy)
+        self.set_controller_setting('event_retention_policy', normalized)
+        return normalized
+
+    def get_event_retention_counts(self) -> dict[str, int]:
+        policy = self.get_event_retention_policy()
+        normal_cutoff = now_utc() - timedelta(days=int(policy['retain_days']))
+        emergency_cutoff = now_utc() - timedelta(days=int(policy['emergency_retain_days']))
+        with self._connect() as conn:
+            rows = conn.execute('select payload from events order by created_at asc').fetchall()
+        counts = {'total': 0, 'emergency': 0, 'prunable_normal': 0, 'prunable_emergency': 0}
+        for row in rows:
+            event = Event.model_validate_json(row['payload'])
+            counts['total'] += 1
+            emergency = is_emergency_event(event.type, event.data if isinstance(event.data, dict) else {})
+            if emergency:
+                counts['emergency'] += 1
+                if event.created_at < emergency_cutoff:
+                    counts['prunable_emergency'] += 1
+            elif event.created_at < normal_cutoff:
+                counts['prunable_normal'] += 1
+        return counts
+
+    def prune_events_by_retention(self) -> dict[str, int]:
+        policy = self.get_event_retention_policy()
+        normal_cutoff = now_utc() - timedelta(days=int(policy['retain_days']))
+        emergency_cutoff = now_utc() - timedelta(days=int(policy['emergency_retain_days']))
+        with self._connect() as conn:
+            rows = conn.execute('select id, payload from events order by created_at asc').fetchall()
+        parsed: list[tuple[str, Event, bool]] = []
+        for row in rows:
+            event = Event.model_validate_json(row['payload'])
+            parsed.append((str(row['id']), event, is_emergency_event(event.type, event.data if isinstance(event.data, dict) else {})))
+        delete_ids: set[str] = set()
+        deleted_normal = 0
+        deleted_emergency = 0
+        for event_id, event, emergency in parsed:
+            if emergency and event.created_at < emergency_cutoff:
+                delete_ids.add(event_id)
+                deleted_emergency += 1
+            elif not emergency and event.created_at < normal_cutoff:
+                delete_ids.add(event_id)
+                deleted_normal += 1
+        survivors = [(event_id, event, emergency) for event_id, event, emergency in parsed if event_id not in delete_ids]
+        overflow = max(0, len(survivors) - int(policy['max_events']))
+        if overflow:
+            non_emergency = [(event_id, event) for event_id, event, emergency in survivors if not emergency]
+            emergency_rows = [(event_id, event) for event_id, event, emergency in survivors if emergency]
+            trimmed_from_survivors = 0
+            for event_id, _event in non_emergency[:overflow]:
+                delete_ids.add(event_id)
+                deleted_normal += 1
+                trimmed_from_survivors += 1
+            overflow = max(0, len(survivors) - trimmed_from_survivors - int(policy['max_events']))
+            if overflow:
+                for event_id, _event in emergency_rows[:overflow]:
+                    delete_ids.add(event_id)
+                    deleted_emergency += 1
+        if delete_ids:
+            with self._lock, self._connect() as conn:
+                conn.executemany('delete from events where id = ?', [(event_id,) for event_id in delete_ids])
+        return {
+            'deleted': len(delete_ids),
+            'deleted_normal': deleted_normal,
+            'deleted_emergency': deleted_emergency,
+            'remaining': max(0, len(parsed) - len(delete_ids)),
+        }
 
     def add_runner(self, runner: Runner) -> Runner:
         runner.touch()

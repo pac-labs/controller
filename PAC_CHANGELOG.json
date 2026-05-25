@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "1.0.358",
+      "date": "2026-05-25T17:30:00Z",
+      "summary": "Extended the redesign with richer atlas interaction layout and an operational events retention surface.",
+      "changes": [
+        "Improved atlas layout for provider, model, and capability clusters so the dashboard map stays readable as those groups grow.",
+        "Refined atlas pan behavior to prevent accidental text selection while dragging the canvas.",
+        "Added the next Events hub redesign pass, including retention status, editable retention policy, and manual event pruning controls.",
+        "Implemented backend support for urgent event feeds, event summaries, and event retention policy management so the redesigned Events hub works end to end."
+      ]
+    },
+    {
       "version": "1.0.357",
       "date": "2026-05-25T09:05:00Z",
       "summary": "Extended the redesigned UI shell with a standardized page runtime, global utilities, and an Update Center surface.",

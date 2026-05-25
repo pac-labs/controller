@@ -290,6 +290,110 @@ function shouldSuppressGlobalEvent(event) {
   return type === 'runner_heartbeat' || type === 'endpoint_heartbeat' || type === 'provider_heartbeat';
 }
 
+
+
+function eventsRetentionFormValue(form, name, fallback) {
+  const field = form?.querySelector(`[name="${name}"]`);
+  if (!field) return fallback;
+  if (field.type === 'checkbox') return field.checked;
+  const value = Number(field.value);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function showEventsRetentionEditor(policy={}) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay events-retention-editor-overlay';
+  overlay.innerHTML = `
+    <div class="modal-card events-retention-editor" role="dialog" aria-modal="true" aria-labelledby="eventsRetentionEditorTitle">
+      <div class="modal-header">
+        <div>
+          <h2 id="eventsRetentionEditorTitle">Events retention policy</h2>
+          <p class="muted">Control how long normal and urgent operational events are kept in the controller store.</p>
+        </div>
+        <button class="icon-button" type="button" data-close-retention-editor aria-label="Close">×</button>
+      </div>
+      <form id="eventsRetentionEditorForm" class="events-retention-editor-form">
+        <label class="checkbox-row"><input name="retention_enabled" type="checkbox" ${policy.retention_enabled === false ? '' : 'checked'}> Enable automatic event retention</label>
+        <div class="form-grid two-columns">
+          <label><span>Normal events, days</span><input name="retain_days" type="number" min="1" max="3650" value="${Number(policy.retain_days || 30)}"></label>
+          <label><span>Urgent events, days</span><input name="emergency_retain_days" type="number" min="1" max="3650" value="${Number(policy.emergency_retain_days || 180)}"></label>
+          <label><span>Maximum stored events</span><input name="max_events" type="number" min="100" max="1000000" step="100" value="${Number(policy.max_events || 20000)}"></label>
+          <label class="checkbox-row inline-checkbox"><input name="prune_on_startup" type="checkbox" ${policy.prune_on_startup === false ? '' : 'checked'}> Prune on startup</label>
+        </div>
+        <div class="wizard-review-box">
+          <strong>Retention model</strong>
+          <p>Urgent events live longer than normal lifecycle events. Logs and metrics should stay in their own observability stores instead of being kept as events forever.</p>
+        </div>
+        <div class="modal-actions">
+          <button class="ghost-button" type="button" data-close-retention-editor>Cancel</button>
+          <button class="primary-button" type="submit">Save policy</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelectorAll('[data-close-retention-editor]').forEach((button) => button.addEventListener('click', close));
+  overlay.addEventListener('click', (event) => { if (event.target === overlay) close(); });
+  overlay.querySelector('#eventsRetentionEditorForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submit = form.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    submit.textContent = 'Saving…';
+    const payload = {
+      retention_enabled: eventsRetentionFormValue(form, 'retention_enabled', true),
+      retain_days: eventsRetentionFormValue(form, 'retain_days', 30),
+      emergency_retain_days: eventsRetentionFormValue(form, 'emergency_retain_days', 180),
+      max_events: eventsRetentionFormValue(form, 'max_events', 20000),
+      prune_on_startup: eventsRetentionFormValue(form, 'prune_on_startup', true),
+    };
+    try {
+      await api('/v1/events/retention', {method:'PUT', body:JSON.stringify(payload)});
+      close();
+      await loadEventsRetentionStatus();
+      await loadEventsHub(true);
+    } catch (err) {
+      submit.disabled = false;
+      submit.textContent = 'Save policy';
+      notify?.(`Failed to save retention policy: ${err.message || err}`);
+    }
+  });
+  setTimeout(() => overlay.querySelector('input[name="retain_days"]')?.focus(), 50);
+}
+
+async function loadEventsRetentionStatus() {
+  const el = document.getElementById('eventsRetentionStatus');
+  if (!el) return;
+  try {
+    const payload = await api('/v1/events/retention');
+    const policy = payload.policy || {};
+    const counts = payload.counts || {};
+    const total = Number(counts.total || 0);
+    const emergency = Number(counts.emergency || 0);
+    const prunable = Number(counts.prunable_normal || 0) + Number(counts.prunable_emergency || 0);
+    el.classList.remove('muted');
+    el.innerHTML = `<span><strong>Retention</strong> · ${total} stored events · ${emergency} urgent · ${prunable} prunable</span><span>${policy.retention_enabled === false ? 'disabled' : `${Number(policy.retain_days || 30)}d normal / ${Number(policy.emergency_retain_days || 180)}d urgent / max ${Number(policy.max_events || 20000)}`}</span><span class="button-row compact-row"><button id="eventsRetentionEdit" class="ghost-button mini-button" type="button">Edit policy</button><button id="eventsRetentionPrune" class="ghost-button mini-button" type="button">Prune now</button></span>`;
+    el.querySelector('#eventsRetentionEdit')?.addEventListener('click', () => showEventsRetentionEditor(policy));
+    el.querySelector('#eventsRetentionPrune')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      button.textContent = 'Pruning…';
+      try {
+        const result = await api('/v1/events/retention/prune', {method:'POST'});
+        button.textContent = `Pruned ${Number(result?.result?.deleted || 0)}`;
+        await loadEventsHub(true);
+        await loadEventsRetentionStatus();
+      } catch (err) {
+        button.disabled = false;
+        button.textContent = 'Prune failed';
+        button.title = String(err?.message || err);
+      }
+    });
+  } catch (err) {
+    el.innerHTML = `<span>Retention status unavailable: ${escapeHtml(err.message || String(err))}</span>`;
+  }
+}
+
 async function loadEventsHub(reset=true) {
   const list = document.getElementById('eventsHubList');
   if (!list) return;
@@ -302,6 +406,7 @@ async function loadEventsHub(reset=true) {
     eventsHubLastEvents = Array.isArray(payload) ? payload : (payload.events || []);
     window.__pacEventsHubFacets = payload.facets || null;
     renderEventsHubSummary(eventsHubLastEvents, payload.summary || null);
+    await loadEventsRetentionStatus();
     renderEventsHub(eventsHubLastEvents, true);
   } catch (e) {
     list.innerHTML = `<div class="empty-events">Could not load events: ${escapeHtml(e.message || String(e))}</div>`;
@@ -442,4 +547,5 @@ function setupEventsRail() {
   if (!globalEventPoll) globalEventPoll = setInterval(() => { loadGlobalEvents(false).catch(()=>{}); if (typeof loadNotificationSummary === 'function') loadNotificationSummary().catch(()=>{}); }, 5000);
   if (!eventsHubPoll) eventsHubPoll = setInterval(() => { if (document.body?.dataset.shellRoute === 'events') loadEventsHub(false).catch(()=>{}); }, 7000);
   loadEventsHub(false).catch(()=>{});
+  loadEventsRetentionStatus().catch(()=>{});
 }

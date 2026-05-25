@@ -210,3 +210,67 @@ html[data-theme="light"] .events-group-row:hover,
 html[data-theme="light"] .events-group-row.active {
   background: #e0f2fe;
 }
+
+.events-retention-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  margin: .85rem 0 .65rem;
+  padding: .65rem .75rem;
+  border: 1px solid var(--panel-border, rgba(148, 163, 184, .35));
+  border-radius: 12px;
+  background: var(--panel-subtle, rgba(148, 163, 184, .08));
+}
+.events-retention-status strong { color: var(--text-strong, inherit); }
+.events-retention-status .button-row { margin-left: auto; }
+
+.events-retention-editor {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.events-retention-editor-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.events-retention-editor-form label {
+  display: grid;
+  gap: .35rem;
+  color: var(--text-strong, inherit);
+  font-weight: 650;
+}
+
+.events-retention-editor-form input[type="number"] {
+  min-height: 38px;
+  border: 1px solid var(--input-border, var(--panel-border, rgba(148, 163, 184, .35)));
+  border-radius: 10px;
+  background: var(--input-bg, var(--panel-bg, #fff));
+  color: var(--text-strong, inherit);
+  padding: .45rem .6rem;
+}
+
+.events-retention-editor-form .checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  font-weight: 650;
+}
+
+.events-retention-editor-form .inline-checkbox {
+  align-self: end;
+  min-height: 38px;
+}
+
+.events-retention-editor-form .wizard-review-box {
+  border: 1px solid var(--panel-border, rgba(148, 163, 184, .35));
+  border-radius: 12px;
+  background: var(--panel-subtle, rgba(148, 163, 184, .08));
+  padding: .75rem .85rem;
+}
+
+.events-retention-editor-form .wizard-review-box p {
+  margin: .25rem 0 0;
+  color: var(--muted, #64748b);
+}

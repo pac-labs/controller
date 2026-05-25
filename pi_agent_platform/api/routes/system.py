@@ -20,6 +20,7 @@ from pi_agent_platform.core.observability_store import query_metrics, query_trac
 
 
 NOISY_EVENT_TYPES = {'runner_heartbeat', 'endpoint_heartbeat', 'provider_heartbeat'}
+EMERGENCY_EVENT_HINTS = ("failed", "error", "warning", "warn", "danger", "critical", "alert", "approval", "security", "denied", "rejected", "unavailable")
 
 
 def _version_tuple(value: str | None) -> tuple[int, ...]:
@@ -96,6 +97,44 @@ def _build_notification_summary(*, tasks: list[Any], alerts: list[dict[str, Any]
         if item["severity"] in {"warning", "warn"}:
             counts["warning"] += 1
     return {"counts": counts, "items": items[:24]}
+
+
+def _event_severity(event: Any) -> str:
+    data = getattr(event, "data", {}) or {}
+    return str(data.get("severity") or data.get("level") or "").strip().lower()
+
+
+def _is_emergency_event(event: Any) -> bool:
+    event_type = str(getattr(event, "type", "") or "").strip().lower()
+    severity = _event_severity(event)
+    if severity in {"critical", "error", "warning", "warn", "danger", "alert"}:
+        return True
+    return any(hint in event_type for hint in EMERGENCY_EVENT_HINTS)
+
+
+def _event_category(event: Any) -> str:
+    event_type = str(getattr(event, "type", "") or "").strip().lower()
+    if _is_emergency_event(event) or "failed" in event_type or "error" in event_type:
+        return "failed"
+    if any(hint in event_type for hint in ("approval", "attention", "reconnect", "slow", "unavailable")):
+        return "attention"
+    if any(hint in event_type for hint in ("queued", "started", "running", "thinking", "stream", "progress")):
+        return "running"
+    return "completed"
+
+
+def _event_source(event: Any) -> dict[str, str]:
+    data = getattr(event, "data", {}) or {}
+    if data.get("runner_id"):
+        return {"kind": "endpoint", "label": str(data.get("runner_id"))}
+    if data.get("workspace_path"):
+        return {"kind": "workspace", "label": str(data.get("workspace_path"))}
+    if getattr(event, "session_id", None) and str(getattr(event, "session_id")) != "system":
+        return {"kind": "session", "label": str(getattr(event, "session_id"))}
+    component = str(data.get("component") or "").strip()
+    if component:
+        return {"kind": "component", "label": component}
+    return {"kind": "system", "label": "controller"}
 
 
 def create_system_router(
@@ -220,6 +259,79 @@ def create_system_router(
             recent_events=recent_events,
             current_version=pac_version,
         )
+
+    @router.get('/v1/events/urgent')
+    def urgent_events(
+        limit: int = Query(default=80, ge=1, le=500),
+        _auth: Any = Depends(require_auth),
+    ) -> dict[str, Any]:
+        require_resource_access(_auth, 'diagnostics', 'events', 'read')
+        recent_events = list_recent_events(limit=max(limit * 6, 500), exclude_types=NOISY_EVENT_TYPES)
+        events = [event.model_dump(mode='json') for event in recent_events if _is_emergency_event(event)][:limit]
+        return {"events": events}
+
+    @router.get('/v1/events/summary')
+    def events_summary(
+        limit: int = Query(default=260, ge=1, le=1000),
+        source_kind: str | None = Query(default=None),
+        source_label: str | None = Query(default=None),
+        _auth: Any = Depends(require_auth),
+    ) -> dict[str, Any]:
+        require_resource_access(_auth, 'diagnostics', 'events', 'read')
+        recent_events = list_recent_events(limit=max(limit * 6, 1000), exclude_types=NOISY_EVENT_TYPES)
+        categories = {"failed": 0, "attention": 0, "running": 0, "completed": 0}
+        sources = {"system": 0, "sessions": 0, "endpoints": 0, "workspaces": 0, "components": 0}
+        source_labels: dict[str, list[dict[str, Any]]] = {}
+        components: list[dict[str, Any]] = []
+        grouped_counts: dict[tuple[str, str], int] = {}
+        filtered: list[Any] = []
+        emergency_total = 0
+        for event in recent_events:
+            category = _event_category(event)
+            categories[category] = categories.get(category, 0) + 1
+            if _is_emergency_event(event):
+                emergency_total += 1
+            source = _event_source(event)
+            source_kind_key = str(source["kind"])
+            source_label_value = str(source["label"])
+            grouped_counts[(source_kind_key, source_label_value)] = grouped_counts.get((source_kind_key, source_label_value), 0) + 1
+            if source_kind_key == "session":
+                sources["sessions"] += 1
+            elif source_kind_key == "endpoint":
+                sources["endpoints"] += 1
+            elif source_kind_key == "workspace":
+                sources["workspaces"] += 1
+            elif source_kind_key == "component":
+                sources["components"] += 1
+            else:
+                sources["system"] += 1
+            if source_kind and source_kind_key != str(source_kind):
+                continue
+            if source_label and source_label_value != str(source_label):
+                continue
+            filtered.append(event)
+        for (kind, label), count in grouped_counts.items():
+            if kind == "component":
+                components.append({"label": label, "count": count})
+                continue
+            bucket = source_labels.setdefault(kind, [])
+            bucket.append({"label": label, "count": count})
+        for entries in source_labels.values():
+            entries.sort(key=lambda item: (-int(item["count"]), str(item["label"])))
+        components.sort(key=lambda item: (-int(item["count"]), str(item["label"])))
+        filtered = filtered[:limit]
+        return {
+            "events": [event.model_dump(mode='json') for event in filtered],
+            "summary": {
+                "categories": categories,
+                "sources": sources,
+                "emergency": emergency_total,
+            },
+            "facets": {
+                "source_labels": source_labels,
+                "components": components[:12],
+            },
+        }
 
     @router.get('/v1/model-usage')
     def model_usage_summary(
