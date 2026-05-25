@@ -82,10 +82,22 @@ async function openPersonalSettingsModal() {
           </section>
           <section class="personal-profile-panel" data-personal-panel="preferences">
             <div class="profile-panel-heading">
-              <div><h3>Advanced preferences</h3><p class="muted">Structured user preferences. Keep this valid JSON.</p></div>
+              <div><h3>Preferences</h3><p class="muted">Theme and structured user preferences live in your profile menu instead of the global utility bar.</p></div>
               <button id="savePersonalPreferencesBtn" type="button">Save preferences</button>
             </div>
-            <label class="profile-textarea-label"><textarea id="personalPreferences" rows="14"></textarea></label>
+            <div class="profile-form-card profile-preferences-card">
+              <label>Theme
+                <select id="personalThemeMode">
+                  <option value="system">System</option>
+                  <option value="dark">Dark</option>
+                  <option value="light">Light</option>
+                  <option value="terminal">Terminal</option>
+                  <option value="dusk">Dusk</option>
+                </select>
+              </label>
+              <p class="muted small-text">Themes change surfaces and content styling while preserving PAC shell layout, navigation behavior, and icon meanings.</p>
+            </div>
+            <label class="profile-textarea-label"><textarea id="personalPreferences" rows="10"></textarea></label>
             <p class="muted small-text">Profile details and preferences are saved together.</p>
           </section>
         </main>
@@ -102,6 +114,11 @@ async function openPersonalSettingsModal() {
   document.getElementById('personalNavDisplayName').textContent = data.me?.display_name || data.me?.username || 'Current user';
   document.getElementById('personalEmail').value = data.me?.metadata?.email || '';
   document.getElementById('personalPreferences').value = JSON.stringify(data.me?.metadata?.preferences || {}, null, 2);
+  const personalThemeSelect = document.getElementById('personalThemeMode');
+  if (personalThemeSelect) {
+    personalThemeSelect.value = pacThemeMode || 'system';
+    personalThemeSelect.addEventListener('change', () => applyThemeMode(personalThemeSelect.value || 'system'));
+  }
   document.getElementById('personalRamContent').value = data.ram?.content || '';
   renderPersonalTokens(document.getElementById('personalTokensList'), data.tokens || []);
   await renderMyAccessSummary();

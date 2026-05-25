@@ -106,14 +106,37 @@
     return window.PacShellNavState?.isRailCollapsed() || false;
   }
 
+  function mastheadModeFor(item) {
+    const panelModes = {
+      updates: 'sticky', credentials: 'sticky', users: 'sticky', approvals: 'sticky',
+      'pi-dev': 'sticky', endpoint: 'sticky', service: 'sticky', tls: 'sticky',
+      'proxy-routes': 'sticky', config: 'sticky',
+    };
+    return item?.mastheadMode || panelModes[item?.settingsPanel || ''] || 'sticky';
+  }
+
+  function updateMastheadMode(item) {
+    const masthead = document.getElementById('pacPageMasthead');
+    if (!masthead) return;
+    const mode = mastheadModeFor(item);
+    masthead.dataset.mastheadMode = mode;
+    masthead.classList.remove('page-masthead-normal', 'page-masthead-sticky', 'page-masthead-compact', 'page-masthead-hidden');
+    masthead.classList.add(`page-masthead-${mode}`);
+    document.body?.setAttribute('data-page-masthead-mode', mode);
+  }
+
   function updateBreadcrumb(item) {
+    if (window.PacPageShell?.applyRoute?.(item)) return;
     const breadcrumb = document.getElementById('pacShellBreadcrumb');
     const context = document.getElementById('pacShellContext');
+    const title = document.getElementById('pacPageTitle');
     const groupLabel = item?.group?.label || 'Operate';
     const itemLabel = item?.label || 'Dashboard';
     const subLabel = item?.settingsPanel ? ` / ${itemLabel}` : ` / ${itemLabel}`;
     if (breadcrumb) breadcrumb.textContent = `${groupLabel}${subLabel}`;
+    if (title) title.textContent = itemLabel === 'Dashboard' ? 'Operations dashboard' : itemLabel;
     if (context) context.textContent = item?.description || item?.group?.description || 'PAC controller workspace';
+    updateMastheadMode(item);
   }
 
   function focusTarget(item) {

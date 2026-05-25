@@ -98,6 +98,7 @@ function renderUpdateArchives(data) {
   const archives = data?.archives || [];
   badge.textContent = archives.length ? `${archives.length} archived` : 'none yet';
   badge.className = `pac-status-badge ${archives.length ? 'current-badge' : ''}`.trim();
+  window.PacUpdateCenter?.refreshArchives?.(data);
   if (hint) hint.textContent = archives.length ? `Latest archive: ${archives[0].stamp}` : 'No preserved controller archives yet.';
   if (modalHint) modalHint.textContent = archives.length ? `${archives.length} preserved backup(s) available.` : 'No preserved controller backups yet.';
   if (!archives.length) {

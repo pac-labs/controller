@@ -13,9 +13,12 @@ function showUserChip(user) {
   const chip = document.getElementById('userChip');
   const name = document.getElementById('userChipName');
   const loginBtn = document.getElementById('loginBtn');
+  const logoutBtn = document.getElementById('userChipLogout');
+  const authEnabled = !!(authStatus || config?.auth || {}).enabled;
+  const localMode = !authEnabled;
   if (chip && name) {
-    if (user) {
-      name.textContent = user.display_name || user.username || user.id || 'User';
+    if (user || localMode) {
+      name.textContent = user ? (user.display_name || user.username || user.id || 'User') : 'Local PAC';
       chip.hidden = false;
       chip.style.display = 'inline-flex';
     } else {
@@ -26,7 +29,8 @@ function showUserChip(user) {
       document.getElementById('userMenu')?.setAttribute('hidden', '');
     }
   }
-  if (loginBtn) loginBtn.hidden = !!user;
+  if (loginBtn) loginBtn.hidden = !!user || localMode;
+  if (logoutBtn) logoutBtn.hidden = !user && !getStoredToken();
 }
 
 async function fetchAuthStatus() {

@@ -81,6 +81,12 @@ async function loadVersion(){
       const when = v?.ui_updated_at ? `\nUI updated: ${v.ui_updated_at}` : '';
       stamp.title = `Backend version: ${backend}\nUI build: ${ui}${when}`;
     }
+    const uiBuild = document.getElementById('pacUiBuildVersion');
+    if (uiBuild) {
+      uiBuild.textContent = ui;
+      uiBuild.title = v?.ui_updated_at ? `UI updated: ${v.ui_updated_at}` : 'UI build identifier';
+    }
+    window.PacUpdateCenter?.refreshFromVersionInfo?.(v);
     if (v?.version) document.title = `PAC - Pi Agent Control v${v.version}`;
   } catch (_) {}
 }

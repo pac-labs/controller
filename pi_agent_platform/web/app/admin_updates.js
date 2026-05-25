@@ -102,6 +102,7 @@ function renderPacReleaseStatus(meta=null) {
   const applyBtn = document.getElementById('applyPacRelease');
   const status = document.getElementById('pacReleaseStatus');
   if (!status) return;
+  window.PacUpdateCenter?.refreshRelease?.(meta);
   if (!meta || !meta.ok) {
     status.textContent = meta?.error || 'GitHub release checks have not run yet.';
     if (applyBtn) applyBtn.disabled = true;

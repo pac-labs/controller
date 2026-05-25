@@ -29,5 +29,5 @@ function renderHeaderAuthBox() {
   if (tokenInput) tokenInput.hidden = !!(enabled && auth.mode === 'user-password');
   if (loginBtn) loginBtn.textContent = auth.needs_setup ? 'Set up account' : 'Log in';
   showUserChip(currentUser);
-  if (!enabled && tokenInput && !hasToken) tokenInput.placeholder = 'Bearer token, optional';
+  if (!enabled && tokenInput && !hasToken) tokenInput.placeholder = 'Optional';
 }

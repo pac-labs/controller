@@ -1,6 +1,6 @@
 // Header, theme, user-menu, settings, and setup-wizard bindings
 
-document.getElementById('refresh').onclick=()=>init();
+document.getElementById('refresh')?.addEventListener('click', () => init());
 const themeModeSelect = document.getElementById('themeMode');
 if (themeModeSelect) themeModeSelect.onchange = () => applyThemeMode(themeModeSelect.value || 'system');
 const authTokenInput = document.getElementById('token');

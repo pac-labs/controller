@@ -21,31 +21,39 @@
       <div class="brand-block">
         <img class="brand-logo" src="/ui/assets/banner.png" alt="PAC logo" />
       </div>
-    <div class="top-actions">
-      <button id="openDownloadsModal" class="top-icon-button monochrome-icon clean-download-icon" title="Downloads" aria-label="Downloads"><span aria-hidden="true"></span></button>
-      <button id="openEventsPanel" class="top-icon-button monochrome-icon clean-bell-icon notification-button" title="Events and notifications" aria-label="Events and notifications"><span aria-hidden="true"></span><b id="notificationBadge" class="notification-badge" hidden>0</b></button>
-      <div class="theme-select-wrap">
-        <select id="themeMode" aria-label="Theme mode">
-          <option value="system">Theme: System</option>
-          <option value="dark">Theme: Dark</option>
-          <option value="light">Theme: Light</option>
-          <option value="terminal">Theme: Terminal</option>
-          <option value="dusk">Theme: Dusk</option>
-        </select>
+    <div class="top-actions global-utility-bar" aria-label="Global utility bar">
+      <button id="openDownloadsModal" class="top-icon-button monochrome-icon clean-download-icon" title="Documentation and downloads" aria-label="Documentation and downloads"><span aria-hidden="true"></span></button>
+      <button id="openEventsPanel" class="top-icon-button monochrome-icon clean-bell-icon notification-button" title="Notifications and events" aria-label="Notifications and events"><span aria-hidden="true"></span><b id="notificationBadge" class="notification-badge" hidden>0</b></button>
+      <div class="global-create-wrap">
+        <button id="globalCreateButton" class="top-icon-button global-create-button" type="button" title="Create resource" aria-label="Create resource" aria-haspopup="menu" aria-expanded="false">+</button>
+        <div id="globalCreateMenu" class="global-create-menu" role="menu" hidden></div>
       </div>
+      <button id="globalHelpButton" class="top-icon-button global-help-button" type="button" title="Help for this page" aria-label="Help for this page">?</button>
       <div class="user-menu-wrap">
         <button id="loginBtn" class="ghost-button user-login-button" type="button">Log in</button>
         <button id="userChip" class="user-chip user-menu-button" type="button" hidden aria-haspopup="menu" aria-expanded="false">
           <span id="userChipName"></span>
           <span class="user-menu-glyph" aria-hidden="true">☰</span>
         </button>
-        <div id="userMenu" class="user-menu-dropdown" hidden>
-          <button id="userMenuSettings" type="button">Personal settings</button>
+        <div id="userMenu" class="user-menu-dropdown utility-profile-menu" hidden>
+          <button id="userMenuSettings" type="button">Profile settings</button>
+          <label class="user-menu-field">
+            <span>Theme</span>
+            <select id="themeMode" aria-label="Theme mode">
+              <option value="system">System</option>
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+              <option value="terminal">Terminal</option>
+              <option value="dusk">Dusk</option>
+            </select>
+          </label>
+          <label class="user-menu-field utility-token-field">
+            <span>Temporary bearer token</span>
+            <input id="token" class="auth-token-input utility-token-input" placeholder="Optional" title="Temporary bearer token. Durable tokens are managed from Profile settings." />
+          </label>
           <button id="userChipLogout" type="button">Log out</button>
         </div>
-        <input id="token" class="auth-token-input" placeholder="Bearer token, optional" />
       </div>
-      <button id="refresh">Refresh</button>
     </div>
   </header>
   <div id="setupWizard" class="modal-backdrop" hidden>
@@ -67,19 +75,22 @@
       </div>
     </section>
   </div>
-  <div class="shell-context-bar" aria-label="Current PAC location">
-    <div>
-      <div id="pacShellBreadcrumb" class="shell-breadcrumb">Operate / Dashboard</div>
-      <div id="pacShellContext" class="shell-context-copy">Overview and system status.</div>
-    </div>
-    <select id="pacShellMobileSelect" class="shell-mobile-select" aria-label="Main navigation"></select>
-  </div>
-
   <div class="app-shell">
   <aside id="pacShellNav" class="shell-nav" aria-label="Primary navigation"></aside>
   <main class="content-area">
+    <section id="pacPageMasthead" class="page-masthead page-masthead-sticky" data-masthead-mode="sticky" aria-labelledby="pacPageTitle">
+      <div class="page-masthead-copy">
+        <p id="pacShellBreadcrumb" class="page-masthead-eyebrow">Operate / Dashboard</p>
+        <h1 id="pacPageTitle">Operations dashboard</h1>
+        <p id="pacShellContext" class="page-masthead-description">Overview and system status.</p>
+      </div>
+      <div id="pacPageMastheadActions" class="page-masthead-actions"></div>
+      <nav id="pacPageTabs" class="page-tabs" aria-label="Page tabs" hidden></nav>
+      <select id="pacShellMobileSelect" class="shell-mobile-select" aria-label="Main navigation"></select>
+    </section>
+    <section id="pacPageToolbar" class="page-toolbar" aria-label="Page toolbar" hidden></section>
     <section id="dashboard" class="tab-panel active">
-      <div class="dashboard-private-head">
+      <div class="dashboard-private-head shell-legacy-head" aria-hidden="true">
         <div>
           <h2>Operations dashboard</h2>
           <p class="muted">Private widget layout with mandatory system status and the zoomable PAC Component Atlas.</p>
@@ -888,8 +899,8 @@
     </section>
 
     <section id="settings-tab" class="tab-panel">
-      <div class="settings-subnav">
-        <button class="settings-sub-btn active" data-settings-panel="updates">Updates</button>
+      <div class="settings-subnav" hidden aria-hidden="true">
+        <button class="settings-sub-btn active" data-settings-panel="updates">Update Center</button>
         <button class="settings-sub-btn" data-settings-panel="credentials">Credentials</button>
         <button class="settings-sub-btn" data-settings-panel="approvals">Approvals</button>
         <button class="settings-sub-btn" data-settings-panel="users">Users</button>
@@ -963,13 +974,31 @@
       <div id="settings-updates" class="settings-panel">
         <div class="settings-panel-inner settings-panel-single">
           <div class="settings-main">
-            <section class="card setting-cube wide">
-              <div class="section-heading compact-heading"><div><h2>Updates</h2><p class="muted">Apply platform updates and feature/source packs from one place.</p></div></div>
+            <section class="card setting-cube wide update-center-card">
+              <div class="section-heading compact-heading"><div><h2>Update Center</h2><p class="muted">Version, changelog, release checks, feature/source packs, and preserved backups from one place.</p></div></div>
               <div class="updates-layout">
                 <div class="updates-main">
-                  <div class="updates-pac-status">
-                    <div class="pac-status-line"><span class="pac-status-label">Running</span><span id="pacCurrentVersion" class="pac-status-version">v?</span></div>
-                    <div class="pac-status-line"><span class="pac-status-label">Archives</span><span id="pacArchiveStatus" class="pac-status-badge">checking</span></div>
+                  <div id="updateCenterSummary" class="update-center-summary-grid" aria-label="Update Center summary">
+                    <article class="update-summary-card" data-update-summary="version">
+                      <span class="update-summary-label">Controller version</span>
+                      <b id="pacCurrentVersion" class="app-version">v?</b>
+                      <small id="pacVersionHint" class="muted">Running controller build</small>
+                    </article>
+                    <article class="update-summary-card" data-update-summary="ui">
+                      <span class="update-summary-label">UI build</span>
+                      <b id="pacUiBuildVersion">checking</b>
+                      <small id="pacUiBuildHint" class="muted">Loaded shell bundle</small>
+                    </article>
+                    <article class="update-summary-card" data-update-summary="release">
+                      <span class="update-summary-label">Release status</span>
+                      <b id="pacReleaseSummary">not checked</b>
+                      <small id="pacReleaseSummaryHint" class="muted">Use Check release to inspect GitHub</small>
+                    </article>
+                    <article class="update-summary-card" data-update-summary="archives">
+                      <span class="update-summary-label">Backups</span>
+                      <b id="pacArchiveStatus">checking</b>
+                      <small id="pacArchiveHintSummary" class="muted">Preserved app states</small>
+                    </article>
                   </div>
                   <div class="button-row settings-update-actions">
                     <button id="checkPacRelease" class="ghost-button">Check PAC release</button>
@@ -1416,12 +1445,13 @@
     </section>
   </div>
 
-  <footer class="app-footer"><img src="/ui/assets/pac-icon-green-32.png" alt="" /> <span>PAC Control • Orchestrate • Execute</span><span id="buildStamp" class="app-version" title="Backend and UI build information">backend v... • ui ...</span></footer>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="/ui/app/ui_helpers.js"></script>
   <script src="/ui/app/app_nav_config.js"></script>
   <script src="/ui/app/app_shell_nav_state.js"></script>
   <script src="/ui/app/app_shell_nav_tools.js"></script>
+  <script src="/ui/app/page_shell_runtime.js"></script>
+  <script src="/ui/app/page_help_registry.js"></script>
   <script src="/ui/app/app_shell_nav.js"></script>
   <script src="/ui/app/ui_loading.js"></script>
   <script src="/ui/app/provider_presets.js"></script>
@@ -1514,6 +1544,7 @@
   <script src="/ui/app/config_proxy_routes.js"></script>
   <script src="/ui/app/config_update_archives.js"></script>
   <script src="/ui/app/admin_updates.js"></script>
+  <script src="/ui/app/update_center_runtime.js"></script>
   <script src="/ui/app/marketplace.js"></script>
   <script src="/ui/app/personal_settings.js"></script>
   <script src="/ui/app/config_credentials.js"></script>
@@ -1522,6 +1553,7 @@
   <script src="/ui/app/config_service_trust_page.js"></script>
   <script src="/ui/app/configuration_page_shell.js"></script>
   <script src="/ui/app/settings_panel_router.js"></script>
+  <script src="/ui/app/global_utility_actions.js"></script>
   <script src="/ui/app/composer_status.js"></script>
   <script src="/ui/app.js"></script>
   <script src="/ui/app/config_raw_editor.js"></script>

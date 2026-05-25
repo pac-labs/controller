@@ -5,8 +5,13 @@ function closePersonalSettingsModal() {
 }
 
 async function loadPersonalSettingsData() {
+  const fallbackUser = {
+    username: currentUser?.username || 'local-pac',
+    display_name: currentUser?.display_name || 'Local PAC',
+    metadata: {preferences: {}}
+  };
   const [me, tokens, ram] = await Promise.all([
-    api('/v1/users/me'),
+    api('/v1/users/me').catch(() => fallbackUser),
     api('/v1/users/me/tokens').catch(() => []),
     api('/v1/users/me/ram').catch(() => ({content: ''})),
   ]);

@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "1.0.357",
+      "date": "2026-05-25T09:05:00Z",
+      "summary": "Extended the redesigned UI shell with a standardized page runtime, global utilities, and an Update Center surface.",
+      "changes": [
+        "Added the next shell-runtime layer from the redesign update, including shared page helpers, update-center runtime wiring, and the standardized app-shell styling.",
+        "Refined the redesign navigation and account/session shell behavior while keeping session selection and update visibility working against the live host.",
+        "Verified the updated shell on 0.7 by selecting a session and opening the Update Center successfully."
+      ]
+    },
+    {
       "version": "1.0.356",
       "date": "2026-05-24T23:30:00Z",
       "summary": "Integrated the redesigned PAC UI shell, navigation, sessions, configuration, and source workbench surfaces.",
@@ -352,5 +362,5 @@
       }
     }
   ],
-  "current_version": "1.0.356"
+  "current_version": "1.0.357"
 }

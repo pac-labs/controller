@@ -5,7 +5,7 @@
       eyebrow: 'Configuration / Credentials',
       copy: 'Workspace variables and write-only secrets are managed separately from personal user settings.',
       steps: ['Identify material', 'Store safely', 'Review audit'],
-      actions: [{label: 'Add variable', target: 'addConfigVariable'}, {label: 'Add secret', target: 'addConfigSecret'}],
+      actions: [{label: 'Add variable', target: 'openConfigVariableWizard', subtle: true}, {label: 'Add secret', target: 'openConfigSecretWizard'}],
     },
     users: {
       title: 'Users & groups',
@@ -22,9 +22,9 @@
       actions: [{label: 'Refresh', target: 'refreshApprovalsBtn'}],
     },
     updates: {
-      title: 'Updates',
+      title: 'Update Center',
       eyebrow: 'Configuration / Platform',
-      copy: 'PAC releases, feature packs, source updates, backups, and local diff checks live in one admin route.',
+      copy: 'PAC versions, changelog, releases, feature packs, source updates, backups, and local diff checks live in one admin route.',
       steps: ['Check version', 'Preview changes', 'Apply or restore'],
       actions: [{label: 'Check release', target: 'checkPacRelease'}, {label: 'Backups', target: 'openBackupsModal'}],
     },
@@ -115,11 +115,8 @@
     const shell = ensureShell();
     if (!shell) return;
     setPanelClass(name);
-    shell.innerHTML = `<div class="config-shell-copy">
-      <p class="config-shell-eyebrow">${esc(meta.eyebrow)}</p>
-      <h1>${esc(meta.title)}</h1>
-      <p class="muted">${esc(meta.copy)}</p>
-    </div>
+    window.PacPageShell?.applyConfigPanel?.(meta, name);
+    shell.innerHTML = `<div class="config-shell-flow-label">Workflow</div>
     <div class="config-shell-flow" aria-label="Configuration flow">
       ${(meta.steps || []).map((step, index) => `<span><b>${index + 1}</b>${esc(step)}</span>`).join('')}
     </div>

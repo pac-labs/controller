@@ -5,9 +5,9 @@
       label: 'Operate',
       description: 'Daily PAC control and execution flow.',
       items: [
-        {id: 'dashboard', tab: 'dashboard', label: 'Dashboard', icon: '⌂', aliases: ['home', 'overview', 'status'], description: 'Overview and system status.'},
-        {id: 'atlas', tab: 'dashboard', label: 'Atlas', icon: '⌘', focus: 'dashboardTopologyMap', aliases: ['map', 'topology', 'graph', 'components'], description: 'Component map and dependencies.'},
-        {id: 'sessions', tab: 'sessions-tab', label: 'Sessions', icon: '◫', aliases: ['chat', 'tasks', 'runs', 'composer'], description: 'Agent conversations and task runs.'},
+        {id: 'dashboard', tab: 'dashboard', label: 'Dashboard', icon: '⌂', aliases: ['home', 'overview', 'status'], description: 'Overview and system status.', mastheadMode: 'normal'},
+        {id: 'atlas', tab: 'dashboard', label: 'Atlas', icon: '⌘', focus: 'dashboardTopologyMap', aliases: ['map', 'topology', 'graph', 'components'], description: 'Component map and dependencies.', mastheadMode: 'compact'},
+        {id: 'sessions', tab: 'sessions-tab', label: 'Sessions', icon: '◫', aliases: ['chat', 'tasks', 'runs', 'composer'], description: 'Agent conversations and task runs.', mastheadMode: 'compact'},
       ],
     },
     {
@@ -40,7 +40,7 @@
         {id: 'credentials', tab: 'settings-tab', settingsPanel: 'credentials', label: 'Credentials', icon: '◈', aliases: ['secrets', 'variables', 'tokens', 'keys'], description: 'Workspace variables and endpoint secret material.'},
         {id: 'users-groups', tab: 'settings-tab', settingsPanel: 'users', label: 'Users & groups', icon: '◍', aliases: ['users', 'groups', 'directory', 'service accounts', 'identity'], description: 'Access, groups, service accounts, and directory controls.'},
         {id: 'approvals-policy', tab: 'settings-tab', settingsPanel: 'approvals', label: 'Approvals', icon: '✓', aliases: ['approval', 'policy', 'requests'], description: 'Governed task approvals and access requests.'},
-        {id: 'updates', tab: 'settings-tab', settingsPanel: 'updates', label: 'Updates', icon: '↻', description: 'Controller updates, release checks, and feature packs.'},
+        {id: 'updates', tab: 'settings-tab', settingsPanel: 'updates', label: 'Update Center', icon: '↻', aliases: ['updates', 'release', 'version', 'changelog'], description: 'Controller versions, release checks, changelog, backups, and feature packs.', mastheadMode: 'sticky'},
         {id: 'runtime', tab: 'settings-tab', settingsPanel: 'pi-dev', label: 'Runtime', icon: 'π', aliases: ['pi.dev', 'pac agent', 'controller agent'], description: 'pi.dev runtime and controller agent settings.'},
         {id: 'service-mode', tab: 'settings-tab', settingsPanel: 'service', label: 'Service', icon: '◧', description: 'Service mode and controller runtime service status.'},
         {id: 'network-security', tab: 'settings-tab', settingsPanel: 'tls', label: 'TLS / CA', icon: '♢', aliases: ['tls', 'ca', 'certificates', 'trust', 'https'], description: 'TLS, certificate authority, and trust material.'},
