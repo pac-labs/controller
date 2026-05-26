@@ -351,7 +351,7 @@ def create_system_router(
 
     @router.get('/v1/system/logs/tail')
     def system_log_tail(
-        name: str = Query(default='controller', pattern='^(controller|audit)$'),
+        name: str = Query(default='controller', pattern='^(controller|audit|wrapper|pi-agent|pacctl)$'),
         limit: int = Query(default=8000, ge=1, le=200000),
         _auth: Any = Depends(require_auth),
     ) -> dict[str, Any]:

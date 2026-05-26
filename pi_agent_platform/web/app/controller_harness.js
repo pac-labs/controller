@@ -92,10 +92,18 @@ function renderControllerHarnessSettings(status=null) {
       'Agent runtime': agentRuntime.status || '-',
       'Agent detail': agentRuntime.detail || '-',
       'Wrapper log': diag.wrapper_log || '-',
+      'pi.dev runtime log': diag.pi_agent_log || '-',
+      'pacctl log': diag.pacctl_log || '-',
     };
     runtimeBox.innerHTML = `<div class="pi-dev-kv-grid">${Object.entries(rows).map(([k,v]) => `<div><span>${k}</span><code>${escapeHtml(String(v))}</code></div>`).join('')}</div>`;
   }
-  if (logsBox) logsBox.textContent = effectiveStatus?.diagnostics?.wrapper_log_tail || '';
+  if (logsBox) {
+    const sections = [];
+    if (effectiveStatus?.diagnostics?.pi_agent_log_tail) sections.push(`=== pi-agent.log ===\n${effectiveStatus.diagnostics.pi_agent_log_tail}`);
+    if (effectiveStatus?.diagnostics?.pacctl_log_tail) sections.push(`=== pacctl.log ===\n${effectiveStatus.diagnostics.pacctl_log_tail}`);
+    if (effectiveStatus?.diagnostics?.wrapper_log_tail) sections.push(`=== controller-pac-wrapper.log ===\n${effectiveStatus.diagnostics.wrapper_log_tail}`);
+    logsBox.textContent = sections.join('\n\n') || '';
+  }
 }
 
 async function loadControllerHarnessStatus() {
@@ -167,4 +175,3 @@ async function openControllerHarnessSession() {
   if (status?.session?.id) { switchToTab('sessions-tab'); await selectSession(status.session.id); }
   else showInline('controllerHarnessResult', status?.message || 'pi.dev session is not available yet. Select a model/profile first.');
 }
-

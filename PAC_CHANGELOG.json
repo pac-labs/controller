@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "1.0.360",
+      "date": "2026-05-26T10:45:00Z",
+      "summary": "Surfaced real pi.dev runtime logs and added post-update pi.dev health verification.",
+      "changes": [
+        "Exposed pi-agent.log and pacctl.log through controller diagnostics and the Observe/Runtime UI so the real pi.dev runtime path is visible without entering the container.",
+        "Added post-update verification that checks the controller pi.dev session, wrapper process, daemon state, and recent runtime log errors after every PAC release install.",
+        "Extended the Update Center result details so release applies report whether pi.dev is healthy immediately after the update."
+      ]
+    },
+    {
       "version": "1.0.359",
       "date": "2026-05-25T20:45:00Z",
       "summary": "Extended the redesign with a more capable atlas overview, restart visibility, and update interaction polish.",

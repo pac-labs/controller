@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from pi_agent_platform.core.config import ProviderConfig
 from pi_agent_platform.core.directory_identities import ensure_provider_principal, retire_provider_principal
 from pi_agent_platform.core.models import Event
+from pi_agent_platform.core.observability import log_file_map, read_log_tail
 
 
 def create_providers_router(
@@ -426,20 +427,23 @@ def create_providers_router(
     def controller_harness_diagnostics(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
         require_resource_access(_auth, 'diagnostics', 'controller-harness', 'read')
         status = _ensure_controller_harness_session()
-        log_file = _pacp_path('logs') / 'controller-pac-wrapper.log'
-        log_tail = ''
-        if log_file.exists():
-            try:
-                lines = log_file.read_text(encoding='utf-8', errors='replace').splitlines()
-                log_tail = '\n'.join(lines[-120:])
-            except Exception as exc:
-                log_tail = f'Could not read wrapper log: {exc}'
+        logs = log_file_map()
+        wrapper_log = logs["wrapper"]
+        pi_agent_log = logs["pi-agent"]
+        pacctl_log = logs["pacctl"]
+        wrapper_tail = read_log_tail(wrapper_log, limit=12000).get("content", "")
+        pi_agent_tail = read_log_tail(pi_agent_log, limit=12000).get("content", "")
+        pacctl_tail = read_log_tail(pacctl_log, limit=12000).get("content", "")
         return {
             'status': status,
             'wrapper_process': _wrapper_process_state(),
             'pi_daemon': _pi_dev_daemon_state(),
-            'wrapper_log': str(log_file),
-            'wrapper_log_tail': log_tail,
+            'wrapper_log': str(wrapper_log),
+            'wrapper_log_tail': wrapper_tail,
+            'pi_agent_log': str(pi_agent_log),
+            'pi_agent_log_tail': pi_agent_tail,
+            'pacctl_log': str(pacctl_log),
+            'pacctl_log_tail': pacctl_tail,
         }
 
 

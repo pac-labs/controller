@@ -47,6 +47,7 @@
           ${tile('Runner', runner.name || harness.runner_id || 'local-PAC', 'Controller runner identity')}
           ${tile('Session', session.name || harness.session_name || 'PAC controller pi.dev', 'Managed controller session')}
           ${tile('Wrapper log', diagnostics.wrapper_log || '—', 'Latest local wrapper log path')}
+          ${tile('pi.dev log', diagnostics.pi_agent_log || '—', 'Main runtime log inside pi-agent-artifacts')}
         </div>
       </section>`;
   }

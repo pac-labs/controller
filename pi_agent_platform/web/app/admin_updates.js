@@ -151,6 +151,24 @@ function renderPacReleaseStatus(meta=null) {
   }
 }
 
+function formatPiDevCheck(result) {
+  const check = result?.pi_dev_check;
+  if (!check) return '';
+  const lines = [
+    `pi.dev verification: ${check.ok ? 'healthy' : 'needs attention'}`,
+    `Session: ${check.session_ok ? 'ok' : 'failed'}`,
+    `Wrapper: ${check.wrapper_running ? 'running' : 'not running'}`,
+    `Daemon: ${check.daemon_running ? 'running' : 'not running'}`,
+  ];
+  const logErrors = Array.isArray(check.detected_errors) ? check.detected_errors.filter(Boolean) : [];
+  if (logErrors.length) {
+    lines.push('');
+    lines.push('Recent runtime log errors:');
+    logErrors.slice(-5).forEach((entry) => lines.push(`- ${entry}`));
+  }
+  return lines.join('\n');
+}
+
 async function checkPacRelease() {
   const meta = await api('/v1/updates/check');
   window.__pacReleaseMeta = meta;
@@ -173,9 +191,15 @@ async function applyPacRelease() {
       setUpdatesDetail({
         title: 'Release applied',
         version: result.latest_version || '',
-        body: `PAC scheduled a restart after applying the latest release.\n\nPreservation archive: ${result.preservation_archive?.archive_path || '-'}\nUser diff: ${result.preservation_diff?.diff_path || '-'}`
+        body: `PAC scheduled a restart after applying the latest release.\n\nPreservation archive: ${result.preservation_archive?.archive_path || '-'}\nUser diff: ${result.preservation_diff?.diff_path || '-'}${formatPiDevCheck(result) ? `\n\n${formatPiDevCheck(result)}` : ''}`
       });
       await loadUpdateArchives().catch(()=>{});
+    } else if (result.pi_dev_check) {
+      setUpdatesDetail({
+        title: 'Release applied',
+        version: result.latest_version || '',
+        body: `PAC scheduled a restart after applying the latest release.\n\n${formatPiDevCheck(result)}`
+      });
     }
     if (result.restart_scheduled) {
       setUpdateConfirmOverlayRestarting(result.latest_version || meta.latest_version || '', 18);
@@ -319,6 +343,5 @@ async function refreshDashboardMetricsOnStartup() {
     setTimeout(() => loadDashboardMetrics().catch(e => { if (delay === 0) paneError('Dashboard metrics could not load', e.message || String(e)); }), delay);
   }
 }
-
 
 

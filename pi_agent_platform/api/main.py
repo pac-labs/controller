@@ -97,10 +97,11 @@ from pi_agent_platform.core.directory import (
 from pi_agent_platform.core.access_control import can as access_can, effective_grants, explain_access, grant_to_principal, is_system_admin, require as access_require, resource_match
 from pi_agent_platform.core.credentials import credential_expired, hash_token_secret, normalize_certificate_fingerprint, new_token_credential
 from pi_agent_platform.core.directory_identities import sync_directory_identities
-from pi_agent_platform.core.observability import setup_pac_observability
+from pi_agent_platform.core.observability import log_file_map, read_log_tail, setup_pac_observability
 from pi_agent_platform.core.observability_store import record_http_request, prune_observability_store
 
 NOISY_EVENT_TYPES = {'runner_heartbeat', 'endpoint_heartbeat', 'provider_heartbeat'}
+_PI_DEV_LOG_ERROR_PATTERN = re.compile(r'(npm error|traceback|fatal|exception|could not determine executable to run|\\berror\\b|\\bfailed\\b)', re.IGNORECASE)
 
 
 def _model_available(model_name: str) -> tuple[bool, str | None]:
@@ -1275,6 +1276,91 @@ def _start_controller_bootstrap(force: bool = False) -> bool:
 
 def _start_controller_bootstrap_if_needed() -> None:
     _start_controller_bootstrap(force=False)
+
+
+def _pi_dev_log_summary(log_name: str, limit: int = 12000) -> dict[str, Any]:
+    path = log_file_map().get(log_name)
+    if path is None:
+        return {'path': '', 'tail': '', 'has_errors': False, 'error_matches': []}
+    payload = read_log_tail(path, limit=limit)
+    tail = str(payload.get('content') or '')
+    matches = []
+    seen: set[str] = set()
+    for line in reversed(tail.splitlines()):
+        if not _PI_DEV_LOG_ERROR_PATTERN.search(line):
+            continue
+        normalized = line.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        matches.append(normalized)
+        if len(matches) >= 8:
+            break
+    matches.reverse()
+    return {
+        'path': str(path),
+        'tail': tail,
+        'bytes': payload.get('bytes', 0),
+        'has_errors': bool(matches),
+        'error_matches': matches,
+    }
+
+
+def _post_update_pi_dev_check() -> dict[str, Any]:
+    try:
+        session_result = _ensure_controller_harness_session()
+    except Exception as exc:
+        return {
+            'ok': False,
+            'message': f'Controller pi.dev session verification failed: {exc}',
+            'session_ok': False,
+            'wrapper_running': False,
+            'daemon_running': False,
+            'pi_agent_log': _pi_dev_log_summary('pi-agent'),
+            'pacctl_log': _pi_dev_log_summary('pacctl'),
+            'wrapper_log': _pi_dev_log_summary('wrapper'),
+        }
+    wrapper_state = _wrapper_process_state()
+    daemon_state = _pi_dev_daemon_state()
+    pi_agent_log = _pi_dev_log_summary('pi-agent')
+    pacctl_log = _pi_dev_log_summary('pacctl')
+    wrapper_log = _pi_dev_log_summary('wrapper')
+    session_ok = bool(session_result.get('ok'))
+    wrapper_running = bool(wrapper_state.get('running'))
+    daemon_running = bool(daemon_state.get('running'))
+    detected_errors = []
+    if pi_agent_log.get('has_errors'):
+        detected_errors.extend(pi_agent_log.get('error_matches') or [])
+    if pacctl_log.get('has_errors'):
+        detected_errors.extend(pacctl_log.get('error_matches') or [])
+    ok = session_ok and wrapper_running and daemon_running and not detected_errors
+    if ok:
+        message = 'pi.dev runtime verified after update.'
+    else:
+        missing = []
+        if not session_ok:
+            missing.append('session')
+        if not wrapper_running:
+            missing.append('wrapper')
+        if not daemon_running:
+            missing.append('daemon')
+        if detected_errors:
+            missing.append('runtime logs')
+        message = 'pi.dev verification needs attention: ' + ', '.join(missing)
+    return {
+        'ok': ok,
+        'message': message,
+        'session_ok': session_ok,
+        'wrapper_running': wrapper_running,
+        'daemon_running': daemon_running,
+        'session': {k: v for k, v in session_result.items() if k not in {'runner', 'workspace', 'session'}},
+        'wrapper_process': wrapper_state,
+        'pi_daemon': daemon_state,
+        'pi_agent_log': pi_agent_log,
+        'pacctl_log': pacctl_log,
+        'wrapper_log': wrapper_log,
+        'detected_errors': detected_errors,
+    }
 
 
 @app.on_event('startup')
@@ -3474,6 +3560,7 @@ def _apply_version_package_from_path(package_path: Path, filename: str, restart_
         _refresh_local_runner_metadata()
     except Exception:
         pass
+    pi_dev_check = _post_update_pi_dev_check()
     marker = pacp_path('run', 'restart-required')
     marker.write_text(f'PAC update applied at {stamp}\nsource={package_path}\nbackup={backup_dir}\n', encoding='utf-8')
     status = 'installed_restarting' if restart_after_update else 'installed_restart_required'
@@ -3490,6 +3577,7 @@ def _apply_version_package_from_path(package_path: Path, filename: str, restart_
         'run_script': run_script_result,
         'wrapper_update': wrapper_result,
         'wrapper_restart': wrapper_restart_result,
+        'pi_dev_check': pi_dev_check,
         'preservation_archive': archive_meta,
         'preservation_diff': diff_meta,
         'restart_required': True,

@@ -15,6 +15,9 @@ _LOGGER_CONFIGURED = False
 _LOG_DIR = pacp_path("logs")
 _CONTROLLER_LOG = _LOG_DIR / "pac-controller.log"
 _AUDIT_LOG = _LOG_DIR / "pac-audit.log"
+_PI_AGENT_LOG = pacp_path("app") / "pi-agent-artifacts" / "pi-agent.log"
+_PACCTL_LOG = pacp_path("app") / "pi-agent-artifacts" / "pacctl.log"
+_CONTROLLER_WRAPPER_LOG = _LOG_DIR / "controller-pac-wrapper.log"
 
 
 def _int_env(name: str, default: int) -> int:
@@ -104,6 +107,16 @@ def _file_info(path: Path) -> dict[str, Any]:
         return {"path": str(path), "exists": False, "size_bytes": 0, "modified_at": None}
 
 
+def log_file_map() -> dict[str, Path]:
+    return {
+        "controller": _CONTROLLER_LOG,
+        "audit": _AUDIT_LOG,
+        "wrapper": _CONTROLLER_WRAPPER_LOG,
+        "pi-agent": _PI_AGENT_LOG,
+        "pacctl": _PACCTL_LOG,
+    }
+
+
 def observability_status() -> dict[str, Any]:
     return {
         "logging": {
@@ -119,6 +132,9 @@ def observability_status() -> dict[str, Any]:
             "files": {
                 "controller": _file_info(_CONTROLLER_LOG),
                 "audit": _file_info(_AUDIT_LOG),
+                "wrapper": _file_info(_CONTROLLER_WRAPPER_LOG),
+                "pi_agent": _file_info(_PI_AGENT_LOG),
+                "pacctl": _file_info(_PACCTL_LOG),
             },
         },
         "runtime": {
@@ -131,8 +147,7 @@ def observability_status() -> dict[str, Any]:
     }
 
 
-def tail_log(name: str = "controller", limit: int = 4000) -> dict[str, Any]:
-    path = _AUDIT_LOG if name == "audit" else _CONTROLLER_LOG
+def read_log_tail(path: Path, limit: int = 4000) -> dict[str, Any]:
     limit = max(1, min(int(limit or 4000), 200000))
     try:
         with path.open("rb") as fh:
@@ -142,6 +157,13 @@ def tail_log(name: str = "controller", limit: int = 4000) -> dict[str, Any]:
             data = fh.read().decode("utf-8", errors="replace")
         if len(data) >= limit:
             data = data[data.find("\n") + 1 :] if "\n" in data else data
-        return {"name": name, "path": str(path), "content": data, "bytes": len(data.encode("utf-8", errors="replace"))}
+        return {"path": str(path), "content": data, "bytes": len(data.encode("utf-8", errors="replace"))}
     except FileNotFoundError:
-        return {"name": name, "path": str(path), "content": "", "bytes": 0}
+        return {"path": str(path), "content": "", "bytes": 0}
+
+
+def tail_log(name: str = "controller", limit: int = 4000) -> dict[str, Any]:
+    path = log_file_map().get(name, _CONTROLLER_LOG)
+    result = read_log_tail(path, limit=limit)
+    result["name"] = name
+    return result

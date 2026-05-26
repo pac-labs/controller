@@ -17,6 +17,16 @@ function renderObserveStatus(status) {
   const logging = status?.logging || {};
   const rotation = logging.rotation || {};
   const files = logging.files || {};
+  const select = document.getElementById('observeLogName');
+  if (select && !select.dataset.enhanced) {
+    select.innerHTML = `
+      <option value="controller">Controller</option>
+      <option value="audit">Audit</option>
+      <option value="wrapper">Wrapper</option>
+      <option value="pi-agent">pi.dev runtime</option>
+      <option value="pacctl">pacctl</option>`;
+    select.dataset.enhanced = 'true';
+  }
   const store = status?.store || {};
   el.classList.remove('muted');
   el.innerHTML = `
@@ -39,6 +49,16 @@ function renderObserveStatus(status) {
       <span>Audit log</span>
       <b>${escapeHtml(observeValue(files.audit?.size_bytes, '0'))} bytes</b>
       <small>${escapeHtml(files.audit?.path || '')}</small>
+    </article>
+    <article class="observe-status-card">
+      <span>pi.dev runtime log</span>
+      <b>${escapeHtml(observeValue(files.pi_agent?.size_bytes, '0'))} bytes</b>
+      <small>${escapeHtml(files.pi_agent?.path || '')}</small>
+    </article>
+    <article class="observe-status-card">
+      <span>pacctl log</span>
+      <b>${escapeHtml(observeValue(files.pacctl?.size_bytes, '0'))} bytes</b>
+      <small>${escapeHtml(files.pacctl?.path || '')}</small>
     </article>
     <article class="observe-status-card">
       <span>Embedded store</span>
