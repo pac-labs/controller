@@ -1,6 +1,14 @@
-FROM node:20-slim
+FROM docker.io/library/golang:1.23 AS pacctl-builder
+
+WORKDIR /src/binaries/pacctl
+COPY binaries/pacctl/go.mod ./
+COPY binaries/pacctl/main.go ./
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/pacctl .
+
+FROM docker.io/library/node:20-slim
 
 ARG PI_NPM_PACKAGE=pi-coding-agent
+ARG PI_CONTAINER_VERSION=dev
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash ca-certificates curl git openssh-client python3 tini \
@@ -10,9 +18,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Example: podman build --build-arg PI_NPM_PACKAGE=@your/pi-package -t localhost/pi-agent-harness:stage11 .
 RUN npm install -g ${PI_NPM_PACKAGE} || true
 
-RUN useradd -m -u 10001 piagent
 WORKDIR /workspace
-COPY entrypoint.sh /usr/local/bin/pi-agent-entrypoint
-RUN chmod +x /usr/local/bin/pi-agent-entrypoint && mkdir -p /workspace/pi-agent-artifacts && chown -R piagent:piagent /workspace
-USER piagent
+COPY --from=pacctl-builder /out/pacctl /usr/local/bin/pacctl
+COPY containers/pi-agent-harness/entrypoint.sh /usr/local/bin/pi-agent-entrypoint
+LABEL org.opencontainers.image.version="${PI_CONTAINER_VERSION}" \
+      pac.pi_container.version="${PI_CONTAINER_VERSION}" \
+      pac.pi_npm_package="${PI_NPM_PACKAGE}"
+RUN chmod +x /usr/local/bin/pi-agent-entrypoint /usr/local/bin/pacctl \
+    && mkdir -p /workspace/pi-agent-artifacts
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/pi-agent-entrypoint"]

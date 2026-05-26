@@ -65,6 +65,7 @@ from pi_agent_platform.core.session_commands import list_session_slash_commands,
 from pi_agent_platform.core.subagents import spawn_pi_dev_subagent
 from pi_agent_platform.core.runner_discovery import discover_host, discover_containers
 from pi_agent_platform.core.maintenance import run_endpoint_maintenance
+from pi_agent_platform.core.pi_dev_runtime import inspect_pi_container_image, pi_container_rebuild_state, pi_container_source_version
 from pi_agent_platform.core.providers import effective_context, model_card, provider_public, test_model, test_provider, list_provider_models, sync_models_from_provider, lmstudio_inspect_provider, lmstudio_load_model, lmstudio_unload_model, lmstudio_download_model, lmstudio_companion_script
 from pi_agent_platform.core.store import store
 from pi_agent_platform.core.artifacts import write_artifact, list_artifacts, task_artifact_dir, safe_artifact_path
@@ -1163,6 +1164,21 @@ def _container_runtime_for_pi_dev() -> str | None:
     return None
 
 
+def _pi_dev_image_rebuild_state() -> dict[str, Any]:
+    root = Path(__file__).resolve().parents[2]
+    runtime = _container_runtime_for_pi_dev()
+    image = os.environ.get('PI_AGENT_PI_CONTAINER_IMAGE', 'localhost/pi-agent-harness:stage11')
+    expected_version = pi_container_source_version(root)
+    image_info = inspect_pi_container_image(runtime, image)
+    state = pi_container_rebuild_state(image_info, expected_version)
+    state.update({
+        'image': image,
+        'runtime': runtime,
+        'image_info': image_info,
+    })
+    return state
+
+
 def _pi_dev_daemon_state() -> dict[str, Any]:
     image = os.environ.get('PI_AGENT_PI_CONTAINER_IMAGE', 'localhost/pi-agent-harness:stage11')
     runtime = _container_runtime_for_pi_dev()
@@ -1219,6 +1235,18 @@ def _start_pi_dev_daemon() -> dict[str, Any]:
     ok = proc.returncode == 0 and bool(new_state.get('running'))
     return {'ok': ok, 'status': 'started' if ok else 'failed', 'command': shlex.join(cmd), 'exit_code': proc.returncode, 'stdout': proc.stdout[-4000:], 'stderr': proc.stderr[-4000:], 'state': new_state, 'message': 'pi.dev controller daemon started.' if ok else 'pi.dev controller daemon failed to start.'}
 
+
+def _restart_pi_dev_daemon() -> dict[str, Any]:
+    runtime = _container_runtime_for_pi_dev()
+    if not runtime:
+        return {'ok': False, 'status': 'missing_runtime', 'message': 'No container runtime found. Install podman or docker.'}
+    try:
+        subprocess.run([runtime, 'rm', '-f', _CONTROLLER_PI_CONTAINER_NAME], capture_output=True, text=True, timeout=30, check=False)
+    except Exception as exc:
+        return {'ok': False, 'status': 'failed', 'message': f'Could not reset pi.dev daemon container: {exc}'}
+    return _start_pi_dev_daemon()
+
+
 def _bootstrap_local_controller_pi_dev() -> dict[str, Any]:
     global _SOURCE_BUILD_ACTIVE
     settings = config.controller_harness
@@ -1231,12 +1259,20 @@ def _bootstrap_local_controller_pi_dev() -> dict[str, Any]:
     install_result = None
     refreshed = _refresh_local_runner_metadata(emit_event=False)
     pi_container = (refreshed.capabilities or {}).get('pi_container') or {}
-    if settings.auto_install_pi_dev and not (pi_container.get('image_available') or pi_container.get('available')):
+    rebuild_state = _pi_dev_image_rebuild_state()
+    should_install_pi_dev = bool(
+        settings.auto_install_pi_dev
+        and (
+            rebuild_state.get('needs_rebuild')
+            or not (pi_container.get('image_available') or pi_container.get('available'))
+        )
+    )
+    if should_install_pi_dev:
         install_result = _run_local_pi_harness_install(runtime='auto')
-        steps.append({'step': 'pi_dev_image', **install_result})
+        steps.append({'step': 'pi_dev_image', 'rebuild_state': rebuild_state, **install_result})
     else:
         image_present = bool(pi_container.get('image_available') or pi_container.get('available'))
-        steps.append({'step': 'pi_dev_image', 'ok': image_present, 'status': 'ready' if image_present else 'missing', 'pi_container': pi_container})
+        steps.append({'step': 'pi_dev_image', 'ok': image_present, 'status': 'ready' if image_present else 'missing', 'pi_container': pi_container, 'rebuild_state': rebuild_state})
     daemon_result = _start_pi_dev_daemon() if settings.auto_install_pi_dev else {'ok': False, 'status': 'disabled', 'message': 'pi.dev daemon auto-start is disabled.'}
     steps.append({'step': 'pi_dev_daemon', **daemon_result})
     wrapper_process = _start_controller_wrapper_once()
@@ -3555,6 +3591,12 @@ def _apply_version_package_from_path(package_path: Path, filename: str, restart_
     wrapper_result = _install_bundled_controller_wrapper(package_root)
     if not wrapper_result.get('ok'):
         wrapper_result = _ensure_controller_wrapper(allow_build=True, force_rebuild=True)
+    pi_dev_update_result = {'ok': False, 'status': 'skipped', 'message': 'pi.dev image update skipped.'}
+    pi_dev_restart_result = {'ok': False, 'status': 'skipped', 'message': 'pi.dev daemon restart skipped.'}
+    if getattr(config.controller_harness, 'auto_install_pi_dev', False):
+        pi_dev_update_result = _run_local_pi_harness_install(runtime='auto')
+        if pi_dev_update_result.get('exit_code') == 0:
+            pi_dev_restart_result = _restart_pi_dev_daemon()
     wrapper_restart_result = _restart_controller_wrapper() if wrapper_result.get('ok') else {'ok': False, 'status': 'skipped', 'message': 'Wrapper restart skipped because wrapper update did not succeed.'}
     try:
         _refresh_local_runner_metadata()
@@ -3576,6 +3618,8 @@ def _apply_version_package_from_path(package_path: Path, filename: str, restart_
         'pip': pip_result,
         'run_script': run_script_result,
         'wrapper_update': wrapper_result,
+        'pi_dev_update': pi_dev_update_result,
+        'pi_dev_restart': pi_dev_restart_result,
         'wrapper_restart': wrapper_restart_result,
         'pi_dev_check': pi_dev_check,
         'preservation_archive': archive_meta,

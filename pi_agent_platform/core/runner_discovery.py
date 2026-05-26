@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .platform_home import pacp_path
+from .pi_dev_runtime import inspect_pi_container_image, pi_container_rebuild_state, pi_container_source_version
 
 
 def _run(cmd: list[str], timeout: int = 5) -> tuple[int, str, str]:
@@ -153,11 +154,13 @@ def discover_host() -> dict[str, Any]:
     }
 
     image = os.environ.get('PI_AGENT_PI_CONTAINER_IMAGE', 'localhost/pi-agent-harness:stage11')
+    expected_pi_version = pi_container_source_version(Path(__file__).resolve().parents[2])
     caps['pi_container'] = {
         'image': image,
         'available': False,
         'image_available': False,
         'runtime': None,
+        'source_version': expected_pi_version,
         'reason': 'No container runtime found. Install podman or docker on the endpoint.',
         'hint': 'The Pi agent harness image is built locally on each endpoint so it matches that machine and runtime.',
         'build_command': 'scripts/build-pi-container.sh localhost/pi-agent-harness:stage11',
@@ -168,8 +171,9 @@ def discover_host() -> dict[str, Any]:
     if caps['container_runtimes']:
         caps['pi_container']['reason'] = f'Image is not present on this endpoint: {image}'
     for runtime in caps['container_runtimes']:
-        code, out, err = _run([runtime, 'image', 'exists', image], timeout=5)
-        if code == 0:
+        image_info = inspect_pi_container_image(runtime, image)
+        if image_info.get('available'):
+            rebuild_state = pi_container_rebuild_state(image_info, expected_pi_version)
             caps['pi_container'] = {
                 'image': image,
                 'available': False,
@@ -177,9 +181,16 @@ def discover_host() -> dict[str, Any]:
                 'runtime': runtime,
                 'reason': 'Pi agent harness image is installed on this endpoint, but the pi.dev runtime is not verified as running yet.',
                 'hint': 'Start or bootstrap pi.dev before treating this endpoint as ready for harness-backed workloads.',
+                'version': image_info.get('version'),
+                'created': image_info.get('created'),
+                'source_version': expected_pi_version,
+                'rebuild_needed': rebuild_state.get('needs_rebuild'),
+                'rebuild_reason': rebuild_state.get('reason'),
+                'labels': image_info.get('labels') or {},
             }
             break
-        caps['pi_container']['last_check'] = {'runtime': runtime, 'exit_code': code, 'stderr': err.strip()[-1000:], 'stdout': out.strip()[-1000:]}
+        caps['pi_container']['last_check'] = image_info.get('last_check') or {}
+        caps['pi_container']['reason'] = image_info.get('reason') or caps['pi_container']['reason']
 
     if caps['tools']['nvidia-smi']['available']:
         code, out, err = _run(['nvidia-smi', '--query-gpu=name,memory.total,driver_version', '--format=csv,noheader'], timeout=5)
