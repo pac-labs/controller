@@ -19,6 +19,19 @@ from .web import try_execute_web_tool
 from .workspace import try_execute_workspace_tool
 
 
+def _normalize_tool_alias(tool: str, session: Session, config: AppConfig) -> tuple[str, dict[str, Any] | None]:
+    raw = str(tool or "").strip()
+    normalized = raw.lower().replace(".", "_").replace("-", "_")
+    if normalized == "pi_dev_agent":
+        allowed = set(session.tools or [])
+        available = set(getattr(config, "tools", {}).keys())
+        if (not allowed or "workspace_manifest" in allowed) and "workspace_manifest" in available:
+            return "workspace_manifest", {"max_files": 300}
+        if not allowed or "list_files" in allowed:
+            return "list_files", {"path": "."}
+    return raw, None
+
+
 def _get_run_agent_loop():
     # Imported lazily to avoid a circular import: agent_loop imports this registry.
     from ..agent_loop import run_agent_loop
@@ -31,6 +44,9 @@ def _permission(session: Session, config: AppConfig):
 
 async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, Any], config: AppConfig) -> tuple[str, bool]:
     ensure_workspace(session)
+    tool, alias_input = _normalize_tool_alias(tool, session, config)
+    if alias_input is not None and not inp:
+        inp = alias_input
     allowed = set(session.tools)
     perm = _permission(session, config)
     if not perm:
