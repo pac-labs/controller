@@ -17,6 +17,7 @@ _CONTROLLER_LOG = _LOG_DIR / "pac-controller.log"
 _AUDIT_LOG = _LOG_DIR / "pac-audit.log"
 _PI_AGENT_LOG = pacp_path("app") / "pi-agent-artifacts" / "pi-agent.log"
 _PACCTL_LOG = pacp_path("app") / "pi-agent-artifacts" / "pacctl.log"
+_PI_FORWARDING_LOG = pacp_path("app") / "pi-agent-artifacts" / "agent-forwarding.jsonl"
 _CONTROLLER_WRAPPER_LOG = _LOG_DIR / "controller-pac-wrapper.log"
 
 
@@ -114,6 +115,7 @@ def log_file_map() -> dict[str, Path]:
         "wrapper": _CONTROLLER_WRAPPER_LOG,
         "pi-agent": _PI_AGENT_LOG,
         "pacctl": _PACCTL_LOG,
+        "pi-forwarding": _PI_FORWARDING_LOG,
     }
 
 
@@ -135,6 +137,7 @@ def observability_status() -> dict[str, Any]:
                 "wrapper": _file_info(_CONTROLLER_WRAPPER_LOG),
                 "pi_agent": _file_info(_PI_AGENT_LOG),
                 "pacctl": _file_info(_PACCTL_LOG),
+                "pi_forwarding": _file_info(_PI_FORWARDING_LOG),
             },
         },
         "runtime": {

@@ -5,7 +5,7 @@ import sqlite3
 from datetime import timedelta
 from pathlib import Path
 from threading import Lock
-from typing import Iterable
+from typing import Callable, Iterable
 
 from .models import AccessRequest, AgentContext, DirectoryCredential, DirectoryPrincipal, Event, Group, Session, Task, Runner, RunnerJob, RunnerJobStatus, User, UserWorkspace, now_utc
 from .shared_storage import SharedStorage
@@ -112,6 +112,11 @@ class SQLiteStore:
                 'insert or replace into events(id, session_id, task_id, payload, created_at) values (?, ?, ?, ?, ?)',
                 (event.id, event.session_id, event.task_id, event.model_dump_json(), event.created_at.isoformat()),
             )
+        for hook in list(_EVENT_HOOKS):
+            try:
+                hook(event)
+            except Exception:
+                continue
         return event
 
     def get_events(self, session_id: str, after_id: str | None = None, limit: int = 500, latest: bool = False) -> list[Event]:
@@ -633,3 +638,15 @@ class SQLiteStore:
 
 
 store = SQLiteStore()
+
+_EVENT_HOOKS: list[Callable[[Event], None]] = []
+
+
+def register_event_hook(hook: Callable[[Event], None]) -> None:
+    hook_id = getattr(hook, "_pac_hook_id", None)
+    if hook_id:
+        for existing in _EVENT_HOOKS:
+            if getattr(existing, "_pac_hook_id", None) == hook_id:
+                return
+    if hook not in _EVENT_HOOKS:
+        _EVENT_HOOKS.append(hook)

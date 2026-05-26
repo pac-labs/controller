@@ -346,6 +346,21 @@ class ControllerHarnessConfig(BaseModel):
     auto_bootstrap: bool = True
     auto_build_wrapper: bool = True
     auto_install_pi_dev: bool = True
+    forward_events_enabled: bool = True
+    forward_events_sink: Literal["none", "pi.dev"] = "pi.dev"
+    forward_scope: Literal["controller", "pi_dev_sessions", "all_sessions"] = "controller"
+    forward_event_types: list[str] = Field(default_factory=lambda: [
+        "user_message",
+        "task_queued",
+        "task_started",
+        "tool_call",
+        "tool_result",
+        "agent_intent",
+        "agent_plan",
+        "result",
+        "task_failed",
+    ])
+    forward_file: str = "pi-agent-artifacts/agent-forwarding.jsonl"
     wrapper_binary_project: str = "pac-endpoint"
     wrapper_binary_name: str = "pac-endpoint"
     wrapper_install_dir: str = "~/.pacp/bin"

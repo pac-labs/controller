@@ -67,7 +67,7 @@ from pi_agent_platform.core.runner_discovery import discover_host, discover_cont
 from pi_agent_platform.core.maintenance import run_endpoint_maintenance
 from pi_agent_platform.core.pi_dev_runtime import inspect_pi_container_image, pi_container_rebuild_state, pi_container_source_version
 from pi_agent_platform.core.providers import effective_context, model_card, provider_public, test_model, test_provider, list_provider_models, sync_models_from_provider, lmstudio_inspect_provider, lmstudio_load_model, lmstudio_unload_model, lmstudio_download_model, lmstudio_companion_script
-from pi_agent_platform.core.store import store
+from pi_agent_platform.core.store import register_event_hook, store
 from pi_agent_platform.core.artifacts import write_artifact, list_artifacts, task_artifact_dir, safe_artifact_path
 from pi_agent_platform.core.secrets import secret_store
 from pi_agent_platform.core.pac_ram import read_ram, write_ram, list_ram, all_ram, bundle_ram, search_ram
@@ -100,6 +100,7 @@ from pi_agent_platform.core.credentials import credential_expired, hash_token_se
 from pi_agent_platform.core.directory_identities import sync_directory_identities
 from pi_agent_platform.core.observability import log_file_map, read_log_tail, setup_pac_observability
 from pi_agent_platform.core.observability_store import record_http_request, prune_observability_store
+from pi_agent_platform.core.pi_dev_forwarding import create_pi_dev_event_forwarder
 
 NOISY_EVENT_TYPES = {'runner_heartbeat', 'endpoint_heartbeat', 'provider_heartbeat'}
 _PI_DEV_LOG_ERROR_PATTERN = re.compile(r'(npm error|traceback|fatal|exception|could not determine executable to run|\\berror\\b|\\bfailed\\b)', re.IGNORECASE)
@@ -194,6 +195,7 @@ def _read_pac_version() -> str:
 config = load_config()
 PAC_VERSION = _read_pac_version()
 setup_pac_observability()
+register_event_hook(create_pi_dev_event_forwarder(config, store))
 prune_observability_store()
 try:
     if store.get_event_retention_policy().get('prune_on_startup', True):
@@ -1354,12 +1356,14 @@ def _post_update_pi_dev_check() -> dict[str, Any]:
             'daemon_running': False,
             'pi_agent_log': _pi_dev_log_summary('pi-agent'),
             'pacctl_log': _pi_dev_log_summary('pacctl'),
+            'forwarding_log': _pi_dev_log_summary('pi-forwarding'),
             'wrapper_log': _pi_dev_log_summary('wrapper'),
         }
     wrapper_state = _wrapper_process_state()
     daemon_state = _pi_dev_daemon_state()
     pi_agent_log = _pi_dev_log_summary('pi-agent')
     pacctl_log = _pi_dev_log_summary('pacctl')
+    forwarding_log = _pi_dev_log_summary('pi-forwarding')
     wrapper_log = _pi_dev_log_summary('wrapper')
     session_ok = bool(session_result.get('ok'))
     wrapper_running = bool(wrapper_state.get('running'))
@@ -1394,8 +1398,16 @@ def _post_update_pi_dev_check() -> dict[str, Any]:
         'pi_daemon': daemon_state,
         'pi_agent_log': pi_agent_log,
         'pacctl_log': pacctl_log,
+        'forwarding_log': forwarding_log,
         'wrapper_log': wrapper_log,
         'detected_errors': detected_errors,
+        'forwarding': {
+            'enabled': bool(config.controller_harness.forward_events_enabled),
+            'sink': config.controller_harness.forward_events_sink,
+            'scope': config.controller_harness.forward_scope,
+            'event_types': list(config.controller_harness.forward_event_types or []),
+            'file': config.controller_harness.forward_file,
+        },
     }
 
 
