@@ -201,18 +201,76 @@ function tokenHeaders() {
   const t = stored || field;
   return t ? {Authorization: `Bearer ${t}`} : {};
 }
+const API_OFFLINE_BACKOFF_KEY = '__pacApiOfflineUntil';
+const API_MISSING_ENDPOINTS_KEY = '__pacApiMissingEndpoints';
+function normaliseApiPath(path) {
+  try { return new URL(path, window.location.origin).pathname; } catch (_) { return String(path || '').split('?')[0]; }
+}
+function apiMissingEndpoints() {
+  if (!window[API_MISSING_ENDPOINTS_KEY]) window[API_MISSING_ENDPOINTS_KEY] = new Map();
+  return window[API_MISSING_ENDPOINTS_KEY];
+}
+function apiBackoffError(message, status = 0, path = '') {
+  const err = new Error(message);
+  err.status = status;
+  err.path = path;
+  err.transient = status === 0;
+  return err;
+}
+function setApiOfflineBackoff(reason = '') {
+  const previous = Number(window[API_OFFLINE_BACKOFF_KEY] || 0);
+  const now = Date.now();
+  const until = Math.max(previous, now + 15000);
+  window[API_OFFLINE_BACKOFF_KEY] = until;
+  window.__pacApiOfflineReason = reason || 'PAC backend is reconnecting.';
+  return until;
+}
+function clearApiOfflineBackoff() {
+  window[API_OFFLINE_BACKOFF_KEY] = 0;
+  window.__pacApiOfflineReason = '';
+}
+function apiBackoffRemainingMs() {
+  return Math.max(0, Number(window[API_OFFLINE_BACKOFF_KEY] || 0) - Date.now());
+}
 async function api(path, opts = {}) {
+  const routePath = normaliseApiPath(path);
+  const missingUntil = Number(apiMissingEndpoints().get(routePath) || 0);
+  if (missingUntil > Date.now()) {
+    throw apiBackoffError(`API route is not available on this controller yet: ${routePath}`, 404, routePath);
+  }
+  if (!opts.allowDuringBackoff && apiBackoffRemainingMs() > 0) {
+    throw apiBackoffError(window.__pacApiOfflineReason || 'PAC backend is reconnecting.', 0, routePath);
+  }
   opts.headers = {...(opts.headers || {}), ...tokenHeaders()};
   if (opts.body && !(opts.body instanceof FormData) && !opts.headers['Content-Type']) opts.headers['Content-Type'] = 'application/json';
-  const r = await fetch(path, opts);
+  let r;
+  try {
+    r = await fetch(path, opts);
+    clearApiOfflineBackoff();
+  } catch (err) {
+    setApiOfflineBackoff(err?.message || 'PAC backend is reconnecting.');
+    throw apiBackoffError('PAC backend is reconnecting or temporarily unavailable.', 0, routePath);
+  }
   if (r.status === 401) {
     localStorage.removeItem(AUTH_TOKEN_KEY);
     currentUser = null;
     renderHeaderAuthBox();
   }
-  if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
+  if (!r.ok) {
+    const body = await r.text();
+    if (r.status === 404 && routePath.startsWith('/v1/')) {
+      apiMissingEndpoints().set(routePath, Date.now() + 10 * 60 * 1000);
+    }
+    const err = new Error(`${r.status}: ${body}`);
+    err.status = r.status;
+    err.path = routePath;
+    err.body = body;
+    throw err;
+  }
   return r.json();
 }
+window.pacApiBackoffRemainingMs = apiBackoffRemainingMs;
+window.pacApiRouteMissing = (path) => Number(apiMissingEndpoints().get(normaliseApiPath(path)) || 0) > Date.now();
 function opt(select, value, label) { const o = document.createElement('option'); o.value=value; o.textContent=label || value; select.appendChild(o); }
 function fillSelects() {
   for (const id of ['agentProfile','workspaceProfile','sessionSourceContext']) { const el=document.getElementById(id); if(el) el.innerHTML = id === 'sessionSourceContext' ? '<option value="">none</option>' : ''; }

@@ -133,7 +133,7 @@
       const payload = await api('/v1/system/storage');
       renderStorageHealth(payload);
     } catch (error) {
-      box.textContent = `Could not load storage health: ${error.message || error}`;
+      box.textContent = error?.status === 404 ? 'Storage health is not available from the active backend yet. The UI may be newer than the running controller; apply/restart PAC, then reload.' : `Could not load storage health: ${error.message || error}`;
     }
   }
 

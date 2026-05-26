@@ -78,3 +78,6 @@
 
 @import url("/ui/styles/dashboard-openshift-overview.css");
 @import url("/ui/styles/release-apply-restart-visibility.css");
+
+@import url("/ui/styles/dashboard-overview-refinement.css");
+@import url("/ui/styles/session-message-actions-integrated.css");

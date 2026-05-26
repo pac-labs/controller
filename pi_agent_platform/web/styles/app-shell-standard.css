@@ -194,3 +194,42 @@ html[data-theme="light"] .update-summary-card{
 }
 html[data-theme="light"] .update-summary-card b{color:#0f172a;}
 html[data-theme="light"] .update-summary-label{color:#047857;}
+
+/* Shell integration pass: page search belongs with the page action row when the
+   page already has a primary action, rather than as an oversized toolbar card. */
+.page-masthead-search{
+  display:inline-flex;
+  align-items:center;
+  gap:.42rem;
+  min-width:min(320px,32vw);
+  max-width:420px;
+  padding:.34rem .55rem;
+  border:1px solid rgba(148,163,184,.22);
+  border-radius:8px;
+  background:rgba(2,6,23,.35);
+  color:var(--pac-text-muted,#94a3b8);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.03);
+}
+.page-masthead-search input{
+  width:100%;
+  min-width:0;
+  border:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  padding:.18rem!important;
+  color:var(--pac-text-strong,#e5edf8)!important;
+  outline:none!important;
+}
+.page-masthead-search input::placeholder{color:color-mix(in srgb,var(--pac-text-muted,#94a3b8) 78%,transparent);}
+html[data-theme="light"] .page-masthead-search,
+body[data-theme="light"] .page-masthead-search{
+  background:#fff;
+  border-color:#dbe7ef;
+  color:#64748b;
+  box-shadow:0 1px 2px rgba(15,23,42,.06);
+}
+html[data-theme="light"] .page-masthead-search input,
+body[data-theme="light"] .page-masthead-search input{color:#0f172a!important;}
+@media(max-width:980px){
+  .page-masthead-search{min-width:min(100%,320px);width:100%;}
+}

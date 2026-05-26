@@ -1,7 +1,7 @@
 (function () {
   const ROUTE_EXTRAS = {
     dashboard: {
-      actions: [{label: 'Widgets', target: 'dashboardWidgetPicker'}, {label: 'Refresh atlas', target: 'dashboardRefreshTopology', subtle: true}],
+      actions: [],
       toolbar: {hidden: true},
     },
     atlas: {
@@ -103,9 +103,23 @@
     return `<button class="${kind} page-shell-action" type="button" data-page-action-scope="${esc(scope)}" data-page-action-index="${index}">${esc(action.label)}</button>`;
   }
 
-  function renderActions(actions, scope, container) {
+  function searchControl(search, placement) {
+    if (!search) return '';
+    const cls = placement === 'masthead' ? 'page-masthead-search' : 'page-toolbar-search';
+    return `<label class="${cls}"><span aria-hidden="true">⌕</span><input type="search" placeholder="${esc(search.placeholder || 'Search…')}" data-page-shell-search="1" /></label>`;
+  }
+
+  function bindSearch(container, search) {
+    if (!container || !search) return;
+    const input = container.querySelector('[data-page-shell-search]');
+    if (input) input.addEventListener('input', () => filterTarget(search.target, input.value));
+  }
+
+  function renderActions(actions, scope, container, options = {}) {
     if (!container) return;
-    container.innerHTML = (actions || []).map((action, index) => actionButton(action, index, scope)).join('');
+    const search = options.search ? searchControl(options.search, 'masthead') : '';
+    container.innerHTML = `${search}${(actions || []).map((action, index) => actionButton(action, index, scope)).join('')}`;
+    bindSearch(container, options.search);
     container.querySelectorAll('[data-page-action-index]').forEach((button) => {
       button.addEventListener('click', () => clickTarget((actions || [])[Number(button.dataset.pageActionIndex || 0)]));
     });
@@ -183,12 +197,16 @@
       container.innerHTML = '';
       return;
     }
-    const search = toolbar.search ? `<label class="page-toolbar-search"><span aria-hidden="true">⌕</span><input type="search" placeholder="${esc(toolbar.search.placeholder || 'Search…')}" data-page-toolbar-search="1" /></label>` : '';
+    const search = toolbar.search ? searchControl(toolbar.search, 'toolbar') : '';
     const actions = (toolbar.actions || []).map((action, index) => actionButton(action, index, 'toolbar')).join('');
+    if (!search && !actions) {
+      container.hidden = true;
+      container.innerHTML = '';
+      return;
+    }
     container.hidden = false;
     container.innerHTML = `<div class="page-toolbar-main">${search}</div><div class="page-toolbar-actions">${actions}</div>`;
-    const input = container.querySelector('[data-page-toolbar-search]');
-    if (input) input.addEventListener('input', () => filterTarget(toolbar.search?.target, input.value));
+    bindSearch(container, toolbar.search);
     container.querySelectorAll('[data-page-action-index]').forEach((button) => {
       button.addEventListener('click', () => clickTarget((toolbar.actions || [])[Number(button.dataset.pageActionIndex || 0)]));
     });
@@ -200,8 +218,11 @@
     setCopy(item, extras);
     syncMasthead(extras.mastheadMode || item?.mastheadMode || 'sticky');
     renderTabs(extras.tabs);
-    renderActions(extras.actions || [], 'masthead', document.getElementById('pacPageMastheadActions'));
-    renderToolbar(extras.toolbar);
+    const mastheadActions = extras.actions || [];
+    const mastheadSearch = extras.toolbar?.search && mastheadActions.length ? extras.toolbar.search : null;
+    renderActions(mastheadActions, 'masthead', document.getElementById('pacPageMastheadActions'), {search: mastheadSearch});
+    const toolbar = mastheadSearch ? {...(extras.toolbar || {}), search: null} : extras.toolbar;
+    renderToolbar(toolbar);
     return true;
   }
 

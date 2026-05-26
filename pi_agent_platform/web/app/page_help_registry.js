@@ -2,8 +2,8 @@
   const HELP = {
     dashboard: {
       title: 'Operations dashboard',
-      purpose: 'Use the dashboard for a concise operational summary and the PAC Component Atlas.',
-      tips: ['Use Widgets to choose visible dashboard panels.', 'Use the atlas controls inside the panel for map-specific refresh and reset.', 'Use the notification bell for events instead of footer status text.'],
+      purpose: 'Use the dashboard for a concise operational summary of controller posture, utilization, readiness, sessions, and events.',
+      tips: ['Use Widgets to choose visible dashboard panels.', 'Open Atlas from the left navigation for the full component map.', 'Use the notification bell for urgent events only.'],
     },
     sessions: {
       title: 'Sessions',

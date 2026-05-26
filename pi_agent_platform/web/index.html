@@ -93,7 +93,7 @@
       <div class="dashboard-private-head shell-legacy-head" aria-hidden="true">
         <div>
           <h2>Operations dashboard</h2>
-          <p class="muted">Private widget layout with mandatory system status and the zoomable PAC Component Atlas.</p>
+          <p class="muted">Private widget layout with mandatory system status, activity, readiness, and utilization panels.</p>
         </div>
         <div class="dashboard-widget-picker-wrap">
           <button id="dashboardWidgetPicker" class="ghost-button" type="button" aria-haspopup="menu" aria-expanded="false">Widgets</button>
@@ -115,14 +115,17 @@
         <section class="card dashboard-widget dashboard-widget-readiness" data-dashboard-widget="readiness"><div class="section-heading"><div><h2>Readiness</h2><p class="muted">Setup, secrets, source state, and update posture.</p></div></div><div id="opsReadiness" class="health-grid muted" data-pac-loading="Loading setup state…">Loading setup state…</div></section>
         <section class="card dashboard-widget dashboard-widget-mandatory dashboard-widget-system" data-dashboard-widget="system"><div class="section-heading"><div><h2>System details</h2><p class="muted">Controller identity and runtime information.</p></div><span class="pill">mandatory</span></div><div class="status-strip"><span class="pac-loader" aria-label="active"></span><span class="muted">PAC active</span></div><div id="systemInfo" class="kv"></div></section>
         <section class="card dashboard-widget dashboard-widget-sessions" data-dashboard-widget="sessions"><div class="section-heading"><div><h2>Recent sessions</h2><p class="muted">Latest controller conversations and task runs.</p></div></div><div id="sessions"></div></section>
-        <section class="card wide dashboard-widget dashboard-topology-card dashboard-atlas-secondary" data-dashboard-widget="topology">
-          <div class="section-heading dashboard-map-heading"><div><h2>PAC Component Atlas</h2><p class="muted">Detailed dependency map for controller, agents, endpoints, workspaces, providers, models, tools, observability, and artifacts.</p></div><div class="button-row compact-row"><button id="dashboardResetTopologyLayout" class="ghost-button" type="button">Reset atlas</button><button id="dashboardRefreshTopology" class="ghost-button" type="button">Refresh atlas</button></div></div>
-          <div class="dashboard-map-layout">
-            <div id="dashboardTopologyMap" class="dashboard-topology-map muted" data-pac-loading="Loading PAC Component Atlas…">Loading PAC Component Atlas…</div>
-            <aside id="dashboardTopologyDetails" class="dashboard-topology-details"><h3>Select an object</h3><p class="muted small-text">Click a component to inspect its PAC role, parent, details, and visible connections.</p></aside>
-          </div>
-        </section>
       </div>
+    </section>
+
+    <section id="atlas-tab" class="tab-panel atlas-workspace">
+      <section class="card wide dashboard-topology-card atlas-route-card">
+        <div class="section-heading dashboard-map-heading"><div><h2>PAC Component Atlas</h2><p class="muted">Detailed dependency map for controller, agents, endpoints, workspaces, providers, models, tools, observability, and artifacts.</p></div><div class="button-row compact-row"><button id="dashboardResetTopologyLayout" class="ghost-button" type="button">Reset atlas</button><button id="dashboardRefreshTopology" class="ghost-button" type="button">Refresh atlas</button></div></div>
+        <div class="dashboard-map-layout atlas-route-layout">
+          <div id="dashboardTopologyMap" class="dashboard-topology-map muted" data-pac-loading="Loading PAC Component Atlas…">Loading PAC Component Atlas…</div>
+          <aside id="dashboardTopologyDetails" class="dashboard-topology-details"><h3>Select an object</h3><p class="muted small-text">Click a component to inspect its PAC role, parent, details, and visible connections.</p></aside>
+        </div>
+      </section>
     </section>
 
     <section id="sessions-tab" class="tab-panel sessions-workspace">

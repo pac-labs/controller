@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "1.0.361",
+      "date": "2026-05-26T12:30:00Z",
+      "summary": "Integrated the latest redesign graphics pass while preserving pi.dev monitoring and release verification details.",
+      "changes": [
+        "Merged the latest redesign shell and dashboard presentation pass, including the refined overview layout, shell spacing, and new session action styling modules.",
+        "Split the PAC Component Atlas into its own dedicated page so the dashboard overview can focus on health, activity, readiness, and utilization cards.",
+        "Preserved pi.dev-specific runtime surfaces so the update result, runtime settings page, controller harness panel, and Observe page still expose wrapper, pi-agent, and pacctl health details."
+      ]
+    },
+    {
       "version": "1.0.360",
       "date": "2026-05-26T10:45:00Z",
       "summary": "Surfaced real pi.dev runtime logs and added post-update pi.dev health verification.",
@@ -393,5 +403,5 @@
       }
     }
   ],
-  "current_version": "1.0.359"
+  "current_version": "1.0.361"
 }

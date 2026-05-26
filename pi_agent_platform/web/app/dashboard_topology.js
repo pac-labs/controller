@@ -7,7 +7,6 @@ let dashboardAtlasWheelRenderTimer = null;
 const DASHBOARD_DEFAULT_WIDGETS = ['overview', 'components', 'events', 'execution', 'readiness', 'sessions', 'topology'];
 const DASHBOARD_WIDGETS = [
   {id: 'overview', label: 'Operations overview'},
-  {id: 'topology', label: 'PAC Component Atlas'},
   {id: 'execution', label: 'Execution health'},
   {id: 'components', label: 'Critical components'},
   {id: 'readiness', label: 'Setup and updates'},

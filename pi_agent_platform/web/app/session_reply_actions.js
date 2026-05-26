@@ -163,55 +163,14 @@ async function branchLatestReplyToNewSession() {
 }
 
 function ensureComposerReplyActions() {
-  const composer = document.querySelector('.session-composer.chatgpt-composer');
-  if (!composer) return null;
-  let row = document.getElementById('composerReplyActions');
-  if (row) return row;
-  row = document.createElement('div');
-  row.id = 'composerReplyActions';
-  row.className = 'composer-reply-actions';
-  row.hidden = true;
-  composer.appendChild(row);
-  return row;
+  const staleRow = document.getElementById('composerReplyActions');
+  if (staleRow) staleRow.remove();
+  return null;
 }
 
 function renderComposerReplyActions() {
-  const row = ensureComposerReplyActions();
-  if (!row) return;
-  const reply = getLatestAssistantReply();
-  if (!reply?.text) {
-    row.hidden = true;
-    row.innerHTML = '';
-    return;
-  }
-  const feedback = currentReplyFeedback(reply);
-  row.hidden = false;
-  row.innerHTML = `
-    <button type="button" class="reply-action-button" data-reply-action="copy" title="Copy reply" aria-label="Copy reply">⧉</button>
-    <button type="button" class="reply-action-button${feedback === 'up' ? ' active' : ''}" data-reply-action="up" title="Thumbs up" aria-label="Thumbs up">▲</button>
-    <button type="button" class="reply-action-button${feedback === 'down' ? ' active' : ''}" data-reply-action="down" title="Thumbs down" aria-label="Thumbs down">▼</button>
-    <button type="button" class="reply-action-button" data-reply-action="share" title="Share reply" aria-label="Share reply">↗</button>
-    <button type="button" class="reply-action-button" data-reply-action="refresh" title="Regenerate reply" aria-label="Regenerate reply">↻</button>
-    <button type="button" class="reply-action-button" data-reply-action="branch" title="Branch into new chat" aria-label="Branch into new chat">⑂</button>
-  `;
-  row.querySelectorAll('[data-reply-action]').forEach((btn) => {
-    const glyphs = {copy:'⧉', up:'▲', down:'▼', share:'↗', refresh:'↻', branch:'⑂'};
-    const action = btn.dataset.replyAction || '';
-    if (glyphs[action]) btn.textContent = glyphs[action];
-  });
-  row.querySelectorAll('[data-reply-action]').forEach((btn) => {
-    btn.onclick = async () => {
-      try {
-        const action = btn.dataset.replyAction || '';
-        if (action === 'copy') await copyReplyText(reply.text);
-        else if (action === 'up') setReplyFeedback(reply, 'up');
-        else if (action === 'down') setReplyFeedback(reply, 'down');
-        else if (action === 'share') await shareReply(reply);
-        else if (action === 'refresh') await regenerateLatestReply();
-        else if (action === 'branch') await branchLatestReplyToNewSession();
-      } catch (error) {
-        paneError('Reply action failed', error.message || String(error));
-      }
-    };
-  });
+  // Reply actions now live with each assistant message. Keeping a mirrored
+  // action row under the input duplicated controls and made the composer
+  // visually heavy, especially on the Sessions page.
+  ensureComposerReplyActions();
 }

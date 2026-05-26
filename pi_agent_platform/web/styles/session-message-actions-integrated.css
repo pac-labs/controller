@@ -1,0 +1,76 @@
+/* PAC v1.0.381: uniform message-local action buttons for Sessions.
+   Actions should read as one integrated control family: thin outline, single icon color,
+   and subtle active state without per-action semantic colouring. */
+#sessions-tab .reply-action-row {
+  display:inline-flex;
+  align-items:center;
+  gap:.28rem;
+  margin-top:.5rem;
+  padding:.14rem;
+  border:1px solid rgba(100,116,139,.18);
+  border-radius:999px;
+  background:rgba(255,255,255,.72);
+  box-shadow:none;
+}
+#sessions-tab .reply-action-button,
+#sessions-tab .reply-action-row .reply-action-button,
+#sessions-tab .chat-bubble .reply-action-button {
+  width:1.7rem;
+  min-width:1.7rem;
+  height:1.7rem;
+  min-height:1.7rem;
+  display:inline-grid;
+  place-items:center;
+  padding:0;
+  border:1px solid rgba(100,116,139,.28);
+  border-radius:999px;
+  background:rgba(255,255,255,.86);
+  color:#475569;
+  box-shadow:none;
+  font-size:.83rem;
+  line-height:1;
+  opacity:.92;
+}
+#sessions-tab .reply-action-button:hover,
+#sessions-tab .reply-action-button:focus-visible {
+  background:#ffffff;
+  border-color:rgba(15,23,42,.42);
+  color:#0f172a;
+  opacity:1;
+  transform:translateY(-1px);
+}
+#sessions-tab .reply-action-button.active {
+  background:rgba(15,23,42,.05);
+  border-color:rgba(15,23,42,.38);
+  color:#0f172a;
+  box-shadow:0 0 0 2px rgba(15,23,42,.06);
+}
+#sessions-tab .composer-reply-actions {
+  display:none !important;
+}
+html[data-theme="dark"] #sessions-tab .reply-action-row,
+body[data-theme="dark"] #sessions-tab .reply-action-row {
+  border-color:rgba(148,163,184,.18);
+  background:rgba(15,23,42,.56);
+}
+html[data-theme="dark"] #sessions-tab .reply-action-button,
+body[data-theme="dark"] #sessions-tab .reply-action-button {
+  border-color:rgba(148,163,184,.24);
+  background:rgba(15,23,42,.82);
+  color:#cbd5e1;
+}
+html[data-theme="dark"] #sessions-tab .reply-action-button:hover,
+html[data-theme="dark"] #sessions-tab .reply-action-button:focus-visible,
+body[data-theme="dark"] #sessions-tab .reply-action-button:hover,
+body[data-theme="dark"] #sessions-tab .reply-action-button:focus-visible {
+  background:rgba(30,41,59,.98);
+  border-color:rgba(226,232,240,.38);
+  color:#f8fafc;
+}
+html[data-theme="dark"] #sessions-tab .reply-action-button.active,
+body[data-theme="dark"] #sessions-tab .reply-action-button.active {
+  background:rgba(226,232,240,.10);
+  border-color:rgba(226,232,240,.42);
+  color:#ffffff;
+  box-shadow:0 0 0 2px rgba(226,232,240,.08);
+}

@@ -433,9 +433,10 @@ async function loadGlobalEvents(reset=false) {
   } catch (e) {
     eventsFetchFailureCount += 1;
     const msg = String(e.message || e);
-    const failed = eventsFetchFailureCount >= 10;
-    const type = failed ? 'events_fetch_failed' : 'events_reconnecting';
-    const message = failed ? 'Events could not reconnect after several attempts.' : 'PAC is reconnecting after an update or restart.';
+    const missingRoute = Number(e?.status || 0) === 404;
+    const failed = missingRoute || eventsFetchFailureCount >= 10;
+    const type = missingRoute ? 'events_backend_route_missing' : (failed ? 'events_fetch_failed' : 'events_reconnecting');
+    const message = missingRoute ? 'Urgent notifications require a newer running PAC backend.' : (failed ? 'Events could not reconnect after several attempts.' : 'PAC is reconnecting after an update or restart.');
     const signature = `${type}:${eventsFetchFailureCount}:${msg}`;
     if (eventsFetchLastNotice !== signature) {
       eventsFetchLastNotice = signature;

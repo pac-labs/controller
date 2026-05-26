@@ -187,10 +187,34 @@ function normalizeUsageHistory(history) {
 function renderUsageSeries(samples) {
   const rows = samples && samples.length ? samples : [];
   if (!rows.length) return '<div class="muted small-text">Integrated time-series history will appear after samples are collected.</div>';
-  const max = Math.max(100, ...rows.flatMap((item) => [item.cpu, item.memory, item.disk]));
-  const time = (item) => item.at instanceof Date && !Number.isNaN(item.at.getTime()) ? item.at.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '';
-  const bar = (value, label, item) => `<i title="${escapeHtml(label)} ${Math.round(value)}% · ${escapeHtml(time(item))}" style="height:${Math.max(5, Math.round((Number(value || 0) / max) * 100))}%"></i>`;
-  return `<div class="utilization-timeseries" aria-label="Controller usage time series">${rows.map((item) => `<span>${bar(item.cpu, 'CPU', item)}${bar(item.memory, 'Memory', item)}${bar(item.disk, 'Disk', item)}</span>`).join('')}</div>`;
+  const width = 640;
+  const height = 132;
+  const padX = 18;
+  const padY = 14;
+  const plotW = width - (padX * 2);
+  const plotH = height - (padY * 2);
+  const point = (item, index, key) => {
+    const x = padX + ((rows.length <= 1 ? 0 : index / (rows.length - 1)) * plotW);
+    const y = padY + (plotH - ((Math.max(0, Math.min(100, Number(item[key] || 0))) / 100) * plotH));
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  };
+  const line = (key) => rows.map((item, index) => point(item, index, key)).join(' ');
+  const latest = rows[rows.length - 1] || {};
+  const startLabel = rows[0]?.at instanceof Date ? rows[0].at.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '';
+  const endLabel = latest.at instanceof Date ? latest.at.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '';
+  const latestValue = (key) => `${Math.round(Number(latest[key] || 0))}%`;
+  return `<div class="utilization-timeseries utilization-line-chart" aria-label="Controller usage time series">
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="CPU, memory, and filesystem usage trend">
+      <line class="chart-grid" x1="${padX}" y1="${padY}" x2="${width - padX}" y2="${padY}" />
+      <line class="chart-grid" x1="${padX}" y1="${padY + plotH / 2}" x2="${width - padX}" y2="${padY + plotH / 2}" />
+      <line class="chart-grid" x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" />
+      <polyline class="usage-line usage-line-cpu" points="${line('cpu')}" />
+      <polyline class="usage-line usage-line-memory" points="${line('memory')}" />
+      <polyline class="usage-line usage-line-disk" points="${line('disk')}" />
+    </svg>
+    <div class="usage-chart-footer"><span>${escapeHtml(startLabel)}</span><span>${escapeHtml(endLabel)}</span></div>
+    <div class="usage-chart-legend"><span class="legend-cpu">CPU ${escapeHtml(latestValue('cpu'))}</span><span class="legend-memory">Memory ${escapeHtml(latestValue('memory'))}</span><span class="legend-disk">Filesystem ${escapeHtml(latestValue('disk'))}</span></div>
+  </div>`;
 }
 function renderUtilizationMeter(label, value, detail) {
   const pct = Number(value || 0);
