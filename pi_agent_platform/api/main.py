@@ -647,6 +647,15 @@ def _platform_workspace_path() -> str:
     return str(Path(__file__).resolve().parents[2])
 
 
+def _controller_tool_baseline() -> list[str]:
+    profile_name = config.controller_harness.agent_profile or MAIN_PI_DEV_PROFILE
+    profile = config.agent_profiles.get(profile_name)
+    desired = list(profile.tools or []) if profile else []
+    if not desired:
+        desired = [tool for tool in MAIN_PI_DEV_PROFILE_TOOLS if tool in config.tools]
+    return list(dict.fromkeys(desired))
+
+
 def _ensure_platform_plugin_sources() -> dict[str, Any]:
     root = Path(_platform_workspace_path())
     plugins_root = root / 'plugins'
@@ -819,7 +828,7 @@ def _ensure_controller_harness_session() -> dict[str, Any]:
             existing.context_mode = desired_context_mode; changed = True
         if existing.workspace_path != (workspace.path or _platform_workspace_path()):
             existing.workspace_path = workspace.path or _platform_workspace_path(); changed = True
-        desired_tools = list(system_context.tools or []) if system_context else (list(config.tools.keys()) if settings.expose_platform_tools else [])
+        desired_tools = list(dict.fromkeys([*(system_context.tools or []), *_controller_tool_baseline()])) if system_context else (list(config.tools.keys()) if settings.expose_platform_tools else [])
         if existing.tools != desired_tools:
             existing.tools = desired_tools; changed = True
         existing.workspace = existing.workspace.model_copy(update={'type': 'profile', 'profile': settings.workspace_profile, 'path': workspace.path})
@@ -858,7 +867,7 @@ def _ensure_controller_harness_session() -> dict[str, Any]:
         workspace={'type': 'profile', 'profile': settings.workspace_profile, 'path': workspace.path},
         workspace_path=workspace.path or _platform_workspace_path(),
         model=model_name,
-        tools=list(system_context.tools or []) if system_context else (list(config.tools.keys()) if settings.expose_platform_tools else []),
+        tools=list(dict.fromkeys([*(system_context.tools or []), *_controller_tool_baseline()])) if system_context else (list(config.tools.keys()) if settings.expose_platform_tools else []),
         metadata={
             'controller_harness': True,
             'preferred_endpoint': settings.runner_id,
@@ -2777,8 +2786,7 @@ def _ensure_default_admin_context(user: User) -> AgentContext:
     seeded_model_name = str(config.controller_harness.model or '').strip()
     model_name = str((item.executor_model if item and item.executor_model else seeded_model_name) or '').strip()
     profile_name = config.controller_harness.agent_profile or MAIN_PI_DEV_PROFILE
-    profile = config.agent_profiles.get(profile_name)
-    desired_tools = list(dict.fromkeys((profile.tools or []) if profile else [tool for tool in MAIN_PI_DEV_PROFILE_TOOLS if tool in config.tools]))
+    desired_tools = _controller_tool_baseline()
     desired = {
         'owner_id': user.id,
         'owner_username': user.username,
@@ -2896,6 +2904,9 @@ def _ensure_auth_admin_scaffolding() -> None:
     for admin_user in admins:
         admin_user = _ensure_admin_user_group_membership(admin_user)
         _ensure_default_admin_context(admin_user)
+
+
+_ensure_auth_admin_scaffolding()
 
 
 app.include_router(create_auth_router(

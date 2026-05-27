@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "1.0.376",
+      "date": "2026-05-27T13:35:00Z",
+      "summary": "Refresh PAC/core tooling on startup so the built-in controller session can use the new code-locator and self-creation tools immediately.",
+      "changes": [
+        "Startup now re-applies admin scaffolding, so the built-in PAC/core context is refreshed when new controller tools are added.",
+        "Controller-session sync now merges the PAC/core context tools with the main pi.dev tool baseline instead of trusting a stale context snapshot.",
+        "This makes find_code_paths and pac_list_components/pac_create_* usable on the existing PAC controller pi.dev session right after update."
+      ]
+    },
+    {
       "version": "1.0.375",
       "date": "2026-05-27T13:20:00Z",
       "summary": "Wire the new PAC/core self-creation tools into the built-in controller context and session.",
@@ -533,5 +543,5 @@
       }
     }
   ],
-  "current_version": "1.0.375"
+  "current_version": "1.0.376"
 }
