@@ -18,6 +18,7 @@ from .agent_events import AgentEvents
 from .agent_prompt_context import build_agent_prompt_context
 from .agent_request_policy import classify_request
 from .agent_request_intent import resolve_request_intent, should_resolve_request_intent
+from .agent_model_selection import resolve_agent_models
 from .profiles import profile_context_name, profile_planner_context_name
 from .agent_response_parser import (
     _extract_json,
@@ -106,13 +107,31 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     agent = config.agent_profiles.get(session.agent_profile or "")
     context_name = profile_context_name(agent, session.context_mode) if agent else session.context_mode
     planner_context_name = profile_planner_context_name(agent, context_name) if agent else context_name
-    planning_model = task.metadata.get('planner_model') or task.metadata.get('model') or session.model
-    decision_model = task.metadata.get('model') or session.model
-    ctx = effective_context(config, decision_model, context_name)
-    context_manager = AgentContextManager(session, task, config, model_name=decision_model, context_profile=context_name)
     full_control = session.permission_profile == "full-control"
     events = AgentEvents(session, task)
     timing = AgentLoopTiming(events)
+    request_policy = classify_request(session, task)
+    task.metadata["request_policy"] = {
+        "prompt_kind": request_policy.prompt_kind,
+        "needs_workspace_index": request_policy.needs_workspace_index,
+        "needs_plan": request_policy.needs_plan,
+        "needs_work_intent": request_policy.needs_work_intent,
+        "prefer_local_inspection": request_policy.prefer_local_inspection,
+        "reason": request_policy.reason,
+    }
+    model_selection = resolve_agent_models(config, session, task, request_policy)
+    planning_model = model_selection.planning_model
+    decision_model = model_selection.decision_model
+    if model_selection.switched_decision_model:
+        task.metadata["effective_decision_model"] = decision_model
+        task.metadata["decision_model_reason"] = model_selection.reason
+        store.add_task(task)
+        events.model_routing_issue(
+            message=f"Using {decision_model} for agent decisions because {session.model} is not configured as a structured agent-work model.",
+            data={"executor_model": session.model, "decision_model": decision_model, "reason": model_selection.reason},
+        )
+    ctx = effective_context(config, decision_model, context_name)
+    context_manager = AgentContextManager(session, task, config, model_name=decision_model, context_profile=context_name)
     events.agent_started(
         model=session.model,
         decision_model=decision_model,
@@ -132,15 +151,6 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
 
     transcript: list[dict[str, Any]] = task.metadata.get("agent_transcript") or []
     lifecycle = AgentRunLifecycle(session, task, config, transcript)
-    request_policy = classify_request(session, task)
-    task.metadata["request_policy"] = {
-        "prompt_kind": request_policy.prompt_kind,
-        "needs_workspace_index": request_policy.needs_workspace_index,
-        "needs_plan": request_policy.needs_plan,
-        "needs_work_intent": request_policy.needs_work_intent,
-        "prefer_local_inspection": request_policy.prefer_local_inspection,
-        "reason": request_policy.reason,
-    }
     store.add_task(task)
 
     resolved_request_intent = None

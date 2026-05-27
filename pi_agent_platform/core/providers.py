@@ -616,6 +616,20 @@ def _record_chat_metric(
         pass
 
 
+def _extract_openai_message_text(body: Any) -> tuple[str, str, str]:
+    try:
+        choice = body["choices"][0]
+        message = choice.get("message") if isinstance(choice, dict) else {}
+        if not isinstance(message, dict):
+            message = {}
+        content = str(message.get("content") or "")
+        reasoning = str(message.get("reasoning_content") or "")
+        finish_reason = str(choice.get("finish_reason") or "")
+        return content, reasoning, finish_reason
+    except Exception:
+        return "", "", ""
+
+
 def chat_complete(
     config: AppConfig,
     model_name: str,
@@ -683,9 +697,16 @@ def chat_complete(
                 response_text = body
                 usage = {}
             else:
-                try:
-                    response_text = body["choices"][0]["message"]["content"] or ""
-                except Exception:
+                response_text, reasoning_text, finish_reason = _extract_openai_message_text(body)
+                if not response_text and reasoning_text and finish_reason == "length":
+                    retry_tokens = min(max(model.max_output_tokens, max_tokens * 4), 512)
+                    if retry_tokens > int(max_tokens or 0):
+                        retry_payload = dict(payload)
+                        retry_payload["max_tokens"] = retry_tokens
+                        ok, body = _json_request(endpoint, provider, retry_payload)
+                        if ok:
+                            response_text, reasoning_text, finish_reason = _extract_openai_message_text(body)
+                if response_text == "" and isinstance(body, dict) and "choices" not in body:
                     duration_ms = int((time.monotonic() - started) * 1000)
                     _record_chat_metric(telemetry=telemetry, model_name=model_name, provider=provider, provider_name=provider_name, provider_model=provider_model, endpoint=endpoint, messages=messages, response_text="", max_tokens=max_tokens, duration_ms=duration_ms, success=False, error=f"unexpected chat response: {body}")
                     metric_recorded = True

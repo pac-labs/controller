@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "1.0.367",
+      "date": "2026-05-27T07:20:00Z",
+      "summary": "Improved agent model routing so context-bound work sessions recover from reasoning-only empty completions and use a structured decision model when the executor is not suitable for agent work.",
+      "changes": [
+        "Added agent-model selection for work requests so PAC can keep the chosen executor model for simple chat while switching structured agent decisions onto a tool/JSON-capable model when the selected executor is not suitable for agent-loop work.",
+        "Recorded explicit model-routing issue events and effective decision-model metadata so PAC shows when a context-bound session is using a different decision model for agent work than the visible executor model.",
+        "Improved OpenAI-compatible provider handling for reasoning-only empty completions by retrying with a larger token budget before PAC treats the response as empty."
+      ]
+    },
+    {
       "version": "1.0.366",
       "date": "2026-05-27T08:00:00Z",
       "summary": "Fixed chat regressions that leaked internal agent-policy and context-sync events into the visible session timeline.",
@@ -453,5 +463,5 @@
       }
     }
   ],
-  "current_version": "1.0.365"
+  "current_version": "1.0.366"
 }
