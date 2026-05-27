@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "1.0.365",
+      "date": "2026-05-27T07:05:00Z",
+      "summary": "Synced context-bound sessions to the latest agent context model before routing new work.",
+      "changes": [
+        "Added a context-bound session resync step to the session task creation path so existing sessions re-apply the latest agent context runtime fields before PAC routes a new prompt.",
+        "Fixed the stale-model case where updating an agent context executor model appeared to save but the backing session continued to run the older concrete session model.",
+        "Verified live on PAC/core that changing the executor model and then sending a prompt updates the existing PAC controller pi.dev session model immediately."
+      ]
+    },
+    {
       "version": "1.0.364",
       "date": "2026-05-27T06:45:00Z",
       "summary": "Made controller work requests bootstrap into concrete inspection work before the main agent turn instead of stalling in narration or unconditional planning.",
@@ -433,5 +443,5 @@
       }
     }
   ],
-  "current_version": "1.0.364"
+  "current_version": "1.0.365"
 }

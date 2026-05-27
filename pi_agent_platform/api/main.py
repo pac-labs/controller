@@ -2536,6 +2536,20 @@ def _ensure_agent_context_session(item: AgentContext, auth: CurrentUser) -> Sess
     return session
 
 
+def _sync_context_bound_session(session: Session, auth: CurrentUser) -> Session:
+    context_id = str((session.metadata or {}).get('agent_context_id') or '').strip()
+    if not context_id:
+        return session
+    item = store.get_agent_context(context_id)
+    if not item:
+        return session
+    if item.last_session_id and item.last_session_id != session.id:
+        item.last_session_id = session.id
+        store.add_agent_context(item)
+    desired = _agent_context_to_session_create(item)
+    return _sync_existing_agent_context_session(item, session, desired)
+
+
 def _shared_storage_payload_to_item(existing: SharedStorage | None, payload: SharedStoragePayload) -> SharedStorage:
     base = existing or SharedStorage(id=(payload.id or _storage_id_from_name(payload.name.strip())), name=payload.name.strip())
     base.name = payload.name.strip()
@@ -4016,4 +4030,5 @@ app.include_router(create_sessions_router(
     safe_workspace_path=safe_workspace_path,
     noisy_event_types=NOISY_EVENT_TYPES,
     effective_context=effective_context,
+    sync_context_bound_session=_sync_context_bound_session,
 ))

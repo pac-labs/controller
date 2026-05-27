@@ -83,6 +83,7 @@ def create_sessions_router(
     safe_workspace_path: Callable[[Session, str], Path],
     noisy_event_types: set[str],
     effective_context: Callable[[Any, str, str], dict[str, Any]],
+    sync_context_bound_session: Callable[[Session, Any], Session],
 ) -> APIRouter:
     router = APIRouter()
     _model_available = model_available
@@ -100,6 +101,7 @@ def create_sessions_router(
     _safe_workspace_path = safe_workspace_path
     _noisy_event_types = noisy_event_types
     _effective_context = effective_context
+    _sync_context_bound_session = sync_context_bound_session
 
     @router.get('/v1/sessions', response_model=list[Session])
     def list_sessions(_auth: Any = Depends(require_auth)) -> list[Session]:
@@ -313,6 +315,7 @@ def create_sessions_router(
         session = store.get_session(session_id)
         if not session:
             raise HTTPException(status_code=404, detail='Session not found')
+        session = _sync_context_bound_session(session, _auth)
         resource_type, resource_id = _session_resource_ref(session)
         _require_resource_access(_auth, resource_type, resource_id, 'write', reason='Send prompts or commands to this session', session_id=session.id)
 
