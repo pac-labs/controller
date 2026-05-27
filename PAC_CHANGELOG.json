@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "1.0.379",
+      "date": "2026-05-27T17:40:00Z",
+      "summary": "Republish the stronger PAC work-contract release with corrected startup packaging.",
+      "changes": [
+        "Republished the work-contract release with the corrected main.py startup order and aligned package metadata.",
+        "This supersedes the stale 1.0.378 asset that still contained the old PAC/core scaffolding order.",
+        "The stronger PAC work contract remains unchanged: code-change requests still ground through inspect, locate, read, and validation before finalizing."
+      ]
+    },
+    {
       "version": "1.0.378",
       "date": "2026-05-27T17:30:00Z",
       "summary": "Fix the 1.0.377 startup regression and keep the stronger PAC work contract in place.",
@@ -563,5 +573,5 @@
       }
     }
   ],
-  "current_version": "1.0.378"
+  "current_version": "1.0.379"
 }
