@@ -2906,9 +2906,6 @@ def _ensure_auth_admin_scaffolding() -> None:
         _ensure_default_admin_context(admin_user)
 
 
-_ensure_auth_admin_scaffolding()
-
-
 app.include_router(create_auth_router(
     require_auth=require_auth,
     require_admin=require_admin,
@@ -2979,6 +2976,9 @@ app.include_router(create_server_config_router(
 
 def _app_dir() -> Path:
     return Path(os.environ.get('PACP_APP_DIR', pacp_path('app'))).expanduser().resolve()
+
+
+_ensure_auth_admin_scaffolding()
 
 
 def _safe_zip_members(zf: zipfile.ZipFile) -> list[str]:

@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "1.0.378",
+      "date": "2026-05-27T17:30:00Z",
+      "summary": "Fix the 1.0.377 startup regression and keep the stronger PAC work contract in place.",
+      "changes": [
+        "Moved PAC/core startup scaffolding to after the path helpers are defined so PAC boots cleanly after update.",
+        "Kept the stronger PAC work contract that forces inspect -> locate -> read -> validate steps for code-change requests.",
+        "This release replaces the broken 1.0.377 startup packaging and is the correct update target."
+      ]
+    },
+    {
       "version": "1.0.377",
       "date": "2026-05-27T14:10:00Z",
       "summary": "Enforce a stronger PAC work contract so code-change requests ground through inspection, location, reads, and validation before finalizing.",
@@ -553,5 +563,5 @@
       }
     }
   ],
-  "current_version": "1.0.377"
+  "current_version": "1.0.378"
 }
