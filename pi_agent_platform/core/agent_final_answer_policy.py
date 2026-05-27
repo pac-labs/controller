@@ -11,6 +11,7 @@ from .agent_action_recovery import (
     _looks_like_unexecuted_consult_request,
     _should_reject_unformatted_action,
 )
+from .agent_resource_contract import evaluate_final as evaluate_resource_contract_final
 from .agent_work_contract import evaluate_final as evaluate_work_contract_final
 from .agent_inspection_policy import (
     has_meaningful_codebase_inspection,
@@ -174,6 +175,18 @@ def evaluate(
             event_message="Final answer rejected because this work request still needs an execution step.",
             event_data={"final_message": final_tail},
         )
+
+    resource_decision = evaluate_resource_contract_final(task.prompt or "", transcript)
+    if not resource_decision.allow:
+        event_data = {"final_message": final_tail, **resource_decision.event_data}
+        if resource_decision.replacement_action:
+            return _tool_decision(
+                resource_decision.replacement_action,
+                reason=resource_decision.reason,
+                event_type="resource_contract_enforced",
+                event_message=resource_decision.event_message or "PAC resource contract enforced a missing creation step.",
+                event_data=event_data,
+            )
 
     contract_decision = evaluate_work_contract_final(task.prompt or "", transcript)
     if not contract_decision.allow:

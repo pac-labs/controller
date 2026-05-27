@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from .agent_pac_resource_intent import parse_pac_resource_plan, session_action, workspace_profile_action
 from .config import AppConfig
 from .models import Session, Task
 from .providers import chat_complete
@@ -16,19 +17,22 @@ _PROMPT = (
     "Return exactly one JSON object with this shape:\n"
     "{\n"
     '  "intent": "work" | "answer",\n'
-    '  "tool": "workspace_manifest" | "find_code_paths" | "list_files" | "ripgrep" | "read_file" | "git_status" | "none",\n'
+    '  "tool": "workspace_manifest" | "find_code_paths" | "list_files" | "ripgrep" | "read_file" | "git_status" | "pac_list_components" | "pac_create_workspace_profile" | "pac_create_session" | "none",\n'
     '  "input": {},\n'
     '  "needs_plan": true | false,\n'
     '  "reason": "short reason"\n'
     "}\n"
     "Rules:\n"
     "- If the user asks to inspect, index, explain a workspace/codebase, fix, build, change, implement, update, or investigate something, intent must be work.\n"
+    "- If the user asks to create PAC resources such as workspaces, endpoint records, providers, models, or sessions, intent must be work and the tool must be a pac_* control-plane tool, not read_file.\n"
+    "- For a prompt that asks to create a git workspace and then a session for it, use pac_create_workspace_profile first with type=git, url, runtime/container_image when present, and needs_plan=true so the loop can create the session next.\n"
     "- Prefer safe first-step tools.\n"
+    "- Use workspace_manifest first for implementation/change/fix requests that do not name one exact file.\n"
     "- Use workspace_manifest first for broad workspace/codebase overview requests.\n"
     "- Use list_files for a simple directory listing request.\n"
     "- Use find_code_paths for broad PAC/core location questions with intent words such as session window, composer, timeline, atlas, dashboard, or visualization.\n"
     "- Use ripgrep only when the request mentions a concrete symbol, exact term, or topic to search.\n"
-    "- Use read_file only when a specific file path is named.\n"
+    "- Use read_file only when a specific local workspace file path is named. Never use read_file for http(s) URLs, repository URLs, domains, or paths outside the workspace.\n"
     "- Use git_status for repository state questions.\n"
     "- Use tool=none only when no tool work is needed.\n"
 )
@@ -100,21 +104,17 @@ async def resolve_request_intent(config: AppConfig, session: Session, task: Task
     payload = _extract_json(raw)
     if not isinstance(payload, dict):
         return fallback_request_intent(session, task, policy)
-    tool = str(payload.get("tool") or "none").strip()
-    tool_input = payload.get("input") if isinstance(payload.get("input"), dict) else {}
-    return RequestIntentResolution(
-        model=model_name,
-        intent=str(payload.get("intent") or "answer").strip().lower(),
-        tool=tool,
-        input=tool_input,
-        needs_plan=bool(payload.get("needs_plan")),
-        reason=str(payload.get("reason") or "").strip(),
-    )
+    normalized = _normalize_model_resolution(model_name, payload, session, task, policy)
+    if normalized is not None:
+        return normalized
+    return fallback_request_intent(session, task, policy)
 
 
 def fallback_request_intent(session: Session, task: Task, policy: Any) -> RequestIntentResolution:
     prompt = str(task.prompt or "").strip()
     lower = prompt.lower()
+    if pac_resource := _pac_resource_bootstrap(prompt):
+        return pac_resource
     if _looks_like_git_request(lower):
         return RequestIntentResolution(
             model="heuristic-fallback",
@@ -152,6 +152,15 @@ def fallback_request_intent(session: Session, task: Task, policy: Any) -> Reques
             needs_plan=bool(getattr(policy, "needs_plan", False)),
             reason="search fallback",
         )
+    if _looks_like_code_change_request(lower):
+        return RequestIntentResolution(
+            model="heuristic-fallback",
+            intent="work",
+            tool="workspace_manifest",
+            input={"max_files": 300},
+            needs_plan=True,
+            reason="code-change bootstrap fallback",
+        )
     if getattr(policy, "needs_workspace_index", False) or _looks_like_workspace_overview_request(lower):
         return RequestIntentResolution(
             model="heuristic-fallback",
@@ -177,6 +186,96 @@ def fallback_request_intent(session: Session, task: Task, policy: Any) -> Reques
         input={},
         needs_plan=bool(getattr(policy, "needs_plan", False)),
         reason="fallback answer",
+    )
+
+
+def _normalize_model_resolution(model_name: str, payload: dict[str, Any], session: Session, task: Task, policy: Any) -> RequestIntentResolution | None:
+    prompt = str(task.prompt or "").strip()
+    tool = str(payload.get("tool") or "none").strip()
+    tool_input = payload.get("input") if isinstance(payload.get("input"), dict) else {}
+    intent = str(payload.get("intent") or "answer").strip().lower()
+    needs_plan = bool(payload.get("needs_plan"))
+    reason = str(payload.get("reason") or "").strip()
+
+    if pac_resource := _pac_resource_bootstrap(prompt):
+        if tool not in {"pac_list_components", "pac_create_workspace_profile", "pac_create_session"}:
+            return RequestIntentResolution(
+                model=model_name,
+                intent=pac_resource.intent,
+                tool=pac_resource.tool,
+                input=pac_resource.input,
+                needs_plan=pac_resource.needs_plan,
+                reason=f"PAC resource heuristic override after model chose {tool or 'none'}",
+            )
+
+    if tool == "read_file" and _path_is_remote_or_unsafe(tool_input.get("path")):
+        fallback = fallback_request_intent(session, task, policy)
+        return RequestIntentResolution(
+            model=model_name,
+            intent=fallback.intent,
+            tool=fallback.tool,
+            input=fallback.input,
+            needs_plan=fallback.needs_plan,
+            reason=f"Unsafe read_file bootstrap replaced: {reason or 'remote/non-local path'}",
+        )
+
+    allowed_tools = {
+        "workspace_manifest",
+        "find_code_paths",
+        "list_files",
+        "ripgrep",
+        "read_file",
+        "git_status",
+        "pac_list_components",
+        "pac_create_workspace_profile",
+        "pac_create_session",
+        "none",
+        "",
+    }
+    if tool not in allowed_tools:
+        return fallback_request_intent(session, task, policy)
+
+    return RequestIntentResolution(
+        model=model_name,
+        intent=intent,
+        tool=tool,
+        input=tool_input,
+        needs_plan=needs_plan,
+        reason=reason,
+    )
+
+
+def _pac_resource_bootstrap(prompt: str) -> RequestIntentResolution | None:
+    plan = parse_pac_resource_plan(prompt)
+    if not plan.applies:
+        return None
+    if plan.needs_workspace:
+        action = workspace_profile_action(plan)
+        return RequestIntentResolution(
+            model="heuristic-fallback",
+            intent="work",
+            tool=action["tool"],
+            input=action["input"],
+            needs_plan=True,
+            reason="PAC workspace/session creation fallback",
+        )
+    if plan.needs_session:
+        action = session_action(plan)
+        return RequestIntentResolution(
+            model="heuristic-fallback",
+            intent="work",
+            tool=action["tool"],
+            input=action["input"],
+            needs_plan=True,
+            reason="PAC session creation fallback",
+        )
+    return RequestIntentResolution(
+        model="heuristic-fallback",
+        intent="work",
+        tool="pac_list_components",
+        input={},
+        needs_plan=True,
+        reason="PAC resource request needs current component state",
     )
 
 
@@ -217,13 +316,29 @@ def _extract_json(raw: str) -> Any:
 
 
 def _extract_named_path(prompt: str) -> str | None:
-    match = re.search(r"([A-Za-z0-9_./\\\\-]+\.[A-Za-z0-9_]+)", prompt)
-    if not match:
-        return None
-    path = match.group(1).replace("\\", "/")
-    if path.startswith(("http://", "https://")):
-        return None
-    return path
+    scrubbed = re.sub(r"https?://[^\s]+", " ", str(prompt or ""))
+    for match in re.finditer(r"([A-Za-z0-9_./\\-]+\.[A-Za-z0-9_]+)", scrubbed):
+        path = match.group(1).replace("\\", "/")
+        if _path_is_remote_or_unsafe(path):
+            continue
+        if "/" not in path and not path.startswith("."):
+            continue
+        return path
+    return None
+
+
+def _path_is_remote_or_unsafe(path: Any) -> bool:
+    value = str(path or "").strip()
+    if not value:
+        return False
+    lowered = value.lower()
+    if lowered.startswith(("http://", "https://", "git@", "ssh://")):
+        return True
+    if re.match(r"^[A-Za-z0-9.-]+\.[A-Za-z]{2,}(/|$)", value):
+        return True
+    if value.startswith(("/", "../", "..\\")):
+        return True
+    return False
 
 
 def _looks_like_git_request(lower: str) -> bool:
@@ -262,4 +377,34 @@ def _looks_like_workspace_overview_request(lower: str) -> bool:
             "understand the code base",
             "understand the codebase",
         )
+    )
+
+
+def _looks_like_code_change_request(lower: str) -> bool:
+    compact = " ".join(str(lower or "").split())
+    if not compact:
+        return False
+    prefixes = (
+        "add ",
+        "please add ",
+        "can you add ",
+        "could you add ",
+        "implement ",
+        "please implement ",
+        "fix ",
+        "change ",
+        "update ",
+        "wire ",
+        "persist ",
+        "store ",
+        "save ",
+        "make it ",
+        "make the ",
+        "allow ",
+        "enable ",
+    )
+    if compact.startswith(prefixes):
+        return True
+    return any(term in compact for term in (" so we can ", " should ", " needs to ")) and any(
+        verb in compact for verb in ("add", "implement", "fix", "change", "update", "persist", "store", "save")
     )
