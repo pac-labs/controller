@@ -206,6 +206,13 @@ MAIN_PI_DEV_PROFILE_TOOLS = [
     "consult_model",
     "remote_memory",
     "query_workspace_index",
+    "find_code_paths",
+    "pac_list_components",
+    "pac_create_provider",
+    "pac_create_model",
+    "pac_create_endpoint",
+    "pac_create_workspace_profile",
+    "pac_create_session",
     "lessons",
     "resume_task",
     "list_task_checkpoints",
@@ -618,6 +625,23 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             install_hint="Install the Printing Press CLI and make sure one of its binary names is available on PATH.",
         )
         changed = True
+    pac_component_tools = {
+        "pac_list_components": "List PAC providers, models, endpoints, workspace profiles, and recent sessions for the built-in controller model.",
+        "pac_create_provider": "Create or replace a model provider in PAC configuration from the built-in controller model.",
+        "pac_create_model": "Create or replace a model entry attached to an existing PAC provider from the built-in controller model.",
+        "pac_create_endpoint": "Create a pending endpoint registration record from the built-in controller model.",
+        "pac_create_workspace_profile": "Create or replace a reusable PAC workspace profile from the built-in controller model.",
+        "pac_create_session": "Create a PAC session from the built-in controller model using configured models and workspaces.",
+        "find_code_paths": "Locate likely PAC code files for a concept or intent across the controller workspace before opening files directly.",
+    }
+    for tool_name, description in pac_component_tools.items():
+        existing_tool = cfg.tools.get(tool_name)
+        if not existing_tool:
+            cfg.tools[tool_name] = ToolConfig(enabled=True, description=description, package="pac-control-plane")
+            changed = True
+        elif not (existing_tool.description or "").strip():
+            existing_tool.description = description
+            changed = True
     if changed:
         config_path.write_text(yaml.safe_dump(cfg.model_dump(mode="json", exclude_none=True), sort_keys=False), encoding="utf-8")
     return cfg

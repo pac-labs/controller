@@ -67,6 +67,7 @@ from pi_agent_platform.core.runner_discovery import discover_host, discover_cont
 from pi_agent_platform.core.maintenance import run_endpoint_maintenance
 from pi_agent_platform.core.pi_dev_runtime import inspect_pi_container_image, pi_container_rebuild_state, pi_container_source_version
 from pi_agent_platform.core.providers import effective_context, model_card, provider_public, test_model, test_provider, list_provider_models, sync_models_from_provider, lmstudio_inspect_provider, lmstudio_load_model, lmstudio_unload_model, lmstudio_download_model, lmstudio_companion_script
+from pi_agent_platform.core.controller_component_context import set_controller_store
 from pi_agent_platform.core.store import register_event_hook, store
 from pi_agent_platform.core.artifacts import write_artifact, list_artifacts, task_artifact_dir, safe_artifact_path
 from pi_agent_platform.core.secrets import secret_store
@@ -193,6 +194,7 @@ def _read_pac_version() -> str:
 
 
 config = load_config()
+set_controller_store(store)
 PAC_VERSION = _read_pac_version()
 setup_pac_observability()
 register_event_hook(create_pi_dev_event_forwarder(config, store))

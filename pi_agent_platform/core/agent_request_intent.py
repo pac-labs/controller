@@ -16,7 +16,7 @@ _PROMPT = (
     "Return exactly one JSON object with this shape:\n"
     "{\n"
     '  "intent": "work" | "answer",\n'
-    '  "tool": "workspace_manifest" | "list_files" | "ripgrep" | "read_file" | "git_status" | "none",\n'
+    '  "tool": "workspace_manifest" | "find_code_paths" | "list_files" | "ripgrep" | "read_file" | "git_status" | "none",\n'
     '  "input": {},\n'
     '  "needs_plan": true | false,\n'
     '  "reason": "short reason"\n'
@@ -24,9 +24,10 @@ _PROMPT = (
     "Rules:\n"
     "- If the user asks to inspect, index, explain a workspace/codebase, fix, build, change, implement, update, or investigate something, intent must be work.\n"
     "- Prefer safe first-step tools.\n"
-    "- Use workspace_manifest for broad workspace/codebase overview requests.\n"
+    "- Use workspace_manifest first for broad workspace/codebase overview requests.\n"
     "- Use list_files for a simple directory listing request.\n"
-    "- Use ripgrep only when the request mentions a concrete symbol, term, or topic to search.\n"
+    "- Use find_code_paths for broad PAC/core location questions with intent words such as session window, composer, timeline, atlas, dashboard, or visualization.\n"
+    "- Use ripgrep only when the request mentions a concrete symbol, exact term, or topic to search.\n"
     "- Use read_file only when a specific file path is named.\n"
     "- Use git_status for repository state questions.\n"
     "- Use tool=none only when no tool work is needed.\n"
@@ -134,6 +135,15 @@ def fallback_request_intent(session: Session, task: Task, policy: Any) -> Reques
         )
     if _looks_like_search_request(lower):
         query = _extract_search_query(prompt)
+        if _looks_like_broad_location_question(lower):
+            return RequestIntentResolution(
+                model="heuristic-fallback",
+                intent="work",
+                tool="find_code_paths",
+                input={"query": query, "max_results": 12},
+                needs_plan=bool(getattr(policy, "needs_plan", False)),
+                reason="code-locator fallback",
+            )
         return RequestIntentResolution(
             model="heuristic-fallback",
             intent="work",
@@ -222,6 +232,13 @@ def _looks_like_git_request(lower: str) -> bool:
 
 def _looks_like_search_request(lower: str) -> bool:
     return any(token in lower for token in ("search for ", "grep ", "find references", "find usages", "where is "))
+
+
+def _looks_like_broad_location_question(lower: str) -> bool:
+    return any(
+        token in lower
+        for token in ("session window", "composer", "timeline", "atlas", "dashboard", "visualization", "visualisation", "where is")
+    )
 
 
 def _extract_search_query(prompt: str) -> str:

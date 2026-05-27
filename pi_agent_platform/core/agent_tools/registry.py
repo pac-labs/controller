@@ -7,11 +7,13 @@ from ..models import Session, Task
 from ..agent_events import AgentEvents
 from ..runtime import ensure_workspace
 from .artifacts import try_execute_artifact_tool
+from .code_locator import try_execute_code_locator_tool
 from .diagnostics import try_execute_diagnostics_tool
 from .file_ops import try_execute_file_tool
 from .git import try_execute_git_tool
 from .memory import try_execute_memory_tool
 from .model_consult import try_execute_model_consult_tool
+from .pac_components import try_execute_pac_component_tool
 from .pty import try_execute_pty_tool
 from .shell import _run_shell, _run_tool_via_runner
 from .task_control import try_execute_task_control_tool
@@ -60,9 +62,11 @@ async def execute_tool(session: Session, task: Task, tool: str, inp: dict[str, A
     for handler in (
         lambda: try_execute_file_tool(session, task, tool, inp, config, perm),
         lambda: try_execute_workspace_tool(session, task, tool, inp, config, perm),
+        lambda: try_execute_code_locator_tool(session, task, tool, inp, config, perm),
         lambda: try_execute_artifact_tool(session, task, tool, inp, config),
         lambda: try_execute_model_consult_tool(session, task, tool, inp, config, allowed),
         lambda: try_execute_memory_tool(session, task, tool, inp, config, allowed),
+        lambda: try_execute_pac_component_tool(session, task, tool, inp, config, allowed),
         lambda: try_execute_web_tool(session, task, tool, inp, config, perm, allowed),
         lambda: try_execute_git_tool(session, task, tool, inp, config, perm),
         lambda: try_execute_diagnostics_tool(session, task, tool, inp, config, perm),

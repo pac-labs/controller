@@ -21,6 +21,8 @@ def _summarize_tool_intent(tool: str, inp: dict[str, Any]) -> str:
         return f"Writing {inp.get('path') or 'file'}"
     if tool == "workspace_manifest":
         return "Scanning workspace structure"
+    if tool == "find_code_paths":
+        return f"Locating code paths for {inp.get('query') or 'code'}"
     if tool == "printing_press":
         return f"Running Printing Press on {inp.get('path') or 'workspace'}"
     if tool == "batch_analyze_text":
@@ -112,7 +114,8 @@ def _infer_tool_call_from_action_narration(text: str, session: Session, task: Ta
     allowed = {str(tool) for tool in configured_tools if str(tool or "").strip()}
 
     def can(tool: str) -> bool:
-        return not allowed or tool in allowed
+        builtin_read_tools = {"workspace_manifest", "find_code_paths", "list_files", "read_file", "read_file_chunk", "ripgrep", "fd"}
+        return tool in builtin_read_tools or not allowed or tool in allowed
 
     if _looks_like_unexecuted_consult_request(raw_text) and can("consult_model"):
         return {
@@ -144,10 +147,12 @@ def _infer_tool_call_from_action_narration(text: str, session: Session, task: Ta
         raw_text,
         re.IGNORECASE,
     )
-    if search_match and can("ripgrep"):
+    if search_match and (can("find_code_paths") or can("ripgrep")):
         query = search_match.group(1).strip()
         query = re.sub(r"\s+(?:in|under|inside|across)\s+(?:the\s+)?(?:workspace|codebase|project|source|files?)$", "", query, flags=re.IGNORECASE).strip()
         if query:
+            if can("find_code_paths"):
+                return {"type": "tool_call", "tool": "find_code_paths", "input": {"query": query, "max_results": 12}}
             return {"type": "tool_call", "tool": "ripgrep", "input": {"query": query, "path": ".", "max_results": 200}}
 
     list_match = re.search(r"\b(?:list|show)\s+(?:the\s+)?(?:files|tree|directory|workspace)", raw, re.IGNORECASE)

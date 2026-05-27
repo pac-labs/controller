@@ -9,6 +9,7 @@ from .editor_session_context import build_editor_state_briefing
 from .models import Session, Task
 from .profiles import profile_instructions
 from .store import store
+from .agent_tools.code_locator import pac_code_location_hints
 from .workspace_index_cache import get_workspace_index
 from .workspace_lessons import get_project_memory
 
@@ -24,6 +25,7 @@ Tool call:
 {"type":"tool_call","tool":"read_file","input":{"path":"README.md"}}
 {"type":"tool_call","tool":"read_file_chunk","input":{"path":"large.log","chunk_index":0,"chunk_tokens":1200}}
 {"type":"tool_call","tool":"workspace_manifest","input":{"max_files":200}}
+{"type":"tool_call","tool":"find_code_paths","input":{"query":"session timeline composer","roots":["pi_agent_platform/web/app/","pi_agent_platform/core/"],"max_results":12}}
 {"type":"tool_call","tool":"batch_analyze_text","input":{"instruction":"find likely bugs","text":"...","chunk_tokens":1000}}
 {"type":"tool_call","tool":"batch_analyze_file","input":{"path":"large-file.txt","instruction":"summarize important parts","chunk_tokens":1000}}
 {"type":"tool_call","tool":"write_file","input":{"path":"file.txt","content":"..."}}
@@ -35,6 +37,9 @@ Tool call:
 {"type":"tool_call","tool":"consult_model","input":{"models":["deep-thinker","fast-coder"],"prompt":"Review this plan and suggest the next 3 steps.","max_tokens":1200}}
 {"type":"tool_call","tool":"remote_memory","input":{"mode":"bundle","profile":"doc-reader","user":"dorbian","workspace":"customer-a"}}
 {"type":"tool_call","tool":"remote_memory","input":{"mode":"search","query":"git author email","kind":"user","limit":5}}
+{"type":"tool_call","tool":"pac_list_components","input":{}}
+{"type":"tool_call","tool":"pac_create_provider","input":{"name":"theD","type":"lmstudio","base_url":"http://deck.local:1234","enabled":true}}
+{"type":"tool_call","tool":"pac_create_model","input":{"name":"deck-nvidia-nemotron-3-nano-4b","provider":"theD","model":"nvidia/nemotron-3-nano-4b"}}
 {"type":"tool_call","tool":"save_artifact","input":{"name":"notes/result.txt","content":"..."}}
 {"type":"tool_call","tool":"list_artifacts","input":{}}
 {"type":"tool_call","tool":"printing_press","input":{"path":".","mode":"optimize"}}
@@ -42,13 +47,14 @@ Tool call:
 
 Rules:
 - Prefer inspecting files before editing.
+- For broad codebase questions, do not guess paths. Start with workspace_manifest, then use find_code_paths or ripgrep for intent words, then read verified matched files.
 - Use shell only when needed.
 - Keep commands scoped to the workspace.
 - If blocked by policy, explain what approval or permission is needed.
 - Do not narrate future actions like "I will now search" or "I am going to run...". If a tool should run, return a tool_call immediately.
 - Do not print tool-call markup or pseudo-code examples in the final answer. Execute the tool call instead.
 - If approval is needed, ask for that approval directly and briefly instead of saying the action has already started.
-- Prefer read_file for normal source files. Use read_file_chunk or batch_analyze_file only when a file is too large for the current effective context budget.
+- Prefer read_file for normal source files only after the path was verified by workspace_manifest, list_files, find_code_paths, ripgrep, fd, or a user-provided exact path. Use read_file_chunk or batch_analyze_file only when a file is too large for the current effective context budget.
 - Use web_search before web_fetch when you do not know the exact URL.
 - Use consult_model when you want a second opinion from another configured PAC model or want to fan out a planning question to multiple models. If you do not know a configured consult model name, omit the models field and PAC will choose an available consult/fallback model. Never return a final answer that merely says to use consult_model; call the tool or continue with the available session model.
 - Use remote_memory when profile/user/workspace memory may contain relevant prior preferences, customer context, or durable notes.
@@ -75,9 +81,11 @@ def controller_session_guidance(session: Session) -> str | None:
         "You are operating as PAC's built-in controller session.\n"
         f"Primary local source of truth: {workspace}\n"
         "For PAC-domain questions about code, sessions, wrappers, providers, profiles, endpoints, settings, updates, logs, or configuration, inspect the local PAC workspace/configuration first.\n"
-        "Prefer local tools like workspace_manifest, list_files, read_file, read_file_chunk, rg/shell, git_status, and git_diff before web_search or web_fetch.\n"
+        "For broad PAC/core codebase questions, use this order: workspace_manifest, then find_code_paths or ripgrep using the user's intent words, then read_file on verified matched paths. Do not invent src/... paths.\n"
+        "Prefer local tools like workspace_manifest, find_code_paths, list_files, read_file, read_file_chunk, rg/shell, git_status, and git_diff before web_search or web_fetch.\n"
         "Only use the web when the user explicitly asks for external information or the local PAC workspace clearly cannot answer the question.\n"
         "If the user asks to update PAC behavior or configuration, you are allowed to rewrite PAC application files and PAC configuration directly. Do the work instead of only describing it.\n"
+        "When the user asks to create PAC resources such as providers, models, endpoints, workspace profiles, or sessions, prefer the pac_create_* control-plane tools over editing YAML by hand. Use pac_list_components first when you need current names or IDs.\n"
         "Assume PAC-specific terms like PAC RAM, plugins, sessions, wrappers, endpoints, and profiles refer to this PAC installation unless the user explicitly broadens the scope.\n"
         "For broad PAC requests, inspect first and answer from local evidence instead of asking generic clarifying questions."
     )
@@ -93,6 +101,7 @@ def controller_session_runtime_context(session: Session, config: AppConfig) -> s
     endpoint_id = str(session.metadata.get("preferred_endpoint") or "local-PAC")
     tool_names = list(session.tools or []) or list(config.tools.keys())
     top_level_hints = ["pi_agent_platform/", "binaries/", "containers/", "plugins/", "docs/", "config/"]
+    code_hints = pac_code_location_hints()
     return (
         "PAC controller runtime snapshot:\n"
         f"- controller workspace: {workspace}\n"
@@ -102,6 +111,7 @@ def controller_session_runtime_context(session: Session, config: AppConfig) -> s
         f"- preferred local endpoint: {endpoint_id}\n"
         f"- common top-level source paths: {', '.join(top_level_hints)}\n"
         f"- available tools in this session: {', '.join(tool_names[:20]) or '-'}\n"
+        f"{code_hints}\n"
         "Use this snapshot as background context; verify details in files or runtime state before making precise claims."
     )
 

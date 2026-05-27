@@ -39,6 +39,7 @@ DEFAULT_RULES: list[dict[str, Any]] = [
     # Safe workspace ops
     {"tool": "workspace_manifest"},
     {"tool": "query_workspace_index"},
+    {"tool": "find_code_paths"},
     {"tool": "git_status"},
     {"tool": "git_diff"},
     {"tool": "log_tail"},

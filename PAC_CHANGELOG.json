@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "1.0.374",
+      "date": "2026-05-27T13:05:00Z",
+      "summary": "Add PAC/core code-location and self-creation tools for the built-in controller session.",
+      "changes": [
+        "Added find_code_paths so PAC/core can locate likely implementation files for concepts like session timeline, dashboard atlas, providers, and endpoints before opening files.",
+        "Added PAC control-plane tools for the built-in controller session to list and create providers, models, endpoints, workspace profiles, and sessions without editing YAML by hand.",
+        "Improved controller-session prompting and request-intent routing so PAC prefers verified paths and PAC component tooling for broad codebase and self-configuration requests."
+      ]
+    },
+    {
       "version": "1.0.372",
       "date": "2026-05-27T11:35:00Z",
       "summary": "Stop runaway missing-file chunk loops and keep session thinking timers anchored to the start of the task.",
@@ -513,5 +523,5 @@
       }
     }
   ],
-  "current_version": "1.0.371"
+  "current_version": "1.0.374"
 }

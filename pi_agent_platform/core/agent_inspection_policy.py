@@ -28,7 +28,7 @@ def prompt_requests_codebase_inspection(prompt: str) -> bool:
 
 
 def has_meaningful_codebase_inspection(transcript: list[dict[str, Any]]) -> bool:
-    deep_tools = {"workspace_manifest", "read_file", "read_file_chunk", "batch_analyze_file", "git_diff", "git_status", "shell"}
+    deep_tools = {"workspace_manifest", "find_code_paths", "read_file", "read_file_chunk", "batch_analyze_file", "git_diff", "git_status", "shell"}
     used = [str(item.get("tool") or "") for item in transcript if item.get("tool")]
     if any(tool in deep_tools for tool in used):
         return True
@@ -78,6 +78,8 @@ def inspection_depth_score(transcript: list[dict[str, Any]]) -> float:
     for item in transcript:
         tool = str(item.get("tool") or "")
         if tool == "workspace_manifest":
+            score += 2.0
+        elif tool == "find_code_paths":
             score += 2.0
         elif tool in {"git_status", "git_diff", "batch_analyze_file", "batch_analyze_text"}:
             score += 1.5
