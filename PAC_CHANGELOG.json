@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "1.0.372",
+      "date": "2026-05-27T11:35:00Z",
+      "summary": "Stop runaway missing-file chunk loops and keep session thinking timers anchored to the start of the task.",
+      "changes": [
+        "Agent loop now detects repeated read_file_chunk misses and tells the model to re-locate the file instead of blindly requesting higher chunk indexes forever.",
+        "Chunk readers now stop escalating when the target file is missing or the chunk index is out of range, which prevents runaway controller-session loops.",
+        "Composer thinking duration now derives from the earliest task event instead of being reset by newer internal events during polling."
+      ]
+    },
+    {
       "version": "1.0.371",
       "date": "2026-05-27T11:10:00Z",
       "summary": "Keep PAC/core on the selected executor model while routing controller-session decisions directly to a structured model when needed.",
@@ -503,5 +513,5 @@
       }
     }
   ],
-  "current_version": "1.0.370"
+  "current_version": "1.0.371"
 }

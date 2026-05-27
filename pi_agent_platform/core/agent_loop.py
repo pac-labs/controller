@@ -49,6 +49,37 @@ def _tool_result_message(tool: str, observation: str) -> str:
     return "Tool result:\n" + text
 
 
+def _tool_observation_requires_recovery(tool: str, inp: dict[str, Any], observation: str, task: Task) -> str:
+    text = str(observation or "").strip()
+    if not text:
+        return ""
+    if tool == "read_file_chunk" and text.startswith("File not found:"):
+        path = str(inp.get("path") or "").strip()
+        missing = dict(task.metadata.get("missing_chunk_paths") or {})
+        count = int(missing.get(path) or 0) + 1
+        missing[path] = count
+        task.metadata["missing_chunk_paths"] = missing
+        store.add_task(task)
+        return (
+            f"The requested file path does not exist: {path or '(missing path)'}. "
+            "Do not request more chunks for this same path. "
+            "Use list_files, workspace_manifest, or read_file on a verified existing path first."
+        )
+    if tool == "read_file_chunk":
+        try:
+            payload = json.loads(text)
+        except Exception:
+            payload = None
+        if isinstance(payload, dict) and payload.get("error") == "chunk_index out of range":
+            path = str(payload.get("path") or inp.get("path") or "").strip()
+            return (
+                f"Chunking is complete for {path or 'that file'}. "
+                "Do not request a higher chunk_index for the same file. "
+                "Summarize what you have or inspect a different file."
+            )
+    return ""
+
+
 def _summarize_workspace_manifest(observation: str) -> str:
     try:
         payload = json.loads(str(observation or ""))
@@ -609,7 +640,11 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                     force=True,
                 )
             messages.append({"role": "assistant", "content": json.dumps(action)})
-            messages.append({"role": "user", "content": _tool_result_message(str(action.get("tool") or ""), observation)})
+            recovery_prompt = _tool_observation_requires_recovery(tool, inp, observation, task)
+            if recovery_prompt:
+                messages.append({"role": "user", "content": recovery_prompt})
+            else:
+                messages.append({"role": "user", "content": _tool_result_message(str(action.get("tool") or ""), observation)})
             messages = context_manager.keep_recent_window(messages)
             continue
 

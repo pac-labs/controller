@@ -12,7 +12,7 @@ function deriveComposerThinkingState(events) {
     });
     const preferredTaskId = activeSessionTaskId && byTask.has(activeSessionTaskId) ? activeSessionTaskId : Array.from(byTask.keys()).at(-1);
     if (!preferredTaskId) return null;
-    const taskEvents = byTask.get(preferredTaskId) || [];
+    const taskEvents = (byTask.get(preferredTaskId) || []).slice().sort((a, b) => new Date(a?.created_at || 0).getTime() - new Date(b?.created_at || 0).getTime());
     const internal = taskEvents.filter((event) => isInternalSessionEvent(event) || looksLikeInternalResultMessage(event, timelineText(event, normalizeTimelineBlock(event))));
     if (!internal.length) return {active: true, summary: 'Thinking about your latest request', startedAt: taskEvents[0]?.created_at, toolCount: 0, approvalPending: false, planSteps: []};
     let summary = '';
