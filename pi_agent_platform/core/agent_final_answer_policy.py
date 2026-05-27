@@ -11,6 +11,7 @@ from .agent_action_recovery import (
     _looks_like_unexecuted_consult_request,
     _should_reject_unformatted_action,
 )
+from .agent_work_contract import evaluate_final as evaluate_work_contract_final
 from .agent_inspection_policy import (
     has_meaningful_codebase_inspection,
     inspection_depth_score,
@@ -172,6 +173,25 @@ def evaluate(
             event_type="final_answer_rejected",
             event_message="Final answer rejected because this work request still needs an execution step.",
             event_data={"final_message": final_tail},
+        )
+
+    contract_decision = evaluate_work_contract_final(task.prompt or "", transcript)
+    if not contract_decision.allow:
+        event_data = {"final_message": final_tail, **contract_decision.event_data}
+        if contract_decision.replacement_action:
+            return _tool_decision(
+                contract_decision.replacement_action,
+                reason=contract_decision.reason,
+                event_type="work_contract_enforced",
+                event_message=contract_decision.event_message or "Work contract enforced a safer next step.",
+                event_data=event_data,
+            )
+        return RejectAndContinue(
+            reason=contract_decision.reason,
+            corrective_prompt=contract_decision.corrective_prompt or _CODEBASE_INSPECTION_CORRECTIVE_PROMPT,
+            event_type="final_answer_rejected",
+            event_message=contract_decision.event_message or "Final answer rejected by the PAC work contract.",
+            event_data=event_data,
         )
 
     if _should_reject_unformatted_action(session, task, final_message, transcript):

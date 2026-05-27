@@ -18,6 +18,7 @@ from .agent_events import AgentEvents
 from .agent_prompt_context import build_agent_prompt_context
 from .agent_request_policy import classify_request
 from .agent_request_intent import resolve_request_intent, should_resolve_request_intent
+from .agent_work_contract import evaluate_tool_action as evaluate_work_contract_action
 from .agent_model_selection import resolve_agent_models, resolve_fallback_model
 from .profiles import profile_context_name, profile_planner_context_name
 from .agent_response_parser import (
@@ -593,6 +594,25 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                 return task
 
         if action.get("type") == "tool_call":
+            contract_decision = evaluate_work_contract_action(task.prompt or "", transcript, action)
+            if not contract_decision.allow:
+                events.final_answer_policy_decision(
+                    event_type="work_contract_enforced",
+                    message=contract_decision.event_message or "Work contract enforced a safer next step.",
+                    reason=contract_decision.reason,
+                    model=decision_model,
+                    step=step,
+                    data=contract_decision.event_data,
+                )
+                if contract_decision.replacement_action:
+                    action = contract_decision.replacement_action
+                    thought_summary, thought_meta = _summarize_model_action(action)
+                    events.agent_intent(summary=thought_summary, model=decision_model, step=step, metadata=thought_meta)
+                else:
+                    messages.append({"role": "assistant", "content": raw})
+                    messages.append({"role": "user", "content": contract_decision.corrective_prompt})
+                    continue
+
             tool = str(action.get("tool") or "")
             inp = action.get("input") or {}
             events.tool_call(tool=tool, input=inp)

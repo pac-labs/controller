@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "1.0.377",
+      "date": "2026-05-27T14:10:00Z",
+      "summary": "Enforce a stronger PAC work contract so code-change requests ground through inspection, location, reads, and validation before finalizing.",
+      "changes": [
+        "Added an explicit work contract for PAC code-change requests that forces a manifest, code-location search, source reads, and validation before PAC accepts a final answer.",
+        "Tool-call execution now enforces the same contract, so guessed edits are redirected into safer inspection steps before mutation.",
+        "This was integrated without overwriting the newer request-intent, search-first grounding, and PAC/core self-creation tooling that already landed in the current agent loop."
+      ]
+    },
+    {
       "version": "1.0.376",
       "date": "2026-05-27T13:35:00Z",
       "summary": "Refresh PAC/core tooling on startup so the built-in controller session can use the new code-locator and self-creation tools immediately.",
@@ -543,5 +553,5 @@
       }
     }
   ],
-  "current_version": "1.0.376"
+  "current_version": "1.0.377"
 }
