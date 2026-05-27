@@ -96,11 +96,20 @@ def resolve_agent_models(
     task: Task,
     request_policy: AgentRequestPolicy,
 ) -> AgentModelSelection:
+    session_meta = session.metadata if isinstance(session.metadata, dict) else {}
     executor_model = str(task.metadata.get("model") or session.model or "").strip()
     planning_model = str(task.metadata.get("planner_model") or executor_model).strip()
     if not executor_model:
         return AgentModelSelection(decision_model="", planning_model=planning_model or "", reason="no_executor_model")
-    if not (request_policy.needs_plan or request_policy.needs_workspace_index or request_policy.needs_work_intent):
+    needs_structured_decision = bool(
+        request_policy.needs_plan
+        or request_policy.needs_workspace_index
+        or request_policy.needs_work_intent
+        or session_meta.get("controller_harness")
+        or session_meta.get("system_context")
+        or request_policy.prefer_local_inspection
+    )
+    if not needs_structured_decision:
         return AgentModelSelection(decision_model=executor_model, planning_model=planning_model or executor_model, reason="simple_request")
     if model_is_structured_agent_capable(config, executor_model):
         return AgentModelSelection(decision_model=executor_model, planning_model=planning_model or executor_model, reason="executor_capable")

@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "1.0.371",
+      "date": "2026-05-27T11:10:00Z",
+      "summary": "Keep PAC/core on the selected executor model while routing controller-session decisions directly to a structured model when needed.",
+      "changes": [
+        "PAC/core and other controller-harness sessions now route immediately to a structured decision model when the selected executor model is not suitable for agent-loop work.",
+        "OpenAI-compatible and LM Studio streaming now detect reasoning-only streams and retry the same model without streaming before PAC treats the turn as empty.",
+        "This keeps a controller session visibly configured on models like DECK while avoiding the wasted first empty turn before PAC falls back to a tool/JSON-capable model."
+      ]
+    },
+    {
       "version": "1.0.370",
       "date": "2026-05-27T07:58:00Z",
       "summary": "Make PAC/core model selection persist across restart and keep controller-session model metadata aligned with the built-in agent context.",

@@ -106,6 +106,7 @@ def _stream_openai_chat(
         headers.setdefault("Authorization", f"Bearer {api_key}")
     req = Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
     chunks: list[str] = []
+    reasoning_chunks: list[str] = []
     emitted_chars = 0
     last_emit = time.monotonic()
     def emit_progress(force: bool = False) -> None:
@@ -140,12 +141,21 @@ def _stream_openai_chat(
                     item = json.loads(data)
                     delta = item.get("choices", [{}])[0].get("delta", {})
                     content = delta.get("content")
+                    reasoning = delta.get("reasoning_content")
                     if content:
                         chunks.append(content)
                         emit_progress()
+                    if reasoning:
+                        reasoning_chunks.append(str(reasoning))
                 except Exception:
                     continue
         emit_progress(force=True)
+        if not chunks and reasoning_chunks:
+            return False, {
+                "error": "stream produced reasoning without final content",
+                "reasoning_only": True,
+                "reasoning_preview": "".join(reasoning_chunks)[-1000:],
+            }
         return True, "".join(chunks)
     except HTTPError as exc:
         return False, {"error": f"HTTP {exc.code}", "body": exc.read().decode(errors="replace")[:1000]}
@@ -176,6 +186,18 @@ def _should_retry_chat_with_stream(provider: ProviderConfig, model: ModelConfig,
     if model.extra.get("stream") is False:
         return False
     return _looks_like_timeout_response(body)
+
+
+def _should_retry_chat_without_stream(provider: ProviderConfig, model: ModelConfig, payload: dict[str, Any], body: Any) -> bool:
+    if not payload.get("stream"):
+        return False
+    if provider.type not in {"openai-compatible", "lmstudio", "vllm"}:
+        return False
+    if model.extra.get("stream") is False:
+        return False
+    if isinstance(body, dict) and body.get("reasoning_only"):
+        return True
+    return False
 
 
 def normalize_provider_base_url(provider: ProviderConfig, model: ModelConfig | None = None) -> str:
@@ -673,6 +695,10 @@ def chat_complete(
             }
             if payload.get("stream"):
                 ok, body = _stream_openai_chat(endpoint, provider, payload, progress_callback=progress_callback)
+                if not ok and _should_retry_chat_without_stream(provider, model, payload, body):
+                    retry_payload = dict(payload)
+                    retry_payload["stream"] = False
+                    ok, body = _json_request(endpoint, provider, retry_payload)
             else:
                 ok, body = _json_request(endpoint, provider, payload)
                 if not ok and _should_retry_chat_with_stream(provider, model, payload, body):
