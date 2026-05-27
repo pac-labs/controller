@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "1.0.366",
+      "date": "2026-05-27T08:00:00Z",
+      "summary": "Fixed chat regressions that leaked internal agent-policy and context-sync events into the visible session timeline.",
+      "changes": [
+        "Classified final-answer policy events, action-narration recovery events, and agent-context session sync events as internal timeline activity so they stay in the thinking flow instead of rendering as user-facing replies.",
+        "Marked backend agent-context session sync events as internal/system events at the source so the chat UI can reliably hide them across refreshes and snapshot reloads.",
+        "Filtered short internal recovery/status messages such as 'Prepared a final answer' and safe bootstrap narration from assistant reply rendering to keep PAC controller sessions focused on real answers."
+      ]
+    },
+    {
       "version": "1.0.365",
       "date": "2026-05-27T07:05:00Z",
       "summary": "Synced context-bound sessions to the latest agent context model before routing new work.",

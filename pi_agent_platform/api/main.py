@@ -2516,7 +2516,7 @@ def _sync_existing_agent_context_session(item: AgentContext, existing: Session, 
             session_id=existing.id,
             type='agent_context_session_synced',
             message=f'Agent context session synced: {item.name}',
-            data={'context_id': item.id, 'changed': sorted(set(changed)), 'model': existing.model},
+            data={'context_id': item.id, 'changed': sorted(set(changed)), 'model': existing.model, 'internal': True, 'visibility': 'internal', 'role': 'system'},
         ))
     return existing
 

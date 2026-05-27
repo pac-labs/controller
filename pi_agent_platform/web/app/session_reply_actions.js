@@ -76,6 +76,12 @@ function looksLikeInternalResultMessage(event, text = '') {
   if (type.includes('task_completed')) return true;
   const normalized = normalizeAssistantText(text).trim();
   if (!normalized) return true;
+  if (/^prepared a final answer$/i.test(normalized)) return true;
+  if (/^agent context session synced:/i.test(normalized)) return true;
+  if (/^model repeated an unformatted intention; pac started with a safe workspace scan\./i.test(normalized)) return true;
+  if (/^work request was answered too early; pac converted it into the resolved bootstrap tool step\./i.test(normalized)) return true;
+  if (/^final answer rejected because /i.test(normalized)) return true;
+  if (/^model returned an intended action as a final answer;/i.test(normalized)) return true;
   if (normalized.length > 140 || normalized.includes('\n\n')) return false;
   return /^(workspace indexed|shell exited|listed\b|listing\b|read\b|wrote\b|written\b|saved\b|created\b|updated\b|deleted\b|renamed\b|moved\b|copied\b|built\b|tested\b|formatted\b|indexed\b|downloaded\b|uploaded\b|complete\b|done\b)/i.test(normalized);
 }

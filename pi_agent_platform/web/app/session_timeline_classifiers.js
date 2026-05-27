@@ -82,6 +82,7 @@ function isInternalSessionEvent(event) {
   if (t.includes('user_message')) return false;
   if (t.includes('tool_result')) return true;
   if (t.includes('result') || t.includes('assistant_message') || t === 'final') return false;
+  if (t.includes('agent_context_session_synced')) return true;
   return t.includes('tool') || t.includes('command') || t.includes('runner') ||
     t.includes('stdout') || t.includes('stderr') || t.includes('approval') ||
     t.includes('thinking') || t.includes('intent') || t.includes('routing') || t.includes('task_queued') || t.includes('task_started') ||
@@ -89,6 +90,7 @@ function isInternalSessionEvent(event) {
     t.includes('task_rejected') || t.includes('task_resumed') || t.includes('subagent_started') ||
     t.includes('context_compacted') || t.includes('checkpoint') || t.includes('batch_result') ||
     t.includes('model_response_empty') || t.includes('tool_call_parse_failed') || t.includes('action_narration_rejected') ||
+    t.includes('final_answer_rejected') || t.includes('final_answer_converted') || t.includes('action_narration_converted') ||
     t.includes('model_response') || t.includes('model_stream_progress') || t.includes('model_call_') ||
     t.includes('agent_phase') || t.includes('agent_plan') || t.includes('workspace_indexed') ||
     t.includes('web_search') || t.includes('web_fetch') || t.includes('artifact_saved');
@@ -150,7 +152,11 @@ function sessionThinkingSummary(event, block) {
   if (type.includes('context_compacted')) return '';
   if (type.includes('model_response_empty')) return '';
   if (type.includes('tool_call_parse_failed')) return '';
+  if (type.includes('final_answer_rejected')) return '';
+  if (type.includes('final_answer_converted')) return '';
   if (type.includes('action_narration_rejected')) return '';
+  if (type.includes('action_narration_converted')) return '';
+  if (type.includes('agent_context_session_synced')) return '';
   if (type.includes('agent_plan')) return String(data.summary || event?.message || 'Plan ready').trim();
   if (type.includes('model_response')) return '';
   if (type.includes('tool_call')) {
