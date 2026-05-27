@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from .config import AppConfig
-from .agent_request_policy import RequestPolicy
 from .models import Session, Task
+
+if TYPE_CHECKING:
+    from .agent_request_policy import AgentRequestPolicy
 
 
 @dataclass(slots=True)
@@ -56,7 +59,12 @@ def _candidate_models(session: Session, task: Task) -> list[str]:
     return candidates
 
 
-def resolve_agent_models(config: AppConfig, session: Session, task: Task, request_policy: RequestPolicy) -> AgentModelSelection:
+def resolve_agent_models(
+    config: AppConfig,
+    session: Session,
+    task: Task,
+    request_policy: AgentRequestPolicy,
+) -> AgentModelSelection:
     executor_model = str(task.metadata.get("model") or session.model or "").strip()
     planning_model = str(task.metadata.get("planner_model") or executor_model).strip()
     if not executor_model:

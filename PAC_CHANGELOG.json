@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "1.0.368",
+      "date": "2026-05-27T08:20:00Z",
+      "summary": "Fixed the 1.0.367 agent-routing startup regression and preserved the structured-model fallback for agent work.",
+      "changes": [
+        "Fixed the agent model selection module import so PAC starts correctly after the structured agent-routing refactor.",
+        "Kept the structured decision-model fallback so context-bound work sessions can use a tool and JSON-capable model for agent-loop work when the selected executor model is not suitable.",
+        "Kept the OpenAI-compatible retry path for reasoning-only empty completions that stop with a too-small token budget."
+      ]
+    },
+    {
       "version": "1.0.367",
       "date": "2026-05-27T07:20:00Z",
       "summary": "Improved agent model routing so context-bound work sessions recover from reasoning-only empty completions and use a structured decision model when the executor is not suitable for agent work.",
@@ -463,5 +473,5 @@
       }
     }
   ],
-  "current_version": "1.0.366"
+  "current_version": "1.0.368"
 }
