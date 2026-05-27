@@ -770,12 +770,21 @@ def _ensure_controller_harness_session() -> dict[str, Any]:
         return {'ok': True, 'enabled': False, 'message': 'Controller pi.dev runtime is disabled'}
     runner = _ensure_controller_harness_runner()
     workspace = _ensure_controller_harness_workspace()
-    model_name, profile_name, permission = _harness_model_and_profile()
-    profile = config.agent_profiles.get(profile_name) if profile_name else None
-    desired_context_mode = settings.context_mode or (profile_context_name(profile) if profile else 'medium') or 'medium'
-    existing = _find_controller_harness_session()
     _ensure_auth_admin_scaffolding()
     system_context = _find_pac_system_context()
+    model_name, profile_name, permission = _harness_model_and_profile()
+    if system_context:
+        model_name = str(system_context.executor_model or model_name or '').strip()
+        profile_name = str(system_context.agent_profile or profile_name or '').strip()
+        permission = str(system_context.permission_profile or permission or '').strip()
+    profile = config.agent_profiles.get(profile_name) if profile_name else None
+    desired_context_mode = (
+        (system_context.context_mode if system_context and system_context.context_mode else None)
+        or settings.context_mode
+        or (profile_context_name(profile) if profile else 'medium')
+        or 'medium'
+    )
+    existing = _find_controller_harness_session()
     pac_wrapper = (runner.capabilities or {}).get('pac_wrapper') or {}
     if not pac_wrapper.get('available'):
         return {'ok': False, 'enabled': True, 'runner': runner.model_dump(), 'workspace': workspace.model_dump(), 'session': existing.model_dump() if existing else None, 'message': pac_wrapper.get('reason') or 'The main server requires the local PAC wrapper before the controller session can run.'}
@@ -808,7 +817,7 @@ def _ensure_controller_harness_session() -> dict[str, Any]:
             existing.context_mode = desired_context_mode; changed = True
         if existing.workspace_path != (workspace.path or _platform_workspace_path()):
             existing.workspace_path = workspace.path or _platform_workspace_path(); changed = True
-        desired_tools = list(config.tools.keys()) if settings.expose_platform_tools else []
+        desired_tools = list(system_context.tools or []) if system_context else (list(config.tools.keys()) if settings.expose_platform_tools else [])
         if existing.tools != desired_tools:
             existing.tools = desired_tools; changed = True
         existing.workspace = existing.workspace.model_copy(update={'type': 'profile', 'profile': settings.workspace_profile, 'path': workspace.path})
@@ -819,10 +828,18 @@ def _ensure_controller_harness_session() -> dict[str, Any]:
                 'agent_context_name': system_context.name,
                 'agent_context_kind': system_context.kind,
                 'system_context': True,
+                'executor_model': system_context.executor_model,
+                'planner_model': system_context.planner_model,
+                'reviewer_model': system_context.reviewer_model,
+                'retrieval_model': system_context.retrieval_model,
             })
         for key, value in desired_metadata.items():
             if existing.metadata.get(key) != value:
                 existing.metadata[key] = value
+                changed = True
+        for stale_key in ('executor_model', 'planner_model', 'reviewer_model', 'retrieval_model'):
+            if stale_key not in desired_metadata and stale_key in existing.metadata:
+                existing.metadata.pop(stale_key, None)
                 changed = True
         if changed:
             existing.touch()
@@ -839,7 +856,7 @@ def _ensure_controller_harness_session() -> dict[str, Any]:
         workspace={'type': 'profile', 'profile': settings.workspace_profile, 'path': workspace.path},
         workspace_path=workspace.path or _platform_workspace_path(),
         model=model_name,
-        tools=list(config.tools.keys()) if settings.expose_platform_tools else [],
+        tools=list(system_context.tools or []) if system_context else (list(config.tools.keys()) if settings.expose_platform_tools else []),
         metadata={
             'controller_harness': True,
             'preferred_endpoint': settings.runner_id,
@@ -851,6 +868,10 @@ def _ensure_controller_harness_session() -> dict[str, Any]:
                 'agent_context_name': system_context.name,
                 'agent_context_kind': system_context.kind,
                 'system_context': True,
+                'executor_model': system_context.executor_model,
+                'planner_model': system_context.planner_model,
+                'reviewer_model': system_context.reviewer_model,
+                'retrieval_model': system_context.retrieval_model,
             } if system_context else {}),
         },
     )
@@ -2751,7 +2772,8 @@ def _ensure_admin_user_group_membership(user: User) -> User:
 def _ensure_default_admin_context(user: User) -> AgentContext:
     item = _find_pac_system_context()
     permission_profile = _admin_permission_profile_name()
-    model_name = str(config.controller_harness.model or '').strip()
+    seeded_model_name = str(config.controller_harness.model or '').strip()
+    model_name = str((item.executor_model if item and item.executor_model else seeded_model_name) or '').strip()
     desired = {
         'owner_id': user.id,
         'owner_username': user.username,
