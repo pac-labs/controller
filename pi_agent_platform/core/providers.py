@@ -460,8 +460,9 @@ def test_model(config: AppConfig, model_name: str) -> dict[str, Any]:
         payload = {
             "model": model.model or model_name,
             "messages": [{"role": "user", "content": "Reply with OK."}],
-            "max_tokens": min(16, model.max_output_tokens),
+            "max_tokens": min(max(64, int(model.max_output_tokens or 64)), 256),
             "stream": False,
+            "temperature": 0,
         }
         ok, body = _json_request(f"{base}/chat/completions", provider, payload)
         return {"ok": ok, "type": provider.type, "endpoint": f"{base}/chat/completions", "model": payload["model"], "response": body}

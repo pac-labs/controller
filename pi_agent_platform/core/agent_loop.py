@@ -18,7 +18,7 @@ from .agent_events import AgentEvents
 from .agent_prompt_context import build_agent_prompt_context
 from .agent_request_policy import classify_request
 from .agent_request_intent import resolve_request_intent, should_resolve_request_intent
-from .agent_model_selection import resolve_agent_models
+from .agent_model_selection import resolve_agent_models, resolve_fallback_model
 from .profiles import profile_context_name, profile_planner_context_name
 from .agent_response_parser import (
     _extract_json,
@@ -122,6 +122,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     model_selection = resolve_agent_models(config, session, task, request_policy)
     planning_model = model_selection.planning_model
     decision_model = model_selection.decision_model
+    decision_model_fallback_used = False
     if model_selection.switched_decision_model:
         task.metadata["effective_decision_model"] = decision_model
         task.metadata["decision_model_reason"] = model_selection.reason
@@ -419,6 +420,47 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
         if not str(raw or "").strip():
             empty_model_retries += 1
             events.model_response_empty(model=decision_model, step=step, retry=empty_model_retries)
+            if not decision_model_fallback_used:
+                fallback_model = resolve_fallback_model(
+                    config,
+                    session,
+                    task,
+                    decision_model,
+                    require_structured=bool(
+                        request_policy.needs_plan
+                        or request_policy.needs_workspace_index
+                        or request_policy.needs_work_intent
+                    ),
+                )
+                if fallback_model:
+                    decision_model_fallback_used = True
+                    empty_model_retries = 0
+                    task.metadata["effective_decision_model"] = fallback_model
+                    task.metadata["decision_model_reason"] = f"empty_response_fallback:{decision_model}->{fallback_model}"
+                    store.add_task(task)
+                    events.model_routing_issue(
+                        message=f"{decision_model} returned an empty response; retrying with {fallback_model}.",
+                        data={
+                            "executor_model": session.model,
+                            "decision_model": fallback_model,
+                            "previous_decision_model": decision_model,
+                            "reason": "empty_response_fallback",
+                        },
+                    )
+                    decision_model = fallback_model
+                    ctx = effective_context(config, decision_model, context_name)
+                    context_manager = AgentContextManager(
+                        session,
+                        task,
+                        config,
+                        model_name=decision_model,
+                        context_profile=context_name,
+                    )
+                    messages.append({
+                        "role": "user",
+                        "content": "Your previous model returned an empty response. Continue from the same context and return either one final answer or one valid tool_call JSON object now.",
+                    })
+                    continue
             if empty_model_retries <= 2:
                 messages.append({"role": "user", "content": "Your previous response was empty. Based on the latest tool result or context, return either ONE final answer or ONE valid tool_call JSON object now."})
                 continue

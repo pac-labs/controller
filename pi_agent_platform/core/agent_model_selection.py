@@ -59,6 +59,37 @@ def _candidate_models(session: Session, task: Task) -> list[str]:
     return candidates
 
 
+def resolve_fallback_model(
+    config: AppConfig,
+    session: Session,
+    task: Task,
+    current_model: str,
+    *,
+    require_structured: bool = False,
+) -> str:
+    ranked_candidates: list[tuple[tuple[int, int, int], str]] = []
+    for name in _candidate_models(session, task):
+        if name == current_model:
+            continue
+        rank = _capability_rank(config, name)
+        if rank[0] < 0:
+            continue
+        ranked_candidates.append((rank, name))
+    existing_names = {item[1] for item in ranked_candidates}
+    for name in config.models:
+        if name == current_model or name in existing_names:
+            continue
+        rank = _capability_rank(config, name)
+        if rank[0] < 0:
+            continue
+        ranked_candidates.append((rank, name))
+    ranked_candidates.sort(key=lambda item: item[0], reverse=True)
+    for _rank, candidate in ranked_candidates:
+        if not require_structured or model_is_structured_agent_capable(config, candidate):
+            return candidate
+    return ""
+
+
 def resolve_agent_models(
     config: AppConfig,
     session: Session,

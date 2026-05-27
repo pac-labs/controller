@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "1.0.369",
+      "date": "2026-05-27T07:50:00Z",
+      "summary": "Recover empty model turns by failing over to another configured model and make model tests reflect realistic LM Studio output budgets.",
+      "changes": [
+        "When a selected model returns empty output repeatedly, PAC now retries once with another configured model instead of looping empty and failing immediately.",
+        "Model test calls for OpenAI-compatible and LM Studio providers now use a more realistic output budget and deterministic temperature so the UI better reflects live behavior.",
+        "This specifically improves controller-session recovery when a context is intentionally set to a model like DECK that can return blank completions under the full PAC prompt context."
+      ]
+    },
+    {
       "version": "1.0.368",
       "date": "2026-05-27T08:20:00Z",
       "summary": "Fixed the 1.0.367 agent-routing startup regression and preserved the structured-model fallback for agent work.",
@@ -473,5 +483,5 @@
       }
     }
   ],
-  "current_version": "1.0.368"
+  "current_version": "1.0.369"
 }
