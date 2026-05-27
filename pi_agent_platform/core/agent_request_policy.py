@@ -49,6 +49,7 @@ class AgentRequestPolicy:
     prompt_kind: str
     needs_workspace_index: bool
     needs_plan: bool
+    needs_work_intent: bool
     prefer_local_inspection: bool
     reason: str
 
@@ -64,6 +65,7 @@ def classify_request(session: Session, task: Task) -> AgentRequestPolicy:
             prompt_kind="empty",
             needs_workspace_index=False,
             needs_plan=False,
+            needs_work_intent=False,
             prefer_local_inspection=controller_session,
             reason="empty prompt",
         )
@@ -73,6 +75,7 @@ def classify_request(session: Session, task: Task) -> AgentRequestPolicy:
             prompt_kind="greeting",
             needs_workspace_index=False,
             needs_plan=False,
+            needs_work_intent=False,
             prefer_local_inspection=False,
             reason="short greeting or acknowledgement",
         )
@@ -82,6 +85,7 @@ def classify_request(session: Session, task: Task) -> AgentRequestPolicy:
             prompt_kind="slash-command",
             needs_workspace_index=False,
             needs_plan=False,
+            needs_work_intent=False,
             prefer_local_inspection=controller_session,
             reason="explicit slash command",
         )
@@ -91,6 +95,7 @@ def classify_request(session: Session, task: Task) -> AgentRequestPolicy:
             prompt_kind="direct-action",
             needs_workspace_index=False,
             needs_plan=explicit_plan,
+            needs_work_intent=False,
             prefer_local_inspection=controller_session or prompt_requests_codebase_inspection(lower),
             reason="direct single action request",
         )
@@ -98,21 +103,24 @@ def classify_request(session: Session, task: Task) -> AgentRequestPolicy:
     broad_codebase = prompt_requests_codebase_inspection(lower) or is_broad_codebase_request(lower)
     complex_request = _looks_complex(lower)
     needs_index = broad_codebase or bool(task.metadata.get("force_workspace_index"))
-    needs_plan = explicit_plan or complex_request or broad_codebase
+    needs_plan = explicit_plan or complex_request or (broad_codebase and _broad_request_needs_plan(lower))
 
     if controller_session and not needs_index and not needs_plan and _looks_like_local_fact_question(lower):
         return AgentRequestPolicy(
             prompt_kind="controller-fact",
             needs_workspace_index=False,
             needs_plan=False,
+            needs_work_intent=False,
             prefer_local_inspection=True,
             reason="controller-local fact question",
         )
 
+    work_request = broad_codebase or complex_request or _looks_like_work_request(lower)
     return AgentRequestPolicy(
         prompt_kind="complex" if (needs_index or needs_plan) else "simple",
         needs_workspace_index=needs_index,
         needs_plan=needs_plan,
+        needs_work_intent=work_request,
         prefer_local_inspection=controller_session or broad_codebase,
         reason=_reason(needs_index, needs_plan, controller_session, broad_codebase, complex_request),
     )
@@ -153,6 +161,42 @@ def _looks_like_local_fact_question(lower: str) -> bool:
     if not any(term in compact for term in local_terms):
         return False
     return compact.startswith(("what ", "where ", "which ", "show ", "list ", "is ", "does "))
+
+
+def _looks_like_work_request(lower: str) -> bool:
+    compact = " ".join(lower.split())
+    work_terms = (
+        "index ",
+        "explain the code",
+        "explain the codebase",
+        "scan the workspace",
+        "work on",
+        "make ",
+        "write ",
+        "patch ",
+        "edit ",
+        "review ",
+        "inspect the local workspace",
+    )
+    return any(term in compact for term in work_terms)
+
+
+def _broad_request_needs_plan(lower: str) -> bool:
+    compact = " ".join(lower.split())
+    read_only_overview_terms = (
+        "index the local workspace",
+        "index the workspace",
+        "scan the workspace",
+        "explain the code base",
+        "explain the codebase",
+        "understand the code base",
+        "understand the codebase",
+        "map the code base",
+        "map the codebase",
+    )
+    if any(term in compact for term in read_only_overview_terms):
+        return False
+    return True
 
 
 def _reason(needs_index: bool, needs_plan: bool, controller_session: bool, broad_codebase: bool, complex_request: bool) -> str:

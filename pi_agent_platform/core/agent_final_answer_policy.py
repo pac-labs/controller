@@ -85,6 +85,12 @@ _GENERIC_READY_CORRECTIVE_PROMPT = (
 )
 
 
+_WORK_REQUEST_CORRECTIVE_PROMPT = (
+    "This request is a work request. Do not stop with a summary yet. "
+    "Return exactly one tool_call JSON object that performs the next concrete inspection or execution step."
+)
+
+
 def _tool_decision(action: dict[str, Any], *, reason: str, event_type: str, event_message: str, event_data: dict[str, Any] | None = None) -> ConvertToToolCall:
     return ConvertToToolCall(
         tool=str(action.get("tool") or ""),
@@ -140,6 +146,31 @@ def evaluate(
             reason="unexecuted_consult_model_request",
             event_type="model_routing_issue",
             event_message="Model returned consult_model as a final answer; converting it into an actual consult/fallback step.",
+            event_data={"final_message": final_tail},
+        )
+
+    request_intent = task.metadata.get("request_intent") if isinstance(task.metadata, dict) else None
+    transcript_has_tool_work = any(isinstance(entry, dict) and entry.get("tool") for entry in transcript)
+    if (
+        isinstance(request_intent, dict)
+        and str(request_intent.get("intent") or "").lower() == "work"
+        and not transcript_has_tool_work
+    ):
+        bootstrap_tool = str(request_intent.get("tool") or "").strip()
+        bootstrap_input = request_intent.get("input") if isinstance(request_intent.get("input"), dict) else {}
+        if bootstrap_tool and bootstrap_tool != "none":
+            return _tool_decision(
+                {"type": "tool_call", "tool": bootstrap_tool, "input": bootstrap_input},
+                reason="work_request_bootstrap_required",
+                event_type="final_answer_converted",
+                event_message="Work request was answered too early; PAC converted it into the resolved bootstrap tool step.",
+                event_data={"final_message": final_tail},
+            )
+        return RejectAndContinue(
+            reason="work_request_requires_action",
+            corrective_prompt=_WORK_REQUEST_CORRECTIVE_PROMPT,
+            event_type="final_answer_rejected",
+            event_message="Final answer rejected because this work request still needs an execution step.",
             event_data={"final_message": final_tail},
         )
 

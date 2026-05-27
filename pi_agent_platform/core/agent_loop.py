@@ -17,6 +17,7 @@ from .agent_loop_timing import AgentLoopTiming
 from .agent_events import AgentEvents
 from .agent_prompt_context import build_agent_prompt_context
 from .agent_request_policy import classify_request
+from .agent_request_intent import resolve_request_intent, should_resolve_request_intent
 from .profiles import profile_context_name, profile_planner_context_name
 from .agent_response_parser import (
     _extract_json,
@@ -33,6 +34,62 @@ from .agent_final_answer_policy import (
 
 
 from .agent_tools import execute_tool
+
+
+def _tool_result_message(tool: str, observation: str) -> str:
+    tool_name = str(tool or "").strip()
+    text = str(observation or "")
+    if tool_name == "workspace_manifest":
+        summarized = _summarize_workspace_manifest(text)
+        if summarized:
+            return "Tool result:\n" + summarized
+    if len(text) > 6000:
+        text = text[:6000] + "\n...[truncated]..."
+    return "Tool result:\n" + text
+
+
+def _summarize_workspace_manifest(observation: str) -> str:
+    try:
+        payload = json.loads(str(observation or ""))
+    except Exception:
+        return ""
+    parts: list[str] = []
+    workspace = str(payload.get("workspace") or "").strip()
+    if workspace:
+        parts.append(f"workspace: {workspace}")
+    project_type = str(payload.get("project_type") or "unknown").strip()
+    parts.append(f"project_type: {project_type}")
+    tree = payload.get("tree") if isinstance(payload.get("tree"), dict) else {}
+    file_count = int(tree.get("file_count") or 0)
+    total_bytes = int(tree.get("total_bytes") or 0)
+    if file_count:
+        parts.append(f"file_count: {file_count}")
+    if total_bytes:
+        parts.append(f"total_mb: {round(total_bytes / (1024 * 1024), 1)}")
+    projects = payload.get("projects") if isinstance(payload.get("projects"), list) else []
+    if projects:
+        project_bits = []
+        for item in projects[:6]:
+            if not isinstance(item, dict):
+                continue
+            project_bits.append(f"{item.get('type') or 'unknown'}:{item.get('file') or item.get('root') or ''}")
+        if project_bits:
+            parts.append("projects: " + ", ".join(project_bits))
+    key_files = payload.get("key_files") if isinstance(payload.get("key_files"), list) else []
+    if key_files:
+        key_paths = [str(item.get("path") or "") for item in key_files[:12] if isinstance(item, dict) and item.get("path")]
+        if key_paths:
+            parts.append("key_files: " + ", ".join(key_paths))
+    flat_files = payload.get("flat_files") if isinstance(payload.get("flat_files"), list) else []
+    if flat_files:
+        top_paths = [str(item.get("path") or "") for item in flat_files[:40] if isinstance(item, dict) and item.get("path")]
+        if top_paths:
+            parts.append("sample_files:\n- " + "\n- ".join(top_paths))
+    git_summary = payload.get("git_summary") if isinstance(payload.get("git_summary"), dict) else {}
+    branch = str(git_summary.get("branch") or "").strip()
+    if branch:
+        parts.append(f"git_branch: {branch}")
+    return "\n".join(parts)
 
 
 async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Task:
@@ -80,11 +137,38 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
         "prompt_kind": request_policy.prompt_kind,
         "needs_workspace_index": request_policy.needs_workspace_index,
         "needs_plan": request_policy.needs_plan,
+        "needs_work_intent": request_policy.needs_work_intent,
         "prefer_local_inspection": request_policy.prefer_local_inspection,
         "reason": request_policy.reason,
     }
     store.add_task(task)
 
+    resolved_request_intent = None
+    if should_resolve_request_intent(config, task, request_policy):
+        try:
+            resolved_request_intent = await timing.around_async(
+                "request_intent_model",
+                "Request-intent resolution was slow",
+                resolve_request_intent(config, session, task, request_policy),
+                {"model": session.model, "prompt_kind": request_policy.prompt_kind},
+            )
+        except Exception:
+            resolved_request_intent = None
+        task.metadata["request_intent_resolved"] = True
+        if resolved_request_intent:
+            task.metadata["request_intent"] = {
+                "model": resolved_request_intent.model,
+                "intent": resolved_request_intent.intent,
+                "tool": resolved_request_intent.tool,
+                "input": resolved_request_intent.input,
+                "needs_plan": resolved_request_intent.needs_plan,
+                "reason": resolved_request_intent.reason,
+            }
+        store.add_task(task)
+
+    include_workspace_index = request_policy.needs_workspace_index and not bool(
+        resolved_request_intent and resolved_request_intent.should_bootstrap_work
+    )
     try:
         with timing.phase("prompt_context", "Agent prompt/context preparation was slow"):
             prompt_context = build_agent_prompt_context(
@@ -92,7 +176,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                 task,
                 config,
                 agent=agent,
-                include_workspace_index=request_policy.needs_workspace_index,
+                include_workspace_index=include_workspace_index,
             )
     except Exception as exc:
         task = await lifecycle.fail(f"Agent prompt preparation failed: {exc}")
@@ -106,8 +190,49 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     if prompt_context.workspace_index_event_data and prompt_context.workspace_index_source == "fresh":
         events.workspace_indexed(prompt_context.workspace_index_event_data)
 
+    if resolved_request_intent and resolved_request_intent.should_bootstrap_work:
+        events.agent_intent(
+            summary=f"Bootstrap work step: {resolved_request_intent.tool}",
+            model=resolved_request_intent.model,
+            step=0,
+            metadata={
+                "action_type": "request_intent",
+                "tool": resolved_request_intent.tool,
+                "input": resolved_request_intent.input,
+                "reason": resolved_request_intent.reason,
+            },
+        )
+        events.tool_call(tool=resolved_request_intent.tool, input=resolved_request_intent.input)
+        try:
+            observation, paused = await timing.around_async(
+                "request_intent_tool",
+                "Request-intent bootstrap tool was slow",
+                execute_tool(session, task, resolved_request_intent.tool, resolved_request_intent.input, config),
+                {"tool": resolved_request_intent.tool, "step": 0},
+            )
+        except Exception as exc:
+            task = await lifecycle.fail(f"Bootstrap work step failed: {resolved_request_intent.tool}: {exc}", messages=messages)
+            return task
+        transcript.append({"step": 0, "tool": resolved_request_intent.tool, "input": resolved_request_intent.input, "observation": observation[-4000:]})
+        task.metadata["agent_transcript"] = transcript[-20:]
+        task.metadata["bootstrap_work_completed"] = True
+        store.add_task(task)
+        if paused:
+            await lifecycle.checkpoint(
+                step=0,
+                messages=messages,
+                rolling_summary=context_manager.rolling_summary,
+                output="",
+                task_status="approval_required",
+            )
+            return task
+        messages.append({"role": "assistant", "content": json.dumps({"type": "tool_call", "tool": resolved_request_intent.tool, "input": resolved_request_intent.input})})
+        messages.append({"role": "user", "content": _tool_result_message(resolved_request_intent.tool, observation)})
+
     should_plan = bool(task.metadata.get("plan_only")) or (
-        bool(task.metadata.get("always_plan")) if "always_plan" in task.metadata else request_policy.needs_plan
+        bool(task.metadata.get("always_plan")) if "always_plan" in task.metadata else (
+            request_policy.needs_plan or bool((task.metadata.get("request_intent") or {}).get("needs_plan"))
+        )
     )
     if should_plan and not task.metadata.get("plan_generated"):
         try:
@@ -187,7 +312,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
         if paused:
             return task
         messages.append({"role": "assistant", "content": json.dumps(pending)})
-        messages.append({"role": "user", "content": "Tool result:\n" + observation})
+        messages.append({"role": "user", "content": _tool_result_message(pending.get("tool", ""), observation)})
     max_runtime_minutes = max(1, int(task.metadata.get("max_runtime_minutes") or (getattr(agent, "max_runtime_minutes", 60) if agent else 60)))
     deadline = time.monotonic() + (max_runtime_minutes * 60)
     empty_model_retries = 0
@@ -432,7 +557,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                     force=True,
                 )
             messages.append({"role": "assistant", "content": json.dumps(action)})
-            messages.append({"role": "user", "content": "Tool result:\n" + observation})
+            messages.append({"role": "user", "content": _tool_result_message(str(action.get("tool") or ""), observation)})
             messages = context_manager.keep_recent_window(messages)
             continue
 

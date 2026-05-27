@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "1.0.364",
+      "date": "2026-05-27T06:45:00Z",
+      "summary": "Made controller work requests bootstrap into concrete inspection work before the main agent turn instead of stalling in narration or unconditional planning.",
+      "changes": [
+        "Added request-intent resolution for agent-loop work requests, with a hidden runtime setting for the intent model and a deterministic heuristic fallback when the intent model is unavailable or returns unusable output.",
+        "Changed broad PAC/core work requests so the loop resolves the first bootstrap tool before prompt expansion, skips the automatic workspace index when a bootstrap inspection step is already chosen, and avoids planning for read-only overview requests like workspace indexing and codebase explanation.",
+        "Tightened final-answer policy for work requests and compacted workspace manifest tool results before refeeding them to the model so controller sessions progress through actual inspection work instead of emitting early summaries or oversized context dumps."
+      ]
+    },
+    {
       "version": "1.0.363",
       "date": "2026-05-27T00:40:00Z",
       "summary": "Forwarded controller pi.dev session traffic into a configurable agent inbox so runtime-side agents can observe PAC messages and results directly.",
@@ -423,5 +433,5 @@
       }
     }
   ],
-  "current_version": "1.0.363"
+  "current_version": "1.0.364"
 }

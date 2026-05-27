@@ -326,6 +326,9 @@ class RuntimeConfig(BaseModel):
     mode: str = "local"
     command_timeout_seconds: int = 300
     max_task_seconds: int = 3600
+    request_intent_enabled: bool = True
+    request_intent_for_work_requests: bool = True
+    request_intent_model: str | None = None
 
 
 class ControllerHarnessConfig(BaseModel):
