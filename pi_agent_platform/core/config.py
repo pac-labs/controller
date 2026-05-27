@@ -642,6 +642,13 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         elif not (existing_tool.description or "").strip():
             existing_tool.description = description
             changed = True
+    main_profile = cfg.agent_profiles.get(MAIN_PI_DEV_PROFILE)
+    if main_profile is not None:
+        desired_tools = [tool for tool in MAIN_PI_DEV_PROFILE_TOOLS if tool in cfg.tools]
+        merged_tools = list(dict.fromkeys([*(main_profile.tools or []), *desired_tools]))
+        if merged_tools != list(main_profile.tools or []):
+            main_profile.tools = merged_tools
+            changed = True
     if changed:
         config_path.write_text(yaml.safe_dump(cfg.model_dump(mode="json", exclude_none=True), sort_keys=False), encoding="utf-8")
     return cfg

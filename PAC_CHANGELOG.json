@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "1.0.375",
+      "date": "2026-05-27T13:20:00Z",
+      "summary": "Wire the new PAC/core self-creation tools into the built-in controller context and session.",
+      "changes": [
+        "PAC/core now carries the new controller tooling set, including find_code_paths and the pac_create_* control-plane helpers.",
+        "The main pi.dev profile now backfills its baseline tool list on load so newly added controller tools become available to the built-in system context.",
+        "Existing controller sessions now sync to the updated PAC/core tool set instead of rejecting the new self-creation tools as unavailable."
+      ]
+    },
+    {
       "version": "1.0.374",
       "date": "2026-05-27T13:05:00Z",
       "summary": "Add PAC/core code-location and self-creation tools for the built-in controller session.",
@@ -523,5 +533,5 @@
       }
     }
   ],
-  "current_version": "1.0.374"
+  "current_version": "1.0.375"
 }

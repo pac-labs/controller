@@ -2776,6 +2776,9 @@ def _ensure_default_admin_context(user: User) -> AgentContext:
     permission_profile = _admin_permission_profile_name()
     seeded_model_name = str(config.controller_harness.model or '').strip()
     model_name = str((item.executor_model if item and item.executor_model else seeded_model_name) or '').strip()
+    profile_name = config.controller_harness.agent_profile or MAIN_PI_DEV_PROFILE
+    profile = config.agent_profiles.get(profile_name)
+    desired_tools = list(dict.fromkeys((profile.tools or []) if profile else [tool for tool in MAIN_PI_DEV_PROFILE_TOOLS if tool in config.tools]))
     desired = {
         'owner_id': user.id,
         'owner_username': user.username,
@@ -2792,9 +2795,10 @@ def _ensure_default_admin_context(user: User) -> AgentContext:
         'endpoint_selector': None,
         'container_image': None,
         'requires_container': False,
-        'agent_profile': config.controller_harness.agent_profile or MAIN_PI_DEV_PROFILE,
+        'agent_profile': profile_name,
         'permission_profile': permission_profile,
         'executor_model': None if model_name in {'', MODEL_NOT_SELECTED} else model_name,
+        'tools': desired_tools,
         'use_groups': [DEFAULT_ADMIN_GROUP_ID],
         'editor_groups': [DEFAULT_ADMIN_GROUP_ID],
         'pinned': True,
@@ -2809,9 +2813,10 @@ def _ensure_default_admin_context(user: User) -> AgentContext:
             controller_workdir=desired['controller_workdir'],
             endpoint_id=desired['endpoint_id'],
             requires_container=False,
-            agent_profile=desired['agent_profile'],
+            agent_profile=profile_name,
             permission_profile=desired['permission_profile'],
             executor_model=desired['executor_model'],
+            tools=desired_tools,
             use_groups=[DEFAULT_ADMIN_GROUP_ID],
             editor_groups=[DEFAULT_ADMIN_GROUP_ID],
             pinned=True,
