@@ -89,6 +89,43 @@ function watchEndpointJob(job, options = {}) {
   setTimeout(render, 600);
 }
 
+
+function endpointTelemetryValue(value, fallback='-') {
+  if (value === undefined || value === null || value === '') return fallback;
+  return String(value);
+}
+
+function endpointTelemetryPercent(value) {
+  if (typeof value !== 'number') return '-';
+  return `${Math.round(value * 100)}%`;
+}
+
+function endpointTelemetryCards(endpoint) {
+  const metadata = endpoint.metadata || {};
+  const inventory = metadata.inventory || metadata.hardware || endpoint.inventory || endpoint.capabilities?.hardware || {};
+  const metrics = metadata.metrics || metadata.latest_metrics || endpoint.metrics || {};
+  const cpu = inventory.cpu || {};
+  const memory = inventory.memory || metrics.memory || {};
+  const disk = inventory.disk || metrics.disk || {};
+  const networks = Array.isArray(inventory.network) ? inventory.network : (Array.isArray(inventory.networks) ? inventory.networks : []);
+  const tools = inventory.tools || metadata.required_tools || endpoint.capabilities?.tools || {};
+  const availableTools = Array.isArray(tools) ? tools : Object.entries(tools || {}).filter(([_, value]) => value?.available !== false).map(([name]) => name);
+  return `<section><h3>Hardware and metrics</h3>
+    <div class="endpoint-telemetry-cards">
+      <article class="endpoint-telemetry-card"><span>CPU</span><b>${escapeHtml(endpointTelemetryValue(cpu.model || inventory.cpu_model || '-'))}</b><small>${escapeHtml(endpointTelemetryValue(cpu.logical_cores || cpu.cores || inventory.logical_cores, '-'))} logical core(s)</small></article>
+      <article class="endpoint-telemetry-card"><span>Memory</span><b>${escapeHtml(memory.total_bytes ? formatBytes(memory.total_bytes) : '-')}</b><small>${escapeHtml(memory.used_ratio !== undefined ? `${endpointTelemetryPercent(memory.used_ratio)} used` : 'usage pending')}</small></article>
+      <article class="endpoint-telemetry-card"><span>Load</span><b>${escapeHtml(metrics.load_1m !== undefined ? Number(metrics.load_1m).toFixed(2) : '-')}</b><small>${escapeHtml(metrics.collected_at ? `sample ${formatDate(metrics.collected_at)}` : 'sample pending')}</small></article>
+      <article class="endpoint-telemetry-card"><span>Disk</span><b>${escapeHtml(disk.total_bytes ? formatBytes(disk.total_bytes) : '-')}</b><small>${escapeHtml(disk.used_ratio !== undefined ? `${endpointTelemetryPercent(disk.used_ratio)} used` : endpointTelemetryValue(disk.path || inventory.root || '-'))}</small></article>
+    </div>
+    <div class="endpoint-progress-grid endpoint-telemetry-grid">
+      <div><span>Kernel</span><code>${escapeHtml(endpointTelemetryValue(inventory.kernel || inventory.version || metadata.os_family || '-'))}</code></div>
+      <div><span>Network</span><code>${escapeHtml(networks.length ? networks.map((nic) => nic.name || nic.interface || nic.address || 'nic').join(', ') : '-')}</code></div>
+      <div><span>Tools</span><code>${escapeHtml(availableTools.length ? availableTools.slice(0, 12).join(', ') : '-')}</code></div>
+      <div><span>Telemetry</span><code>${escapeHtml(metrics.collected_at || inventory.collected_at || '-')}</code></div>
+    </div>
+  </section>`;
+}
+
 async function openEndpointDetailsModal(endpoint) {
   const modal = endpointModalShell('endpointDetailsModal', endpoint.name || endpoint.id || 'Endpoint details', 'Current inventory, queued jobs, and operational diagnostics.');
   const body = modal.querySelector('.endpoint-progress-body');
@@ -106,6 +143,7 @@ async function openEndpointDetailsModal(endpoint) {
       <div><span>Last seen</span><code>${escapeHtml(formatDate(endpoint.last_seen_at))}</code></div>
       <div><span>Default workspace</span><code>${escapeHtml(metadata.default_workspace || '-')}</code></div>
     </div></section>
+    ${endpointTelemetryCards(endpoint)}
     <section><h3>pi.dev / command channel</h3><div class="endpoint-progress-grid">
       <div><span>Agent status</span><code>${escapeHtml(metadata.agent_enablement?.status || metadata.agent_runtime?.status || '-')}</code></div>
       <div><span>Detail</span><code>${escapeHtml(metadata.agent_enablement?.detail || '-')}</code></div>

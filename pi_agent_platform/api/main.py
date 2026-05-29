@@ -38,6 +38,7 @@ from pi_agent_platform.api.routes.mcp import create_mcp_router
 from pi_agent_platform.api.routes.system import create_system_router
 from pi_agent_platform.api.routes.endpoints import create_endpoints_router
 from pi_agent_platform.api.routes.editor_bridge import create_editor_bridge_router
+from pi_agent_platform.api.routes.debug_bundles import create_debug_bundles_router
 from pi_agent_platform.api.routes.events_retention import create_events_retention_router
 from pi_agent_platform.api.routes.providers import create_providers_router
 from pi_agent_platform.api.routes.proxy import create_proxy_router
@@ -47,6 +48,7 @@ from pi_agent_platform.api.routes.profiles import create_profiles_router
 from pi_agent_platform.api.routes.service_runtime import create_service_runtime_router
 from pi_agent_platform.api.routes.sources import create_sources_router
 from pi_agent_platform.api.routes.sessions import create_sessions_router
+from pi_agent_platform.api.routes.playbooks import create_playbooks_router
 from pi_agent_platform.api.routes import sessions as session_routes
 from pi_agent_platform.api.routes.updates import create_updates_router
 from pi_agent_platform.api.routes.ui import register_ui_routes
@@ -75,7 +77,8 @@ from pi_agent_platform.core.pac_ram import read_ram, write_ram, list_ram, all_ra
 from pi_agent_platform.core.source_variables import source_variable_store
 from pi_agent_platform.core.source_library import ensure_source_library, list_tree as source_list_tree, read_text as source_read_text, write_text as source_write_text, make_archive as source_make_archive, build_container as source_build_container, build_binary as source_build_binary, list_binary_artifacts as source_list_binary_artifacts, binary_artifact_path as source_binary_artifact_path, delete_binary_artifact as source_delete_binary_artifact, prune_binary_artifacts as source_prune_binary_artifacts, inspect_feature_pack as source_inspect_feature_pack, apply_feature_pack as source_apply_feature_pack, create_entry as source_create_entry, rename_entry as source_rename_entry, delete_entry as source_delete_entry, fetch_online_package_updates as source_fetch_online_package_updates
 from pi_agent_platform.core.update_preservation import TRACKED_ROOTS, build_backup_archive, compare_trees, generate_local_diff, list_generated_diffs
-from pi_agent_platform.updates import fetch_latest_release_metadata, download_release_package
+from pi_agent_platform.core.update_packages import copy_update_package_tree
+from pi_agent_platform.updates import download_release_asset, fetch_latest_release_metadata, download_release_package
 from pi_agent_platform.core.shared_storage import SharedStorage, controller_storage_path, public_shared_storage, shared_storage_binding
 from pi_agent_platform.core.letsencrypt_cert import (
     issue_letsencrypt_certificate,
@@ -647,15 +650,6 @@ def _platform_workspace_path() -> str:
     return str(Path(__file__).resolve().parents[2])
 
 
-def _controller_tool_baseline() -> list[str]:
-    profile_name = config.controller_harness.agent_profile or MAIN_PI_DEV_PROFILE
-    profile = config.agent_profiles.get(profile_name)
-    desired = list(profile.tools or []) if profile else []
-    if not desired:
-        desired = [tool for tool in MAIN_PI_DEV_PROFILE_TOOLS if tool in config.tools]
-    return list(dict.fromkeys(desired))
-
-
 def _ensure_platform_plugin_sources() -> dict[str, Any]:
     root = Path(_platform_workspace_path())
     plugins_root = root / 'plugins'
@@ -828,7 +822,7 @@ def _ensure_controller_harness_session() -> dict[str, Any]:
             existing.context_mode = desired_context_mode; changed = True
         if existing.workspace_path != (workspace.path or _platform_workspace_path()):
             existing.workspace_path = workspace.path or _platform_workspace_path(); changed = True
-        desired_tools = list(dict.fromkeys([*(system_context.tools or []), *_controller_tool_baseline()])) if system_context else (list(config.tools.keys()) if settings.expose_platform_tools else [])
+        desired_tools = list(system_context.tools or []) if system_context else (list(config.tools.keys()) if settings.expose_platform_tools else [])
         if existing.tools != desired_tools:
             existing.tools = desired_tools; changed = True
         existing.workspace = existing.workspace.model_copy(update={'type': 'profile', 'profile': settings.workspace_profile, 'path': workspace.path})
@@ -867,7 +861,7 @@ def _ensure_controller_harness_session() -> dict[str, Any]:
         workspace={'type': 'profile', 'profile': settings.workspace_profile, 'path': workspace.path},
         workspace_path=workspace.path or _platform_workspace_path(),
         model=model_name,
-        tools=list(dict.fromkeys([*(system_context.tools or []), *_controller_tool_baseline()])) if system_context else (list(config.tools.keys()) if settings.expose_platform_tools else []),
+        tools=list(system_context.tools or []) if system_context else (list(config.tools.keys()) if settings.expose_platform_tools else []),
         metadata={
             'controller_harness': True,
             'preferred_endpoint': settings.runner_id,
@@ -963,22 +957,68 @@ def _install_wrapper_artifact(project: str, artifact: Path) -> dict[str, Any]:
     return {'installed': True, 'project': project, 'source': str(artifact), 'path': str(target), 'size': target.stat().st_size}
 
 
-def _find_bundled_binary_in_package(package_root: Path, project: str, target: str, binary_name: str) -> Path | None:
+def _find_binary_in_release_zip(zip_path: Path, project: str, target: str, binary_name: str) -> Path | None:
+    if not zip_path.is_file() or not zipfile.is_zipfile(zip_path):
+        return None
     goos, goarch = target.split('/', 1)
     ext = '.exe' if goos == 'windows' else ''
-    candidates = [
-        package_root / 'release-binaries' / project / f'{goos}-{goarch}' / f'{binary_name}{ext}',
-        package_root / 'release-binaries' / project / f'{goos}-{goarch}' / f'{project}{ext}',
+    prefixes = [
+        f'release-binaries/{project}/{goos}-{goarch}/{binary_name}{ext}',
+        f'release-binaries/{project}/{goos}-{goarch}/{project}{ext}',
     ]
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    target_dir = package_root / 'release-binaries' / project / f'{goos}-{goarch}'
-    if target_dir.is_dir():
-        matches = sorted(path for path in target_dir.iterdir() if path.is_file())
-        if matches:
-            return matches[0]
-    return None
+    extract_dir = pacp_path('updates', 'release-assets', 'extracted-binaries', project, f'{goos}-{goarch}')
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path) as zf:
+        names = [name for name in zf.namelist() if not name.endswith('/')]
+        selected = next((name for name in prefixes if name in names), None)
+        if not selected:
+            prefix = f'release-binaries/{project}/{goos}-{goarch}/'
+            selected = next((name for name in names if name.startswith(prefix) and not name.endswith('RELEASE_BINARIES.json')), None)
+        if not selected:
+            return None
+        filename = Path(selected).name
+        target_path = extract_dir / filename
+        with zf.open(selected) as src, target_path.open('wb') as dst:
+            shutil.copyfileobj(src, dst)
+    try:
+        target_path.chmod(target_path.stat().st_mode | 0o111)
+    except Exception:
+        pass
+    return target_path
+
+
+def _install_github_release_controller_wrapper(project: str, target: str, binary_name: str) -> dict[str, Any]:
+    asset_path = pacp_path('updates', 'release-assets', 'release_binaries', 'pac-binaries.zip')
+    download = download_release_asset('release_binaries', asset_path)
+    if not download.get('ok'):
+        return {
+            'ok': False,
+            'status': download.get('status') or 'release_binary_download_failed',
+            'project': project,
+            'target': target,
+            'download': download,
+            'message': download.get('error') or 'PAC release binary asset could not be downloaded.',
+        }
+    artifact = _find_binary_in_release_zip(asset_path, project, target, binary_name)
+    if not artifact:
+        return {
+            'ok': False,
+            'status': 'release_binary_missing_target',
+            'project': project,
+            'target': target,
+            'download': download,
+            'message': 'GitHub release binary artifact did not contain a matching PAC wrapper target.',
+        }
+    installed = _install_wrapper_artifact(project, artifact)
+    return {
+        'ok': True,
+        'status': 'github_release_installed',
+        'project': project,
+        'target': target,
+        'download': download,
+        'message': 'PAC wrapper installed from GitHub release binary artifact.',
+        **installed,
+    }
 
 
 def _ensure_controller_wrapper(allow_build: bool = True, force_rebuild: bool = False) -> dict[str, Any]:
@@ -991,9 +1031,12 @@ def _ensure_controller_wrapper(allow_build: bool = True, force_rebuild: bool = F
     artifact = None if force_rebuild else _find_matching_binary_artifact(project, target)
     if artifact:
         installed = _install_wrapper_artifact(project, artifact)
-        return {'ok': True, 'status': 'installed', 'target': target, 'message': 'PAC wrapper installed from existing artifact.', **installed}
+        return {'ok': True, 'status': 'installed', 'target': target, 'message': 'PAC wrapper installed from existing local artifact.', **installed}
+    release_install = _install_github_release_controller_wrapper(project, target, settings.wrapper_binary_name or 'pac-endpoint')
+    if release_install.get('ok'):
+        return release_install
     if not allow_build:
-        return {'ok': False, 'status': 'missing', 'path': str(wrapper_path), 'target': target, 'message': 'PAC wrapper is missing and auto-build is disabled.'}
+        return {'ok': False, 'status': 'missing', 'path': str(wrapper_path), 'target': target, 'release_install': release_install, 'message': 'PAC wrapper is missing, GitHub release download failed, and auto-build is disabled.'}
     old_build_server_url = os.environ.get('PAC_BUILD_SERVER_URL')
     compiled_url = str(config.server.public_url or '').strip().rstrip('/')
     if compiled_url:
@@ -1008,33 +1051,8 @@ def _ensure_controller_wrapper(allow_build: bool = True, force_rebuild: bool = F
     artifact = _find_matching_binary_artifact(project, target)
     if result.get('ok') and artifact:
         installed = _install_wrapper_artifact(project, artifact)
-        return {'ok': True, 'status': 'rebuilt_installed' if force_rebuild else 'built_installed', 'target': target, 'build': result, 'message': 'PAC wrapper rebuilt and installed.' if force_rebuild else 'PAC wrapper built and installed.', **installed}
-    return {'ok': False, 'status': 'build_failed', 'target': target, 'build': result, 'message': 'PAC wrapper rebuild did not produce a host binary.' if force_rebuild else 'PAC wrapper build did not produce a host binary.'}
-
-
-def _install_bundled_controller_wrapper(package_root: Path) -> dict[str, Any]:
-    settings = config.controller_harness
-    project = settings.wrapper_binary_project or 'pac-endpoint'
-    target = _host_binary_target()
-    binary_name = settings.wrapper_binary_name or 'pac-endpoint'
-    bundled = _find_bundled_binary_in_package(package_root, project, target, binary_name)
-    if not bundled:
-        return {
-            'ok': False,
-            'status': 'bundled_missing',
-            'project': project,
-            'target': target,
-            'message': 'Release package does not include a matching bundled PAC wrapper binary.',
-        }
-    installed = _install_wrapper_artifact(project, bundled)
-    return {
-        'ok': True,
-        'status': 'bundled_installed',
-        'project': project,
-        'target': target,
-        'message': 'PAC wrapper installed from bundled release binary.',
-        **installed,
-    }
+        return {'ok': True, 'status': 'rebuilt_installed' if force_rebuild else 'built_installed', 'target': target, 'release_install': release_install, 'build': result, 'message': 'PAC wrapper rebuilt locally and installed.' if force_rebuild else 'PAC wrapper built locally and installed.', **installed}
+    return {'ok': False, 'status': 'build_failed', 'target': target, 'release_install': release_install, 'build': result, 'message': 'PAC wrapper could not be installed from GitHub release assets and local build did not produce a host binary.'}
 
 
 def _required_tool_state() -> dict[str, Any]:
@@ -1901,7 +1919,7 @@ def _mcp_write_status(status: str, message: str, artifacts: list[dict[str, Any]]
 
 
 def _mcp_artifacts() -> list[dict[str, Any]]:
-    source_artifacts = source_list_binary_artifacts('zed-binary').get('projects', [])
+    source_artifacts = source_list_binary_artifacts('pacctl').get('projects', [])
     if source_artifacts and source_artifacts[0].get('artifacts'):
         return source_artifacts[0].get('artifacts', [])
     out = _mcp_dir() / 'bin'
@@ -1935,13 +1953,13 @@ def _mcp_build_event(build_id: str, event_type: str, message: str, **data: Any) 
 def _run_mcp_builder(runtime: str | None = None, build_id: str | None = None) -> None:
     build_id = build_id or uuid.uuid4().hex[:12]
     try:
-        result = source_build_binary('binaries/zed-binary', runtime=runtime or 'auto')
+        result = source_build_binary('binaries/pacctl', runtime=runtime or 'auto')
         status = 'completed' if result.get('ok') else 'failed'
         _mcp_write_status(status, 'Zed binary build completed' if result.get('ok') else 'Zed binary build failed', artifacts=result.get('artifacts', []), logs=[result.get('stdout',''), result.get('stderr','')])
         _mcp_build_event(build_id, 'mcp_build_completed' if result.get('ok') else 'mcp_build_failed', 'Zed binary build completed' if result.get('ok') else 'Zed binary build failed', **result)
         return
     except Exception as source_exc:
-        _mcp_build_event(build_id, 'mcp_build_warning', f'Sources zed-binary build path unavailable: {source_exc}', error=str(source_exc))
+        _mcp_build_event(build_id, 'mcp_build_warning', f'Sources pacctl build path unavailable: {source_exc}', error=str(source_exc))
     runtime = runtime or _find_container_runtime()
     if not runtime:
         msg = 'No container runtime found. Install podman or docker on the PAC host.'
@@ -2786,7 +2804,8 @@ def _ensure_default_admin_context(user: User) -> AgentContext:
     seeded_model_name = str(config.controller_harness.model or '').strip()
     model_name = str((item.executor_model if item and item.executor_model else seeded_model_name) or '').strip()
     profile_name = config.controller_harness.agent_profile or MAIN_PI_DEV_PROFILE
-    desired_tools = _controller_tool_baseline()
+    profile = config.agent_profiles.get(profile_name)
+    desired_tools = list(dict.fromkeys((profile.tools or []) if profile else [tool for tool in MAIN_PI_DEV_PROFILE_TOOLS if tool in config.tools]))
     desired = {
         'owner_id': user.id,
         'owner_username': user.username,
@@ -2978,9 +2997,6 @@ def _app_dir() -> Path:
     return Path(os.environ.get('PACP_APP_DIR', pacp_path('app'))).expanduser().resolve()
 
 
-_ensure_auth_admin_scaffolding()
-
-
 def _safe_zip_members(zf: zipfile.ZipFile) -> list[str]:
     names: list[str] = []
     for info in zf.infolist():
@@ -2992,39 +3008,22 @@ def _safe_zip_members(zf: zipfile.ZipFile) -> list[str]:
 
 
 def _find_package_root(extract_dir: Path) -> Path:
-    if (extract_dir / 'pyproject.toml').is_file() and (extract_dir / 'pi_agent_platform').is_dir():
+    def looks_like_package(path: Path) -> bool:
+        full_package = (path / 'pyproject.toml').is_file() and (path / 'pi_agent_platform').is_dir()
+        changed_files_package = (path / 'VERSION').is_file() and (path / 'PAC_CHANGELOG.json').is_file() and any(path.glob('PAC_UPDATE_DIFF*.diff'))
+        return full_package or changed_files_package
+
+    if looks_like_package(extract_dir):
         return extract_dir
     candidates = [p for p in extract_dir.iterdir() if p.is_dir()]
     for candidate in candidates:
-        if (candidate / 'pyproject.toml').is_file() and (candidate / 'pi_agent_platform').is_dir():
+        if looks_like_package(candidate):
             return candidate
-    raise HTTPException(status_code=400, detail='Uploaded package does not look like a PAC version package: pyproject.toml and pi_agent_platform/ were not found')
+    raise HTTPException(status_code=400, detail='Uploaded package does not look like a PAC version package: expected a full app package or changed-files patch with VERSION, PAC_CHANGELOG.json, and PAC_UPDATE_DIFF*.diff')
 
 
-def _copy_package_tree(src: Path, dst: Path) -> list[str]:
-    entries = [
-        'README.md', 'requirements.txt', 'pyproject.toml', '.gitignore',
-        'pi_agent_platform', 'config', 'scripts', 'deploy', 'containers', 'docs', 'tests', 'vscode-extension', 'binaries',
-        'VERSION', 'VERSION_CURRENT.md', 'FILES.txt', 'MANIFEST.json', 'docs-zed-mcp-example.json', 'install.sh', 'mcp',
-    ]
-    copied: list[str] = []
-    dst.mkdir(parents=True, exist_ok=True)
-    for entry in entries:
-        source = src / entry
-        if not source.exists():
-            continue
-        target = dst / entry
-        if target.exists():
-            if target.is_dir():
-                shutil.rmtree(target)
-            else:
-                target.unlink()
-        if source.is_dir():
-            shutil.copytree(source, target, ignore=shutil.ignore_patterns('.venv', '__pycache__', '*.pyc'))
-        else:
-            shutil.copy2(source, target)
-        copied.append(entry)
-    return copied
+def _copy_package_tree(src: Path, dst: Path) -> dict[str, Any]:
+    return copy_update_package_tree(src, dst)
 
 
 def _pip_install_editable(app_dir: Path) -> dict[str, Any]:
@@ -3651,12 +3650,11 @@ def _apply_version_package_from_path(package_path: Path, filename: str, restart_
             'diff_path': str(preservation_dir / f'{Path(filename).stem}-user.diff'),
             'summary_path': str(preservation_dir / 'change-summary.json'),
         }
-    copied = _copy_package_tree(package_root, app_dir)
+    copy_meta = _copy_package_tree(package_root, app_dir)
+    copied = copy_meta.get('copied', [])
     pip_result = _pip_install_editable(app_dir)
     run_script_result = _write_runtime_run_script(app_dir)
-    wrapper_result = _install_bundled_controller_wrapper(package_root)
-    if not wrapper_result.get('ok'):
-        wrapper_result = _ensure_controller_wrapper(allow_build=True, force_rebuild=True)
+    wrapper_result = _ensure_controller_wrapper(allow_build=True, force_rebuild=True)
     pi_dev_update_result = {'ok': False, 'status': 'skipped', 'message': 'pi.dev image update skipped.'}
     pi_dev_restart_result = {'ok': False, 'status': 'skipped', 'message': 'pi.dev daemon restart skipped.'}
     if getattr(config.controller_harness, 'auto_install_pi_dev', False):
@@ -3680,6 +3678,8 @@ def _apply_version_package_from_path(package_path: Path, filename: str, restart_
         'app_dir': str(app_dir),
         'backup_dir': str(backup_dir),
         'copied': copied,
+        'copied_count': len(copied),
+        'update_mode': copy_meta.get('update_mode'),
         'members': len(members),
         'pip': pip_result,
         'run_script': run_script_result,
@@ -3958,6 +3958,14 @@ app.include_router(create_system_router(
 ))
 
 
+app.include_router(create_debug_bundles_router(
+    require_auth=require_auth,
+    store=store,
+    config=config,
+))
+
+
+
 app.include_router(create_events_retention_router(
     require_auth=require_auth,
     store=store,
@@ -4048,6 +4056,14 @@ app.include_router(create_endpoints_router(
     install_pi_harness_command=_install_pi_harness_command,
     local_pi_harness_install_worker=_local_pi_harness_install_worker,
     require_resource_access=_require_resource_access,
+))
+
+
+app.include_router(create_playbooks_router(
+    require_auth=require_auth,
+    config=config,
+    store=store,
+    run_agent_loop=run_agent_loop,
 ))
 
 

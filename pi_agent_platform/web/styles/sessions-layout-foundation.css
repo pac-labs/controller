@@ -170,3 +170,20 @@ pre#events, pre#diff { min-width: 0; width: 100%; overflow: auto; white-space: p
 #composerMode[value="agent"] + #taskCommand { opacity:.75; }
 @media(max-width:1180px){ .session-chat-layout { grid-template-columns:1fr; } .composer-controls { grid-template-columns:1fr; } .chat-bubble { max-width:94%; } .session-session-meta { flex-direction:column; align-items:stretch; } .session-quick-controls { justify-content:flex-start; } }
 
+
+.subagent-summary-panel {
+  margin: .75rem 0 1rem;
+}
+.subagent-summary-list {
+  display: grid;
+  gap: .55rem;
+}
+.subagent-summary-item {
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, .24));
+  border-radius: 14px;
+  padding: .65rem .75rem;
+  background: rgba(148, 163, 184, .07);
+}
+.subagent-summary-item .pill {
+  margin-left: .35rem;
+}

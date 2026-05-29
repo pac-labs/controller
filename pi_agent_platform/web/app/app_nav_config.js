@@ -8,6 +8,7 @@
         {id: 'dashboard', tab: 'dashboard', label: 'Dashboard', icon: '⌂', aliases: ['home', 'overview', 'status'], description: 'Overview and system status.', mastheadMode: 'normal'},
         {id: 'atlas', tab: 'atlas-tab', label: 'Atlas', icon: '⌘', focus: 'dashboardTopologyMap', aliases: ['map', 'topology', 'graph', 'components'], description: 'Component map and dependencies.', mastheadMode: 'compact'},
         {id: 'sessions', tab: 'sessions-tab', label: 'Sessions', icon: '◫', aliases: ['chat', 'tasks', 'runs', 'composer'], description: 'Agent conversations and task runs.', mastheadMode: 'compact'},
+        {id: 'playbooks', tab: 'playbooks-tab', label: 'Playbooks', icon: '☷', aliases: ['workflow', 'runbook', 'automation'], description: 'Gated YAML workflows and repeatable agent runs.', mastheadMode: 'compact'},
       ],
     },
     {

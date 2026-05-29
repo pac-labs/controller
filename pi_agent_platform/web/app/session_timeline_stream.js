@@ -20,6 +20,7 @@ function renderSessionSnapshotFast(snapshot, sessionId) {
     rememberSessionUserTask(ev, text);
   });
   suppressSessionAutoScroll = true;
+  renderSubagentSummaryPanel(tail);
   tail.forEach((ev) => renderSessionTimelineEvent(ev));
   suppressSessionAutoScroll = false;
   if (wasPinned) timeline.scrollTop = timeline.scrollHeight;

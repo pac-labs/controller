@@ -229,3 +229,120 @@ async function deleteWorkspaceFromForm() {
   await loadConfig();
   showInline('workspaceFormResult', `Deleted workspace ${name}`);
 }
+
+
+function openWorkspaceLiveTerminal(workspaceId) {
+  if (!workspaceId) return;
+  const modal = endpointModalShell ? endpointModalShell('workspaceLiveTerminalModal', `Workspace terminal: ${workspaceId}`, 'Commands are routed through PAC, streamed live, and retained in command history.') : null;
+  if (!modal) return;
+  modal.classList.add('workspace-terminal-modal');
+  const body = modal.querySelector('.endpoint-progress-body');
+  body.innerHTML = `<div class="workspace-terminal">
+    <textarea class="workspace-terminal-command" placeholder="Enter a shell command, for example: pwd && ls -la"></textarea>
+    <div class="workspace-terminal-toolbar">
+      <button class="primary-button" data-terminal-run>Run and stream</button>
+      <button class="ghost-button" data-terminal-interrupt disabled>Interrupt</button>
+      <button class="ghost-button" data-terminal-refresh>Refresh history</button>
+      <span class="muted small-text" data-terminal-status>Ready.</span>
+    </div>
+    <div class="workspace-terminal-layout">
+      <div class="workspace-terminal-history" data-terminal-history><div class="muted small-text">Loading command history...</div></div>
+      <pre class="workspace-terminal-output" data-terminal-output></pre>
+    </div>
+  </div>`;
+  const commandEl = body.querySelector('[data-terminal-run]');
+  const interruptEl = body.querySelector('[data-terminal-interrupt]');
+  const refreshEl = body.querySelector('[data-terminal-refresh]');
+  const textEl = body.querySelector('.workspace-terminal-command');
+  const outEl = body.querySelector('[data-terminal-output]');
+  const statusEl = body.querySelector('[data-terminal-status]');
+  const historyEl = body.querySelector('[data-terminal-history]');
+  let activeCommandId = '';
+  let streamAbort = null;
+  const appendOutput = (stream, data) => {
+    if (!data || data === '<nil>') return;
+    outEl.textContent += stream === 'stderr' ? `[stderr] ${data}` : data;
+    outEl.scrollTop = outEl.scrollHeight;
+  };
+  const loadCommandEvents = async (commandId) => {
+    if (!commandId) return;
+    outEl.textContent = '';
+    statusEl.textContent = `Loading history ${commandId}...`;
+    const result = await api(`/v1/workspaces/${encodeURIComponent(workspaceId)}/commands/${encodeURIComponent(commandId)}/events?limit=5000`);
+    (result.events || []).forEach((event) => appendOutput(event.stream || 'system', event.data || ''));
+    statusEl.textContent = `Loaded ${result.count || 0} stored event(s) for ${commandId}.`;
+  };
+  const loadTerminalHistory = async () => {
+    try {
+      const result = await api(`/v1/workspaces/${encodeURIComponent(workspaceId)}`);
+      const commands = result.commands || [];
+      historyEl.innerHTML = commands.map((command) => {
+        const when = command.created_at ? new Date(command.created_at).toLocaleString() : '';
+        const label = `${command.status || 'unknown'}${command.exit_code !== undefined && command.exit_code !== null ? ` / ${command.exit_code}` : ''}`;
+        return `<button class="workspace-terminal-history-item" data-terminal-command-id="${escapeHtml(command.id)}">
+          <b>${escapeHtml(command.command || command.id)}</b>
+          <span>${escapeHtml(label)} · ${escapeHtml(String(command.event_count || 0))} event(s)</span>
+          <small>${escapeHtml(when)}</small>
+        </button>`;
+      }).join('') || '<div class="muted small-text">No commands have run in this workspace yet.</div>';
+      historyEl.querySelectorAll('[data-terminal-command-id]').forEach((btn) => {
+        btn.onclick = () => loadCommandEvents(btn.getAttribute('data-terminal-command-id') || '').catch((e) => { statusEl.textContent = `History error: ${e.message}`; });
+      });
+    } catch (e) {
+      historyEl.innerHTML = `<div class="muted small-text">History unavailable: ${escapeHtml(e.message || String(e))}</div>`;
+    }
+  };
+  const streamCommand = async (commandId) => {
+    streamAbort = new AbortController();
+    const response = await fetch(`/v1/workspaces/${encodeURIComponent(workspaceId)}/commands/${encodeURIComponent(commandId)}/stream`, {headers: tokenHeaders(), signal: streamAbort.signal});
+    if (!response.ok || !response.body) throw new Error(`stream failed: HTTP ${response.status}`);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, {stream:true});
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        if (event.type === 'status') {
+          statusEl.textContent = `Finished: ${event.status || 'complete'}${event.exit_code !== undefined && event.exit_code !== null ? `, exit ${event.exit_code}` : ''}`;
+          continue;
+        }
+        appendOutput(event.stream || 'system', event.data || '');
+      }
+    }
+  };
+  commandEl.onclick = async () => {
+    const command = textEl.value.trim();
+    if (!command) return alert('Enter a command first');
+    outEl.textContent = '';
+    activeCommandId = '';
+    interruptEl.disabled = true;
+    statusEl.textContent = 'Queueing command...';
+    try {
+      const result = await api(`/v1/workspaces/${encodeURIComponent(workspaceId)}/commands`, {method:'POST', body:JSON.stringify({command, wait:true, metadata:{source:'ui-live-terminal'}})});
+      activeCommandId = result?.command?.id || '';
+      interruptEl.disabled = !activeCommandId;
+      statusEl.textContent = activeCommandId ? `Streaming ${activeCommandId}...` : 'Command queued.';
+      if (activeCommandId) await streamCommand(activeCommandId);
+      await loadTerminalHistory();
+    } catch (e) {
+      if (String(e.name || '') !== 'AbortError') statusEl.textContent = `Terminal error: ${e.message}`;
+    } finally {
+      interruptEl.disabled = true;
+      streamAbort = null;
+    }
+  };
+  interruptEl.onclick = async () => {
+    if (!activeCommandId) return;
+    statusEl.textContent = 'Interrupt requested...';
+    await api(`/v1/workspaces/${encodeURIComponent(workspaceId)}/commands/${encodeURIComponent(activeCommandId)}/cancel`, {method:'POST', body:JSON.stringify({reason:'Interrupted from PAC UI live terminal', force:false})});
+    appendOutput('system', '\n[interrupt requested]\n');
+  };
+  refreshEl.onclick = () => loadTerminalHistory();
+  loadTerminalHistory();
+}

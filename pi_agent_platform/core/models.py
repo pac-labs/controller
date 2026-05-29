@@ -217,12 +217,79 @@ class RunnerJobUpdate(BaseModel):
     output: str | None = None
     error: str | None = None
     exit_code: int | None = None
+    stream_seq: int = 0
+    events: list[dict[str, Any]] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class RunnerJobLog(BaseModel):
     stream: Literal["stdout", "stderr", "system"] = "system"
     message: str
+
+
+class WorkspaceAgentStatus(str, Enum):
+    online = "online"
+    degraded = "degraded"
+    offline = "offline"
+
+
+class WorkspaceAgentCommandStatus(str, Enum):
+    queued = "queued"
+    claimed = "claimed"
+    completed = "completed"
+    failed = "failed"
+    interrupted = "interrupted"
+
+
+class WorkspaceAgent(BaseModel):
+    id: str = Field(default_factory=lambda: f"wsa_{uuid4().hex[:12]}")
+    workspace_id: str
+    name: str
+    status: WorkspaceAgentStatus = WorkspaceAgentStatus.online
+    endpoint_id: str | None = None
+    root: str | None = None
+    lifetime: Literal["persistent", "ephemeral"] = "persistent"
+    labels: list[str] = Field(default_factory=list)
+    capabilities: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+    last_seen_at: datetime | None = None
+
+    def touch(self) -> None:
+        self.updated_at = now_utc()
+
+
+class WorkspaceAgentCommand(BaseModel):
+    id: str = Field(default_factory=lambda: f"wcmd_{uuid4().hex[:12]}")
+    workspace_id: str
+    command: str
+    status: WorkspaceAgentCommandStatus = WorkspaceAgentCommandStatus.queued
+    workspace_path: str | None = None
+    output: str | None = None
+    error: str | None = None
+    exit_code: int | None = None
+    stream_seq: int = 0
+    events: list[dict[str, Any]] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+    claimed_at: datetime | None = None
+    completed_at: datetime | None = None
+
+    def touch(self) -> None:
+        self.updated_at = now_utc()
+
+
+class WorkspaceAgentCommandEvent(BaseModel):
+    id: str = Field(default_factory=lambda: f"wce_{uuid4().hex[:12]}")
+    workspace_id: str
+    command_id: str
+    seq: int
+    stream: Literal["stdout", "stderr", "system", "status"] = "system"
+    data: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=now_utc)
 
 
 class User(BaseModel):

@@ -55,6 +55,7 @@ function appendReplyScopeNotice(parent, event) {
 function appendChatText(parent, role, text) {
   if (text == null || text === '') return null;
   const normalized = (role === 'assistant' || role === 'system' || role === 'error') ? normalizeAssistantText(text) : String(text);
+  if (shouldCollapseSessionText(normalized, role)) return appendCollapsibleSessionText(parent, role, normalized);
   if (typeof marked !== 'undefined' && (role === 'assistant' || role === 'system' || role === 'error')) {
     const el = document.createElement('div');
     el.className = 'chat-bubble-text markdown-body';
@@ -63,6 +64,63 @@ function appendChatText(parent, role, text) {
     return el;
   }
   return appendText(parent, 'div', 'chat-bubble-text', normalized);
+}
+
+function shouldCollapseSessionText(text, role) {
+  const value = String(text || '');
+  if (!value) return false;
+  const lines = value.split('\n').length;
+  if (role === 'user') return value.length > 900 || lines > 12;
+  return value.length > 1800 || lines > 28;
+}
+
+function appendCollapsibleSessionText(parent, role, text) {
+  const wrap = document.createElement('div');
+  wrap.className = `chat-bubble-text session-collapsible-text ${role === 'user' ? 'user-prompt' : 'assistant-output'}`;
+  const preview = String(text || '').split('\n').slice(0, 8).join('\n');
+  const pre = document.createElement('pre');
+  pre.className = 'session-collapsible-preview';
+  pre.textContent = preview + (preview.length < String(text).length ? '\n…' : '');
+  const full = document.createElement('pre');
+  full.className = 'session-collapsible-full';
+  full.textContent = String(text || '');
+  full.hidden = true;
+  const actions = document.createElement('div');
+  actions.className = 'session-collapsible-actions';
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'inline-link-button';
+  toggle.textContent = 'Show full text';
+  toggle.onclick = () => {
+    const isHidden = full.hidden;
+    full.hidden = !isHidden;
+    pre.hidden = isHidden;
+    toggle.textContent = isHidden ? 'Collapse text' : 'Show full text';
+  };
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'inline-link-button';
+  copy.textContent = 'Copy';
+  copy.onclick = () => navigator.clipboard.writeText(String(text || '')).catch(() => {});
+  const download = document.createElement('button');
+  download.type = 'button';
+  download.className = 'inline-link-button';
+  download.textContent = 'Download .txt';
+  download.onclick = () => {
+    const blob = new Blob([String(text || '')], {type: 'text/plain'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = role === 'user' ? 'pac-session-prompt.txt' : 'pac-session-message.txt';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  actions.append(toggle, copy, download);
+  wrap.append(pre, full, actions);
+  parent.appendChild(wrap);
+  return wrap;
 }
 
 function looksLikeInternalResultMessage(event, text = '') {

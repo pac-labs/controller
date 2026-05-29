@@ -129,6 +129,13 @@ Usage:
   pacctl ram get <profile|user|workspace> KEY [--content-only]
   pacctl ram bundle [--profile NAME] [--user NAME] [--workspace NAME] [--content-only]
   pacctl ram search QUERY [--kind profile|user|workspace] [--limit N]
+  pacctl api get|post|put|delete PATH [--file payload.json]
+  pacctl poll events|endpoints|workspaces [--limit N]
+  pacctl provider send --file provider.json
+  pacctl workspace status WORKSPACE
+  pacctl workspace exec WORKSPACE [--wait|--stream] [--timeout SECONDS] -- COMMAND...
+  pacctl workspace cancel WORKSPACE COMMAND_ID [--reason TEXT] [--force]
+  pacctl mcp serve
 
 Environment:
   PAC_URL         Controller base URL, for example https://192.168.0.7:8443
@@ -207,6 +214,16 @@ func main() {
 	}
 	ctx := context.Background()
 	switch args[0] {
+	case "api":
+		os.Exit(handleAPI(ctx, c, args))
+	case "poll":
+		os.Exit(handlePoll(ctx, c, args))
+	case "provider":
+		os.Exit(handleProvider(ctx, c, args))
+	case "workspace":
+		os.Exit(handleWorkspace(ctx, c, args))
+	case "mcp":
+		os.Exit(handleMCP(ctx, c, args))
 	case "config":
 		if len(args) < 2 || args[1] != "get" {
 			usage()

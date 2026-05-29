@@ -9,7 +9,12 @@ const SESSION_SLASH_COMMANDS = {
   bad: {kind:'tool', tool:'bat', label:'/bad <file>', description:'Typo alias for /bat.'},
   just: {kind:'tool', tool:'just', label:'/just <recipe>', description:'Run a just recipe in the endpoint workspace.'},
   compact: {kind:'session', label:'/compact', description:'Compact the session context/history before the next model turn.'},
-  subagent: {kind:'pi.dev', label:'/subagent <instruction>', description:'Create a scoped subagent task for one specific objective.'},
+  model: {kind:'session', label:'/model [model|provider:model]', description:'Show or switch the active model for this session.'},
+  subagent: {kind:'pi.dev', label:'/subagent [explore|plan|coder|verify|general] <instruction>', description:'Create a scoped specialist subagent task.'},
+  explore: {kind:'pi.dev', label:'/explore <instruction>', description:'Spawn a read-only Explore sub-agent.'},
+  coder: {kind:'pi.dev', label:'/coder <instruction>', description:'Spawn a scoped Coder sub-agent.'},
+  verify: {kind:'pi.dev', label:'/verify <instruction>', description:'Spawn a Verify sub-agent for tests/review.'},
+  general: {kind:'pi.dev', label:'/general <instruction>', description:'Spawn a General-purpose sub-agent.'},
   help: {kind:'help', label:'/help', description:'Show available slash commands.'},
 };
 function shellSplit(input) {
@@ -41,9 +46,31 @@ function parseSessionSlashCommand(raw) {
   if (spec.kind === 'session' && verb === 'compact') {
     return {kind:'compact', verb, prompt:'Compact session context', metadata:{slash_command:'compact', context_action:'compact'}};
   }
-  if (spec.kind === 'pi.dev' && verb === 'subagent') {
+  if (spec.kind === 'session' && verb === 'model') {
+    const fallback = [];
+    const remaining = [];
+    let role = 'session';
+    for (const part of parts) {
+      if (String(part).startsWith('--fallback=')) fallback.push(...String(part).split('=')[1].split(',').map(x => x.trim()).filter(Boolean));
+      else if (String(part).startsWith('--role=')) role = String(part).split('=')[1] || 'session';
+      else remaining.push(part);
+    }
+    const selector = remaining.join(' ').trim();
+    return {kind:'model', verb, prompt: selector ? `Switch session model to ${selector}` : 'Show available session models', metadata:{slash_command:'model', model_selector:selector, model_fallback_selectors:fallback, model_role:role}};
+  }
+  if (spec.kind === 'pi.dev') {
+    let profile = null;
+    if (verb === 'subagent' && parts.length) {
+      const maybeProfile = String(parts[0] || '').toLowerCase();
+      if (['explore','plan','coder','verify','general','default','inspect','review','test','code'].includes(maybeProfile)) {
+        profile = parts.shift();
+      }
+    } else if (['explore','coder','verify','general'].includes(verb)) {
+      profile = verb;
+    }
     const instruction = parts.join(' ').trim();
-    return {kind:'subagent', verb, prompt: instruction ? `Subagent: ${instruction}` : 'Subagent task', metadata:{slash_command:'subagent', subagent:true, subagent_instruction:instruction}};
+    const label = profile ? `${profile} subagent` : 'Subagent';
+    return {kind:'subagent', verb, prompt: instruction ? `${label}: ${instruction}` : `${label} task`, metadata:{slash_command:verb, subagent:true, subagent_instruction:instruction, subagent_profile:profile}};
   }
   if (verb === 'command') {
     const tool = (parts.shift() || '').trim();

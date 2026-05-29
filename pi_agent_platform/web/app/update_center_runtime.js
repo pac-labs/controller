@@ -168,15 +168,60 @@
     setState('release', 'ok');
   }
 
+
+  function renderUpdateEnvironment(payload) {
+    const box = document.getElementById('updateEnvironmentPlan');
+    if (!box) return;
+    const esc = window.escapeHtml || ((value) => String(value ?? ''));
+    const stages = Array.isArray(payload?.stages) ? payload.stages : [];
+    if (!stages.length) {
+      box.innerHTML = '<div class="muted">No update orchestration stages are available yet.</div>';
+      return;
+    }
+    box.innerHTML = `<div class="release-binary-manifest-grid">${stages.map((stage) => {
+      const state = stage.status === 'ok' ? 'ok' : (stage.status === 'failed' ? 'warn' : (stage.status === 'warn' ? 'attention' : 'neutral'));
+      return `<div class="release-binary-manifest-card" data-state="${esc(state)}"><b>${esc(stage.name || 'stage')}</b><span>${esc(stage.status || 'planned')} · ${esc(stage.message || '')}</span></div>`;
+    }).join('')}</div>`;
+  }
+
+  async function loadUpdateEnvironmentPlan() {
+    const box = document.getElementById('updateEnvironmentPlan');
+    if (!box) return;
+    box.textContent = 'Loading update orchestration plan…';
+    try {
+      const payload = await api('/v1/updates/environment-plan');
+      renderUpdateEnvironment(payload);
+    } catch (error) {
+      box.textContent = `Could not load environment plan: ${error.message || error}`;
+    }
+  }
+
+  async function runUpdateEnvironment() {
+    const box = document.getElementById('updateEnvironmentPlan');
+    const button = document.getElementById('runUpdateEnvironment');
+    if (button) { button.disabled = true; button.textContent = 'Refreshing…'; }
+    if (box) box.textContent = 'Resolving release binaries and refreshing PAC tool instructions…';
+    try {
+      const payload = await api('/v1/updates/environment/apply', {method: 'POST'});
+      renderUpdateEnvironment(payload);
+    } catch (error) {
+      if (box) box.textContent = `Environment refresh failed: ${error.message || error}`;
+    } finally {
+      if (button) { button.disabled = false; button.textContent = 'Run environment refresh'; }
+    }
+  }
+
   function bind() {
     refreshFromVersionInfo(window.currentVersionInfo);
     document.getElementById('reloadReleaseAssets')?.addEventListener('click', loadReleaseAssets);
     document.getElementById('reloadStorageHealth')?.addEventListener('click', loadStorageHealth);
+    document.getElementById('runUpdateEnvironment')?.addEventListener('click', runUpdateEnvironment);
     if (document.getElementById('releaseAssetsList')) loadReleaseAssets().catch(()=>{});
     if (document.getElementById('storageHealthList')) loadStorageHealth().catch(()=>{});
+    if (document.getElementById('updateEnvironmentPlan')) loadUpdateEnvironmentPlan().catch(()=>{});
   }
 
-  window.PacUpdateCenter = {refreshFromVersionInfo, refreshArchives, refreshRelease, loadReleaseAssets, renderReleaseAssets, loadBinaryManifest, renderBinaryManifest, loadStorageHealth, renderStorageHealth};
+  window.PacUpdateCenter = {refreshFromVersionInfo, refreshArchives, refreshRelease, loadReleaseAssets, renderReleaseAssets, loadBinaryManifest, renderBinaryManifest, loadStorageHealth, renderStorageHealth, loadUpdateEnvironmentPlan, renderUpdateEnvironment, runUpdateEnvironment};
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);
   else bind();
 })();

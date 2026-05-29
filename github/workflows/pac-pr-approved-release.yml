@@ -1,0 +1,73 @@
+name: PAC release approved pull request
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: pac-approved-pr-release-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  merge-and-release:
+    name: Merge approved PR and release main
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.review.state == 'approved' &&
+      github.event.pull_request.base.ref == 'main'
+    steps:
+      - name: Validate PR release readiness
+        id: ready
+        env:
+          GH_TOKEN: ${{ secrets.push_token || github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          details="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json isDraft,mergeStateStatus,reviewDecision,baseRefName,headRefName --jq '.')"
+          echo "$details"
+          is_draft="$(jq -r '.isDraft' <<< "$details")"
+          review_decision="$(jq -r '.reviewDecision' <<< "$details")"
+          merge_state="$(jq -r '.mergeStateStatus' <<< "$details")"
+          if [ "$is_draft" = "true" ]; then
+            echo "PR is still a draft; not releasing." >&2
+            exit 1
+          fi
+          if [ "$review_decision" != "APPROVED" ]; then
+            echo "PR review decision is $review_decision, not APPROVED." >&2
+            exit 1
+          fi
+          if [ "$merge_state" != "CLEAN" ] && [ "$merge_state" != "HAS_HOOKS" ]; then
+            echo "PR merge state is $merge_state; wait for checks/conflicts to clear before release." >&2
+            exit 1
+          fi
+          if gh pr diff "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --name-only | grep -E '^\.pac/diffs/'; then
+            echo "PR still contains .pac/diffs input files. Let the diff expansion workflow finish first." >&2
+            exit 1
+          fi
+
+      - name: Merge pull request
+        env:
+          GH_TOKEN: ${{ secrets.push_token || github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr merge "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --squash \
+            --delete-branch \
+            --subject "Merge PAC PR #$PR_NUMBER for release"
+
+      - name: Trigger release current main workflow
+        env:
+          GH_TOKEN: ${{ secrets.push_token || github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run pac-release.yml --repo "$GITHUB_REPOSITORY" --ref main

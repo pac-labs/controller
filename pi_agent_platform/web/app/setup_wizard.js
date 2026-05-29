@@ -127,14 +127,15 @@ function setupWizardReviewHtml() {
   </div>`;
 }
 function buildSetupWizardSteps() {
-  const steps = [
-    {id:'connection', label:'Connection', title:'Controller connection', render:setupWizardConnectionHtml, save:saveSetupWizardConnectionStep},
-    {id:'provider', label:'Provider', title:'Model provider', render:setupWizardProviderHtml, save:saveSetupWizardProviderStep},
-    {id:'model', label:'Model', title:'Session model', render:setupWizardModelHtml, save:saveSetupWizardModelStep},
-    {id:'controller', label:'pi.dev', title:'Controller pi.dev', render:setupWizardControllerHtml, save:saveSetupWizardControllerStep},
-    {id:'review', label:'Review', title:'Review and finish', render:setupWizardReviewHtml, save:async()=>{}},
-  ];
-  return steps;
+  const allSteps = {
+    overview: {id:'overview', label:'Remaining', title:'What still needs setup', render:setupWizardOverviewHtml, save:async()=>{}},
+    connection: {id:'connection', label:'Connection', title:'Controller connection', render:setupWizardConnectionHtml, save:saveSetupWizardConnectionStep},
+    provider: {id:'provider', label:'Provider', title:'Model provider', render:setupWizardProviderHtml, save:saveSetupWizardProviderStep},
+    model: {id:'model', label:'Model', title:'Session model', render:setupWizardModelHtml, save:saveSetupWizardModelStep},
+    controller: {id:'controller', label:'pi.dev', title:'Controller pi.dev', render:setupWizardControllerHtml, save:saveSetupWizardControllerStep},
+    review: {id:'review', label:'Review', title:'Review and finish', render:setupWizardReviewHtml, save:async()=>{}},
+  };
+  return setupWizardNeededStepIds().map(id => allSteps[id]).filter(Boolean);
 }
 function setupWizardStepResult(message, tone='') {
   const el = document.getElementById('setupWizardStepResult');
@@ -233,20 +234,26 @@ function wireSetupWizardStep(stepId) {
 async function saveSetupWizardConnectionStep() {
   let publicUrl = (document.getElementById('setupPublicUrl')?.value || '').trim();
   const mdnsEnabled = !!document.getElementById('setupMdnsEnabled')?.checked;
-  if (!publicUrl) throw new Error('Controller public URL is required.');
-  if (!/^https?:\/\//i.test(publicUrl)) publicUrl = `https://${publicUrl}`;
-  await api('/v1/server/connection', {method:'POST', body:JSON.stringify({public_url: publicUrl, mdns_enabled: mdnsEnabled})});
+  let savedConnection = false;
+  if (publicUrl) {
+    if (!/^https?:\/\//i.test(publicUrl)) publicUrl = `https://${publicUrl}`;
+    await api('/v1/server/connection', {method:'POST', body:JSON.stringify({public_url: publicUrl, mdns_enabled: mdnsEnabled})});
+    savedConnection = true;
+  }
   if (config?.auth?.enabled && config?.auth?.mode === 'dev-token') {
     const token = (document.getElementById('setupDevToken')?.value || '').trim();
-    if (token && token !== config?.auth?.dev_token) {
+    if (!token || token === 'change-me') throw new Error('Replace the default dev bearer token before continuing.');
+    if (token !== config?.auth?.dev_token) {
       const nextConfig = JSON.parse(JSON.stringify(config));
       nextConfig.auth = nextConfig.auth || {};
       nextConfig.auth.dev_token = token;
       await api('/v1/config', {method:'PUT', body:JSON.stringify({config: nextConfig})});
+      savedConnection = true;
     }
   }
+  if (!savedConnection) setupWizardStepResult('No connection changes were needed.', 'ok');
   await loadConfig();
-  setupWizardStepResult('Connection settings saved.', 'ok');
+  setupWizardStepResult(savedConnection ? 'Connection settings saved.' : 'Connection settings already current.', 'ok');
 }
 async function saveSetupWizardProviderStep() {
   const name = (document.getElementById('setupProviderName')?.value || '').trim();
@@ -364,8 +371,13 @@ function renderSetupWizard() {
   setupWizardStepIndex = Math.max(0, Math.min(setupWizardStepIndex, setupWizardSteps.length - 1));
   const step = setupWizardSteps[setupWizardStepIndex];
   if (title) title.textContent = step?.title || 'Finish PAC setup';
-  if (meta) meta.textContent = `${issues.length} required item(s) and ${warnings.length} warning(s). Configure the core platform settings directly here.`;
-  if (progress) progress.innerHTML = setupWizardSteps.map((item, index) => `<button type="button" class="ghost-button ${index === setupWizardStepIndex ? 'active' : ''}" data-setup-step="${index}" ${index === setupWizardStepIndex ? 'aria-current="step"' : ''}>${escapeHtml(item.label)}</button>`).join('');
+  if (meta) meta.textContent = setupWizardOverviewMeta();
+  if (progress) progress.innerHTML = setupWizardSteps.map((item, index) => {
+    const active = index === setupWizardStepIndex;
+    const issuesForStep = setupWizardIssuesForStep(item.id);
+    const badge = issuesForStep.length ? ` <span class="setup-step-badge">${issuesForStep.length}</span>` : '';
+    return `<button type="button" class="ghost-button ${active ? 'active' : ''}" data-setup-step="${index}" ${active ? 'aria-current="step"' : ''}>${escapeHtml(item.label)}${badge}</button>`;
+  }).join('');
   body.innerHTML = step.render();
   progress?.querySelectorAll('[data-setup-step]').forEach(btn => btn.addEventListener('click', () => {
     setupWizardStepIndex = Number(btn.dataset.setupStep || 0);
@@ -375,5 +387,6 @@ function renderSetupWizard() {
   if (nextBtn) nextBtn.hidden = setupWizardStepIndex >= setupWizardSteps.length - 1;
   if (doneBtn) doneBtn.hidden = setupWizardStepIndex < setupWizardSteps.length - 1;
   wireSetupWizardStep(step.id);
+  if (step.id === 'overview') wireSetupWizardOverview();
   openSetupWizard();
 }

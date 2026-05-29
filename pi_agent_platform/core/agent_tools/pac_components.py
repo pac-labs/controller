@@ -10,6 +10,8 @@ from ..config import AppConfig, ModelConfig, ProviderConfig, WorkspaceProfile, s
 from ..controller_component_context import get_controller_store
 from ..directory_identities import ensure_endpoint_principal, ensure_provider_principal
 from ..models import Event, Runner, RunnerStatus, Session, Task, WorkspaceSpec
+from ..workspace_bootstrap import ensure_workspace_materialized
+from ..coding_session_readiness import CodingSessionReadinessError, prepare_coding_session
 
 _COMPONENT_TOOLS = {
     "pac_list_components",
@@ -155,6 +157,10 @@ def _create_endpoint(inp: dict[str, Any], config: AppConfig, store: Any) -> dict
 def _create_workspace_profile(inp: dict[str, Any], config: AppConfig, store: Any) -> dict[str, Any]:
     name = _safe_name(inp.get("name") or inp.get("profile"), fallback="workspace")
     if name in config.workspaces and not bool(inp.get("overwrite", False)):
+        existing = config.workspaces[name]
+        if bool(inp.get("idempotent", False)):
+            store.add_event(Event(session_id="system", type="pac_component_exists", message=f"Workspace profile already exists: {name}", data={"component": "workspace_profile", "name": name}))
+            return {"ok": True, "component": "workspace_profile", "name": name, "existing": True, "workspace": existing.model_dump(mode="json")}
         raise ValueError(f"Workspace profile already exists: {name}. Pass overwrite=true to replace it.")
     data = {
         "description": inp.get("description"),
@@ -182,20 +188,77 @@ def _create_workspace_profile(inp: dict[str, Any], config: AppConfig, store: Any
     return {"ok": True, "component": "workspace_profile", "name": name, "workspace": profile.model_dump(mode="json")}
 
 
-def _workspace_for_session(inp: dict[str, Any], config: AppConfig, session_id_hint: str) -> tuple[WorkspaceSpec, str]:
+
+
+def _online_container_endpoint(store: Any, preferred: Any = None) -> Runner | None:
+    preferred_id = str(preferred or "").strip()
+    runners = list(store.list_runners()) if hasattr(store, "list_runners") else []
+    if preferred_id:
+        runner = store.get_runner(preferred_id) if hasattr(store, "get_runner") else None
+        if runner and runner.status == RunnerStatus.online and runner.allow_container_execution:
+            return runner
+    for runner in runners:
+        if runner.status == RunnerStatus.online and runner.allow_container_execution:
+            return runner
+    return None
+
+
+def _container_image_for_session(inp: dict[str, Any], profile: WorkspaceProfile | None, metadata: dict[str, Any]) -> str:
+    for candidate in (
+        inp.get("container_image"),
+        metadata.get("container_image"),
+        getattr(profile, "container_image", None) if profile else None,
+    ):
+        value = str(candidate or "").strip()
+        if value:
+            return value
+    return "localhost/python-dev:latest"
+
+
+def _metadata_for_created_session(inp: dict[str, Any], profile: WorkspaceProfile | None, store: Any) -> dict[str, Any]:
+    metadata = {"created_by": "pac_create_session", **dict(inp.get("metadata") or {})}
+    workspace_runtime = str(getattr(profile, "runtime", "") or "").strip().lower()
+    wants_container = bool(
+        metadata.get("coding_session")
+        or inp.get("container_image")
+        or metadata.get("container_image")
+        or workspace_runtime == "container"
+        or getattr(profile, "container_image", None)
+    )
+    if not wants_container:
+        return metadata
+
+    metadata["coding_session"] = True
+    metadata["agent_enabled"] = True
+    metadata["execution_mode"] = "container"
+    metadata["preferred_execution_mode"] = "container"
+    metadata["container_image"] = _container_image_for_session(inp, profile, metadata)
+
+    preferred = inp.get("preferred_endpoint") or metadata.get("preferred_endpoint") or getattr(profile, "endpoint_id", None)
+    runner = _online_container_endpoint(store, preferred)
+    if not runner:
+        raise ValueError("Container-backed PAC-created sessions require an online endpoint with container execution enabled")
+    metadata["preferred_endpoint"] = runner.id
+    metadata["runner_id"] = runner.id
+    metadata["endpoint_locked"] = True
+    metadata["endpoint_name"] = runner.name
+    return metadata
+
+
+def _workspace_for_session(inp: dict[str, Any], config: AppConfig, session_id_hint: str) -> tuple[WorkspaceSpec, str, WorkspaceProfile | None]:
     workspace_profile = str(inp.get("workspace_profile") or "").strip()
     if workspace_profile:
         if workspace_profile not in config.workspaces:
             raise ValueError(f"Unknown workspace profile: {workspace_profile}")
         profile = config.workspaces[workspace_profile]
         path = profile.path or str(Path(config.server.default_workspace_root or Path(config.server.data_dir) / "workspaces") / session_id_hint)
-        return WorkspaceSpec(type="profile", profile=workspace_profile, path=path, url=profile.url, branch=profile.branch), path
+        return WorkspaceSpec(type="profile", profile=workspace_profile, path=path, url=profile.url, branch=profile.branch), path, profile
     workspace_type = str(inp.get("workspace_type") or inp.get("type") or "local")
     path = str(inp.get("path") or "").strip()
     if not path:
         path = str(Path(config.server.default_workspace_root or Path(config.server.data_dir) / "workspaces") / session_id_hint)
     spec = WorkspaceSpec(type=workspace_type if workspace_type in {"local", "git"} else "local", path=path, url=inp.get("url"), branch=inp.get("branch"))
-    return spec, path
+    return spec, path, None
 
 
 def _create_session(inp: dict[str, Any], config: AppConfig, store: Any) -> dict[str, Any]:
@@ -204,7 +267,8 @@ def _create_session(inp: dict[str, Any], config: AppConfig, store: Any) -> dict[
         raise ValueError("A known model is required. Create/configure a model first or pass model=<configured model name>.")
     name = str(inp.get("name") or "PAC-created session").strip()
     session_id_hint = _safe_slug(name, fallback="session")
-    workspace, workspace_path = _workspace_for_session(inp, config, session_id_hint)
+    workspace, workspace_path, workspace_profile = _workspace_for_session(inp, config, session_id_hint)
+    session_metadata = _metadata_for_created_session(inp, workspace_profile, store)
     permission = str(inp.get("permission_profile") or "ask-first").strip()
     if permission not in config.permission_profiles:
         permission = "ask-first"
@@ -220,11 +284,18 @@ def _create_session(inp: dict[str, Any], config: AppConfig, store: Any) -> dict[
         workspace_path=workspace_path,
         model=model,
         tools=tools,
-        metadata={"created_by": "pac_create_session", **dict(inp.get("metadata") or {})},
+        metadata=session_metadata,
     )
     store.add_session(session)
-    store.add_event(Event(session_id=session.id, type="session_created", message=f"Session created by PAC tool: {name}", data={"component": "session"}))
-    return {"ok": True, "component": "session", "session": session.model_dump(mode="json")}
+    if session.metadata.get("coding_session"):
+        readiness = prepare_coding_session(session, config, store=store)
+        workspace_materialization = session.metadata.get("workspace_materialization") or readiness.get("materialization") or {}
+    else:
+        workspace_materialization = ensure_workspace_materialized(session)
+        session.metadata["workspace_materialization"] = workspace_materialization
+        store.add_session(session)
+    store.add_event(Event(session_id=session.id, type="session_created", message=f"Session created by PAC tool: {name}", data={"component": "session", "workspace_materialization": workspace_materialization, "coding_readiness": session.metadata.get("coding_readiness"), "endpoint": session.metadata.get("preferred_endpoint"), "endpoint_locked": session.metadata.get("endpoint_locked"), "agent_enabled": session.metadata.get("agent_enabled", True), "execution_mode": session.metadata.get("execution_mode"), "container_image": session.metadata.get("container_image")}))
+    return {"ok": True, "component": "session", "session": session.model_dump(mode="json"), "workspace_materialization": workspace_materialization, "coding_readiness": session.metadata.get("coding_readiness")}
 
 
 async def try_execute_pac_component_tool(

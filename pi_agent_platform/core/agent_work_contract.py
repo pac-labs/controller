@@ -9,6 +9,7 @@ from typing import Any
 INSPECTION_TOOLS = {"workspace_manifest", "find_code_paths", "ripgrep", "fd", "list_files"}
 READ_TOOLS = {"read_file", "read_file_chunk", "batch_analyze_file"}
 MUTATING_TOOLS = {"write_file", "edit_file"}
+VALIDATION_TOOLS = {"shell", "git_diff", "git_status"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +83,12 @@ def is_code_change_contract_request(prompt: str) -> bool:
 
 
 def evaluate_tool_action(prompt: str, transcript: list[dict[str, Any]], action: dict[str, Any]) -> ContractDecision:
+    """Gate PAC code-change actions through an inspect -> locate -> read -> mutate flow.
+
+    This is intentionally small and deterministic. It does not try to decide how
+    to implement a feature; it only prevents the loop from skipping grounding
+    steps that protect PAC/core from guessed paths and shallow edits.
+    """
     state = inspect_contract_state(prompt, transcript)
     if not state.applies:
         return ContractDecision(allow=True)

@@ -46,7 +46,22 @@ def read_json(path: Path) -> dict:
         return {}
 
 
-def collect_components(out: Path) -> list[dict]:
+def read_previous_components(out: Path) -> dict[str, dict]:
+    manifest = read_json(out / "packages.json")
+    components = manifest.get("components") if isinstance(manifest, dict) else []
+    previous: dict[str, dict] = {}
+    if isinstance(components, list):
+        for item in components:
+            if not isinstance(item, dict):
+                continue
+            source_path = str(item.get("source_path") or item.get("path") or item.get("id") or "").strip().strip("/")
+            if source_path:
+                previous[source_path] = item
+    return previous
+
+
+def collect_components(out: Path, previous: dict[str, dict] | None = None) -> list[dict]:
+    previous = previous or {}
     components: list[dict] = []
     for meta_path in sorted(out.glob("**/pac-component.json")):
         rel_path = meta_path.relative_to(out)
@@ -58,6 +73,10 @@ def collect_components(out: Path) -> list[dict]:
         data.setdefault("title", meta_path.parent.name.replace("-", " ").title())
         data.setdefault("source_path", rel)
         data["content_hash"] = component_content_hash(meta_path.parent)
+        old = previous.get(str(data.get("source_path") or rel))
+        if old and old.get("content_hash") == data["content_hash"] and not data.get("version") and old.get("version"):
+            data["version"] = old.get("version")
+        data["version_policy"] = "component-owned"
         components.append(data)
     return sorted(components, key=lambda c: str(c.get("source_path", c.get("id", ""))))
 
@@ -74,6 +93,7 @@ def main() -> int:
     version = args.version or (source / "VERSION").read_text(encoding="utf-8").strip()
 
     out.mkdir(parents=True, exist_ok=True)
+    previous_components = read_previous_components(out)
     for root in PACKAGE_ROOTS:
         target = out / root
         if target.exists():
@@ -84,10 +104,12 @@ def main() -> int:
         else:
             target.mkdir(parents=True, exist_ok=True)
 
-    components = collect_components(out)
+    components = collect_components(out, previous_components)
     manifest = {
         "schema": "pac-packages.v1",
         "version": version,
+        "pac_release_version": version,
+        "component_version_policy": "component-owned",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "repository": "https://github.com/pac-labs/packages",
         "controller_repository": "https://github.com/pac-labs/controller",
@@ -102,7 +124,7 @@ def main() -> int:
         "This repository is generated from `pac-labs/controller`. It mirrors the source-package directories used by the PAC Source Library.\n\n"
         "Package roots:\n\n"
         + "".join(f"- `{root}/`\n" for root in PACKAGE_ROOTS)
-        + "\nEach component can include `pac-component.json` for title, description, maintainers, version, and package metadata.\n",
+        + "\nEach component can include `pac-component.json` for title, description, maintainers, version, and package metadata. Component versions are owned by the component source and are not automatically bumped to the PAC controller release version.\n",
         encoding="utf-8",
     )
     return 0

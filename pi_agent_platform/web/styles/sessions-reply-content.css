@@ -36,3 +36,25 @@
 .chat-message-row.assistant:not(.thought-history-row):hover .inline-link-button {
   opacity: 1;
 }
+
+.session-collapsible-text {
+  display: grid;
+  gap: .55rem;
+}
+.session-collapsible-text pre {
+  margin: 0;
+  max-height: 340px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid rgba(148,163,184,.25);
+  border-radius: 12px;
+  padding: .75rem;
+  background: rgba(15,23,42,.28);
+}
+.session-collapsible-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+  align-items: center;
+}

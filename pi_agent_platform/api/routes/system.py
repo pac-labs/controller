@@ -14,9 +14,11 @@ NoArgDictProvider = Callable[[], dict[str, Any]]
 NoArgListProvider = Callable[[], list[Any]]
 RunnerAuthProvider = Callable[[str | None, str | None, str | None], Any]
 from pi_agent_platform.core.dashboard_component_atlas import build_dashboard_topology
+from pi_agent_platform.core.agent_tools.pipeline_metrics import pipeline_metrics_snapshot
 from pi_agent_platform.core.model_metrics import model_metrics
 from pi_agent_platform.core.observability import observability_status, tail_log
 from pi_agent_platform.core.observability_store import query_metrics, query_traces, prune_observability_store
+from pi_agent_platform.core.playbooks.metrics import playbook_metrics_snapshot
 
 
 NOISY_EVENT_TYPES = {'runner_heartbeat', 'endpoint_heartbeat', 'provider_heartbeat'}
@@ -229,6 +231,8 @@ def create_system_router(
             'events_by_day': [{'date': key, 'count': events_by_day[key]} for key in day_keys],
             'top_event_types': sorted(event_types.items(), key=lambda item: item[1], reverse=True)[:8],
             'model_usage': model_metrics.summarize_usage(since_hours=24, limit=10000),
+            'tool_pipeline': pipeline_metrics_snapshot(),
+            'playbooks': playbook_metrics_snapshot(limit=200),
             'component_health': component_health,
             'alerts': alerts,
             'alert_counts': alert_counts,
@@ -365,7 +369,20 @@ def create_system_router(
         _auth: Any = Depends(require_auth),
     ) -> dict[str, Any]:
         require_resource_access(_auth, 'diagnostics', 'observability:metrics', 'read')
-        return query_metrics(since_hours=since_hours, limit=limit)
+        payload = query_metrics(since_hours=since_hours, limit=limit)
+        payload['tool_pipeline'] = pipeline_metrics_snapshot()
+        payload['playbooks'] = playbook_metrics_snapshot(limit=200)
+        return payload
+
+    @router.get('/v1/observability/playbooks')
+    def playbook_observability(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        require_resource_access(_auth, 'diagnostics', 'observability:playbooks', 'read')
+        return {'playbooks': playbook_metrics_snapshot(limit=500)}
+
+    @router.get('/v1/observability/tool-pipeline')
+    def tool_pipeline_metrics(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        require_resource_access(_auth, 'diagnostics', 'observability:tool-pipeline', 'read')
+        return pipeline_metrics_snapshot()
 
     @router.get('/v1/observability/traces')
     def embedded_observability_traces(

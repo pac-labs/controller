@@ -81,7 +81,7 @@ def ensure_source_library() -> dict[str, Any]:
     changed = _copy_default_tree(pkg / 'binaries', root / 'binaries') or changed
     # Keep the controller-provided build source folders present even on upgraded
     # systems where the source library was created before binary sources existed.
-    for binary_dir in ('pac-endpoint', 'pac-endpoint-runner', 'pac-agent', 'zed-binary'):
+    for binary_dir in ('pac-endpoint', 'pacctl'):
         changed = _copy_default_tree(pkg / 'binaries' / binary_dir, root / 'binaries' / binary_dir) or changed
     changed = _copy_default_tree(pkg / 'docs', root / 'docs') or changed
     try:
@@ -162,7 +162,7 @@ def _binary_build_version(folder: Path) -> str | None:
     """
     local_version = _read_version_file(folder)
     packaged_version = _packaged_version()
-    if folder.name in {"pac-endpoint", "pac-endpoint-runner", "pac-agent", "pacctl", "zed-binary"}:
+    if folder.name in {"pac-endpoint", "pacctl"}:
         return packaged_version or local_version
     return local_version or packaged_version
 
@@ -300,7 +300,15 @@ def _is_pac_app_package(zip_path: str | Path) -> dict[str, Any] | None:
             roots.extend([d + '/' for d in top_dirs])
             package_root = None
             for root in roots:
-                if (root + 'pyproject.toml') in files and any(f.startswith(root + 'pi_agent_platform/') for f in files):
+                root_has_version = (root + 'VERSION') in files or (root + 'VERSION_CURRENT.md') in files
+                root_has_changelog = (root + 'PAC_CHANGELOG.json') in files
+                root_has_diff = any(f.startswith(root + 'PAC_UPDATE_DIFF') and f.endswith('.diff') for f in files)
+                root_has_pyproject = (root + 'pyproject.toml') in files
+                root_has_app_code = any(f.startswith(root + 'pi_agent_platform/') for f in files)
+                if root_has_pyproject and root_has_app_code:
+                    package_root = root
+                    break
+                if root_has_version and root_has_changelog and root_has_diff:
                     package_root = root
                     break
             if package_root is None:
@@ -316,15 +324,21 @@ def _is_pac_app_package(zip_path: str | Path) -> dict[str, Any] | None:
             target_version = version or 'unknown'
             changelog = _read_package_changelog(zf, package_root, files, current, target_version)
             files_count = sum(1 for f in files if f.startswith(package_root))
+            diff_files = [f for f in files if f.startswith(package_root + 'PAC_UPDATE_DIFF') and f.endswith('.diff')]
+            has_manifest = (package_root + 'MANIFEST.json') in files
+            update_mode = 'changed_files' if diff_files and not has_manifest else 'full_replace'
+            action = 'merge touched files + restart' if update_mode == 'changed_files' else 'install + restart'
             return {
                 'ok': True,
                 'package_type': 'pac_app_update',
+                'update_mode': update_mode,
                 'filename': path.name,
                 'root_version': target_version,
                 'target_version': target_version,
                 'current_version': current,
                 'package_root': package_root.rstrip('/') or '.',
                 'files': files_count,
+                'diff_files': diff_files,
                 'changelog': changelog,
                 'changes': changelog.get('delta', []),
                 'components': [{
@@ -336,9 +350,10 @@ def _is_pac_app_package(zip_path: str | Path) -> dict[str, Any] | None:
                     'from_version': current,
                     'to_version': version or 'unknown',
                     'status': 'update',
+                    'action': action,
                 }],
                 'component_count': 1,
-                'summary': 'PAC application patch/full package',
+                'summary': 'PAC application changed-files patch' if update_mode == 'changed_files' else 'PAC application full package',
             }
     except zipfile.BadZipFile:
         return None
@@ -565,7 +580,8 @@ def _safe_name(value: str) -> str:
 
 
 _BINARY_PROJECT_ALIASES = {
-    'pac-zed': 'zed-binary',
+    'pac-zed': 'pacctl',
+    'zed-binary': 'pacctl',
 }
 
 
@@ -683,7 +699,7 @@ def build_binary(
         # error in the UI event output.
         pass
     version = _binary_build_version(folder)
-    project_name = binary_name or ('pac-zed' if folder.name == 'zed-binary' else folder.name)
+    project_name = binary_name or folder.name
     project_name = str(project_name).strip()
     compiled_server_url = (compiled_server_url or os.environ.get("PAC_BUILD_SERVER_URL", os.environ.get("PAC_PUBLIC_URL", ""))).strip().rstrip('/')
     compiled_endpoint_name = str(compiled_endpoint_name or os.environ.get("PAC_BUILD_ENDPOINT_NAME", "")).strip()
@@ -969,17 +985,15 @@ def fetch_online_package_updates(manifest_url: str | None = None, timeout_second
         local_hash = local_record.get('content_hash') if local_record else None
         if not local_record:
             status_text = 'new'
-        elif remote_version or local_version:
-            # Version is authoritative when both sides provide it. This prevents a
-            # package with the same published version but different generated hash
-            # metadata from being reported as an update for the version already in use.
-            status_text = 'update' if _version_is_newer(remote_version, local_version) else 'current'
         elif remote_hash and local_hash:
+            # Component content is the strongest signal. Unchanged sources remain
+            # current even when the PAC controller release version changes; changed
+            # sources still surface as updates even if a component maintainer forgot
+            # to bump that component's own version.
             status_text = 'update' if remote_hash != local_hash else 'current'
+        elif remote_version or local_version:
+            status_text = 'update' if _version_is_newer(remote_version, local_version) else 'current'
         else:
-            # The repository-level package version changes on every controller release.
-            # Do not treat that as a module update when the module has no explicit
-            # version/hash of its own.
             status_text = 'current'
         if status_text in {'new', 'update'}:
             updates.append({

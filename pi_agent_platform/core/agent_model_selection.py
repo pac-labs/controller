@@ -43,6 +43,16 @@ def model_is_structured_agent_capable(config: AppConfig, model_name: str) -> boo
 
 def _candidate_models(session: Session, task: Task) -> list[str]:
     candidates: list[str] = []
+    raw_chain = []
+    for chain_source in (task.metadata.get("model_fallback_chain"), session.metadata.get("model_fallback_chain") if isinstance(session.metadata, dict) else None):
+        if isinstance(chain_source, list):
+            raw_chain.extend(chain_source)
+        elif isinstance(chain_source, str):
+            raw_chain.extend([item.strip() for item in chain_source.split(",") if item.strip()])
+    for name in raw_chain:
+        value = str(name or "").strip()
+        if value and value not in candidates:
+            candidates.append(value)
     for name in (
         task.metadata.get("planner_model"),
         task.metadata.get("reviewer_model"),

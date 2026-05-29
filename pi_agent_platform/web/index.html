@@ -221,7 +221,7 @@
 
     <div id="sessionEventModal" class="modal-backdrop" hidden>
       <section class="modal-card wide-modal" role="dialog" aria-modal="true" aria-labelledby="sessionEventModalTitle">
-        <div class="section-heading"><div><h2 id="sessionEventModalTitle">Thought details</h2><p class="muted">Thinking, tools, approvals, and execution steps are grouped here. Open a step to see exactly what happened.</p></div><button id="closeSessionEventModal" class="ghost-button">Close</button></div>
+        <div class="section-heading"><div><h2 id="sessionEventModalTitle">Thought details</h2><p class="muted">Thinking, tools, approvals, and execution steps are grouped here. Open a step to see exactly what happened.</p></div><div class="modal-heading-actions"><button id="downloadSessionDebugBundle" class="ghost-button" type="button" title="Generate a complete redacted debug bundle for this session">Generate and download debug</button><button id="closeSessionEventModal" class="ghost-button">Close</button></div></div>
         <div id="sessionEventModalBody" class="modal-scroll-output"></div>
       </section>
     </div>
@@ -350,9 +350,10 @@
         <section class="card split-main">
           <div class="section-heading">
             <div><h2>Providers</h2><p class="muted">Providers connect PAC to model APIs and expose live model lists.</p></div>
-            <div class="button-row"><button id="openProviderModal">Add provider</button></div>
+            <div class="button-row"><button id="discoverLocalProviders" class="ghost-button">Detect LM Studio</button><button id="openProviderModal">Add provider</button></div>
           </div>
           <div id="providerFormResult" class="inline-result"></div>
+          <div id="localProviderDiscovery" class="inline-result"></div>
           <div id="providers" class="provider-grid"></div>
         </section>
         <aside class="split-side">
@@ -678,6 +679,34 @@
       </section>
     </div>
 
+
+    <section id="playbooks-tab" class="tab-panel playbooks-panel">
+      <div class="card wide">
+        <div class="section-heading compact-heading">
+          <div>
+            <h2>Playbooks</h2>
+            <p class="muted">Typed YAML workflows with checkpoints, approval gates, dependency ordering, and resumable progress.</p>
+          </div>
+          <div class="button-row compact-row">
+            <button id="playbooksCreate" class="ghost-button" type="button">Create playbook</button>
+            <button id="playbooksImport" class="ghost-button" type="button">Import YAML</button>
+            <button id="playbooksRefresh" class="ghost-button" type="button">Refresh</button>
+            <span id="playbooksStatus" class="muted small-text"></span>
+          </div>
+        </div>
+      </div>
+      <div class="dashboard-grid playbooks-grid">
+        <section class="card wide">
+          <h2>Catalog</h2>
+          <div id="playbooksCatalog" class="playbook-catalog muted">Open this page to load playbooks.</div>
+        </section>
+        <section class="card wide">
+          <h2>Runs</h2>
+          <div id="playbookRuns" class="playbook-runs muted">Open this page to load playbook runs.</div>
+        </section>
+      </div>
+    </section>
+
     <section id="observe-tab" class="tab-panel observe-panel">
       <div class="observe-hero card wide">
         <div class="section-heading compact-heading">
@@ -714,6 +743,15 @@
         <section class="card observe-card">
           <h2>Embedded metrics</h2>
           <div id="observeEmbeddedMetrics" class="observe-kv muted" data-pac-loading="Loading embedded metric store…">Loading embedded metric store…</div>
+        </section>
+        <section class="card observe-card">
+          <h2>Tool pipeline</h2>
+          <div id="observeToolPipeline" class="observe-kv muted" data-pac-loading="Loading tool pipeline metrics…">Loading tool pipeline metrics…</div>
+        </section>
+        <section class="card observe-card">
+          <h2>Playbooks</h2>
+          <p class="muted small-text">Run status, gate pressure, and active workflow visibility.</p>
+          <div id="observePlaybooks" class="observe-kv muted" data-pac-loading="Loading playbook metrics…">Loading playbook metrics…</div>
         </section>
         <section class="card observe-card observe-traces-card">
           <div class="section-heading compact-heading"><div><h2>Recent traces</h2><p class="muted">Lightweight local spans for requests and future agent/endpoint operations.</p></div><button id="observePruneStore" class="ghost-button" type="button">Prune store</button></div>
@@ -929,7 +967,21 @@
 
     <div id="downloadsModal" class="modal-backdrop" hidden>
       <section class="modal-card wide-modal downloads-modal-card" role="dialog" aria-modal="true" aria-labelledby="downloadsModalTitle">
-        <div class="section-heading"><div><h2 id="downloadsModalTitle">Downloads</h2><p class="muted">Built binaries available for download and cleanup.</p></div><button id="closeDownloadsModal" class="ghost-button">Close</button></div>
+        <div class="section-heading"><div><h2 id="downloadsModalTitle">Downloads</h2><p class="muted">Built binaries, support bundles, and generated environment diagnostics.</p></div><button id="closeDownloadsModal" class="ghost-button">Close</button></div>
+        <section class="download-version-group environment-debug-downloads">
+          <div class="download-version-head">
+            <div>
+              <div class="download-version-title"><b>Environment debug bundle</b><span>support download</span></div>
+              <div class="download-version-meta">Generate a redacted platform bundle first, then download it here for troubleshooting.</div>
+            </div>
+            <div class="download-version-actions">
+              <button id="generateEnvironmentDebugBundle">Generate debug bundle</button>
+              <button id="refreshEnvironmentDebugBundles" class="ghost-button">Refresh</button>
+            </div>
+          </div>
+          <div id="environmentDebugBundleStatus" class="source-build-hint muted">No environment debug bundle generated in this browser session yet.</div>
+          <div id="environmentDebugBundleList" class="download-pill-list muted">Generate a bundle to enable download.</div>
+        </section>
         <div class="downloads-modal-controls">
           <label class="field-label" for="binaryFolderFilter">Binary folder</label>
           <select id="binaryFolderFilter" class="binary-folder-filter"><option value="">All binary folders</option></select>
@@ -1069,6 +1121,13 @@
                     </div>
                     <div id="releaseAssetsList" class="release-assets-list muted small-text">Release assets have not been loaded yet.</div>
                     <div id="releaseBinaryManifest" class="release-binary-manifest muted small-text">Binary manifest has not been loaded yet.</div>
+                  </div>
+                  <div class="updates-archive-section update-orchestration-panel">
+                    <div class="section-heading compact-heading">
+                      <div><h3>Update orchestration</h3><p class="muted">Shows the environment work PAC performs after applying a release: binary resolution, tool instructions, pi.dev verification, and local metadata refresh.</p></div>
+                      <button id="runUpdateEnvironment" class="ghost-button mini-button" type="button">Run environment refresh</button>
+                    </div>
+                    <div id="updateEnvironmentPlan" class="release-binary-manifest muted small-text">Environment update plan has not been loaded yet.</div>
                   </div>
                   <div class="updates-archive-section storage-health-panel">
                     <div class="section-heading compact-heading">
@@ -1527,9 +1586,11 @@
   <script src="/ui/app/provider_model_cards.js"></script>
   <script src="/ui/app/providers.js"></script>
   <script src="/ui/app/session_commands.js"></script>
+  <script src="/ui/app/setup_wizard_plan.js"></script>
   <script src="/ui/app/setup_wizard.js"></script>
   <script src="/ui/app/source_tree.js"></script>
   <script src="/ui/app/source_downloads.js"></script>
+  <script src="/ui/app/source_environment_debug.js"></script>
   <script src="/ui/app/source_contexts.js"></script>
   <script src="/ui/app/source_ide_context.js"></script>
   <script src="/ui/app/source_tools.js"></script>
@@ -1585,6 +1646,8 @@
   <script src="/ui/app/directory_detail_renderers.js"></script>
   <script src="/ui/app/directory_tree.js"></script>
   <script src="/ui/app/directory_access.js"></script>
+  <script src="/ui/app/playbook_builder.js"></script>
+  <script src="/ui/app/playbooks.js"></script>
   <script src="/ui/app/observe.js"></script>
   <script src="/ui/app/events.js"></script>
   <script src="/ui/app/update_confirm_overlay.js"></script>

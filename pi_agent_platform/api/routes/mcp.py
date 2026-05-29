@@ -36,8 +36,8 @@ def create_mcp_router(
     @router.post('/v1/mcp/build')
     def build_mcp_bridge(background_tasks: BackgroundTasks, runtime: str | None = None, _auth: Any = Depends(require_auth)) -> dict[str, Any]:
         build_id = uuid.uuid4().hex[:12]
-        write_status('queued', 'Zed binary build queued from Sources / binaries / zed-binary', None, None)
-        build_event(build_id, 'mcp_build_queued', 'Zed binary build queued from Sources')
+        write_status('queued', 'pacctl MCP build queued from Sources / binaries / pacctl', None, None)
+        build_event(build_id, 'mcp_build_queued', 'pacctl MCP build queued from Sources')
         background_tasks.add_task(run_builder, runtime, build_id)
         return {'ok': True, 'status': 'queued', 'build_id': build_id, 'status_url': '/v1/mcp/build/status'}
 
@@ -50,7 +50,7 @@ def create_mcp_router(
             except Exception:
                 data = {'status': 'unknown', 'message': 'Status file could not be parsed'}
         else:
-            data = {'status': 'not_built', 'message': 'No Zed binary build has run yet.'}
+            data = {'status': 'not_built', 'message': 'No pacctl MCP build has run yet.'}
         data['artifacts'] = artifacts()
         data['version'] = pac_version
         return data

@@ -133,6 +133,7 @@ function activateMainTab(tabId) {
   if (panel) panel.classList.add('active');
   if (tabId === 'settings-tab') switchSettingsPanel(window.__pacActiveSettingsPanel || 'updates');
   if (tabId === 'observe-tab' && typeof loadObservePanel === 'function') loadObservePanel().catch(()=>{});
+  if (tabId === 'playbooks-tab' && typeof loadPlaybooksPanel === 'function') loadPlaybooksPanel().catch(()=>{});
   const overflowMenu = document.getElementById('tabsOverflowMenu');
   const overflowBtn = document.getElementById('tabsOverflowButton');
   if (overflowMenu) overflowMenu.hidden = true;
@@ -201,6 +202,7 @@ function tokenHeaders() {
   const t = stored || field;
   return t ? {Authorization: `Bearer ${t}`} : {};
 }
+window.tokenHeaders = tokenHeaders;
 const API_OFFLINE_BACKOFF_KEY = '__pacApiOfflineUntil';
 const API_MISSING_ENDPOINTS_KEY = '__pacApiMissingEndpoints';
 function normaliseApiPath(path) {
@@ -826,12 +828,20 @@ if (downloadFilterText) downloadFilterText.oninput = () => {
 const openDownloadsModalBtn = document.getElementById('openDownloadsModal');
 const downloadsModal = document.getElementById('downloadsModal');
 const closeDownloadsModalBtn = document.getElementById('closeDownloadsModal');
-if (openDownloadsModalBtn && downloadsModal) openDownloadsModalBtn.onclick = async () => { downloadsModal.hidden = false; await loadSourceBinaryArtifacts(selectedBinaryArtifactFilter || '').catch(e=>paneError('Downloads unavailable', e.message)); };
+if (openDownloadsModalBtn && downloadsModal) openDownloadsModalBtn.onclick = async () => {
+  downloadsModal.hidden = false;
+  await Promise.all([
+    loadSourceBinaryArtifacts(selectedBinaryArtifactFilter || '').catch(e=>paneError('Downloads unavailable', e.message)),
+    (typeof loadEnvironmentDebugBundles === 'function' ? loadEnvironmentDebugBundles().catch(e=>paneError('Debug bundles unavailable', e.message)) : Promise.resolve()),
+  ]);
+};
 if (closeDownloadsModalBtn && downloadsModal) closeDownloadsModalBtn.onclick = () => { downloadsModal.hidden = true; };
 if (downloadsModal) downloadsModal.onclick = (ev) => { if (ev.target === downloadsModal) downloadsModal.hidden = true; };
 
 const openProviderBtn = document.getElementById('openProviderModal');
 if (openProviderBtn) openProviderBtn.onclick = () => openProviderModal();
+const discoverLocalProvidersBtn = document.getElementById('discoverLocalProviders');
+if (discoverLocalProvidersBtn) discoverLocalProvidersBtn.onclick = () => discoverLocalProviders().catch(e => alert(e.message));
 const closeProviderBtn = document.getElementById('closeProviderModal');
 if (closeProviderBtn) closeProviderBtn.onclick = closeProviderModal;
 const openModelBtn = document.getElementById('openModelModal');

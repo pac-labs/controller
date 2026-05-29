@@ -154,17 +154,19 @@ async function saveEndpointConnectionSettings() {
 }
 
 async function loadWorkspaceCatalogs() {
-  const [templateData, workspaceData, contextData, groupsData, storageData] = await Promise.all([
+  const [templateData, workspaceData, contextData, groupsData, storageData, workspaceAgentData] = await Promise.all([
     api('/v1/workspace-templates').catch(() => ({templates: []})),
     api('/v1/my-workspaces').catch(() => ({items: []})),
     api('/v1/agent-contexts').catch(() => ({items: []})),
     api('/v1/directory/groups').catch(() => []),
     api('/v1/shared-storages').catch(() => ({items: []})),
+    api('/v1/workspaces').catch(() => ({agents: []})),
   ]);
   workspaceTemplates = Array.isArray(templateData?.templates) ? templateData.templates : [];
   personalWorkspaces = Array.isArray(workspaceData?.items) ? workspaceData.items : [];
   agentContexts = Array.isArray(contextData?.items) ? contextData.items : [];
   sharedStorages = Array.isArray(storageData?.items) ? storageData.items : [];
+  window.__pacWorkspaceAgents = Array.isArray(workspaceAgentData?.agents) ? workspaceAgentData.agents : [];
   window.__pacGroups = Array.isArray(groupsData) ? groupsData : [];
   if (selectedIdeWorkspaceId && !personalWorkspaces.some((item) => item.id === selectedIdeWorkspaceId)) selectedIdeWorkspaceId = '';
   if (!selectedIdeWorkspaceId && personalWorkspaces.length) {

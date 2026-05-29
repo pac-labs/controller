@@ -44,7 +44,9 @@ function renderSelectedSessionSummary(session = selectedSession) {
   const contextName = sessionContextLabel(session);
   const summaryEl = document.getElementById('selectedSession');
   if (summaryEl) {
-    summaryEl.innerHTML = `<span class="session-lock-dot"></span><span>Profile: ${escapeHtml(session.agent_profile || 'default')}</span><span>Permissions: ${escapeHtml(session.permission_profile || '-')}</span><span>Endpoint: ${escapeHtml(endpointName)}</span><span>Mode: ${escapeHtml(session.metadata?.execution_mode || (session.metadata?.agent_enabled === false ? 'direct model' : 'pi.dev'))}</span>${contextName ? `<span>Context: ${escapeHtml(contextName)}</span>` : ''}<span>Model: ${escapeHtml(session.model || '')}</span><span>${escapeHtml(session.workspace_path || '')}</span>`;
+    const budget = session.metadata?.context_budget || {};
+    const budgetText = budget.percent != null ? `<span>Budget: ${escapeHtml(String(budget.percent))}% ${escapeHtml(budget.level || '')}</span>` : '';
+    summaryEl.innerHTML = `<span class="session-lock-dot"></span><span>Profile: ${escapeHtml(session.agent_profile || 'default')}</span><span>Permissions: ${escapeHtml(session.permission_profile || '-')}</span><span>Endpoint: ${escapeHtml(endpointName)}</span><span>Mode: ${escapeHtml(session.metadata?.execution_mode || (session.metadata?.agent_enabled === false ? 'direct model' : 'pi.dev'))}</span>${contextName ? `<span>Context: ${escapeHtml(contextName)}</span>` : ''}${budgetText}<span>Model: ${escapeHtml(session.model || '')}</span><span>${escapeHtml(session.workspace_path || '')}</span>`;
   }
   const lockEl = document.getElementById('sessionEndpointLock');
   if (lockEl) {

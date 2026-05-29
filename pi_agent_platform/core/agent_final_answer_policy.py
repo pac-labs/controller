@@ -11,8 +11,8 @@ from .agent_action_recovery import (
     _looks_like_unexecuted_consult_request,
     _should_reject_unformatted_action,
 )
-from .agent_resource_contract import evaluate_final as evaluate_resource_contract_final
 from .agent_work_contract import evaluate_final as evaluate_work_contract_final
+from .agent_resource_contract import evaluate_final as evaluate_resource_contract_final
 from .agent_inspection_policy import (
     has_meaningful_codebase_inspection,
     inspection_depth_score,
@@ -89,7 +89,15 @@ _GENERIC_READY_CORRECTIVE_PROMPT = (
 
 _WORK_REQUEST_CORRECTIVE_PROMPT = (
     "This request is a work request. Do not stop with a summary yet. "
-    "Return exactly one tool_call JSON object that performs the next concrete inspection or execution step."
+    "Return exactly one tool_call JSON object that performs the next safe inspection or execution step. "
+    "Use workspace_manifest/list_files/find_code_paths/read_file/search tools first when you need local evidence."
+)
+
+
+_CODE_CHANGE_CORRECTIVE_PROMPT = (
+    "This is a PAC code-change request. Do not finish with advice or a plan only. "
+    "Inspect the relevant files, then perform the change with write_file or an appropriate shell command. "
+    "Only return a final answer after the transcript contains an actual mutation and, where practical, a validation step."
 )
 
 
@@ -201,10 +209,19 @@ def evaluate(
             )
         return RejectAndContinue(
             reason=contract_decision.reason,
-            corrective_prompt=contract_decision.corrective_prompt or _CODEBASE_INSPECTION_CORRECTIVE_PROMPT,
+            corrective_prompt=contract_decision.corrective_prompt or _CODE_CHANGE_CORRECTIVE_PROMPT,
             event_type="final_answer_rejected",
             event_message=contract_decision.event_message or "Final answer rejected by the PAC work contract.",
             event_data=event_data,
+        )
+
+    if _looks_like_code_change_request(task.prompt) and not _has_mutating_tool_work(transcript):
+        return RejectAndContinue(
+            reason="code_change_requires_mutation",
+            corrective_prompt=_CODE_CHANGE_CORRECTIVE_PROMPT,
+            event_type="final_answer_rejected",
+            event_message="Final answer rejected because the requested PAC code change has not mutated any files yet.",
+            event_data={"final_message": final_tail},
         )
 
     if _should_reject_unformatted_action(session, task, final_message, transcript):
@@ -266,3 +283,63 @@ def evaluate(
         )
 
     return AcceptFinal(final_message)
+
+
+def _looks_like_code_change_request(prompt: str) -> bool:
+    compact = " ".join(str(prompt or "").lower().split())
+    if not compact:
+        return False
+    prefixes = (
+        "add ",
+        "please add ",
+        "can you add ",
+        "could you add ",
+        "implement ",
+        "please implement ",
+        "fix ",
+        "please fix ",
+        "change ",
+        "please change ",
+        "update ",
+        "please update ",
+        "wire ",
+        "persist ",
+        "store ",
+        "save ",
+        "make it ",
+        "make the ",
+        "allow ",
+        "enable ",
+    )
+    if compact.startswith(prefixes):
+        return True
+    return any(verb in compact for verb in ("add ", "implement ", "fix ", "change ", "update ", "persist ", "store ", "save ")) and any(
+        term in compact
+        for term in (
+            " so we can ",
+            " in there",
+            " file",
+            " code",
+            " route",
+            " api",
+            " ui",
+            " event",
+            " events",
+            " session",
+            " json",
+        )
+    )
+
+
+def _has_mutating_tool_work(transcript: list[dict[str, Any]]) -> bool:
+    for entry in transcript:
+        if not isinstance(entry, dict):
+            continue
+        tool = str(entry.get("tool") or "")
+        if tool == "write_file":
+            return True
+        if tool == "shell":
+            command = str((entry.get("input") or {}).get("command") or "").strip().lower()
+            if command.startswith(("python ", "python3 ", "perl ", "sed -i", "cat >", "tee ", "npm run", "pytest", "ruff", "git apply")):
+                return True
+    return False

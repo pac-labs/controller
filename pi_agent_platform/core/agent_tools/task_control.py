@@ -10,8 +10,10 @@ from ..config import AppConfig
 from ..models import Session, Task, TaskStatus
 from ..agent_events import AgentEvents
 from ..session_commands import parse_session_slash_command, slash_help_text
+from ..model_switch import model_options_text, switch_session_model
 from ..store import store
 from ..subagents import spawn_pi_dev_subagent
+from ..subagent_chains import start_subagent_chain, import_subagent_summaries
 
 
 async def try_execute_task_control_tool(
@@ -24,6 +26,51 @@ async def try_execute_task_control_tool(
     get_run_agent_loop_fn: Callable[[], Any],
 ) -> tuple[str, bool] | None:
     events = AgentEvents(session, task)
+    if tool == "spawn_subagent":
+        instruction = str(inp.get("instruction") or inp.get("prompt") or "").strip()
+        profile_key = str(inp.get("profile") or inp.get("kind") or "").strip() or None
+        spawned = await spawn_pi_dev_subagent(
+            session,
+            task,
+            instruction,
+            config,
+            get_run_agent_loop_fn(),
+            profile_key=profile_key,
+        )
+        child_session = spawned["session"]
+        child_task = spawned["task"]
+        profile = spawned.get("profile")
+        return json.dumps({
+            "ok": True,
+            "message": spawned["message"],
+            "subagent_session_id": child_session.id,
+            "subagent_task_id": child_task.id,
+            "profile": getattr(profile, "key", profile_key or "general"),
+            "display_name": getattr(profile, "display_name", "Subagent"),
+            "turn_budget": getattr(profile, "turn_budget", None),
+            "locked_tools": list(child_session.tools or []),
+        }, indent=2), False
+
+
+    if tool == "run_subagent_chain":
+        instruction = str(inp.get("instruction") or inp.get("prompt") or task.prompt or "").strip()
+        raw_profiles = inp.get("profiles") if isinstance(inp.get("profiles"), list) else None
+        profiles = [str(item).strip() for item in raw_profiles if str(item).strip()] if raw_profiles else None
+        started = await start_subagent_chain(
+            session,
+            task,
+            instruction,
+            config,
+            get_run_agent_loop_fn(),
+            profiles=profiles,
+            chain_name=str(inp.get("chain") or "code_change"),
+        )
+        return json.dumps(started, indent=2), False
+
+    if tool == "import_subagent_summary":
+        imported = import_subagent_summaries(session, task, source_task_id=str(inp.get("parent_task_id") or inp.get("task_id") or "").strip() or None)
+        return json.dumps(imported, indent=2), False
+
     if tool == "slash_command":
         parsed = parse_session_slash_command(str(inp.get("command") or ""))
         if not parsed:
@@ -35,8 +82,40 @@ async def try_execute_task_control_tool(
         if parsed["kind"] == "compact":
             task.metadata["_compact_now"] = True
             return "Context compaction requested.", False
+        if parsed["kind"] == "model":
+            selector = str(parsed.get("selector") or "").strip()
+            if not selector:
+                return model_options_text(config, session), False
+            result = switch_session_model(
+                config,
+                session,
+                selector,
+                task=task,
+                role=str(parsed.get("role") or "session"),
+                fallback_selectors=parsed.get("fallback") or [],
+                source="slash_command_tool",
+            )
+            return json.dumps(result.to_dict(), indent=2), False
+        if parsed["kind"] == "subagent_chain":
+            started = await start_subagent_chain(
+                session,
+                task,
+                str(parsed.get("instruction") or ""),
+                config,
+                get_run_agent_loop_fn(),
+                profiles=parsed.get("profiles") or None,
+                chain_name=str(parsed.get("chain") or "code_change"),
+            )
+            return json.dumps(started, indent=2), False
         if parsed["kind"] == "subagent":
-            spawned = await spawn_pi_dev_subagent(session, task, str(parsed.get("instruction") or ""), config, get_run_agent_loop_fn())
+            spawned = await spawn_pi_dev_subagent(
+                session,
+                task,
+                str(parsed.get("instruction") or ""),
+                config,
+                get_run_agent_loop_fn(),
+                profile_key=str(parsed.get("profile") or "") or None,
+            )
             child_session = spawned["session"]
             child_task = spawned["task"]
             return f"{spawned['message']} Child task: {child_task.id}. Child session: {child_session.id}.", False

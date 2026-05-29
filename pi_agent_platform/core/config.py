@@ -151,6 +151,20 @@ class ToolConfig(BaseModel):
     socket: str | None = None
     package: str | None = None
     install_hint: str | None = None
+    argument_schema: dict[str, Any] = Field(default_factory=dict)
+    permission_class: str | None = None
+    read_only: bool | None = None
+    mutating: bool | None = None
+    path_scoped: bool | None = None
+    path_fields: list[str] = Field(default_factory=list)
+    cache_policy: Literal["auto", "read_only", "disabled"] = "auto"
+    schema_version: str | None = None
+    schema_source: str | None = None
+    schema_signature: str | None = None
+    schema_last_seen_at: str | None = None
+    schema_stale: bool = False
+    pre_hooks: list[str] = Field(default_factory=list)
+    post_hooks: list[str] = Field(default_factory=list)
 
 
 class ToolPackageConfig(BaseModel):
@@ -167,6 +181,7 @@ class PluginConfig(BaseModel):
     code: str | None = None
     documentation: str | None = None
     requires_tools: list[str] = Field(default_factory=list)
+    tools: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class PermissionRule(BaseModel):
@@ -174,7 +189,9 @@ class PermissionRule(BaseModel):
     file_read: Literal["deny", "ask", "allow"] = "allow"
     file_write: Literal["deny", "ask", "allow"] = "ask"
     git_push: Literal["deny", "ask", "allow"] = "ask"
+    git_write: Literal["deny", "ask", "allow"] = "ask"
     network: Literal["deny", "ask", "allow"] = "ask"
+    pac_control_plane_write: Literal["deny", "ask", "allow"] = "ask"
     cluster_write: Literal["deny", "ask", "allow"] = "ask"
     secrets: Literal["deny", "ask", "allow"] = "ask"
     dangerous: Literal["deny", "ask", "allow"] = "deny"
@@ -207,14 +224,53 @@ MAIN_PI_DEV_PROFILE_TOOLS = [
     "remote_memory",
     "query_workspace_index",
     "find_code_paths",
+    "code_intelligence_report",
+    "code_symbol_search",
+    "code_definition",
+    "code_references",
+    "code_diagnostics",
+    "code_language_servers",
+    "code_project_metadata",
+    "code_call_hierarchy",
+    "code_type_hierarchy",
+    "code_module_index",
+    "code_blast_radius",
+    "code_lsp_status",
+    "code_lsp_document_symbols",
+    "code_lsp_definition",
+    "code_lsp_references",
+    "code_lsp_hover",
+    "code_lsp_call_hierarchy",
+    "code_lsp_type_hierarchy",
+    "code_lsp_shutdown",
+    "code_lsp_rename_plan",
+    "code_lsp_rename_apply",
+    "code_lsp_endpoint_prepare",
+    "code_roslyn_analysis",
+    "batch_tools",
     "pac_list_components",
     "pac_create_provider",
     "pac_create_model",
     "pac_create_endpoint",
     "pac_create_workspace_profile",
     "pac_create_session",
+    "local_inference_discover",
+    "local_inference_health",
+    "local_inference_register",
+    "slash_command",
     "lessons",
     "resume_task",
+    "spawn_subagent",
+    "run_subagent_chain",
+    "import_subagent_summary",
+    "playbook_list",
+    "playbook_start",
+    "playbook_status",
+    "playbook_resume",
+    "playbook_approve",
+    "playbook_cancel",
+    "playbook_export",
+    "playbook_import",
     "list_task_checkpoints",
     "clear_checkpoints",
     "auto_approve",
@@ -235,7 +291,8 @@ MAIN_PI_DEV_SYSTEM_PROMPT = (
     "Use the PAC controller workspace and PAC configuration as the source of truth, prefer local inspection over web research for PAC-domain questions, "
     "keep changes scoped to the requested task, surface build/update/runtime diagnostics clearly, and move the task forward with tool use instead of narration whenever the next step is obvious. "
     "If the user asks to change PAC itself, you are allowed to read and rewrite PAC application files and PAC configuration directly. "
-    "For broad PAC questions, start by inspecting the local PAC workspace, config, or runtime state instead of responding like a generic assistant."
+    "For broad PAC questions, start by inspecting the local PAC workspace, config, or runtime state instead of responding like a generic assistant. "
+    "For source-code understanding, prefer code_intelligence_report, code_language_servers, code_project_metadata, code_symbol_search, code_definition, code_references, code_call_hierarchy, code_type_hierarchy, code_blast_radius, code_lsp_definition, code_lsp_references, code_lsp_rename_plan, code_lsp_rename_apply, and code_diagnostics before hand-rolled grep when the request needs symbols, diagnostics, or cross-file impact. Use playbook_list, playbook_start, playbook_status, playbook_resume, playbook_approve, playbook_cancel, playbook_export, and playbook_import for repeatable gated workflows. Use local_inference_discover, local_inference_health, and local_inference_register to find and register LM Studio local inference providers instead of asking users to type local provider details by hand. Use /model or the slash_command tool with /model to switch models mid-session; after a switch, respect the new active model, capability warnings, and fallback chain."
 )
 
 
@@ -632,7 +689,46 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "pac_create_endpoint": "Create a pending endpoint registration record from the built-in controller model.",
         "pac_create_workspace_profile": "Create or replace a reusable PAC workspace profile from the built-in controller model.",
         "pac_create_session": "Create a PAC session from the built-in controller model using configured models and workspaces.",
+        "run_subagent_chain": "Run Explore, Plan, Coder, and Verify sub-agents as a structured chain for larger code-change requests.",
+        "import_subagent_summary": "Import completed child sub-agent summaries into the current parent task context.",
         "find_code_paths": "Locate likely PAC code files for a concept or intent across the controller workspace before opening files directly.",
+        "code_intelligence_report": "Detect project languages, LSP/tool availability, project markers, and a cross-language symbol index for the workspace.",
+        "code_symbol_search": "Search the static symbol index across Python, TypeScript, Go, Rust, and C# source files.",
+        "code_definition": "Find likely definitions for a named symbol across supported source languages.",
+        "code_references": "Find workspace references to a named symbol across supported source languages.",
+        "code_diagnostics": "Prepare or run safe language diagnostics such as cargo check JSON, compileall, go test, tsc, or dotnet build when binaries are available.",
+        "code_language_servers": "Check language-server and compiler availability for Python, TypeScript, Go, Rust, and C# in the current workspace or endpoint container.",
+        "code_project_metadata": "Collect project metadata such as cargo metadata, go list, package.json summaries, Python markers, and dotnet project lists.",
+        "code_call_hierarchy": "Build a static caller list for a symbol using cross-file references and function ranges.",
+        "code_type_hierarchy": "Build a static type hierarchy across Python, TypeScript, Rust, and C# inheritance/impl patterns.",
+        "code_module_index": "Build a language-aware module/file index for Python, TypeScript, Go, Rust, and C# projects.",
+        "code_blast_radius": "Estimate affected files, definitions, references, and validation commands for a symbol change.",
+        "code_lsp_status": "Inspect persistent JSON-RPC language-server clients and server availability for the workspace.",
+        "code_lsp_document_symbols": "Use a persistent language server to return exact document symbols for a source file.",
+        "code_lsp_definition": "Use a persistent language server to resolve go-to-definition at a file position.",
+        "code_lsp_references": "Use a persistent language server to resolve references at a file position.",
+        "code_lsp_hover": "Use a persistent language server to return hover/type information at a file position.",
+        "code_lsp_call_hierarchy": "Use a persistent language server call hierarchy provider at a file position when available.",
+        "code_lsp_type_hierarchy": "Use a persistent language server type hierarchy provider at a file position when available.",
+        "code_lsp_shutdown": "Stop persistent language-server clients for the workspace or language.",
+        "code_lsp_rename_plan": "Ask a persistent language server for a safe rename workspace-edit preview without changing files.",
+        "code_lsp_rename_apply": "Apply a language-server rename workspace edit after approval and file-write permission checks.",
+        "code_lsp_endpoint_prepare": "Prepare endpoint/container LSP metadata and verify endpoint-side language server availability.",
+        "code_roslyn_analysis": "Inspect C# project structure, static symbols, relationships, dotnet availability, and optional build diagnostics.",
+        "batch_tools": "Run a bounded group of read-only tool calls in parallel through the same tool pipeline.",
+        "spawn_subagent": "Spawn a locked specialist sub-agent such as Explore, Plan, Coder, Verify, or General-purpose.",
+        "playbook_list": "List built-in and configured YAML playbooks with typed parameters and steps.",
+        "playbook_start": "Start a gated playbook run with typed parameters for repeatable workflows.",
+        "playbook_status": "Inspect recent playbook runs or one playbook run in detail.",
+        "playbook_resume": "Resume a paused or failed playbook run from its last checkpoint.",
+        "playbook_approve": "Approve the current Confirm, Review, or Approve gate for a waiting playbook run.",
+        "playbook_cancel": "Cancel a waiting or active playbook run and mark child tasks for cancellation.",
+        "playbook_export": "Export a playbook definition as YAML.",
+        "playbook_import": "Import or update a custom playbook YAML definition.",
+        "local_inference_discover": "Probe common local/network LM Studio endpoints and report discovered local inference providers.",
+        "local_inference_health": "Run an LM Studio local inference health check against a candidate base URL.",
+        "local_inference_register": "Register a discovered LM Studio server as a PAC local provider and optionally create model entries from its inventory.",
+        "slash_command": "Execute supported PAC session slash commands such as /model, /compact, /subagent, and endpoint helper commands from inside an agent loop.",
     }
     for tool_name, description in pac_component_tools.items():
         existing_tool = cfg.tools.get(tool_name)

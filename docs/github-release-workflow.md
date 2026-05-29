@@ -8,7 +8,7 @@ release assets, and package repository update.
 
 ### 1. Release the latest `main`
 
-Use **PAC release current main** from GitHub Actions.
+**PAC release current main** runs automatically when `main` receives source changes. It can also be started manually from GitHub Actions. Release-owned metadata-only commits are ignored so the workflow does not loop after it writes `VERSION`, `PAC_CHANGELOG.json`, and related files.
 
 The workflow:
 
@@ -17,17 +17,23 @@ The workflow:
    - an explicit workflow input wins;
    - otherwise the latest `vX.Y.Z` tag is read and the patch number is bumped;
 3. writes `VERSION` and `VERSION_CURRENT.md`;
-4. runs `scripts/generate-pac-release.py`;
-5. commits release metadata back to `main`;
-6. creates the annotated `vX.Y.Z` tag;
-7. publishes the GitHub Release assets;
-8. syncs `pac-labs/packages`.
+4. compiles the first-class Go release binaries with `scripts/compile-release-binaries.py`;
+5. validates that the binary-first pipeline is intact with `scripts/validate-release-binary-pipeline.py`;
+6. runs `scripts/generate-pac-release.py` against those compiled binaries;
+7. commits release metadata back to `main`;
+8. creates the annotated `vX.Y.Z` tag;
+9. publishes the GitHub Release assets;
+10. syncs `pac-labs/packages`.
 
 Generated assets:
 
 - `pac-full.zip`
 - `pac-patch.zip`
 - `pac-packages-seed.zip`
+- `pac-binaries.zip`
+- direct `pac-endpoint-*` binary assets
+- direct `pacctl-*` binary assets
+- `RELEASE_BINARIES.json`
 - `PAC_RELEASE_MANIFEST.json`
 - `PAC_UPDATE_DIFF.diff`
 
@@ -106,3 +112,14 @@ The validator rejects:
 
 Workflow changes must be made as normal source changes or by a trusted operator,
 not through a self-modifying PAC diff PR.
+
+## Binary and component versions
+
+Release binaries are compiled before release packaging. Binary versions come from each binary component, not from the PAC controller release version. See `docs/github-release-binary-version-policy-20260529.md`.
+
+
+## Binary-first guarantee
+
+Release packaging depends on `dist/release-binaries/RELEASE_BINARIES.json`. `scripts/generate-pac-release.py` exits before writing packages when that manifest is missing or empty. The GitHub workflow also runs `scripts/validate-release-binary-pipeline.py` before packaging to verify that binary compilation appears before release generation, that only `pac-endpoint` and `pacctl` are first-class release binaries, and that direct binary assets are uploaded.
+
+The source/update zips remain source-only: they must not contain `release-binaries/` or compiled binaries. Installers and updates download `pac-endpoint-*` and `pacctl-*` from GitHub Release assets.

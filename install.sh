@@ -312,18 +312,24 @@ else
 fi
 
 
-# Build the cross-platform Zed binaries on first install when a container runtime is present.
-# This is intentionally best-effort; PAC can also build them later from Settings.
-if [ "${PAC_SKIP_MCP_BUILD:-0}" != "1" ] && [ -x "$APP_DIR/scripts/build-mcp-bridge.sh" ]; then
-  if command -v podman >/dev/null 2>&1 || command -v docker >/dev/null 2>&1; then
-    if [ ! -f "$PACP_HOME/mcp/bin/pac-mcp-linux-amd64" ]; then
-      log "Starting Zed binary build in the background"
-      (cd "$APP_DIR" && PACP_HOME="$PACP_HOME" "$APP_DIR/scripts/build-mcp-bridge.sh" > "$PACP_HOME/logs/mcp-build.log" 2>&1 &) || warn "Could not start Zed binary build"
-    fi
-  else
-    warn "No podman/docker found; Zed binaries can be built later from Settings once a runtime is installed"
-  fi
-fi
+# PAC source/update zips do not bundle compiled endpoint/client binaries.
+# pac-endpoint and pacctl are downloaded from GitHub Release assets on demand,
+# with local source builds reserved for explicit fallback flows. Avoid starting
+# legacy Zed/MCP binary builds during controller installation; that behavior is
+# moving into pacctl.
+mkdir -p "$PACP_HOME/bin"
+cat > "$PACP_HOME/bin/README.md" <<'EOFBIN'
+PAC runtime/client binaries are resolved from GitHub Release assets:
+
+- pac-endpoint: endpoint/workspace wrapper
+- pacctl: client/API/editor/provider utility
+
+The controller source package intentionally does not bundle compiled binaries.
+
+Install helpers copied with PAC:
+  $APP_DIR/scripts/install-pac-binary.sh pacctl
+  $APP_DIR/scripts/install-pac-binary.sh pac-endpoint
+EOFBIN
 
 cat <<EOF2
 

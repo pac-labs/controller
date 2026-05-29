@@ -1,0 +1,71 @@
+name: Seed PAC packages repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      packages_repo:
+        description: "Target packages repository"
+        required: false
+        default: "pac-labs/packages"
+        type: string
+  push:
+    branches:
+      - main
+    paths:
+      - binaries/**
+      - containers/**
+      - plugins/**
+      - scripts/**
+      - docs/**
+      - .github/workflows/seed-packages.yml
+      - scripts/generate-package-repo.py
+
+permissions:
+  contents: read
+
+jobs:
+  seed-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout controller
+        uses: actions/checkout@v4
+        with:
+          path: controller
+          fetch-depth: 0
+
+      - name: Checkout packages
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.packages_repo || 'pac-labs/packages' }}
+          token: ${{ secrets.push_token || github.token }}
+          path: packages
+          fetch-depth: 0
+
+      - name: Generate package repository contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd controller
+          latest="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 || true)"
+          if [ -n "$latest" ]; then
+            version="${latest#v}"
+          else
+            version="$(tr -d '[:space:]' < VERSION 2>/dev/null || echo '0.0.0')"
+          fi
+          cd ..
+          python3 controller/scripts/generate-package-repo.py --source controller --out packages --version "$version"
+
+      - name: Commit package repository changes
+        shell: bash
+        working-directory: packages
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- .; then
+            echo "No package changes to publish."
+            exit 0
+          fi
+          git config user.name "pac-sync[bot]"
+          git config user.email "pac-sync[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Sync PAC packages from controller ${GITHUB_SHA::7}"
+          git push

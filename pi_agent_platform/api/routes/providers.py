@@ -11,6 +11,12 @@ from pi_agent_platform.core.config import ProviderConfig
 from pi_agent_platform.core.directory_identities import ensure_provider_principal, retire_provider_principal
 from pi_agent_platform.core.models import Event
 from pi_agent_platform.core.observability import log_file_map, read_log_tail
+from pi_agent_platform.core.local_inference import (
+    create_lmstudio_models_from_inventory,
+    discover_lmstudio,
+    lmstudio_health,
+    register_lmstudio_provider,
+)
 
 
 def create_providers_router(
@@ -67,6 +73,59 @@ def create_providers_router(
     _ensure_controller_wrapper = ensure_controller_wrapper
     _restart_controller_wrapper = restart_controller_wrapper
     _refresh_local_runner_metadata = refresh_local_runner_metadata
+
+
+
+    @router.get('/v1/local-inference/lmstudio/discover')
+    def local_lmstudio_discover(timeout_seconds: float = 1.5, url: str | None = None, _auth: Any = Depends(require_auth)) -> dict:
+        require_resource_access(_auth, 'provider', '*', 'read')
+        extra_urls = [url] if url else []
+        result = discover_lmstudio(store, extra_urls=extra_urls, timeout_seconds=timeout_seconds)
+        store.add_event(Event(session_id='system', type='local_provider_discovery', message='LM Studio discovery completed', data={'kind': 'lmstudio', 'ok': result.get('ok'), 'candidates': len(result.get('candidates') or [])}))
+        return result
+
+
+    @router.post('/v1/local-inference/lmstudio/health')
+    def local_lmstudio_health(payload: dict[str, Any], _auth: Any = Depends(require_auth)) -> dict:
+        require_resource_access(_auth, 'provider', '*', 'read')
+        base_url = str(payload.get('base_url') or payload.get('url') or '').strip()
+        if not base_url:
+            raise HTTPException(status_code=400, detail='base_url is required')
+        result = lmstudio_health(
+            base_url,
+            timeout_seconds=float(payload.get('timeout_seconds') or 3.0),
+            chat_test=bool(payload.get('chat_test', False)),
+            model=payload.get('model'),
+        )
+        store.add_event(Event(session_id='system', type='local_provider_health', message=f'LM Studio health: {"ok" if result.get("ok") else "failed"}', data={'kind': 'lmstudio', 'base_url': base_url, 'ok': result.get('ok'), 'models': result.get('model_count')}))
+        return result
+
+
+    @router.post('/v1/local-inference/lmstudio/register')
+    def local_lmstudio_register(payload: dict[str, Any], _auth: Any = Depends(require_auth)) -> dict:
+        require_resource_access(_auth, 'provider', '*', 'manage')
+        config = _get_config()
+        base_url = str(payload.get('base_url') or payload.get('url') or '').strip()
+        if not base_url:
+            raise HTTPException(status_code=400, detail='base_url is required')
+        health = lmstudio_health(base_url, timeout_seconds=float(payload.get('timeout_seconds') or 3.0), chat_test=bool(payload.get('chat_test', False)))
+        if not health.get('ok') and not bool(payload.get('force', False)):
+            raise HTTPException(status_code=400, detail={'message': 'LM Studio server is not healthy. Pass force=true to register anyway.', 'health': health})
+        provider_name, provider = register_lmstudio_provider(
+            config,
+            name=payload.get('name'),
+            base_url=base_url,
+            enabled=bool(payload.get('enabled', True)),
+            overwrite=bool(payload.get('overwrite', False)),
+            cached_models=health.get('models') or [],
+        )
+        created_models: list[str] = []
+        if bool(payload.get('create_models', True)):
+            created_models = create_lmstudio_models_from_inventory(config, provider_name, health.get('models') or [], limit=int(payload.get('model_limit') or 12))
+        save_config(config)
+        ensure_provider_principal(store, provider_name, provider)
+        store.add_event(Event(session_id='system', type='local_provider_registered', message=f'LM Studio provider registered: {provider_name}', data={'provider': provider_name, 'base_url': provider.base_url, 'models': len(provider.cached_models), 'created_models': created_models}))
+        return {'ok': True, 'provider': provider_name, 'registered': provider.model_dump(mode='json', exclude={'api_key'}), 'health': health, 'created_models': created_models}
 
     @router.get('/v1/models')
     def list_models(_auth: Any = Depends(require_auth)) -> dict:

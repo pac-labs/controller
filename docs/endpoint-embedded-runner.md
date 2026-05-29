@@ -30,4 +30,4 @@ The command channel metadata also reports whether the embedded runner is availab
 
 ## Compatibility
 
-The `pac-endpoint-runner` source folder is retained as a compatibility entry, but new installs should build and install `pac-endpoint`.
+The `pac-endpoint-runner` source folder has been removed. New installs build and install `pac-endpoint` only.

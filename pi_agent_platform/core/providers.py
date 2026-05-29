@@ -93,6 +93,8 @@ def _stream_openai_chat(
     provider: ProviderConfig,
     payload: dict[str, Any],
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    *,
+    max_stream_seconds: int | None = None,
 ) -> tuple[bool, Any]:
     """Read OpenAI-compatible SSE chat streams.
 
@@ -129,8 +131,17 @@ def _stream_openai_chat(
             pass
 
     try:
-        with urlopen(req, timeout=max(120, provider.timeout_seconds)) as resp:
+        started = time.monotonic()
+        stream_budget = int(max_stream_seconds or 0)
+        with urlopen(req, timeout=max(30, provider.timeout_seconds)) as resp:
             for raw in resp:
+                if stream_budget > 0 and time.monotonic() - started > stream_budget:
+                    return False, {
+                        "error": f"stream exceeded {stream_budget} seconds",
+                        "stream_timeout": True,
+                        "preview": "".join(chunks)[-1000:],
+                        "reasoning_preview": "".join(reasoning_chunks)[-1000:],
+                    }
                 line = raw.decode(errors="replace").strip()
                 if not line or not line.startswith("data:"):
                     continue
@@ -694,7 +705,13 @@ def chat_complete(
                 ),
             }
             if payload.get("stream"):
-                ok, body = _stream_openai_chat(endpoint, provider, payload, progress_callback=progress_callback)
+                ok, body = _stream_openai_chat(
+                    endpoint,
+                    provider,
+                    payload,
+                    progress_callback=progress_callback,
+                    max_stream_seconds=int(model.extra.get("stream_timeout_seconds") or model.extra.get("stream_max_seconds") or 180),
+                )
                 if not ok and _should_retry_chat_without_stream(provider, model, payload, body):
                     retry_payload = dict(payload)
                     retry_payload["stream"] = False
@@ -714,7 +731,13 @@ def chat_complete(
                             pass
                     retry_payload = dict(payload)
                     retry_payload["stream"] = True
-                    ok, body = _stream_openai_chat(endpoint, provider, retry_payload, progress_callback=progress_callback)
+                    ok, body = _stream_openai_chat(
+                        endpoint,
+                        provider,
+                        retry_payload,
+                        progress_callback=progress_callback,
+                        max_stream_seconds=int(model.extra.get("stream_timeout_seconds") or model.extra.get("stream_max_seconds") or 180),
+                    )
             if not ok:
                 duration_ms = int((time.monotonic() - started) * 1000)
                 _record_chat_metric(telemetry=telemetry, model_name=model_name, provider=provider, provider_name=provider_name, provider_model=provider_model, endpoint=endpoint, messages=messages, response_text="", max_tokens=max_tokens, duration_ms=duration_ms, success=False, error=str(body))

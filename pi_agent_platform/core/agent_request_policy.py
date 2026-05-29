@@ -29,6 +29,9 @@ DIRECT_ACTION_HINTS = (
 )
 
 COMPLEXITY_HINTS = (
+    "add",
+    "allow",
+    "enable",
     "implement",
     "refactor",
     "investigate",
@@ -40,6 +43,8 @@ COMPLEXITY_HINTS = (
     "create",
     "build",
     "design",
+    "wire",
+    "persist",
     "explain why",
 )
 
@@ -146,6 +151,8 @@ def _looks_complex(lower: str) -> bool:
     compact = " ".join(lower.split())
     if len(compact) > 220:
         return True
+    if _looks_like_code_change_request(compact):
+        return True
     if any(hint in compact for hint in COMPLEXITY_HINTS):
         return True
     if compact.count(" and ") >= 2 or compact.count(",") >= 3:
@@ -178,7 +185,56 @@ def _looks_like_work_request(lower: str) -> bool:
         "review ",
         "inspect the local workspace",
     )
-    return any(term in compact for term in work_terms)
+    return _looks_like_code_change_request(compact) or any(term in compact for term in work_terms)
+
+
+def _looks_like_code_change_request(compact: str) -> bool:
+    if not compact:
+        return False
+    action_prefixes = (
+        "add ",
+        "please add ",
+        "can you add ",
+        "could you add ",
+        "implement ",
+        "please implement ",
+        "fix ",
+        "please fix ",
+        "change ",
+        "please change ",
+        "update ",
+        "please update ",
+        "wire ",
+        "persist ",
+        "store ",
+        "save ",
+        "make it ",
+        "make the ",
+        "allow ",
+        "enable ",
+    )
+    code_change_terms = (
+        " in there",
+        " so we can ",
+        " code",
+        " file",
+        " route",
+        " api",
+        " ui",
+        " event",
+        " events",
+        " session",
+        " component",
+        " function",
+        " class",
+        " json",
+        " changelog",
+    )
+    if compact.startswith(action_prefixes):
+        return True
+    return any(verb in compact for verb in ("add ", "implement ", "fix ", "change ", "update ", "persist ", "store ")) and any(
+        term in compact for term in code_change_terms
+    )
 
 
 def _broad_request_needs_plan(lower: str) -> bool:

@@ -8,6 +8,7 @@ from ..agent_events import AgentEvents
 from ..store import store
 from ..web_tools import as_json_text, fetch_page_text, search_web_text
 from .permission_guard import PermissionGuard
+from .pipeline_approval import is_pipeline_approved
 
 
 async def try_execute_web_tool(
@@ -26,7 +27,7 @@ async def try_execute_web_tool(
             return "DENIED: web_fetch/internet tool is not enabled for this session", False
         if denied := permission_guard.require("network"):
             return denied
-        if permission_guard.level("network") == "ask" and session.permission_profile != "full-control":
+        if permission_guard.level("network") == "ask" and session.permission_profile != "full-control" and not is_pipeline_approved(inp):
             from ..auto_approve import should_auto_approve
             approved, reason = should_auto_approve("web_fetch", inp)
             if approved:
@@ -52,7 +53,7 @@ async def try_execute_web_tool(
             return "DENIED: web_search/internet tool is not enabled for this session", False
         if denied := permission_guard.require("network"):
             return denied
-        if permission_guard.level("network") == "ask" and session.permission_profile != "full-control":
+        if permission_guard.level("network") == "ask" and session.permission_profile != "full-control" and not is_pipeline_approved(inp):
             from ..auto_approve import should_auto_approve
             approved, reason = should_auto_approve("web_search", inp)
             if approved:

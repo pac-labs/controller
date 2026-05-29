@@ -25,14 +25,18 @@ from .agent_response_parser import (
     _extract_json,
     _looks_like_wrapped_tool_markup,
 )
+from .agent_doom_loop import evaluate_after_tool_result, evaluate_before_tool_action
 from .agent_action_recovery import _summarize_model_action
-from .agent_model_calls import run_blocking_provider_call
+from .agent_model_calls import AgentModelCallAborted, run_blocking_provider_call
 from .agent_final_answer_policy import (
     AcceptFinal,
     ConvertToToolCall,
     RejectAndContinue,
     evaluate as evaluate_final_answer,
 )
+from .agent_resource_flow import build_resource_action_sequence, resource_completion_message
+from .coding_session_readiness import CodingSessionReadinessError, is_coding_session, prepare_coding_session
+from .subagent_chains import should_auto_start_code_chain, start_subagent_chain
 
 
 from .agent_tools import execute_tool
@@ -126,10 +130,13 @@ def _summarize_workspace_manifest(observation: str) -> str:
 
 
 async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Task:
-    ensure_workspace(session)
-    if session.metadata.get("agent_enabled") and "printing_press" in config.tools and "printing_press" not in (session.tools or []):
-        session.tools = [*(session.tools or []), "printing_press"]
-        store.add_session(session)
+    if not is_coding_session(session):
+        ensure_workspace(session)
+    if session.metadata.get("agent_enabled"):
+        auto_tools = [tool for tool in ("printing_press", "spawn_subagent") if tool in config.tools and tool not in (session.tools or [])]
+        if auto_tools:
+            session.tools = [*(session.tools or []), *auto_tools]
+            store.add_session(session)
     task.metadata["agent_loop"] = True
     task.status = TaskStatus.running
     session.status = SessionStatus.running
@@ -151,6 +158,32 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
         "prefer_local_inspection": request_policy.prefer_local_inspection,
         "reason": request_policy.reason,
     }
+    if should_auto_start_code_chain(session, task, request_policy):
+        started = await start_subagent_chain(
+            session,
+            task,
+            task.prompt,
+            config,
+            run_agent_loop,
+            chain_name="auto_code_change",
+        )
+        task.status = TaskStatus.running
+        task.output = started.get("message") or "Started specialist chain."
+        store.add_task(task)
+        AgentEvents(session, task).emit(
+            "subagent_chain_auto_selected",
+            "Large code-change request routed to the specialist chain.",
+            {
+                "chain": started.get("chain"),
+                "profiles": started.get("profiles"),
+                "timeline": {
+                    "title": "Specialist chain selected",
+                    "summary": "PAC selected Explore → Plan → Coder → Verify for this larger code-change request.",
+                    "fields": {"Chain": str(started.get("chain") or "auto_code_change")},
+                },
+            },
+        )
+        return task
     model_selection = resolve_agent_models(config, session, task, request_policy)
     planning_model = model_selection.planning_model
     decision_model = model_selection.decision_model
@@ -181,6 +214,31 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     )
     if full_control:
         events.full_control_enabled()
+
+    if is_coding_session(session):
+        try:
+            readiness = prepare_coding_session(session, config, task=task)
+            task.metadata["coding_readiness"] = readiness
+            task.metadata["runner_id"] = task.metadata.get("runner_id") or session.metadata.get("preferred_endpoint")
+            task.metadata["container_image"] = task.metadata.get("container_image") or session.metadata.get("container_image")
+            store.add_task(task)
+        except CodingSessionReadinessError as exc:
+            task.status = TaskStatus.failed
+            task.error = f"Coding session is not ready: {exc}"
+            session.status = SessionStatus.failed
+            store.add_session(session)
+            store.add_task(task)
+            events.final_result(
+                output=task.error,
+                data={
+                    "role": "assistant",
+                    "model": session.model,
+                    "endpoint_id": session.metadata.get("preferred_endpoint"),
+                    "agent_profile": session.agent_profile,
+                    "coding_readiness": session.metadata.get("coding_readiness"),
+                },
+            )
+            return task
 
     transcript: list[dict[str, Any]] = task.metadata.get("agent_transcript") or []
     lifecycle = AgentRunLifecycle(session, task, config, transcript)
@@ -224,7 +282,7 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     except Exception as exc:
         task = await lifecycle.fail(f"Agent prompt preparation failed: {exc}")
         return task
-    messages = prompt_context.messages
+    messages = context_manager.restore_checkpoint_summary_into_messages(prompt_context.messages)
     controller_guidance = prompt_context.controller_guidance
     controller_context = prompt_context.controller_runtime_context
     index_briefing = prompt_context.workspace_index_briefing or ""
@@ -233,7 +291,67 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
     if prompt_context.workspace_index_event_data and prompt_context.workspace_index_source == "fresh":
         events.workspace_indexed(prompt_context.workspace_index_event_data)
 
-    if resolved_request_intent and resolved_request_intent.should_bootstrap_work:
+    resource_actions = build_resource_action_sequence(task.prompt or "", transcript)
+    if resource_actions:
+        for resource_action in resource_actions:
+            events.agent_intent(
+                summary=f"PAC resource step: {resource_action.tool}",
+                model=(resolved_request_intent.model if resolved_request_intent else "heuristic-fallback"),
+                step=0,
+                metadata={
+                    "action_type": "pac_resource_flow",
+                    "tool": resource_action.tool,
+                    "input": resource_action.input,
+                    "reason": resource_action.reason,
+                },
+            )
+            events.tool_call(tool=resource_action.tool, input=resource_action.input)
+            try:
+                observation, paused = await timing.around_async(
+                    "resource_flow_tool",
+                    "PAC resource creation step was slow",
+                    execute_tool(session, task, resource_action.tool, resource_action.input, config),
+                    {"tool": resource_action.tool, "step": 0},
+                )
+            except Exception as exc:
+                task = await lifecycle.fail(f"PAC resource step failed: {resource_action.tool}: {exc}", messages=messages)
+                return task
+            transcript.append({"step": 0, "tool": resource_action.tool, "input": resource_action.input, "observation": observation[-4000:]})
+            task.metadata["agent_transcript"] = transcript[-20:]
+            task.metadata["bootstrap_work_completed"] = True
+            store.add_task(task)
+            if paused:
+                await lifecycle.checkpoint(
+                    step=0,
+                    messages=messages,
+                    rolling_summary=context_manager.rolling_summary,
+                    output="",
+                    task_status="approval_required",
+                )
+                return task
+            lowered_observation = str(observation or "").lower()
+            if '"ok": false' in lowered_observation or "denied:" in lowered_observation:
+                task = await lifecycle.fail(
+                    f"PAC resource step failed: {resource_action.tool}: {observation[:1200]}",
+                    messages=messages,
+                )
+                return task
+            messages.append({"role": "assistant", "content": json.dumps({"type": "tool_call", "tool": resource_action.tool, "input": resource_action.input})})
+            messages.append({"role": "user", "content": _tool_result_message(resource_action.tool, observation)})
+
+        completion_message = resource_completion_message(task.prompt or "", transcript)
+        if completion_message:
+            task = await lifecycle.complete(
+                completion_message,
+                reason="pac_resource_flow_completed",
+                step=0,
+                messages=messages,
+                rolling_summary=context_manager.rolling_summary,
+                checkpoint_output=completion_message[:2000],
+            )
+            return task
+
+    elif resolved_request_intent and resolved_request_intent.should_bootstrap_work:
         events.agent_intent(
             summary=f"Bootstrap work step: {resolved_request_intent.tool}",
             model=resolved_request_intent.model,
@@ -357,11 +475,35 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
         messages.append({"role": "assistant", "content": json.dumps(pending)})
         messages.append({"role": "user", "content": _tool_result_message(pending.get("tool", ""), observation)})
     max_runtime_minutes = max(1, int(task.metadata.get("max_runtime_minutes") or (getattr(agent, "max_runtime_minutes", 60) if agent else 60)))
+    max_agent_steps = int(task.metadata.get("max_agent_steps") or session.metadata.get("max_agent_steps") or getattr(agent, "max_agent_steps", 0) or 0)
     deadline = time.monotonic() + (max_runtime_minutes * 60)
     empty_model_retries = 0
     step = 0
     while True:
         step += 1
+        if max_agent_steps and step > max_agent_steps:
+            reason = f"agent_step_budget_exhausted:{max_agent_steps}"
+            task = await lifecycle.timeout(
+                max_runtime_minutes=max_runtime_minutes,
+                step=step,
+                messages=messages,
+                rolling_summary=context_manager.rolling_summary,
+            )
+            task.error = f"Agent turn budget reached after {max_agent_steps} iteration(s)."
+            task.metadata["stop_reason"] = reason
+            store.add_task(task)
+            events.emit(
+                "agent_step_budget_exhausted",
+                task.error,
+                {
+                    "step": step,
+                    "max_agent_steps": max_agent_steps,
+                    "subagent_profile": task.metadata.get("subagent_profile") or session.metadata.get("subagent_profile"),
+                },
+            )
+            return task
+        task.metadata["agent_step"] = step
+        store.add_task(task)
         # Auto-checkpoint every 10 steps
         if step % 10 == 0:
             await lifecycle.checkpoint(
@@ -371,11 +513,21 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                 emit_event=True,
             )
         latest_task = store.get_task(task.id) or task
-        stop_requested = bool((latest_task.metadata or {}).get("stop_requested"))
+        stop_requested = bool((latest_task.metadata or {}).get("stop_requested") or (latest_task.metadata or {}).get("cancel_requested"))
         if stop_requested:
             task = await lifecycle.stop(
                 latest_task=latest_task,
-                reason="user_stop",
+                reason=str((latest_task.metadata or {}).get("stop_reason") or "user_stop"),
+                step=step,
+                messages=messages,
+                rolling_summary=context_manager.rolling_summary,
+            )
+            return task
+        if bool((store.get_task(task.id) or task).metadata.get("stop_requested") or (store.get_task(task.id) or task).metadata.get("cancel_requested")):
+            latest_task = store.get_task(task.id) or task
+            task = await lifecycle.stop(
+                latest_task=latest_task,
+                reason=str((latest_task.metadata or {}).get("stop_reason") or "user_stop"),
                 step=step,
                 messages=messages,
                 rolling_summary=context_manager.rolling_summary,
@@ -390,10 +542,19 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             )
             return task
         messages = await timing.around_async(
-            "context_compaction_check",
-            "Context compaction/check was slow",
-            context_manager.maybe_compact(messages, source="threshold"),
+            "context_pressure_check",
+            "Context pressure/checkpoint/compaction check was slow",
+            context_manager.manage_pressure(messages, source="threshold", step=step),
         )
+        if context_manager.consume_checkpoint_request():
+            await lifecycle.checkpoint(
+                step=step,
+                messages=messages,
+                rolling_summary=context_manager.rolling_summary,
+                output=str(task.metadata.get("context_checkpoint_summary") or "")[:2000],
+                task_status="running",
+                emit_event=True,
+            )
 
         remaining_seconds = max(0, int(deadline - time.monotonic()))
         if step == 1 or step % 10 == 0:
@@ -413,6 +574,23 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                     preview=str(update.get("preview") or ""),
                 )
 
+            decision_timeout_seconds = int(
+                task.metadata.get("decision_timeout_seconds")
+                or session.metadata.get("decision_timeout_seconds")
+                or task.metadata.get("model_call_timeout_seconds")
+                or session.metadata.get("model_call_timeout_seconds")
+                or 180
+            )
+
+            def decision_should_abort() -> bool:
+                latest = store.get_task(task.id) or task
+                metadata = latest.metadata or {}
+                return bool(
+                    metadata.get("stop_requested")
+                    or metadata.get("cancel_requested")
+                    or latest.status in {TaskStatus.completed, TaskStatus.failed}
+                )
+
             raw = await timing.around_async(
                 "decision_model",
                 "Decision model call was slow",
@@ -425,20 +603,49 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                         telemetry={"session_id": session.id, "task_id": task.id, "call_type": "decision", "step": step},
                         progress_callback=decision_progress,
                     ),
-                    timeout_seconds=int(task.metadata.get("decision_timeout_seconds") or 0) or None,
+                    timeout_seconds=decision_timeout_seconds,
                     on_abandoned=lambda: events.model_call_abandoned(
                         model=decision_model,
                         call_type="decision",
-                        timeout_seconds=int(task.metadata.get("decision_timeout_seconds") or 0),
+                        timeout_seconds=decision_timeout_seconds,
+                    ),
+                    on_aborted=lambda: events.emit(
+                        "model_call_cancelled",
+                        "Provider call was abandoned because the task was stopped.",
+                        events.assistant_data(
+                            model=decision_model,
+                            step=step,
+                            call_type="decision",
+                            timeout_seconds=decision_timeout_seconds,
+                        ),
                     ),
                     on_late_completed=lambda success: events.model_call_late_completed(
                         model=decision_model,
                         call_type="decision",
                         success=success,
                     ),
+                    should_abort=decision_should_abort,
                 ),
-                {"model": decision_model, "step": step},
+                {"model": decision_model, "step": step, "timeout_seconds": decision_timeout_seconds},
             )
+        except AgentModelCallAborted:
+            latest_task = store.get_task(task.id) or task
+            task = await lifecycle.stop(
+                latest_task=latest_task,
+                reason=str((latest_task.metadata or {}).get("stop_reason") or "user_stop"),
+                step=step,
+                messages=messages,
+                rolling_summary=context_manager.rolling_summary,
+            )
+            return task
+        except asyncio.TimeoutError:
+            task = await lifecycle.fail(
+                f"Model call timed out after {decision_timeout_seconds} seconds.",
+                step=step,
+                messages=messages,
+                rolling_summary=context_manager.rolling_summary,
+            )
+            return task
         except Exception as exc:
             task = await lifecycle.fail(
                 f"Model call failed: {exc}",
@@ -613,6 +820,16 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                     messages.append({"role": "user", "content": contract_decision.corrective_prompt})
                     continue
 
+            doom_pre = evaluate_before_tool_action(task, prompt=task.prompt or "", action=action)
+            if doom_pre.detected and doom_pre.replacement_action:
+                events.doom_loop_detected(
+                    message=doom_pre.message or "Doom-loop recovery enforced.",
+                    data=doom_pre.data or {},
+                )
+                action = doom_pre.replacement_action
+                thought_summary, thought_meta = _summarize_model_action(action)
+                events.agent_intent(summary=thought_summary, model=decision_model, step=step, metadata=thought_meta)
+
             tool = str(action.get("tool") or "")
             inp = action.get("input") or {}
             events.tool_call(tool=tool, input=inp)
@@ -644,27 +861,93 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                 )
                 return task
             latest_task = store.get_task(task.id) or task
-            if (latest_task.metadata or {}).get("stop_requested"):
+            if (latest_task.metadata or {}).get("stop_requested") or (latest_task.metadata or {}).get("cancel_requested"):
                 task = await lifecycle.stop(
                     latest_task=latest_task,
-                    reason="user_stop",
+                    reason=str((latest_task.metadata or {}).get("stop_reason") or "user_stop"),
                     step=step,
                     messages=messages,
                     rolling_summary=context_manager.rolling_summary,
                 )
                 return task
             if context_manager.consume_compact_now_request():
-                messages = await context_manager.maybe_compact(
+                messages = await context_manager.manage_pressure(
                     messages,
                     source="agent_slash_command",
-                    force=True,
+                    step=step,
+                    force_checkpoint=True,
+                    force_compact=True,
                 )
+                if context_manager.consume_checkpoint_request():
+                    await lifecycle.checkpoint(
+                        step=step,
+                        messages=messages,
+                        rolling_summary=context_manager.rolling_summary,
+                        output=str(task.metadata.get("context_checkpoint_summary") or "")[:2000],
+                        task_status="running",
+                        emit_event=True,
+                    )
             messages.append({"role": "assistant", "content": json.dumps(action)})
             recovery_prompt = _tool_observation_requires_recovery(tool, inp, observation, task)
             if recovery_prompt:
                 messages.append({"role": "user", "content": recovery_prompt})
             else:
                 messages.append({"role": "user", "content": _tool_result_message(str(action.get("tool") or ""), observation)})
+
+            doom_decision = evaluate_after_tool_result(
+                task,
+                prompt=task.prompt or "",
+                step=step,
+                tool=tool,
+                inp=inp if isinstance(inp, dict) else {},
+                observation=observation,
+            )
+            store.add_task(task)
+            if doom_decision.detected:
+                events.doom_loop_detected(
+                    message=doom_decision.message or "Doom loop detected; switching strategy.",
+                    data=doom_decision.data or {},
+                )
+                if doom_decision.replacement_action:
+                    recovery_action = doom_decision.replacement_action
+                    recovery_tool = str(recovery_action.get("tool") or "")
+                    recovery_input = recovery_action.get("input") or {}
+                    thought_summary, thought_meta = _summarize_model_action(recovery_action)
+                    events.agent_intent(summary=thought_summary, model=decision_model, step=step, metadata={**thought_meta, "doom_loop_recovery": True})
+                    events.tool_call(tool=recovery_tool, input=recovery_input)
+                    try:
+                        recovery_observation, recovery_paused = await timing.around_async(
+                            "doom_loop_recovery_tool",
+                            "Doom-loop recovery tool was slow",
+                            execute_tool(session, task, recovery_tool, recovery_input, config),
+                            {"tool": recovery_tool, "step": step, "reason": doom_decision.reason},
+                        )
+                    except Exception as exc:
+                        task = await lifecycle.fail(
+                            f"Doom-loop recovery failed before producing a result: {recovery_tool}: {exc}",
+                            step=step,
+                            messages=messages,
+                            rolling_summary=context_manager.rolling_summary,
+                        )
+                        return task
+                    transcript.append({"step": step, "tool": recovery_tool, "input": recovery_input, "observation": recovery_observation[-4000:], "doom_loop_recovery": True})
+                    task.metadata["agent_transcript"] = transcript[-20:]
+                    store.add_task(task)
+                    messages.append({"role": "assistant", "content": json.dumps(recovery_action)})
+                    messages.append({"role": "user", "content": _tool_result_message(recovery_tool, recovery_observation)})
+                    if doom_decision.corrective_prompt:
+                        messages.append({"role": "user", "content": doom_decision.corrective_prompt})
+                    if recovery_paused:
+                        await lifecycle.checkpoint(
+                            step=step,
+                            messages=messages,
+                            rolling_summary=context_manager.rolling_summary,
+                            output="",
+                            task_status="approval_required",
+                        )
+                        return task
+                elif doom_decision.corrective_prompt:
+                    messages.append({"role": "user", "content": doom_decision.corrective_prompt})
             messages = context_manager.keep_recent_window(messages)
             continue
 

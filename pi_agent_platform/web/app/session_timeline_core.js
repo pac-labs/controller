@@ -54,6 +54,48 @@ function formatDurationMs(ms) {
   return `${seconds}s`;
 }
 
+
+function renderSubagentSummaryPanel(events) {
+  const timeline = document.getElementById('events');
+  if (!timeline || !Array.isArray(events)) return;
+  const items = [];
+  events.forEach((event) => {
+    const type = String(event?.type || '').toLowerCase();
+    const data = event?.data && typeof event.data === 'object' ? event.data : {};
+    if (type === 'subagent_chain_completed' && Array.isArray(data.summaries)) {
+      data.summaries.forEach((item) => items.push({
+        profile: item.display_name || item.profile || 'Subagent',
+        status: item.status || 'completed',
+        summary: item.summary || '',
+        session: item.session_id || '',
+      }));
+    } else if (type === 'subagent_completed' || type === 'subagent_failed') {
+      items.push({
+        profile: data.subagent_display_name || data.subagent_profile || 'Subagent',
+        status: data.status || (type.endsWith('failed') ? 'failed' : 'completed'),
+        summary: data.summary || data.error || event.message || '',
+        session: data.subagent_session_id || '',
+      });
+    }
+  });
+  if (!items.length) return;
+  const panel = document.createElement('section');
+  panel.className = 'subagent-summary-panel timeline-card info';
+  const latest = items.slice(-6);
+  panel.innerHTML = `<div class="timeline-card-header"><strong>Specialist sub-agents</strong><span>${latest.length} summary${latest.length === 1 ? '' : 'ies'}</span></div>`;
+  const body = document.createElement('div');
+  body.className = 'subagent-summary-list';
+  latest.forEach((item) => {
+    const row = document.createElement('div');
+    row.className = 'subagent-summary-item';
+    const summary = String(item.summary || '').split('\n').filter(Boolean).slice(0, 3).join(' ');
+    row.innerHTML = `<div><b>${escapeHtml(item.profile)}</b> <span class="pill">${escapeHtml(item.status)}</span></div><div class="muted">${escapeHtml(summary || 'No summary returned.')}</div>${item.session ? `<div class="muted">Session: ${escapeHtml(item.session)}</div>` : ''}`;
+    body.appendChild(row);
+  });
+  panel.appendChild(body);
+  timeline.appendChild(panel);
+}
+
 function sessionEventMetaLines(event) {
   const data = event?.data && typeof event.data === 'object' ? event.data : {};
   const lines = [];

@@ -347,3 +347,88 @@ This internal layer should remain dependency-free and low overhead. External sys
 Observe contains runtime evidence: events, logs, metrics, traces, and diagnostics. Config contains configuration and setup values.
 
 Events shown from the top notification/bell rail must include backend events and UI-triggered operations that are persisted through the controller event API. UI actions that say “Details are in Events” must create an event row, not only a transient browser-only message.
+
+== Binary and Workspace Agent Model
+
+PAC exposes two installable runtime binaries:
+
+- `pac-endpoint`: the endpoint/workspace wrapper that runs where work happens.
+- `pacctl`: the client used by humans, scripts, IDEs, containers, and automation to talk to PAC.
+
+The former `pac-endpoint-runner` binary is removed. Its behavior is embedded in `pac-endpoint`.
+
+`pac-agent` and `zed-binary` source folders have been retired. Their active behavior now belongs to the two primary binaries: `pac-endpoint` for endpoint/workspace execution and `pacctl` for CLI/MCP/client integration.
+
+=== pac-endpoint
+
+`pac-endpoint` supports host and workspace modes.
+
+Host daemon mode registers the machine as an endpoint, forwards heartbeat, reports tools and capabilities, executes controller-routed jobs, and will forward hardware/metrics inventory.
+
+Workspace mode uses:
+
+----
+pac-endpoint workspace run
+----
+
+This command is the foreground process for workspace containers. It reads workspace configuration from JSON or environment variables, registers the workspace with PAC, opens an outbound controller connection, sends heartbeat, executes PAC-routed commands, and keeps the container alive. When the container stops or loses connectivity, PAC marks the workspace offline after heartbeat timeout.
+
+Workspace containers do not own durable command history. Command history, output events, session state, audit records, and PAC RAM live in PAC. Workspace storage should be centralized or mounted.
+
+=== pacctl
+
+`pacctl` communicates with PAC and asks PAC to route work to endpoints or workspaces. It should not bypass PAC by directly connecting to hosts by default.
+
+Supported client responsibilities include:
+
+- polling PAC state and events;
+- sending provider/model information;
+- using dynamic API/catalog endpoints;
+- requesting endpoint/workspace commands through PAC;
+- serving editor/MCP integration behavior after the Zed bridge is merged.
+
+=== Release delivery
+
+GitHub Releases publish direct binary assets for `pac-endpoint` and `pacctl` per OS/architecture, plus `RELEASE_BINARIES.json`. Source/update zips intentionally do not bundle compiled binaries. Installation and update flows resolve matching binary assets from GitHub and only build from source as an explicit fallback.
+
+=== Endpoint telemetry and workspace liveness
+
+`pac-endpoint` owns lightweight host and workspace telemetry. In host daemon mode it forwards hardware inventory, tool readiness, and runtime metrics with endpoint heartbeats. In `workspace run` mode it registers the workspace, keeps the outbound command loop open, and forwards the same telemetry shape with workspace-agent heartbeats.
+
+PAC stores command history, PAC RAM, events, and workspace liveness centrally. Workspace containers are ephemeral executors: when the container stops or the outbound tunnel breaks, PAC marks the workspace degraded/offline from heartbeat age instead of relying on local state in the container.
+
+
+== Workspace command live streaming
+
+Workspace command execution is routed through PAC. `pacctl` queues commands against a workspace and may either poll for completion or open a live command stream. The workspace-side `pac-endpoint workspace run` process claims queued commands, executes them inside the workspace root, forwards ordered stdout/stderr events to PAC, and then posts the final command status and exit code.
+
+PAC stores command events, aggregated output, status, and exit code centrally. Workspace containers are allowed to be ephemeral: if the container exits, heartbeat timeout marks the workspace offline, while command history and PAC RAM remain in the controller.
+
+=== Workspace live terminal interruption
+
+Workspace commands are routed through PAC and can now be streamed and interrupted. The controller keeps the command history and ordered event stream, while the workspace agent polls PAC for cancellation intent during execution. A queued command can be marked `interrupted` immediately; a claimed command receives `cancel_requested` metadata and the endpoint terminates the local process, completing the command with an interrupted status and exit code 130.
+
+Endpoint inventory and metrics from `pac-endpoint` are surfaced as endpoint detail cards in the UI. The command event model still needs a dedicated high-volume event table for long-running or noisy commands; this follow-up is documented in `docs/workspace-command-event-model-followup-20260529.md`.
+
+=== Workspace command event store
+
+Workspace command output is stored in PAC as append-only command events keyed by workspace id, command id, and sequence number. The live terminal and `pacctl workspace exec --stream` replay from this store. Command records keep bounded recent events and aggregate stdout/stderr summaries only, which keeps command history available after workspace containers stop without growing command payloads indefinitely.
+
+== Update Orchestrator and Binary-First Release Flow
+
+PAC release updates are source-first and binary-resolved. The source/update zip must not bundle compiled binaries. GitHub Actions builds the first-class release binaries before packaging and publishes them as direct release assets plus `RELEASE_BINARIES.json`.
+
+First-class binaries:
+
+* `pac-endpoint` - endpoint/workspace wrapper.
+* `pacctl` - PAC client, integration, provider, workspace, and MCP tool.
+
+Default release targets:
+
+* `linux/amd64`
+* `linux/arm64`
+* `darwin/amd64`
+* `darwin/arm64`
+* `windows/amd64`
+
+When the Update Center applies a release, PAC also runs an environment orchestration phase. It downloads `RELEASE_BINARIES.json`, resolves and verifies the matching `pac-endpoint` and `pacctl` assets for the controller host platform, installs them into the local PAC binary cache, regenerates PAC/pi.dev tool instructions, and verifies the pi.dev runtime state. This keeps pi.dev/tool guidance aligned with the installed PAC environment without requiring bundled binaries.

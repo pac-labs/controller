@@ -5,7 +5,6 @@ import json
 import re
 import shlex
 import shutil
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -17,12 +16,17 @@ from pydantic import BaseModel, Field
 from pi_agent_platform.core.config import CODING_SESSION_PERMISSION_PROFILE
 from pi_agent_platform.core.models import Event, Session, SessionCreate, SessionStatus, Task, TaskCreate, TaskStatus, WorkspaceSpec
 from pi_agent_platform.core.runtime import git_diff, git_status, run_shell_task
+from pi_agent_platform.core.workspace_bootstrap import WorkspaceBootstrapError, ensure_workspace_materialized
+from pi_agent_platform.core.coding_session_readiness import CodingSessionReadinessError, prepare_coding_session
 from pi_agent_platform.core.agent_loop import run_agent_loop, execute_tool
 from pi_agent_platform.core.session_commands import parse_session_slash_command, slash_help_text
+from pi_agent_platform.core.model_switch import model_options_text, switch_session_model
 from pi_agent_platform.core.subagents import spawn_pi_dev_subagent
+from pi_agent_platform.core.subagent_chains import start_subagent_chain
 from pi_agent_platform.core.shared_storage import controller_storage_path, shared_storage_binding
 from pi_agent_platform.core.profiles import can_use_profile, profile_context_name
 from pi_agent_platform.core.diagnostics_bundle import build_session_diagnostics, build_session_diagnostics_zip
+from pi_agent_platform.core.platform_debug_bundle import build_platform_debug_zip
 from pi_agent_platform.core.model_metrics import model_metrics
 
 
@@ -251,22 +255,23 @@ def create_sessions_router(
             tools=selected_tools,
             metadata=payload.metadata,
         )
-        Path(session.workspace_path).mkdir(parents=True, exist_ok=True)
-
-        if workspace.type == 'git':
-            if not workspace.url:
-                raise HTTPException(status_code=400, detail='Git workspace requires url')
-            if not Path(session.workspace_path, '.git').exists():
-                cmd = ['git', 'clone']
-                if workspace.branch:
-                    cmd += ['--branch', workspace.branch]
-                cmd += [workspace.url, session.workspace_path]
-                result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-                if result.returncode != 0:
-                    raise HTTPException(status_code=500, detail=result.stderr)
-
         store.add_session(session)
-        store.add_event(Event(session_id=session.id, type='session_created', message='Session created', data={'workspace_path': session.workspace_path, 'agent_profile': session.agent_profile, 'permission_profile': session.permission_profile, 'context_mode': session.context_mode, 'endpoint': session.metadata.get('preferred_endpoint'), 'endpoint_locked': session.metadata.get('endpoint_locked'), 'agent_enabled': session.metadata.get('agent_enabled', True), 'execution_mode': session.metadata.get('execution_mode', 'pi.dev'), 'effective_context': _effective_context(config, session.model, context_name)}))
+        try:
+            if coding_session:
+                readiness = prepare_coding_session(session, config, store=store)
+                workspace_materialization = session.metadata.get('workspace_materialization') or readiness.get('materialization') or {}
+            else:
+                workspace_materialization = ensure_workspace_materialized(session)
+                session.metadata['workspace_materialization'] = workspace_materialization
+                store.add_session(session)
+        except (WorkspaceBootstrapError, CodingSessionReadinessError) as exc:
+            session.status = SessionStatus.failed
+            session.metadata['coding_readiness'] = {'status': 'failed', 'stage': 'session_create', 'error': str(exc)}
+            store.add_session(session)
+            store.add_event(Event(session_id=session.id, type='session_readiness_failed', message=str(exc), data={'error': str(exc), 'workspace_path': session.workspace_path, 'endpoint': session.metadata.get('preferred_endpoint')}))
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        store.add_event(Event(session_id=session.id, type='session_created', message='Session created', data={'workspace_path': session.workspace_path, 'workspace_materialization': workspace_materialization, 'coding_readiness': session.metadata.get('coding_readiness'), 'agent_profile': session.agent_profile, 'permission_profile': session.permission_profile, 'context_mode': session.context_mode, 'endpoint': session.metadata.get('preferred_endpoint'), 'endpoint_locked': session.metadata.get('endpoint_locked'), 'agent_enabled': session.metadata.get('agent_enabled', True), 'execution_mode': session.metadata.get('execution_mode', 'pi.dev'), 'effective_context': _effective_context(config, session.model, context_name)}))
         return session
 
 
@@ -336,6 +341,27 @@ def create_sessions_router(
                 store.add_event(Event(session_id=session_id, task_id=task.id, type='user_message', message=payload.prompt, data={'role': 'user', 'model': metadata.get('model') or session.model, 'session_model': session.model, 'endpoint_id': metadata.get('runner_id') or session.metadata.get('preferred_endpoint'), 'command': None, 'execution_mode': metadata.get('execution_mode'), 'stored': True}))
                 store.add_event(Event(session_id=session_id, task_id=task.id, type='result', message=task.output, data={'role': 'assistant', 'model': metadata.get('model') or session.model, 'agent_profile': session.agent_profile, 'endpoint_id': metadata.get('runner_id') or session.metadata.get('preferred_endpoint'), 'slash_command': 'help'}))
                 return task
+            if parsed_slash['kind'] == 'model':
+                task = Task(session_id=session_id, prompt=payload.prompt, metadata={**metadata, 'slash_command': 'model'})
+                task.status = TaskStatus.completed
+                selector = str(parsed_slash.get('selector') or '').strip()
+                store.add_task(task)
+                store.add_event(Event(session_id=session_id, task_id=task.id, type='user_message', message=payload.prompt, data={'role': 'user', 'model': metadata.get('model') or session.model, 'session_model': session.model, 'endpoint_id': metadata.get('runner_id') or session.metadata.get('preferred_endpoint'), 'command': None, 'execution_mode': metadata.get('execution_mode'), 'stored': True}))
+                if not selector:
+                    task.output = model_options_text(config, session)
+                    store.add_task(task)
+                    store.add_event(Event(session_id=session_id, task_id=task.id, type='result', message=task.output, data={'role': 'assistant', 'model': session.model, 'agent_profile': session.agent_profile, 'slash_command': 'model', 'timeline': {'title': 'Model options', 'summary': 'Available models for this PAC session.', 'fields': {'Current': session.model}}}))
+                    return task
+                result = switch_session_model(config, session, selector, task=task, role=str(parsed_slash.get('role') or 'session'), fallback_selectors=parsed_slash.get('fallback') or [], source='slash_command')
+                if result.ok:
+                    task.output = f"Model switched to {result.selected_model}." + (f" Fallbacks: {', '.join(result.fallback_chain)}." if result.fallback_chain else '')
+                else:
+                    task.status = TaskStatus.failed
+                    task.error = result.reason
+                    task.output = result.reason
+                store.add_task(task)
+                store.add_event(Event(session_id=session_id, task_id=task.id, type='result', message=task.output, data={'role': 'assistant', 'model': session.model, 'agent_profile': session.agent_profile, 'slash_command': 'model', 'model_switch': result.to_dict()}))
+                return task
             payload = TaskCreate(
                 prompt=parsed_slash.get('prompt') or payload.prompt,
                 command=parsed_slash.get('command') or payload.command,
@@ -344,7 +370,7 @@ def create_sessions_router(
             )
             if parsed_slash['kind'] == 'tool':
                 metadata['execution_mode'] = 'host'
-            elif parsed_slash['kind'] == 'subagent':
+            elif parsed_slash['kind'] in {'subagent', 'subagent_chain'}:
                 metadata['execution_mode'] = metadata.get('execution_mode') or 'pi_container'
         if _is_coding_session_metadata(session.metadata):
             metadata['coding_session'] = True
@@ -408,8 +434,23 @@ def create_sessions_router(
             store.add_task(task)
             store.add_event(Event(session_id=session_id, task_id=task.id, type='context_compacted', message='Context compaction requested', data={'role': 'assistant', 'model': metadata.get('model') or session.model, 'agent_profile': session.agent_profile, 'slash_command': metadata.get('slash_command')}))
             return task
+        if metadata.get('subagent_chain'):
+            started = await start_subagent_chain(
+                session,
+                task,
+                str(metadata.get('subagent_instruction') or payload.prompt or ''),
+                config,
+                run_agent_loop,
+                profiles=metadata.get('subagent_chain_profiles') or None,
+                chain_name=str(metadata.get('subagent_chain') or 'code_change'),
+            )
+            task.status = TaskStatus.running
+            task.output = started.get('message') or 'Specialist chain started.'
+            store.add_task(task)
+            store.add_event(Event(session_id=session_id, task_id=task.id, type='result', message=task.output, data={'role': 'assistant', 'model': metadata.get('model') or session.model, 'agent_profile': session.agent_profile, 'endpoint_id': metadata.get('runner_id') or session.metadata.get('preferred_endpoint'), 'subagent_chain': metadata.get('subagent_chain'), 'timeline': {'title': 'Specialist chain launched', 'summary': task.output, 'fields': {'Chain': metadata.get('subagent_chain') or 'code_change', 'Endpoint': metadata.get('runner_id') or session.metadata.get('preferred_endpoint') or '-'}}}))
+            return task
         if metadata.get('subagent'):
-            spawned = await spawn_pi_dev_subagent(session, task, str(metadata.get('subagent_instruction') or payload.prompt or ''), config, run_agent_loop)
+            spawned = await spawn_pi_dev_subagent(session, task, str(metadata.get('subagent_instruction') or payload.prompt or ''), config, run_agent_loop, profile_key=str(metadata.get('subagent_profile') or '') or None)
             child_session = spawned['session']
             child_task = spawned['task']
             task.status = TaskStatus.completed
@@ -724,6 +765,35 @@ def create_sessions_router(
             include_workspace_state=include_workspace_state,
         )
         filename = f'pac-diagnostics-{session.id}.zip'
+        return Response(
+            content=bundle,
+            media_type='application/zip',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+        )
+
+
+    @router.get('/v1/sessions/{session_id}/debug-bundle.zip')
+    def download_session_debug_bundle(
+        session_id: str,
+        include_events: int = Query(default=3000, ge=1, le=10000),
+        full: bool = Query(default=True),
+        active_task_id: str | None = Query(default=None),
+        _auth: Any = Depends(require_auth),
+    ) -> Response:
+        session = store.get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail='Session not found')
+        resource_type, resource_id = _session_resource_ref(session)
+        _require_resource_access(_auth, resource_type, resource_id, 'read', reason='Download session debug bundle')
+        bundle = build_platform_debug_zip(
+            store=store,
+            config=config,
+            session=session,
+            include_events=include_events,
+            include_full=full,
+            active_task_id=active_task_id,
+        )
+        filename = f'pac-debug-{session.id}.zip'
         return Response(
             content=bundle,
             media_type='application/zip',

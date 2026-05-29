@@ -7,6 +7,8 @@ function openSessionThinkingModal(group) {
   const body = document.getElementById('sessionEventModalBody');
   const duration = formatDurationMs(((group.endedAt || new Date()).getTime()) - (group.startedAt || new Date()).getTime());
   if (title) title.textContent = group.closed ? `Thought for ${duration}` : `Thinking for ${duration}`;
+  const debugButton = document.getElementById('downloadSessionDebugBundle');
+  if (debugButton) debugButton.dataset.taskId = group.taskId || group.lastEvent?.task_id || '';
   if (body) {
     body.className = 'modal-scroll-output tool-activity-modal';
     const planSteps = deriveThinkingPlanSteps(group);
@@ -197,6 +199,8 @@ function openSessionEventModal(event, block) {
   const title = document.getElementById('sessionEventModalTitle');
   const body = document.getElementById('sessionEventModalBody');
   if (title) title.textContent = prettyEventType(event?.type || 'reply details');
+  const debugButton = document.getElementById('downloadSessionDebugBundle');
+  if (debugButton) debugButton.dataset.taskId = event?.task_id || '';
   if (body) {
     body.className = 'modal-scroll-output';
     body.textContent = sessionEventDetailsText(event, block);
@@ -213,6 +217,15 @@ function closeSessionEventModal() {
 function bindSessionEventModalChrome() {
   const modal = document.getElementById('sessionEventModal');
   const closeButton = document.getElementById('closeSessionEventModal');
+  const debugButton = document.getElementById('downloadSessionDebugBundle');
+  if (debugButton && !debugButton.dataset.sessionDebugBound) {
+    debugButton.dataset.sessionDebugBound = '1';
+    debugButton.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      downloadSessionDebugBundleFromModal();
+    });
+  }
   if (closeButton && !closeButton.dataset.sessionCloseBound) {
     closeButton.dataset.sessionCloseBound = '1';
     closeButton.addEventListener('click', (ev) => {
@@ -235,3 +248,18 @@ function bindSessionEventModalChrome() {
   }
 }
 
+
+function downloadSessionDebugBundleFromModal() {
+  if (!selectedSession?.id) return;
+  const button = document.getElementById('downloadSessionDebugBundle');
+  const taskId = button?.dataset.taskId || '';
+  const params = new URLSearchParams({include_events: '3000', full: 'true'});
+  if (taskId) params.set('active_task_id', taskId);
+  const url = `/v1/sessions/${encodeURIComponent(selectedSession.id)}/debug-bundle.zip?${params.toString()}`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `pac-debug-${selectedSession.id}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}

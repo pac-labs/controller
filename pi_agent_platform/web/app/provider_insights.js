@@ -141,17 +141,27 @@ function renderWorkspaceActivityPanel() {
   const target = document.getElementById('workspacesActive');
   if (!target) return;
   const sessions = window.__pacSessions || [];
+  const agents = window.__pacWorkspaceAgents || [];
   const workspaces = Object.entries(config.workspaces || {});
-  if (!workspaces.length) {
-    target.innerHTML = '<div class="muted small-text">No workspaces configured.</div>';
-    return;
-  }
-  target.innerHTML = workspaces.map(([name, workspace]) => {
+  const agentCards = agents.map((agent) => {
+    const metrics = agent.metrics || agent.metadata?.metrics || {};
+    const memory = metrics.memory || {};
+    const usedRatio = typeof memory.used_ratio === 'number' ? `${Math.round(memory.used_ratio * 100)}% memory` : 'metrics pending';
+    const load = typeof metrics.load_1m === 'number' ? `load ${Number(metrics.load_1m).toFixed(2)}` : usedRatio;
+    const statusClass = agent.status === 'online' ? 'ready' : agent.status === 'degraded' ? 'attention' : 'muted';
+    return `<div class="inline-browser-row"><div><b>${escapeHtml(agent.name || agent.workspace_id)}</b><div class="muted small-text">${escapeHtml(agent.status || 'unknown')} - ${escapeHtml(agent.root || '-')} - ${escapeHtml(load)}</div></div><div class="row-actions"><button class="ghost-button mini-button" data-workspace-terminal="${escapeHtml(agent.workspace_id)}">Terminal</button><span class="pill ${statusClass}">agent</span></div></div>`;
+  });
+  const profileCards = workspaces.map(([name, workspace]) => {
     const count = sessions.filter(session => {
       const path = String(session.workspace_path || '');
       return path === String(workspace.path || '') || path.includes(name);
     }).length;
     const placement = workspace.endpoint_id || workspace.endpoint_selector || 'runtime';
     return `<div class="inline-browser-row"><div><b>${escapeHtml(name)}</b><div class="muted small-text">${escapeHtml(workspace.type || 'local')} - ${escapeHtml(placement)}</div></div><span class="pill">${count} session(s)</span></div>`;
-  }).join('');
+  });
+  const cards = [...agentCards, ...profileCards];
+  target.innerHTML = cards.join('') || '<div class="muted small-text">No workspaces configured or online.</div>';
+  target.querySelectorAll('[data-workspace-terminal]').forEach((btn) => {
+    btn.onclick = () => openWorkspaceLiveTerminal(btn.getAttribute('data-workspace-terminal') || '');
+  });
 }

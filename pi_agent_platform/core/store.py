@@ -7,7 +7,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Callable, Iterable
 
-from .models import AccessRequest, AgentContext, DirectoryCredential, DirectoryPrincipal, Event, Group, Session, Task, Runner, RunnerJob, RunnerJobStatus, User, UserWorkspace, now_utc
+from .models import AccessRequest, AgentContext, DirectoryCredential, DirectoryPrincipal, Event, Group, Session, Task, Runner, RunnerJob, RunnerJobStatus, User, UserWorkspace, WorkspaceAgent, WorkspaceAgentCommand, WorkspaceAgentCommandEvent, WorkspaceAgentCommandStatus, now_utc
 from .shared_storage import SharedStorage
 from .config import ProxyRoute
 from .event_retention import is_emergency_event, normalize_event_retention_policy
@@ -59,6 +59,13 @@ class SQLiteStore:
             conn.execute('create index if not exists idx_shared_storages_name on shared_storages(name)')
             conn.execute('create table if not exists proxy_routes (id text primary key, payload text not null, updated_at text not null)')
             conn.execute('create table if not exists controller_settings (key text primary key, value text not null, updated_at text not null)')
+            conn.execute('create table if not exists workspace_agents (workspace_id text primary key, payload text not null, updated_at text not null)')
+            conn.execute('create index if not exists idx_workspace_agents_updated on workspace_agents(updated_at)')
+            conn.execute('create table if not exists workspace_agent_commands (id text primary key, workspace_id text not null, status text not null, payload text not null, updated_at text not null)')
+            conn.execute('create index if not exists idx_workspace_agent_commands_workspace_status on workspace_agent_commands(workspace_id, status, updated_at)')
+            conn.execute('create table if not exists workspace_agent_command_events (id text primary key, workspace_id text not null, command_id text not null, seq integer not null, stream text not null, payload text not null, created_at text not null)')
+            conn.execute('create unique index if not exists idx_workspace_agent_command_events_command_seq on workspace_agent_command_events(command_id, seq)')
+            conn.execute('create index if not exists idx_workspace_agent_command_events_workspace_created on workspace_agent_command_events(workspace_id, created_at)')
 
     def add_session(self, session: Session) -> Session:
         session.touch()
@@ -556,6 +563,94 @@ class SQLiteStore:
         with self._lock, self._connect() as conn:
             cur = conn.execute('delete from user_workspaces where id = ?', (workspace_id,))
         return cur.rowcount > 0
+
+
+    def add_workspace_agent(self, agent: WorkspaceAgent) -> WorkspaceAgent:
+        agent.touch()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'insert or replace into workspace_agents(workspace_id, payload, updated_at) values (?, ?, ?)',
+                (agent.workspace_id, agent.model_dump_json(), agent.updated_at.isoformat()),
+            )
+        return agent
+
+    def get_workspace_agent(self, workspace_id: str) -> WorkspaceAgent | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from workspace_agents where workspace_id = ?', (workspace_id,)).fetchone()
+        return WorkspaceAgent.model_validate_json(row['payload']) if row else None
+
+    def list_workspace_agents(self) -> list[WorkspaceAgent]:
+        with self._connect() as conn:
+            rows = conn.execute('select payload from workspace_agents order by updated_at desc').fetchall()
+        return [WorkspaceAgent.model_validate_json(r['payload']) for r in rows]
+
+    def add_workspace_agent_command(self, command: WorkspaceAgentCommand) -> WorkspaceAgentCommand:
+        command.touch()
+        status = command.status.value if hasattr(command.status, 'value') else str(command.status)
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'insert or replace into workspace_agent_commands(id, workspace_id, status, payload, updated_at) values (?, ?, ?, ?, ?)',
+                (command.id, command.workspace_id, status, command.model_dump_json(), command.updated_at.isoformat()),
+            )
+        return command
+
+    def get_workspace_agent_command(self, command_id: str) -> WorkspaceAgentCommand | None:
+        with self._connect() as conn:
+            row = conn.execute('select payload from workspace_agent_commands where id = ?', (command_id,)).fetchone()
+        return WorkspaceAgentCommand.model_validate_json(row['payload']) if row else None
+
+    def claim_next_workspace_agent_command(self, workspace_id: str) -> WorkspaceAgentCommand | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                'select payload from workspace_agent_commands where workspace_id = ? and status = ? order by updated_at asc limit 1',
+                (workspace_id, WorkspaceAgentCommandStatus.queued.value),
+            ).fetchone()
+            if not row:
+                return None
+            command = WorkspaceAgentCommand.model_validate_json(row['payload'])
+            command.status = WorkspaceAgentCommandStatus.claimed
+            command.claimed_at = now_utc()
+            command.touch()
+            conn.execute(
+                'insert or replace into workspace_agent_commands(id, workspace_id, status, payload, updated_at) values (?, ?, ?, ?, ?)',
+                (command.id, command.workspace_id, command.status.value, command.model_dump_json(), command.updated_at.isoformat()),
+            )
+        return command
+
+    def list_workspace_agent_commands(self, workspace_id: str, limit: int = 50) -> list[WorkspaceAgentCommand]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                'select payload from workspace_agent_commands where workspace_id = ? order by updated_at desc limit ?',
+                (workspace_id, max(1, min(int(limit or 50), 200))),
+            ).fetchall()
+        return [WorkspaceAgentCommand.model_validate_json(r['payload']) for r in rows]
+
+
+    def add_workspace_agent_command_event(self, event: WorkspaceAgentCommandEvent) -> WorkspaceAgentCommandEvent:
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                'insert or replace into workspace_agent_command_events(id, workspace_id, command_id, seq, stream, payload, created_at) values (?, ?, ?, ?, ?, ?, ?)',
+                (event.id, event.workspace_id, event.command_id, int(event.seq), event.stream, event.model_dump_json(), event.created_at.isoformat()),
+            )
+        return event
+
+    def list_workspace_agent_command_events(self, command_id: str, *, after_seq: int = 0, limit: int = 500) -> list[WorkspaceAgentCommandEvent]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                'select payload from workspace_agent_command_events where command_id = ? and seq > ? order by seq asc limit ?',
+                (command_id, max(0, int(after_seq or 0)), max(1, min(int(limit or 500), 5000))),
+            ).fetchall()
+        return [WorkspaceAgentCommandEvent.model_validate_json(r['payload']) for r in rows]
+
+    def count_workspace_agent_command_events(self, command_id: str) -> int:
+        with self._connect() as conn:
+            row = conn.execute('select count(*) as count from workspace_agent_command_events where command_id = ?', (command_id,)).fetchone()
+        return int(row['count'] or 0) if row else 0
+
+    def delete_workspace_agent_command_events(self, command_id: str) -> int:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute('delete from workspace_agent_command_events where command_id = ?', (command_id,))
+        return int(cur.rowcount or 0)
 
     def add_agent_context(self, context: AgentContext) -> AgentContext:
         context.touch()

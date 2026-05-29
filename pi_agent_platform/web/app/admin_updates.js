@@ -21,8 +21,11 @@ function renderFeaturePackPreview(result) {
       ? `<div class="update-delta-list">${delta.map(entry => `<div class="update-delta-version"><div class="update-delta-title">${escapeHtml(entry.title || ('PAC v' + entry.version))}</div><ul>${(entry.changes || []).map(change => `<li>${escapeHtml(change)}</li>`).join('')}</ul></div>`).join('')}</div>`
       : '<div class="muted small-text">No version notes were found inside this zip. The update can still be applied.</div>';
     const source = result.changelog?.source ? `<span class="muted small-text">Change notes: ${escapeHtml(result.changelog.source)}</span>` : '';
-    box.innerHTML = `<div class="pack-summary strong-summary">PAC application update ready</div><div class="muted small-text">${escapeHtml(result.filename || 'upload')} updates the controller from ${escapeHtml(fromVersion)} to ${escapeHtml(toVersion)}. Apply will install the app patch and restart PAC.</div><table class="compact-table"><thead><tr><th>Update</th><th>From</th><th>To</th><th>Action</th></tr></thead><tbody><tr><td><code>PAC app</code></td><td>${escapeHtml(fromVersion)}</td><td>${escapeHtml(toVersion)}</td><td>install + restart</td></tr></tbody></table><div class="update-delta-heading">Changes included</div>${changeHtml}${source}`;
-    setUpdatesDetail({title:'Previewed update', version:toVersion, entries:delta, body:`${result.filename || 'upload'} updates PAC from ${fromVersion} to ${toVersion}.`});
+    const updateMode = result.update_mode === 'changed_files' ? 'Changed-files patch' : 'Full app package';
+    const actionText = result.update_mode === 'changed_files' ? 'merge touched files + restart' : 'install + restart';
+    const fileCount = Number(result.files || result.components?.[0]?.files || 0);
+    box.innerHTML = `<div class="pack-summary strong-summary">PAC application update ready</div><div class="muted small-text">${escapeHtml(result.filename || 'upload')} updates the controller from ${escapeHtml(fromVersion)} to ${escapeHtml(toVersion)}. ${escapeHtml(updateMode)} will ${escapeHtml(actionText)}.</div><table class="compact-table"><thead><tr><th>Update</th><th>From</th><th>To</th><th>Action</th></tr></thead><tbody><tr><td><code>${escapeHtml(updateMode)}</code></td><td>${escapeHtml(fromVersion)}</td><td>${escapeHtml(toVersion)}</td><td>${escapeHtml(actionText)}</td></tr></tbody></table><div class="muted small-text">Files in package: ${escapeHtml(String(fileCount || '-'))}</div><div class="update-delta-heading">Changes included</div>${changeHtml}${source}`;
+    setUpdatesDetail({title:'Previewed update', version:toVersion, entries:delta, body:`${result.filename || 'upload'} updates PAC from ${fromVersion} to ${toVersion} as a ${updateMode}.`});
     return;
   }
   const rows = result.components.map(c => `<tr><td><code>${escapeHtml(c.path)}</code></td><td>${escapeHtml(c.kind)}</td><td>${escapeHtml(c.from_version || 'new')}</td><td>${escapeHtml(c.to_version || '-')}</td><td>${escapeHtml(c.status || '')}</td></tr>`).join('');
@@ -191,15 +194,17 @@ async function applyPacRelease() {
       setUpdatesDetail({
         title: 'Release applied',
         version: result.latest_version || '',
-        body: `PAC scheduled a restart after applying the latest release.\n\nPreservation archive: ${result.preservation_archive?.archive_path || '-'}\nUser diff: ${result.preservation_diff?.diff_path || '-'}${formatPiDevCheck(result) ? `\n\n${formatPiDevCheck(result)}` : ''}`
+        body: `PAC scheduled a restart after applying the latest release.\n\nPreservation archive: ${result.preservation_archive?.archive_path || '-'}\nUser diff: ${result.preservation_diff?.diff_path || '-'}${formatPiDevCheck(result) ? `\n\n${formatPiDevCheck(result)}` : ''}${result.environment_update ? `\n\nEnvironment update: ${result.environment_update.status || 'completed'} (${(result.environment_update.stages || []).length} stage(s))` : ''}`
       });
       await loadUpdateArchives().catch(()=>{});
+      if (result.environment_update) window.PacUpdateCenter?.renderUpdateEnvironment?.(result.environment_update);
     } else if (result.pi_dev_check) {
       setUpdatesDetail({
         title: 'Release applied',
         version: result.latest_version || '',
-        body: `PAC scheduled a restart after applying the latest release.\n\n${formatPiDevCheck(result)}`
+        body: `PAC scheduled a restart after applying the latest release.\n\n${formatPiDevCheck(result)}${result.environment_update ? `\n\nEnvironment update: ${result.environment_update.status || 'completed'} (${(result.environment_update.stages || []).length} stage(s))` : ''}`
       });
+      if (result.environment_update) window.PacUpdateCenter?.renderUpdateEnvironment?.(result.environment_update);
     }
     if (result.restart_scheduled) {
       setUpdateConfirmOverlayRestarting(result.latest_version || meta.latest_version || '', 18);
@@ -326,14 +331,14 @@ async function loadMcpBuildStatus() {
     const links = artifacts.map(a => `<li><a href="${a.download_url}" download>${a.name}</a> <span class="muted">(${a.size || 0} bytes)</span></li>`).join('');
     box.innerHTML = `<b>Status:</b> ${status.status || 'unknown'}<br><b>Message:</b> ${escapeHtml(status.message || '')}<br><b>Version:</b> ${status.version || ''}${artifacts.length ? `<br><b>Downloads:</b><ul>${links}</ul>` : '<br><span class="muted">No binaries available yet.</span>'}<br><span class="muted">Build details are recorded in Events.</span>`;
   } catch (e) {
-    box.textContent = 'Could not load Zed binary status: ' + e.message;
+    box.textContent = 'Could not load pacctl MCP status: ' + e.message;
   }
 }
 
 async function buildMcpBridgeFromUi() {
   switchToTab('sources-tab');
-  await renderSources('binaries/zed-binary');
-  selectedSourceFolder = 'binaries/zed-binary';
+  await renderSources('binaries/pacctl');
+  selectedSourceFolder = 'binaries/pacctl';
   updateSourceActions();
   await buildSelectedBinarySource();
 }

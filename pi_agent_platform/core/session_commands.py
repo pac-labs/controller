@@ -74,10 +74,41 @@ SESSION_SLASH_COMMANDS: dict[str, dict[str, str]] = {
         "label": "/compact",
         "description": "Compact the session context/history before the next model turn.",
     },
+    "model": {
+        "kind": "session",
+        "label": "/model [model|provider:model] [--fallback=a,b]",
+        "description": "Show or switch the active model for this session, with capability checks and fallback chain refresh.",
+    },
     "subagent": {
         "kind": "pi.dev",
         "label": "/subagent <instruction>",
         "description": "Create a scoped pi.dev-backed subagent task for one specific objective.",
+    },
+
+    "explore": {
+        "kind": "pi.dev",
+        "label": "/explore <instruction>",
+        "description": "Spawn a locked read-only Explore sub-agent for discovery.",
+    },
+    "coder": {
+        "kind": "pi.dev",
+        "label": "/coder <instruction>",
+        "description": "Spawn a locked Coder sub-agent for scoped implementation.",
+    },
+    "verify": {
+        "kind": "pi.dev",
+        "label": "/verify <instruction>",
+        "description": "Spawn a locked Verify sub-agent for adversarial testing and checks.",
+    },
+    "general": {
+        "kind": "pi.dev",
+        "label": "/general <instruction>",
+        "description": "Spawn a locked General-purpose sub-agent.",
+    },
+    "chain": {
+        "kind": "pi.dev",
+        "label": "/chain <instruction>",
+        "description": "Run the default Explore → Plan → Coder → Verify specialist chain.",
     },
     "help": {
         "kind": "help",
@@ -121,6 +152,29 @@ def parse_session_slash_command(raw: str) -> dict[str, Any] | None:
             "prompt": "Compact session context",
             "metadata": {"slash_command": "compact", "context_action": "compact"},
         }
+    if spec["kind"] == "session" and verb == "model":
+        fallback: list[str] = []
+        role = "session"
+        remaining: list[str] = []
+        for part in parts:
+            if part.startswith("--fallback="):
+                fallback.extend([item.strip() for item in part.split("=", 1)[1].split(",") if item.strip()])
+            elif part == "--fallback":
+                continue
+            elif part.startswith("--role="):
+                role = part.split("=", 1)[1].strip() or "session"
+            else:
+                remaining.append(part)
+        selector = " ".join(remaining).strip()
+        return {
+            "kind": "model",
+            "verb": verb,
+            "prompt": f"Switch session model to {selector}" if selector else "Show available session models",
+            "selector": selector,
+            "fallback": fallback,
+            "role": role,
+            "metadata": {"slash_command": "model", "model_selector": selector, "model_fallback_selectors": fallback, "model_role": role},
+        }
     if spec["kind"] == "session" and verb == "plan":
         instruction = " ".join(parts).strip()
         return {
@@ -129,14 +183,43 @@ def parse_session_slash_command(raw: str) -> dict[str, Any] | None:
             "prompt": instruction or "Plan the current request",
             "metadata": {"slash_command": "plan", "always_plan": True, "plan_only": True},
         }
-    if spec["kind"] == "pi.dev" and verb == "subagent":
+    if spec["kind"] == "pi.dev" and verb == "chain":
+        instruction = " ".join(parts).strip()
+        return {
+            "kind": "subagent_chain",
+            "verb": verb,
+            "prompt": instruction or "Run specialist chain",
+            "instruction": instruction,
+            "chain": "code_change",
+            "profiles": ["explore", "plan", "coder", "verify"],
+            "metadata": {
+                "slash_command": verb,
+                "subagent_chain": "code_change",
+                "subagent_chain_profiles": ["explore", "plan", "coder", "verify"],
+                "subagent_instruction": instruction,
+            },
+        }
+    if spec["kind"] == "pi.dev":
+        profile_key = None
+        if verb == "subagent" and parts:
+            maybe_profile = parts[0].lower().strip()
+            if maybe_profile in {"explore", "plan", "coder", "verify", "general", "default", "inspect", "review", "test", "code"}:
+                profile_key = parts.pop(0)
+        elif verb in {"explore", "coder", "verify", "general"}:
+            profile_key = verb
         instruction = " ".join(parts).strip()
         return {
             "kind": "subagent",
             "verb": verb,
             "prompt": instruction or "Subagent task",
             "instruction": instruction,
-            "metadata": {"slash_command": "subagent", "subagent": True, "subagent_instruction": instruction},
+            "profile": profile_key,
+            "metadata": {
+                "slash_command": verb,
+                "subagent": True,
+                "subagent_instruction": instruction,
+                "subagent_profile": profile_key,
+            },
         }
     if verb == "command":
         tool = (parts.pop(0) if parts else "").strip()

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -18,6 +19,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -216,6 +218,20 @@ func (c Client) request(ctx context.Context, method, path string, body any) ([]b
 	return data, resp.StatusCode, nil
 }
 
+func commandShellContext(ctx context.Context, command string, metadata map[string]any) *exec.Cmd {
+	shell := stringMeta(metadata, "shell")
+	if runtime.GOOS == "windows" {
+		if shell == "cmd" {
+			return exec.CommandContext(ctx, "cmd.exe", "/C", command)
+		}
+		return exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command)
+	}
+	if shell == "sh" {
+		return exec.CommandContext(ctx, "/bin/sh", "-lc", command)
+	}
+	return exec.CommandContext(ctx, "/bin/bash", "-lc", command)
+}
+
 func commandShell(command string, metadata map[string]any) *exec.Cmd {
 	requested := strings.ToLower(strings.TrimSpace(stringMeta(metadata, "shell")))
 	if runtime.GOOS == "windows" {
@@ -270,12 +286,111 @@ func runCommand(job Job) (int, string, string) {
 	cmd.Stderr = &er
 	err = cmd.Run()
 	code := 0
-	if err != nil {
+	if err != nil && code != 130 {
 		if ee, ok := err.(*exec.ExitError); ok {
 			code = ee.ExitCode()
 		} else {
 			code = 1
 			er.WriteString(err.Error())
+		}
+	}
+	return code, out.String(), er.String()
+}
+
+type commandEventFunc func(stream, data string)
+
+func runCommandStreaming(job Job, emit commandEventFunc) (int, string, string) {
+	return runCommandStreamingCancelable(job, emit, nil)
+}
+
+func runCommandStreamingCancelable(job Job, emit commandEventFunc, cancelRequested func() bool) (int, string, string) {
+	root, err := workspaceRoot(job)
+	if err != nil {
+		return 1, "", err.Error()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd := commandShellContext(ctx, job.Command, job.Metadata)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "PAC_WORKSPACE="+root, "PAC_JOB_ID="+job.ID, "PAC_ENDPOINT_VERSION="+version)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return 1, "", err.Error()
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return 1, "", err.Error()
+	}
+	if err := cmd.Start(); err != nil {
+		return 1, "", err.Error()
+	}
+	var out, er bytes.Buffer
+	var wg sync.WaitGroup
+	copyStream := func(name string, reader io.Reader, sink *bytes.Buffer) {
+		defer wg.Done()
+		scanner := bufio.NewScanner(reader)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		for scanner.Scan() {
+			chunk := scanner.Text() + "\n"
+			sink.WriteString(chunk)
+			if emit != nil {
+				emit(name, chunk)
+			}
+		}
+		if scanErr := scanner.Err(); scanErr != nil {
+			msg := scanErr.Error() + "\n"
+			er.WriteString(msg)
+			if emit != nil {
+				emit("stderr", msg)
+			}
+		}
+	}
+	wg.Add(2)
+	go copyStream("stdout", stdout, &out)
+	go copyStream("stderr", stderr, &er)
+	interrupted := false
+	monitorDone := make(chan struct{})
+	if cancelRequested != nil {
+		go func() {
+			ticker := time.NewTicker(750 * time.Millisecond)
+			defer ticker.Stop()
+			defer close(monitorDone)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if cancelRequested() {
+						interrupted = true
+						if emit != nil {
+							emit("system", "Workspace command interrupted by PAC.\n")
+						}
+						cancel()
+						return
+					}
+				}
+			}
+		}()
+	}
+	err = cmd.Wait()
+	cancel()
+	if cancelRequested != nil {
+		<-monitorDone
+	}
+	wg.Wait()
+	code := 0
+	if interrupted {
+		code = 130
+	}
+	if err != nil && code != 130 {
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		} else {
+			code = 1
+			er.WriteString(err.Error())
+			if emit != nil {
+				emit("stderr", err.Error()+"\n")
+			}
 		}
 	}
 	return code, out.String(), er.String()
@@ -450,7 +565,7 @@ func runToolInvocation(job Job) (int, string, string) {
 	cmd.Stderr = &er
 	err = cmd.Run()
 	code := 0
-	if err != nil {
+	if err != nil && code != 130 {
 		if ee, ok := err.(*exec.ExitError); ok {
 			code = ee.ExitCode()
 		} else {
@@ -464,6 +579,8 @@ func runToolInvocation(job Job) (int, string, string) {
 func runtimeCapabilities(runnerEnabled bool) map[string]any {
 	workspace := env("PAC_WORKSPACE", filepath.Join(os.TempDir(), "pac-endpoint-workspace"))
 	tools := discoverEndpointTools()
+	inventory := endpointInventory(workspace)
+	metrics := endpointMetrics(workspace)
 	caps := map[string]any{
 		"os":        runtime.GOOS,
 		"arch":      runtime.GOARCH,
@@ -477,6 +594,9 @@ func runtimeCapabilities(runnerEnabled bool) map[string]any {
 			"workspace": workspace,
 		},
 		"tools":                 tools,
+		"inventory":             inventory,
+		"metrics":               metrics,
+		"telemetry":             map[string]any{"inventory": true, "metrics": true, "mode": "heartbeat"},
 		"agent_required_tools":  requiredToolSummary(tools),
 		"tool_execution_bridge": map[string]any{"available": runnerEnabled, "mode": "named-tool", "returns": []string{"stdout", "stderr", "exit_code"}},
 		"remote_code_execution": map[string]any{"available": runnerEnabled, "mode": "controller-queued", "host_shell": map[string]string{"windows": "PowerShell", "default": "POSIX sh"}[map[bool]string{true: "windows", false: "default"}[runtime.GOOS == "windows"]]},
@@ -559,6 +679,9 @@ func registerWithRetry(ctx context.Context, c Client, reg map[string]any, name s
 
 func main() {
 	os.Args = append(os.Args[:1], applyEnvAssignments(os.Args[1:])...)
+	if workspaceModeRequested(os.Args[1:]) {
+		os.Exit(runWorkspaceMode(context.Background(), os.Args[1:]))
+	}
 	base := strings.TrimRight(env("PAC_URL", defaultServerURL), "/")
 	token := env("PAC_TOKEN", "")
 	name := env("PAC_ENDPOINT_NAME", strings.TrimSpace(defaultEndpointName))
@@ -587,7 +710,27 @@ func main() {
 		labels = append(labels, "runner-disabled")
 	}
 	controllerWrapper := envBool("PAC_CONTROLLER_WRAPPER", false)
-	metadata := map[string]any{"runner_version": version, "runner_embedded": true, "runner_enabled": runnerEnabled, "binary": binaryName, "os": runtime.GOOS, "arch": runtime.GOARCH, "os_family": runtime.GOOS, "remote_code_execution": map[string]any{"available": runnerEnabled, "mode": "controller-queued"}, "secure_transport": "bearer-token optional-mtls", "self_update": true, "tool_bridge": true, "required_tools": requiredToolSummary(discoverEndpointTools()), "compiled_server_url": defaultServerURL, "controller_id": defaultControllerID, "update_channel": defaultUpdateChannel, "controller_wrapper": controllerWrapper}
+	endpointWorkspace := env("PAC_WORKSPACE", filepath.Join(os.TempDir(), "pac-endpoint-workspace"))
+	metadata := map[string]any{
+		"runner_version":        version,
+		"runner_embedded":       true,
+		"runner_enabled":        runnerEnabled,
+		"binary":                binaryName,
+		"os":                    runtime.GOOS,
+		"arch":                  runtime.GOARCH,
+		"os_family":             runtime.GOOS,
+		"inventory":             endpointInventory(endpointWorkspace),
+		"metrics":               endpointMetrics(endpointWorkspace),
+		"remote_code_execution": map[string]any{"available": runnerEnabled, "mode": "controller-queued"},
+		"secure_transport":      "bearer-token optional-mtls",
+		"self_update":           true,
+		"tool_bridge":           true,
+		"required_tools":        requiredToolSummary(discoverEndpointTools()),
+		"compiled_server_url":   defaultServerURL,
+		"controller_id":         defaultControllerID,
+		"update_channel":        defaultUpdateChannel,
+		"controller_wrapper":    controllerWrapper,
+	}
 	if controllerWrapper {
 		labels = append(labels, "controller", "local", "PAC", "pi.dev")
 		metadata["local_control_plane"] = true
@@ -596,7 +739,7 @@ func main() {
 	reg := map[string]any{"name": name, "labels": labels, "endpoint": "pac-endpoint://" + name, "allow_host_execution": runnerEnabled, "allow_container_execution": runnerEnabled, "agent_enabled": controllerWrapper, "metadata": metadata}
 	r := registerWithRetry(ctx, c, reg, name, runnerEnabled)
 	for {
-		hbMetadata := map[string]any{"command_channel": map[string]any{"available": runnerEnabled, "mode": "controller-queued", "embedded": true}, "runner_enabled": runnerEnabled, "os_family": runtime.GOOS, "remote_code_execution": map[string]any{"available": runnerEnabled, "mode": "controller-queued"}, "self_update": true, "tool_bridge": true, "required_tools": requiredToolSummary(discoverEndpointTools()), "compiled_server_url": defaultServerURL, "controller_id": defaultControllerID, "update_channel": defaultUpdateChannel, "controller_wrapper": controllerWrapper}
+		hbMetadata := map[string]any{"command_channel": map[string]any{"available": runnerEnabled, "mode": "controller-queued", "embedded": true}, "runner_enabled": runnerEnabled, "os_family": runtime.GOOS, "remote_code_execution": map[string]any{"available": runnerEnabled, "mode": "controller-queued"}, "self_update": true, "tool_bridge": true, "required_tools": requiredToolSummary(discoverEndpointTools()), "inventory": endpointInventory(env("PAC_WORKSPACE", filepath.Join(os.TempDir(), "pac-endpoint-workspace"))), "metrics": endpointMetrics(env("PAC_WORKSPACE", filepath.Join(os.TempDir(), "pac-endpoint-workspace"))), "compiled_server_url": defaultServerURL, "controller_id": defaultControllerID, "update_channel": defaultUpdateChannel, "controller_wrapper": controllerWrapper}
 		if controllerWrapper {
 			hbMetadata["local_control_plane"] = true
 			hbMetadata["pi_dev_required"] = true

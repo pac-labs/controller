@@ -173,7 +173,7 @@ Important endpoint sources:
 
 ```text
 binaries/pac-endpoint/              Main endpoint wrapper and embedded runner
-binaries/pac-endpoint-runner/       Compatibility source for older runner references
+binaries/pac-endpoint/              Endpoint/workspace wrapper and daemon source
 scripts/install-runner.sh           Endpoint install helper
 ```
 
@@ -242,9 +242,9 @@ PAC includes small Go binaries for endpoint, IDE and automation integration.
 | Binary | Role |
 | --- | --- |
 | `pac-endpoint` | Turns a host into a PAC endpoint and optionally executes queued jobs. |
-| `pac-agent` | PAC-side wrapper around pi.dev runtime integration. |
+| `pac-endpoint` | Endpoint/workspace wrapper, daemon mode, and PAC/pi.dev worker integration. |
 | `pacctl` | Lightweight CLI for IDE helpers, containers and endpoint workflows. |
-| `zed-binary` | Packaged helper for Zed context-server integration. |
+| `pacctl` | PAC client CLI plus MCP/editor integration commands. |
 | `pac-mcp-go` | MCP stdio bridge that forwards MCP tool calls to a PAC server. |
 
 Relevant paths:
@@ -480,3 +480,11 @@ PAC is a controller-driven platform for agent sessions, endpoint orchestration, 
 - **Providers** supply model inference externally.
 
 That separation makes PAC suitable for multi-machine development, operational automation, customer-scoped documentation work, controlled code execution and IDE-integrated agent workflows.
+
+## Release binaries and Update Center orchestration
+
+PAC releases keep controller source/update zips separate from compiled binaries. On pushes to `main`, the GitHub release workflow builds `pac-endpoint` and `pacctl` first, including macOS/OSX targets (`darwin/amd64` and `darwin/arm64`), then packages the controller release.
+
+When the Update Center applies a release, PAC now runs an environment refresh after the source update. It downloads `RELEASE_BINARIES.json`, resolves the matching `pac-endpoint` and `pacctl` release assets for the controller host, verifies their checksums, installs them into the local PAC binary cache, refreshes PAC/pi.dev tool instructions, and checks the pi.dev runtime state.
+
+The same environment refresh can be run manually from Update Center with **Run environment refresh**.

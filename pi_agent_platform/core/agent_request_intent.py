@@ -5,10 +5,10 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from .agent_pac_resource_intent import parse_pac_resource_plan, session_action, workspace_profile_action
 from .config import AppConfig
 from .models import Session, Task
 from .providers import chat_complete
+from .agent_pac_resource_intent import parse_pac_resource_plan, session_action, workspace_profile_action
 
 
 _PROMPT = (
@@ -191,6 +191,7 @@ def fallback_request_intent(session: Session, task: Task, policy: Any) -> Reques
 
 def _normalize_model_resolution(model_name: str, payload: dict[str, Any], session: Session, task: Task, policy: Any) -> RequestIntentResolution | None:
     prompt = str(task.prompt or "").strip()
+    lower = prompt.lower()
     tool = str(payload.get("tool") or "none").strip()
     tool_input = payload.get("input") if isinstance(payload.get("input"), dict) else {}
     intent = str(payload.get("intent") or "answer").strip().lower()

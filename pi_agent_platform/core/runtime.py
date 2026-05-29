@@ -4,15 +4,15 @@ import asyncio
 import fnmatch
 import os
 import subprocess
-from pathlib import Path
 
 from .config import AppConfig
 from .models import Event, Session, SessionStatus, Task, TaskStatus
+from .workspace_bootstrap import ensure_workspace_materialized
 from .store import store
 
 
 def ensure_workspace(session: Session) -> None:
-    Path(session.workspace_path).mkdir(parents=True, exist_ok=True)
+    ensure_workspace_materialized(session)
 
 
 def _matches(patterns: list[str], command: str) -> bool:

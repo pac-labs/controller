@@ -35,7 +35,7 @@ async function buildSelectedBinarySource() {
   emitUiEvent('source_binary_build_started', `Binary build started: ${folder}`, {path: folder});
   const result = await runWithPaneError(() => api('/v1/sources/build-binary', {method:'POST', body:JSON.stringify({path:folder, server_url:(config.server?.public_url || '').replace(/\/$/, '')})}), 'Binary build failed');
   if (result) { renderSourceBuildResult(result); emitUiEvent(result.ok ? 'source_binary_built' : 'source_binary_build_failed', result.ok ? `Binary build completed: ${folder}` : `Binary build failed: ${folder}`, result); }
-  if (folder === 'binaries/zed-binary') await loadMcpBuildStatus().catch(()=>{});
+  if (folder === 'binaries/pacctl') await loadMcpBuildStatus().catch(()=>{});
   selectedBinaryArtifactFilter = folder.split('/')[1] || '';
   await loadBinaryFolderFilters().catch(()=>{});
   await loadSourceBinaryArtifacts(selectedBinaryArtifactFilter).catch(()=>{});

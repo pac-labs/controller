@@ -28,15 +28,15 @@ Each package/component can include `pac-component.json` with metadata:
 
 ```json
 {
-  "id": "pac-agent",
-  "title": "PAC Wrapper",
-  "description": "PAC-side wrapper around the pi.dev runtime.",
+  "id": "pac-endpoint",
+  "title": "PAC Endpoint Wrapper",
+  "description": "Endpoint daemon and workspace agent for PAC-routed work.",
   "kind": "binary",
-  "version": "1.0.98",
+  "version": "1.0.105",
   "maintainers": ["pac-labs"],
   "repository": "https://github.com/pac-labs/packages",
-  "source_path": "binaries/pac-agent",
-  "tags": ["pac", "pi.dev"]
+  "source_path": "binaries/pac-endpoint",
+  "tags": ["pac", "endpoint", "workspace"]
 }
 ```
 

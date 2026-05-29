@@ -92,7 +92,7 @@ async function selectSession(id) {
       startSessionPolling(id);
     };
     source.onmessage = (e) => { try { appendEvent('message', JSON.parse(e.data)); } catch { appendEvent('message', e.data); } };
-    ['user_message','agent_routing','agent_intent','agent_plan','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','final','full_control_enabled','subagent_started'].forEach((t) => source.addEventListener(t, (e) => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
+    ['user_message','agent_routing','agent_intent','agent_plan','task_queued','stdout','stderr','task_started','task_completed','task_failed','approval_required','task_approved','task_rejected','session_created','agent_loop_started','agent_thinking','model_response','tool_call','tool_result','result','final','full_control_enabled','subagent_started','subagent_completed','subagent_failed','subagent_chain_started','subagent_chain_auto_selected','subagent_chain_completed','subagent_chain_failed','subagent_summaries_imported','agent_step_budget_exhausted','doom_loop_detected','context_pressure','context_checkpoint_summary','context_checkpoint_summary_failed','context_checkpoint_restored'].forEach((t) => source.addEventListener(t, (e) => { try { appendEvent(t, JSON.parse(e.data)); } catch { appendEvent(t, e.data); } }));
     stopSessionPolling();
   }
   await refreshSessionRunButton().catch(()=>{});

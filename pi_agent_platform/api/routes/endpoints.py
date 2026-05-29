@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from pi_agent_platform.core.config import WorkspaceProfile
+from pi_agent_platform.core.agent_tools.pipeline_endpoint_schema import sync_endpoint_tool_schemas
 from pi_agent_platform.core.directory_identities import ensure_endpoint_principal, retire_endpoint_principal
 from .endpoint_heartbeat_events import emit_heartbeat_events, stable_capability_signature
 
@@ -374,6 +375,12 @@ def create_endpoints_router(
             pi_container=pi_container,
         )
         runner = _normalise_endpoint_metadata(runner, runner.metadata.get('agent_requested') or runner.metadata.get('agent_enabled', False))
+        schema_sync = sync_endpoint_tool_schemas(config, runner)
+        if schema_sync.get('changed'):
+            save_config(config)
+            store.add_event(Event(session_id='system', type='endpoint_tool_schemas_synced', message=f'Endpoint tool schemas synced for {runner.name}', data={'runner_id': runner.id, **schema_sync}))
+        elif schema_sync.get('synced'):
+            store.add_event(Event(session_id='system', type='endpoint_tool_schemas_seen', message=f'Endpoint tool schemas seen for {runner.name}', data={'runner_id': runner.id, **schema_sync}))
         runner.last_seen_at = Event(session_id='system', type='noop', message='noop').created_at
         store.add_runner(runner)
         ensure_endpoint_principal(store, runner)

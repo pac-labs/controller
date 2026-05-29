@@ -226,6 +226,10 @@ class AgentEvents:
     def runner_job_queued(self, *, tool: str, runner_name: str, data: dict[str, Any]) -> None:
         self.emit("runner_job_queued", f"Queued {tool} on runner {runner_name}", data)
 
+
+    def doom_loop_detected(self, *, message: str, data: dict[str, Any] | None = None) -> None:
+        self.emit("doom_loop_detected", message, data or {})
+
     def model_routing_issue(self, *, message: str, data: dict[str, Any]) -> None:
         self.emit("model_routing_issue", message, data)
 

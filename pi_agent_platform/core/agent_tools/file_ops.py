@@ -12,6 +12,7 @@ from ..agent_events import AgentEvents
 from ..store import store
 from ..workspace_index_cache import clear_workspace_index
 from .permission_guard import PermissionGuard
+from .pipeline_approval import is_pipeline_approved
 
 
 def _safe_path(session: Session, rel_path: str) -> Path:
@@ -209,7 +210,7 @@ async def try_execute_file_tool(
     if tool == "write_file":
         if denied := permission_guard.require("file_write"):
             return denied
-        if permission_guard.level("file_write") == "ask" and session.permission_profile != "full-control":
+        if permission_guard.level("file_write") == "ask" and session.permission_profile != "full-control" and not is_pipeline_approved(inp):
             from ..auto_approve import should_auto_approve
             approved, reason = should_auto_approve("write_file", inp)
             if approved:

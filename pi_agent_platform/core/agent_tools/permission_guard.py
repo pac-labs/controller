@@ -10,6 +10,8 @@ _DEFAULT_DENIALS: dict[str, str] = {
     "shell": "DENIED: shell access is denied",
     "network": "DENIED: network access is denied",
     "git_push": "DENIED: git push access is denied",
+    "git_write": "DENIED: git write access is denied",
+    "pac_control_plane_write": "DENIED: PAC control-plane changes are denied",
     "cluster_write": "DENIED: cluster write access is denied",
     "secrets": "DENIED: secret access is denied",
     "dangerous": "DENIED: dangerous operations are denied",

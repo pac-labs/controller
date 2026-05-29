@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import re
+from datetime import timedelta
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from pi_agent_platform.core.config import WorkspaceProfile
-from pi_agent_platform.core.models import Event
+from pi_agent_platform.core.models import Event, WorkspaceAgent, WorkspaceAgentCommand, WorkspaceAgentCommandEvent, WorkspaceAgentCommandStatus, WorkspaceAgentStatus, now_utc
 
 DEFAULT_ADMIN_CONTEXT_NAME = 'PAC/core'
+WORKSPACE_OFFLINE_AFTER = timedelta(seconds=90)
 
 
 class UserWorkspacePayload(BaseModel):
@@ -78,6 +83,58 @@ class SharedStoragePayload(BaseModel):
     default_subpath: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+
+
+class WorkspaceAgentRegisterPayload(BaseModel):
+    workspace_id: str | None = None
+    name: str | None = None
+    root: str | None = None
+    lifetime: str = 'persistent'
+    labels: list[str] = Field(default_factory=list)
+    capabilities: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    inventory: dict[str, Any] = Field(default_factory=dict)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkspaceAgentHeartbeatPayload(BaseModel):
+    workspace_id: str
+    endpoint_id: str | None = None
+    status: str = 'online'
+    version: str | None = None
+    root: str | None = None
+    labels: list[str] = Field(default_factory=list)
+    capabilities: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    inventory: dict[str, Any] = Field(default_factory=dict)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkspaceCommandPayload(BaseModel):
+    command: str
+    wait: bool = False
+    workspace_path: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkspaceCommandCompletePayload(BaseModel):
+    status: str = 'completed'
+    output: str | None = None
+    error: str | None = None
+    exit_code: int | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkspaceCommandEventPayload(BaseModel):
+    stream: str = 'stdout'
+    data: str = ''
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkspaceCommandCancelPayload(BaseModel):
+    reason: str | None = None
+    force: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 def create_workspaces_router(
@@ -412,5 +469,282 @@ def create_workspaces_router(
         save_config(config)
         store.add_event(Event(session_id='system', type='workspace_deleted', message=f'Workspace deleted: {workspace_name}'))
         return {'ok': True, 'deleted': workspace_name}
+
+
+
+    def _merge_agent_metadata(current: dict[str, Any] | None, incoming: dict[str, Any] | None, inventory: dict[str, Any] | None, metrics: dict[str, Any] | None) -> dict[str, Any]:
+        metadata = {**(current or {}), **(incoming or {})}
+        inv = inventory or metadata.get('inventory') or {}
+        met = metrics or metadata.get('metrics') or {}
+        if inv:
+            metadata['inventory'] = inv
+            metadata['hardware'] = inv
+        if met:
+            metadata['metrics'] = met
+            metadata['latest_metrics'] = met
+        return metadata
+
+    def _public_workspace_agent(agent: WorkspaceAgent) -> dict[str, Any]:
+        last_seen = agent.last_seen_at
+        status = agent.status.value if hasattr(agent.status, 'value') else str(agent.status)
+        if last_seen and now_utc() - last_seen > timedelta(seconds=90):
+            status = 'offline'
+        elif last_seen and now_utc() - last_seen > timedelta(seconds=30):
+            status = 'degraded'
+        return {
+            'id': agent.id,
+            'workspace_id': agent.workspace_id,
+            'name': agent.name,
+            'status': status,
+            'endpoint_id': agent.endpoint_id,
+            'root': agent.root,
+            'lifetime': agent.lifetime,
+            'labels': agent.labels,
+            'capabilities': agent.capabilities,
+            'metadata': agent.metadata,
+            'inventory': (agent.metadata or {}).get('inventory') or (agent.metadata or {}).get('hardware') or {},
+            'metrics': (agent.metadata or {}).get('metrics') or (agent.metadata or {}).get('latest_metrics') or {},
+            'created_at': agent.created_at.isoformat(),
+            'updated_at': agent.updated_at.isoformat(),
+            'last_seen_at': agent.last_seen_at.isoformat() if agent.last_seen_at else None,
+        }
+
+    def _workspace_agent_or_404(workspace_id: str) -> WorkspaceAgent:
+        agent = store.get_workspace_agent(workspace_id)
+        if not agent:
+            raise HTTPException(status_code=404, detail='Workspace agent not found')
+        return agent
+
+    def _append_workspace_command_event(command: WorkspaceAgentCommand, *, stream: str, data: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+        safe_stream = stream if stream in {'stdout', 'stderr', 'system', 'status'} else 'system'
+        command.stream_seq = int(command.stream_seq or 0) + 1
+        event_model = WorkspaceAgentCommandEvent(
+            workspace_id=command.workspace_id,
+            command_id=command.id,
+            seq=command.stream_seq,
+            stream=safe_stream,
+            data=data or '',
+            metadata=metadata or {},
+        )
+        event = event_model.model_dump(mode='json')
+        if safe_stream == 'stdout' and data:
+            command.output = (command.output or '') + data
+        elif safe_stream == 'stderr' and data:
+            command.error = (command.error or '') + data
+        # Keep only a compact recent tail on the command record. The complete,
+        # append-only event history lives in workspace_agent_command_events.
+        command.events.append(event)
+        if len(command.events) > 200:
+            command.events = command.events[-200:]
+        store.add_workspace_agent_command_event(event_model)
+        store.add_workspace_agent_command(command)
+        return event
+
+    def _terminal_command_status(command: WorkspaceAgentCommand) -> bool:
+        status = command.status.value if hasattr(command.status, 'value') else str(command.status)
+        return status in {'completed', 'failed', 'interrupted'}
+
+    @router.get('/v1/workspaces')
+    def list_workspaces(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        profiles = []
+        for name, profile in (config.workspaces or {}).items():
+            profiles.append({'name': name, **profile.model_dump()})
+        agents = [_public_workspace_agent(agent) for agent in store.list_workspace_agents()]
+        user_items = []
+        try:
+            owner_id, _ = _workspace_owner(_auth)
+            user_items = [_public_user_workspace(item) for item in store.list_user_workspaces(owner_id=owner_id)]
+        except Exception:
+            user_items = []
+        return {'items': agents, 'agents': agents, 'profiles': profiles, 'user_workspaces': user_items}
+
+    @router.get('/v1/workspaces/{workspace_id}')
+    def get_workspace_status(workspace_id: str, _auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        agent = store.get_workspace_agent(workspace_id)
+        if agent:
+            commands = []
+            for cmd in store.list_workspace_agent_commands(workspace_id, limit=25):
+                payload = cmd.model_dump(mode='json')
+                payload['event_count'] = store.count_workspace_agent_command_events(cmd.id)
+                commands.append(payload)
+            return {'workspace': _public_workspace_agent(agent), 'commands': commands}
+        if workspace_id in config.workspaces:
+            return {'workspace': {'name': workspace_id, **config.workspaces[workspace_id].model_dump()}, 'commands': []}
+        item = store.get_user_workspace(workspace_id)
+        if item:
+            owner_id, _ = _workspace_owner(_auth)
+            if not _can_resource_access(_auth, 'workspace', f'user:{item.id}', 'read', owner_id=item.owner_id):
+                raise HTTPException(status_code=403, detail='Workspace not available')
+            return {'workspace': _public_user_workspace(item), 'commands': []}
+        raise HTTPException(status_code=404, detail='Workspace not found')
+
+    @router.post('/v1/workspace-agents/register')
+    def register_workspace_agent(payload: WorkspaceAgentRegisterPayload, _auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        raw_name = (payload.name or payload.workspace_id or '').strip()
+        if not raw_name:
+            raise HTTPException(status_code=400, detail='Workspace name or id is required')
+        workspace_id = (payload.workspace_id or re.sub(r'[^a-zA-Z0-9_.:-]+', '-', raw_name).strip('-') or raw_name).strip()
+        existing = store.get_workspace_agent(workspace_id)
+        agent = existing or WorkspaceAgent(workspace_id=workspace_id, name=raw_name)
+        agent.name = raw_name
+        agent.status = WorkspaceAgentStatus.online
+        agent.root = payload.root or agent.root
+        agent.lifetime = 'ephemeral' if payload.lifetime == 'ephemeral' else 'persistent'
+        agent.labels = sorted(set([*(agent.labels or []), *(payload.labels or [])]))
+        agent.capabilities = {**(agent.capabilities or {}), **(payload.capabilities or {})}
+        agent.metadata = _merge_agent_metadata(agent.metadata, payload.metadata, payload.inventory, payload.metrics)
+        agent.last_seen_at = now_utc()
+        store.add_workspace_agent(agent)
+        store.add_event(Event(session_id='system', type='workspace_agent_registered', message=f'Workspace agent online: {agent.name}', data={'workspace_id': workspace_id, 'agent_id': agent.id}))
+        return {'ok': True, 'workspace_id': workspace_id, 'agent_id': agent.id, 'workspace': _public_workspace_agent(agent)}
+
+    @router.post('/v1/workspace-agents/heartbeat')
+    def heartbeat_workspace_agent(payload: WorkspaceAgentHeartbeatPayload, _auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        workspace_id = payload.workspace_id.strip()
+        if not workspace_id:
+            raise HTTPException(status_code=400, detail='workspace_id is required')
+        agent = store.get_workspace_agent(workspace_id) or WorkspaceAgent(workspace_id=workspace_id, name=workspace_id)
+        agent.status = WorkspaceAgentStatus.online if payload.status == 'online' else WorkspaceAgentStatus.degraded
+        agent.endpoint_id = payload.endpoint_id or agent.endpoint_id
+        agent.root = payload.root or agent.root
+        agent.labels = sorted(set([*(agent.labels or []), *(payload.labels or [])]))
+        agent.capabilities = {**(agent.capabilities or {}), **(payload.capabilities or {})}
+        metadata = _merge_agent_metadata(agent.metadata, payload.metadata, payload.inventory, payload.metrics)
+        if payload.version:
+            metadata['endpoint_version'] = payload.version
+        agent.metadata = metadata
+        agent.last_seen_at = now_utc()
+        store.add_workspace_agent(agent)
+        return {'ok': True, 'workspace_id': workspace_id, 'status': agent.status.value}
+
+    @router.post('/v1/workspaces/{workspace_id}/commands')
+    def queue_workspace_command(workspace_id: str, payload: WorkspaceCommandPayload, _auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        if not store.get_workspace_agent(workspace_id):
+            raise HTTPException(status_code=404, detail='Workspace agent is not online or registered')
+        command_text = str(payload.command or '').strip()
+        if not command_text:
+            raise HTTPException(status_code=400, detail='command is required')
+        command = WorkspaceAgentCommand(workspace_id=workspace_id, command=command_text, workspace_path=payload.workspace_path, metadata=payload.metadata or {})
+        store.add_workspace_agent_command(command)
+        store.add_event(Event(session_id='system', type='workspace_command_queued', message=f'Workspace command queued for {workspace_id}', data={'workspace_id': workspace_id, 'command_id': command.id}))
+        return {'ok': True, 'command': command.model_dump(mode='json')}
+
+    @router.get('/v1/workspace-agents/{workspace_id}/commands/next')
+    def claim_workspace_command(workspace_id: str, _auth: Any = Depends(require_auth)) -> dict[str, Any] | None:
+        agent = _workspace_agent_or_404(workspace_id)
+        agent.last_seen_at = now_utc()
+        agent.status = WorkspaceAgentStatus.online
+        store.add_workspace_agent(agent)
+        command = store.claim_next_workspace_agent_command(workspace_id)
+        if not command:
+            return None
+        _append_workspace_command_event(command, stream='system', data='Workspace command claimed by agent.\n')
+        store.add_event(Event(session_id='system', type='workspace_command_claimed', message=f'Workspace command claimed by {workspace_id}', data={'workspace_id': workspace_id, 'command_id': command.id}))
+        return {'id': command.id, 'command': command.command, 'workspace_path': command.workspace_path or agent.root, 'metadata': command.metadata}
+
+    @router.get('/v1/workspaces/{workspace_id}/commands/{command_id}')
+    def get_workspace_command(workspace_id: str, command_id: str, _auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        command = store.get_workspace_agent_command(command_id)
+        if not command or command.workspace_id != workspace_id:
+            raise HTTPException(status_code=404, detail='Workspace command not found')
+        agent = store.get_workspace_agent(workspace_id)
+        payload = command.model_dump(mode='json')
+        payload['event_count'] = store.count_workspace_agent_command_events(command.id)
+        payload['events'] = [event.model_dump(mode='json') for event in store.list_workspace_agent_command_events(command.id, limit=200)]
+        return {
+            'command': payload,
+            'workspace': _public_workspace_agent(agent) if agent else None,
+        }
+
+    @router.get('/v1/workspaces/{workspace_id}/commands/{command_id}/events')
+    def list_workspace_command_events(workspace_id: str, command_id: str, cursor: int = 0, limit: int = 500, _auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        command = store.get_workspace_agent_command(command_id)
+        if not command or command.workspace_id != workspace_id:
+            raise HTTPException(status_code=404, detail='Workspace command not found')
+        events = store.list_workspace_agent_command_events(command_id, after_seq=cursor, limit=limit)
+        return {
+            'events': [event.model_dump(mode='json') for event in events],
+            'next_cursor': events[-1].seq if events else int(cursor or 0),
+            'count': len(events),
+        }
+
+    @router.post('/v1/workspace-agents/{workspace_id}/commands/{command_id}/events')
+    def append_workspace_command_event(workspace_id: str, command_id: str, payload: WorkspaceCommandEventPayload, _auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        command = store.get_workspace_agent_command(command_id)
+        if not command or command.workspace_id != workspace_id:
+            raise HTTPException(status_code=404, detail='Workspace command not found')
+        event = _append_workspace_command_event(command, stream=payload.stream, data=payload.data, metadata=payload.metadata)
+        return {'ok': True, 'event': event}
+
+
+    @router.post('/v1/workspaces/{workspace_id}/commands/{command_id}/cancel')
+    def cancel_workspace_command(workspace_id: str, command_id: str, payload: WorkspaceCommandCancelPayload, _auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        command = store.get_workspace_agent_command(command_id)
+        if not command or command.workspace_id != workspace_id:
+            raise HTTPException(status_code=404, detail='Workspace command not found')
+        if _terminal_command_status(command):
+            return {'ok': True, 'command': command.model_dump(mode='json'), 'already_terminal': True}
+        metadata = {**(command.metadata or {})}
+        metadata['cancel_requested'] = True
+        metadata['cancel_force'] = bool(payload.force)
+        metadata['cancel_reason'] = payload.reason or 'cancel requested'
+        metadata['cancel_metadata'] = payload.metadata or {}
+        metadata['cancel_requested_at'] = now_utc().isoformat()
+        command.metadata = metadata
+        if command.status == WorkspaceAgentCommandStatus.queued:
+            command.status = WorkspaceAgentCommandStatus.interrupted
+            command.exit_code = 130
+            command.completed_at = now_utc()
+            _append_workspace_command_event(command, stream='status', data='Workspace command cancelled before agent claim.\n', metadata={'reason': metadata['cancel_reason'], 'cancelled': True})
+        else:
+            _append_workspace_command_event(command, stream='system', data='Interrupt requested for workspace command.\n', metadata={'reason': metadata['cancel_reason'], 'force': bool(payload.force)})
+            store.add_workspace_agent_command(command)
+        store.add_event(Event(session_id='system', type='workspace_command_interrupt_requested', message=f'Workspace command interrupt requested: {workspace_id}', data={'workspace_id': workspace_id, 'command_id': command.id, 'reason': metadata['cancel_reason'], 'force': bool(payload.force)}))
+        return {'ok': True, 'command': command.model_dump(mode='json')}
+
+    @router.get('/v1/workspaces/{workspace_id}/commands/{command_id}/stream')
+    async def stream_workspace_command(workspace_id: str, command_id: str, cursor: int = 0, _auth: Any = Depends(require_auth)) -> StreamingResponse:
+        async def generate():
+            next_seq = max(1, int(cursor or 0) + 1)
+            terminal_sent = False
+            while True:
+                command = store.get_workspace_agent_command(command_id)
+                if not command or command.workspace_id != workspace_id:
+                    yield json.dumps({'stream': 'system', 'data': 'Workspace command not found.\n', 'status': 'missing'}) + '\n'
+                    return
+                events = [event for event in (command.events or []) if int(event.get('seq') or 0) >= next_seq]
+                for event in events:
+                    next_seq = max(next_seq, int(event.get('seq') or 0) + 1)
+                    yield json.dumps({'type': 'event', **event}) + '\n'
+                if _terminal_command_status(command):
+                    if not terminal_sent:
+                        terminal_sent = True
+                        yield json.dumps({'type': 'status', 'seq': command.stream_seq, 'status': command.status.value if hasattr(command.status, 'value') else str(command.status), 'exit_code': command.exit_code, 'created_at': now_utc().isoformat()}) + '\n'
+                    return
+                await asyncio.sleep(0.5)
+
+        return StreamingResponse(generate(), media_type='application/x-ndjson')
+
+    @router.post('/v1/workspace-agents/{workspace_id}/commands/{command_id}/complete')
+    def complete_workspace_command(workspace_id: str, command_id: str, payload: WorkspaceCommandCompletePayload, _auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        command = store.get_workspace_agent_command(command_id)
+        if not command or command.workspace_id != workspace_id:
+            raise HTTPException(status_code=404, detail='Workspace command not found')
+        if command.status == WorkspaceAgentCommandStatus.interrupted or payload.status == 'interrupted':
+            command.status = WorkspaceAgentCommandStatus.interrupted
+            command.exit_code = command.exit_code if command.exit_code is not None else (payload.exit_code if payload.exit_code is not None else 130)
+        else:
+            command.status = WorkspaceAgentCommandStatus.completed if payload.status == 'completed' else WorkspaceAgentCommandStatus.failed
+        if payload.output is not None:
+            command.output = payload.output
+        if payload.error is not None:
+            command.error = payload.error
+        if payload.exit_code is not None:
+            command.exit_code = payload.exit_code
+        command.metadata = {**(command.metadata or {}), **(payload.metadata or {})}
+        command.completed_at = now_utc()
+        _append_workspace_command_event(command, stream='status', data=f'Workspace command {command.status.value}.\n', metadata={'exit_code': command.exit_code})
+        store.add_event(Event(session_id='system', type='workspace_command_completed', message=f'Workspace command {command.status.value}: {workspace_id}', data={'workspace_id': workspace_id, 'command_id': command.id, 'exit_code': command.exit_code}))
+        return {'ok': True, 'command': command.model_dump(mode='json')}
 
     return router

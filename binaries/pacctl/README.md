@@ -1,24 +1,22 @@
 # pacctl
 
-`pacctl` is the lightweight PAC-facing client binary intended for IDE helpers,
-containers, and endpoint-side workflows.
+`pacctl` is the PAC client binary.
 
-Current commands:
+It is used by humans, scripts, containers, CI, IDEs, and editor integrations to communicate with the PAC controller. `pacctl` routes endpoint/workspace actions through PAC; it does not directly SSH into machines by default.
 
-- `pacctl config get`
-- `pacctl context resolve --name docs-customer-a`
-- `pacctl context resolve --path docs/customer-a --secrets`
-- `pacctl secret get github/pat --value-only`
-- `pacctl variable list`
-- `pacctl variable get GIT_AUTHOR_EMAIL --value-only`
-- `pacctl ram list`
-- `pacctl ram get profile doc-reader --content-only`
-- `pacctl ram bundle --profile doc-reader --user dorbian --workspace customer-a`
-- `pacctl ram search "git author email" --kind user --limit 5`
+Examples:
 
-Runtime configuration:
+```sh
+pacctl api get /v1/version
+pacctl poll endpoints
+pacctl provider send --file provider.json
+pacctl workspace status python-dev
+pacctl workspace exec python-dev -- python --version
+pacctl workspace exec python-dev --stream -- python long_running_task.py
+```
 
-- `PAC_URL`: controller base URL
-- `PAC_TOKEN`: admin bearer token
-- `PAC_RUNNER_ID` and `PAC_RUNNER_KEY`: endpoint-scoped retrieval headers
-- `PAC_CA_FILE`: optional controller CA bundle
+Near-term consolidation target:
+
+- provider/model sync commands live in `pacctl`;
+- dynamic API/catalog commands live in `pacctl`;
+- MCP/Zed editor bridge behavior is now exposed by `pacctl mcp serve`.

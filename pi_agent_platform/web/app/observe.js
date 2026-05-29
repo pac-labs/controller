@@ -122,6 +122,43 @@ function renderObserveEmbeddedMetrics(data) {
   `).join('');
 }
 
+function renderObserveToolPipeline(data) {
+  const el = document.getElementById('observeToolPipeline');
+  if (!el) return;
+  const pipeline = data?.tool_pipeline || data || {};
+  const rows = Array.isArray(pipeline?.summary) ? pipeline.summary : [];
+  el.classList.remove('muted');
+  if (!rows.length) {
+    el.innerHTML = '<div class="muted small-text">No tool pipeline samples yet. Run an agent task and refresh.</div>';
+    return;
+  }
+  el.innerHTML = rows.slice(0, 8).map((row) => `
+    <div class="observe-kv-row"><span>${escapeHtml(row.tool || 'tool')}<small>${escapeHtml(row.stage || '')} · ${escapeHtml(row.status || 'ok')}</small></span><b>${escapeHtml(observeValue(row.count))} runs · avg ${escapeHtml(observeValue(row.avg_duration_ms))} ms</b></div>
+  `).join('');
+}
+
+function renderObservePlaybooks(data) {
+  const el = document.getElementById('observePlaybooks');
+  if (!el) return;
+  const pb = data?.playbooks || data || {};
+  const status = pb.status || {};
+  const active = Array.isArray(pb.active_runs) ? pb.active_runs : [];
+  el.classList.remove('muted');
+  const statusRows = observeKvRows({
+    'Runs tracked': pb.runs_total,
+    'Running': status.running || 0,
+    'Waiting': status.waiting || 0,
+    'Completed': status.completed || 0,
+    'Failed': status.failed || 0,
+    'Cancelled': status.cancelled || 0,
+    'Avg terminal duration': pb.completed_duration_avg_seconds ? `${Math.round(Number(pb.completed_duration_avg_seconds))}s` : '—',
+  });
+  const activeRows = active.length ? active.slice(0, 6).map((run) => `
+    <div class="observe-kv-row"><span>${escapeHtml(run.title || run.playbook_id || 'run')}<small>${escapeHtml(run.id || '')} · ${escapeHtml(run.status || '')}</small></span><b>${escapeHtml(run.waiting_step_id || 'active')}</b></div>
+  `).join('') : '<div class="muted small-text">No active playbook runs.</div>';
+  el.innerHTML = `${statusRows}<hr class="subtle-separator">${activeRows}`;
+}
+
 function renderObserveTraces(data) {
   const el = document.getElementById('observeTraces');
   if (!el) return;
@@ -161,12 +198,14 @@ async function loadObserveLogs() {
 async function loadObservePanel() {
   const cards = document.getElementById('observeStatusCards');
   if (cards) { if (window.PACLoading) PACLoading.set(cards, 'Loading observability status…'); else cards.textContent = 'Loading observability status…'; }
-  const [status, metrics, usage, embeddedMetrics, traces] = await Promise.all([
+  const [status, metrics, usage, embeddedMetrics, traces, toolPipeline, playbookMetrics] = await Promise.all([
     api('/v1/system/observability').catch((e) => ({error: e.message})),
     api('/v1/metrics/summary').catch((e) => ({error: e.message})),
     api('/v1/model-usage?since_hours=24').catch((e) => ({error: e.message})),
     api('/v1/observability/metrics?since_hours=24&limit=120').catch((e) => ({error: e.message})),
     api('/v1/observability/traces?since_hours=24&limit=40').catch((e) => ({error: e.message})),
+    api('/v1/observability/tool-pipeline').catch((e) => ({error: e.message})),
+    api('/v1/observability/playbooks').catch((e) => ({error: e.message})),
   ]);
   if (status?.error) {
     if (cards) cards.innerHTML = `<div class="muted">Could not load observability status: ${escapeHtml(status.error)}</div>`;
@@ -189,6 +228,14 @@ async function loadObservePanel() {
     const el = document.getElementById('observeTraces');
     if (el) el.textContent = `Could not load traces: ${traces.error}`;
   } else renderObserveTraces(traces);
+  if (toolPipeline?.error) {
+    const el = document.getElementById('observeToolPipeline');
+    if (el) el.textContent = `Could not load tool pipeline metrics: ${toolPipeline.error}`;
+  } else renderObserveToolPipeline(toolPipeline);
+  if (playbookMetrics?.error) {
+    const el = document.getElementById('observePlaybooks');
+    if (el) el.textContent = `Could not load playbook metrics: ${playbookMetrics.error}`;
+  } else renderObservePlaybooks(playbookMetrics);
   await loadObserveLogs();
 }
 

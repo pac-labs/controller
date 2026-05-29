@@ -26,6 +26,7 @@ Tool call:
 {"type":"tool_call","tool":"read_file_chunk","input":{"path":"large.log","chunk_index":0,"chunk_tokens":1200}}
 {"type":"tool_call","tool":"workspace_manifest","input":{"max_files":200}}
 {"type":"tool_call","tool":"find_code_paths","input":{"query":"session timeline composer","roots":["pi_agent_platform/web/app/","pi_agent_platform/core/"],"max_results":12}}
+{"type":"tool_call","tool":"spawn_subagent","input":{"profile":"explore","instruction":"Inspect the repository structure and identify the main runtime components."}}
 {"type":"tool_call","tool":"batch_analyze_text","input":{"instruction":"find likely bugs","text":"...","chunk_tokens":1000}}
 {"type":"tool_call","tool":"batch_analyze_file","input":{"path":"large-file.txt","instruction":"summarize important parts","chunk_tokens":1000}}
 {"type":"tool_call","tool":"write_file","input":{"path":"file.txt","content":"..."}}
@@ -48,14 +49,19 @@ Tool call:
 Rules:
 - Prefer inspecting files before editing.
 - For broad codebase questions, do not guess paths. Start with workspace_manifest, then use find_code_paths or ripgrep for intent words, then read verified matched files.
+- For PAC code-change work, follow the implementation contract: workspace_manifest -> find_code_paths/ripgrep -> read_file on a verified match -> write/edit -> validate with git_diff, tests, or a scoped compile/check.
 - Use shell only when needed.
 - Keep commands scoped to the workspace.
+- Every tool call passes through PAC's tool pipeline: JSON object input, schema checks, workspace path sanity, plan-mode/capability checks, cache/artifact policy, and invalidation. Do not try to bypass it with guessed absolute paths or URLs in path fields.
 - If blocked by policy, explain what approval or permission is needed.
+- If PAC emits doom_loop_detected or a recovery tool result, stop repeating the failing sequence. Use the recovery evidence from workspace_manifest, find_code_paths, list_files, ripgrep, or fd before trying more reads or writes.
+- If PAC emits context_pressure or context_checkpoint_summary, continue normally but keep future responses compact and rely on the checkpoint summary after compaction or resume.
 - Do not narrate future actions like "I will now search" or "I am going to run...". If a tool should run, return a tool_call immediately.
 - Do not print tool-call markup or pseudo-code examples in the final answer. Execute the tool call instead.
 - If approval is needed, ask for that approval directly and briefly instead of saying the action has already started.
 - Prefer read_file for normal source files only after the path was verified by workspace_manifest, list_files, find_code_paths, ripgrep, fd, or a user-provided exact path. Use read_file_chunk or batch_analyze_file only when a file is too large for the current effective context budget.
-- Use web_search before web_fetch when you do not know the exact URL.
+- Use web_search before web_fetch when you do not know the exact URL. If the user explicitly asks to look online or use documentation, perform that web_search/web_fetch step before finalizing the implementation plan.
+- Use spawn_subagent when a request benefits from isolated specialist work: Explore for read-only discovery, Plan for architecture, Coder for scoped implementation, Verify for adversarial testing, or General for mixed support. Sub-agents have locked tools and turn budgets; do not ask them to do work outside their profile.
 - Use consult_model when you want a second opinion from another configured PAC model or want to fan out a planning question to multiple models. If you do not know a configured consult model name, omit the models field and PAC will choose an available consult/fallback model. Never return a final answer that merely says to use consult_model; call the tool or continue with the available session model.
 - Use remote_memory when profile/user/workspace memory may contain relevant prior preferences, customer context, or durable notes.
 - Save important generated files/results with save_artifact when the user may want to download them.
@@ -73,6 +79,27 @@ class AgentPromptContext:
     workspace_index_source: str | None
 
 
+def subagent_session_guidance(session: Session, task: Task) -> str | None:
+    if not (session.metadata.get("subagent") or task.metadata.get("subagent_profile")):
+        return None
+    display_name = str(session.metadata.get("subagent_display_name") or task.metadata.get("subagent_display_name") or "Subagent")
+    profile = str(session.metadata.get("subagent_profile") or task.metadata.get("subagent_profile") or "general")
+    turn_budget = int(session.metadata.get("subagent_turn_budget") or task.metadata.get("subagent_turn_budget") or task.metadata.get("max_agent_steps") or 25)
+    locked_tools = session.metadata.get("locked_tools") or task.metadata.get("locked_tools") or session.tools or []
+    read_only = bool(session.metadata.get("subagent_read_only") or task.metadata.get("subagent_read_only"))
+    plan_only = bool(session.metadata.get("subagent_plan_only") or task.metadata.get("subagent_plan_only"))
+    lines = [
+        f"You are running as the locked {display_name} specialist sub-agent.",
+        f"Sub-agent profile: {profile}",
+        f"Turn budget: {turn_budget} model/tool iterations. Finish early with a concise parent-ready summary.",
+        "Locked tool set: " + (", ".join(str(tool) for tool in locked_tools) if locked_tools else "none"),
+    ]
+    if read_only or plan_only:
+        lines.append("This specialist is read-only/planning-only. Do not write files, commit changes, or run mutating commands.")
+    lines.append("Your final answer must summarize evidence, verified paths, actions taken, and remaining work for the parent session.")
+    return "\n".join(lines)
+
+
 def controller_session_guidance(session: Session) -> str | None:
     if not session.metadata.get("controller_harness"):
         return None
@@ -82,8 +109,9 @@ def controller_session_guidance(session: Session) -> str | None:
         f"Primary local source of truth: {workspace}\n"
         "For PAC-domain questions about code, sessions, wrappers, providers, profiles, endpoints, settings, updates, logs, or configuration, inspect the local PAC workspace/configuration first.\n"
         "For broad PAC/core codebase questions, use this order: workspace_manifest, then find_code_paths or ripgrep using the user's intent words, then read_file on verified matched paths. Do not invent src/... paths.\n"
+        "All tool calls are enforced by PAC's tool pipeline, so pass valid JSON inputs and workspace-relative paths only. Use resource URLs in URL fields, not file path fields.\n"
         "Prefer local tools like workspace_manifest, find_code_paths, list_files, read_file, read_file_chunk, rg/shell, git_status, and git_diff before web_search or web_fetch.\n"
-        "Only use the web when the user explicitly asks for external information or the local PAC workspace clearly cannot answer the question.\n"
+        "Only use the web when the user explicitly asks for external information or the local PAC workspace clearly cannot answer the question. When they explicitly ask to look online for documentation, use web_search/web_fetch as part of the work loop.\n"
         "If the user asks to update PAC behavior or configuration, you are allowed to rewrite PAC application files and PAC configuration directly. Do the work instead of only describing it.\n"
         "When the user asks to create PAC resources such as providers, models, endpoints, workspace profiles, or sessions, prefer the pac_create_* control-plane tools over editing YAML by hand. Use pac_list_components first when you need current names or IDs.\n"
         "Assume PAC-specific terms like PAC RAM, plugins, sessions, wrappers, endpoints, and profiles refer to this PAC installation unless the user explicitly broadens the scope.\n"
@@ -212,6 +240,10 @@ def build_agent_prompt_context(
 ) -> AgentPromptContext:
     system_prompt = profile_instructions(agent) if agent else "You are a remote coding agent."
     messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt + "\n\n" + TOOL_HELP}]
+
+    subagent_guidance = subagent_session_guidance(session, task)
+    if subagent_guidance:
+        messages.append({"role": "system", "content": subagent_guidance})
 
     guidance = controller_session_guidance(session)
     if guidance:

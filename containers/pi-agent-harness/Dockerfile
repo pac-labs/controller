@@ -1,8 +1,8 @@
 FROM docker.io/library/golang:1.23 AS pacctl-builder
 
+WORKDIR /src
+COPY binaries/pacctl/ ./binaries/pacctl/
 WORKDIR /src/binaries/pacctl
-COPY binaries/pacctl/go.mod ./
-COPY binaries/pacctl/main.go ./
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/pacctl .
 
 FROM docker.io/library/node:20-slim

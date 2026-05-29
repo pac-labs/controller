@@ -1,6 +1,7 @@
 (function () {
   const DEFAULT_ROUTE = 'dashboard';
   const STORAGE_KEY = 'pac-shell-active-route';
+  const URL_BASE = '/ui';
 
   function navGroups() {
     return Array.isArray(window.PAC_NAV_GROUPS) ? window.PAC_NAV_GROUPS : [];
@@ -43,12 +44,41 @@
     return flattenItems().find((entry) => entry.tab === tabId) || null;
   }
 
+  function routeFromLocation() {
+    const path = String(window.location?.pathname || '');
+    if (!path.startsWith(URL_BASE)) return '';
+    const rest = path.slice(URL_BASE.length).replace(/^\/+|\/+$/g, '');
+    if (!rest || rest === 'index.html') return '';
+    const first = rest.split('/')[0] || '';
+    return findItemByRoute(first) ? first : '';
+  }
+
+  function pathForRoute(route) {
+    const safe = route || DEFAULT_ROUTE;
+    return `${URL_BASE}/${encodeURIComponent(safe)}`;
+  }
+
   function savedRoute() {
+    const urlRoute = routeFromLocation();
+    if (urlRoute) return urlRoute;
     try { return localStorage.getItem(STORAGE_KEY) || DEFAULT_ROUTE; } catch (_) { return DEFAULT_ROUTE; }
   }
 
   function saveRoute(route) {
     try { localStorage.setItem(STORAGE_KEY, route || DEFAULT_ROUTE); } catch (_) {}
+  }
+
+  function updateBrowserRoute(route, options = {}) {
+    const activeRoute = route || DEFAULT_ROUTE;
+    saveRoute(activeRoute);
+    if (window.__pacShellApplyingPopstate) return;
+    if (!window.history?.pushState || !window.location) return;
+    const target = pathForRoute(activeRoute);
+    const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (current === target) return;
+    const state = {pacRoute: activeRoute};
+    if (options.replace) window.history.replaceState(state, '', target);
+    else window.history.pushState(state, '', target);
   }
 
   function renderNav(container) {
@@ -192,11 +222,11 @@
     }, 0);
   }
 
-  function activateItem(item, activateMainTab, showRail) {
+  function activateItem(item, activateMainTab, showRail, options = {}) {
     if (!item) return;
     const route = routeFor(item);
     window.__pacActiveShellRoute = route;
-    saveRoute(route);
+    updateBrowserRoute(route, options);
     window.__pacActiveSettingsPanel = item.settingsPanel || '';
     if (typeof activateMainTab === 'function') activateMainTab(item.tab || DEFAULT_ROUTE);
     renderGroup(item.group.id, item.tab || DEFAULT_ROUTE);
@@ -237,8 +267,19 @@
     window.__pacTabGroups = {NAV_GROUPS: Object.fromEntries(navGroups().map((group) => [group.id, group.items || []])), TAB_TO_GROUP: buildTabToGroup(), renderGroup};
     setCollapsed(isCollapsed());
     const initialItem = findItemByRoute(savedRoute()) || findItemByRoute(DEFAULT_ROUTE);
-    activateItem(initialItem, activateMainTab, showRail);
+    activateItem(initialItem, activateMainTab, showRail, {replace: true});
+    if (!window.__pacShellPopstateBound) {
+      window.__pacShellPopstateBound = true;
+      window.addEventListener('popstate', () => {
+        const route = routeFromLocation() || savedRoute() || DEFAULT_ROUTE;
+        const item = findItemByRoute(route) || findItemByRoute(DEFAULT_ROUTE);
+        if (!item) return;
+        window.__pacShellApplyingPopstate = true;
+        try { activateItem(item, activateMainTab, showRail); }
+        finally { window.__pacShellApplyingPopstate = false; }
+      });
+    }
   }
 
-  window.PacShellNav = {setupTabs, renderGroup, findItemByRoute, findItemByTab, activateItem, applyRouteClass};
+  window.PacShellNav = {setupTabs, renderGroup, findItemByRoute, findItemByTab, activateItem, applyRouteClass, routeFromLocation, pathForRoute};
 })();

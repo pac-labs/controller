@@ -1,14 +1,12 @@
-# PAC binary sources
+# PAC binaries
 
-Controller bundle: 1.0.55
+PAC has two installable/released binaries:
 
-Each binary source folder has its own `VERSION`. Build artifacts use that source version, not the PAC controller version.
+- `pac-endpoint` — endpoint/workspace wrapper. It runs as a host daemon or as the foreground process in a workspace container.
+- `pacctl` — client utility for humans, scripts, IDE integrations, provider sync, dynamic API calls, and workspace/endpoint control through PAC.
 
-Buildable folders:
+The source/update zip does not bundle compiled binaries. GitHub Releases publish direct binary assets per OS/architecture and a `RELEASE_BINARIES.json` manifest. Installation/update logic should download the matching release asset and only build locally as an explicit fallback.
 
-- `pac-endpoint/` builds the remote execution endpoint binary.
-- `pac-endpoint-runner/` builds the endpoint runner binary used for endpoint downloads.
-- `pac-agent/` builds the PAC agent worker binary.
-- `zed-binary/` builds the Zed connector binary.
+Transitional source directories may remain while behavior is merged:
 
-Select one of these folders in the Source Library and use **Build binary**. The build runs from the folder root and produces OS/architecture-specific downloads.
+Removed binary folders: `pac-agent`, `zed-binary`, and `pac-endpoint-runner`. Their active behavior now lives in `pac-endpoint` and `pacctl`.

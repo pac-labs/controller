@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import shutil
 import tarfile
 from datetime import datetime, timezone
@@ -12,7 +14,8 @@ from fastapi.responses import FileResponse
 from pi_agent_platform.core.models import Event
 from pi_agent_platform.core.platform_home import pacp_path
 from pi_agent_platform.core.update_preservation import TRACKED_ROOTS, build_backup_archive, generate_local_diff, list_generated_diffs
-from pi_agent_platform.updates import download_release_package, fetch_latest_release_metadata
+from pi_agent_platform.updates import download_release_asset, download_release_package, fetch_latest_release_assets, fetch_latest_release_metadata
+from pi_agent_platform.core.updates.orchestrator import plan_update_orchestration, run_update_orchestration
 
 
 def create_updates_router(
@@ -63,6 +66,59 @@ def create_updates_router(
             archive.extractall(target_app_dir, members=members)
         return {'restored_files': len([member for member in members if member.isfile()])}
 
+
+    def _release_asset_cache_path(asset_key: str, asset_name: str | None = None) -> Path:
+        safe_key = ''.join(ch for ch in str(asset_key or '') if ch.isalnum() or ch in ('-', '_')) or 'asset'
+        safe_name = Path(str(asset_name or safe_key)).name
+        return pacp_path('updates', 'release-assets', safe_key, safe_name)
+
+    def _cached_asset_meta(asset_key: str, asset: dict[str, Any]) -> dict[str, Any]:
+        path = _release_asset_cache_path(asset_key, asset.get('name') if isinstance(asset, dict) else None)
+        if not path.is_file():
+            return {'asset_key': asset_key, 'status': 'not_cached'}
+        data = path.read_bytes()
+        return {'asset_key': asset_key, 'status': 'cached', 'path': str(path), 'size': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
+
+    @router.get('/v1/updates/release-assets')
+    def get_release_assets(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+        payload = fetch_latest_release_assets()
+        assets = payload.get('assets') if isinstance(payload, dict) else {}
+        cache = []
+        if isinstance(assets, dict):
+            cache = [_cached_asset_meta(key, asset) for key, asset in assets.items() if isinstance(asset, dict)]
+        payload['cache'] = cache
+        return payload
+
+    @router.get('/v1/updates/release-assets/{asset_key}/download')
+    def download_release_asset_route(asset_key: str, _auth: None = Depends(require_auth)) -> FileResponse:
+        assets_payload = fetch_latest_release_assets()
+        asset = ((assets_payload.get('assets') or {}).get(asset_key) if isinstance(assets_payload, dict) else None) or {}
+        if not asset:
+            raise HTTPException(status_code=404, detail=f'Release asset is not available: {asset_key}')
+        target = _release_asset_cache_path(asset_key, asset.get('name'))
+        if not target.is_file():
+            result = download_release_asset(asset_key, target)
+            if not result.get('ok'):
+                raise HTTPException(status_code=502, detail=result.get('error') or f'Could not download release asset: {asset_key}')
+        return FileResponse(target, filename=Path(str(asset.get('name') or target.name)).name)
+
+    @router.get('/v1/updates/release-assets/{asset_key}/json')
+    def read_release_asset_json(asset_key: str, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+        assets_payload = fetch_latest_release_assets()
+        asset = ((assets_payload.get('assets') or {}).get(asset_key) if isinstance(assets_payload, dict) else None) or {}
+        if not asset:
+            raise HTTPException(status_code=404, detail=f'Release asset is not available: {asset_key}')
+        target = _release_asset_cache_path(asset_key, asset.get('name'))
+        if not target.is_file():
+            result = download_release_asset(asset_key, target)
+            if not result.get('ok'):
+                raise HTTPException(status_code=502, detail=result.get('error') or f'Could not download release asset: {asset_key}')
+        try:
+            data = json.loads(target.read_text(encoding='utf-8'))
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f'Release asset is not JSON: {asset_key}') from exc
+        return data if isinstance(data, dict) else {'value': data}
+
     @router.get('/v1/updates/status')
     def get_updates_status(_auth: None = Depends(require_auth)) -> dict[str, Any]:
         archives = list_update_archives()
@@ -80,6 +136,21 @@ def create_updates_router(
         meta = fetch_latest_release_metadata(pac_version)
         store.add_event(Event(session_id='system', type='update_checked', message=meta.get('has_update') and f"Update available: v{meta.get('latest_version')}" or 'PAC release channel checked', data=meta))
         return meta
+
+    @router.get('/v1/updates/environment-plan')
+    def get_update_environment_plan(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+        return plan_update_orchestration()
+
+    @router.post('/v1/updates/environment/apply')
+    def apply_update_environment(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+        result = run_update_orchestration(version=pac_version)
+        store.add_event(Event(
+            session_id='system',
+            type='update_environment_orchestrated' if result.get('ok') else 'update_environment_needs_attention',
+            message='PAC update environment orchestration completed.' if result.get('ok') else 'PAC update environment orchestration needs attention.',
+            data=result,
+        ))
+        return result
 
     @router.get('/v1/updates/archives')
     def list_archives(_auth: None = Depends(require_auth)) -> dict[str, Any]:
@@ -259,7 +330,14 @@ def create_updates_router(
                 'download': download,
             }
         result = apply_version_package_from_path(target, target.name, restart_after_update=restart_after_update)
-        result.update({'ok': True, 'current_version': pac_version, 'latest_version': meta.get('latest_version'), 'release_url': meta.get('release_url'), 'download_url': download_url, 'download': download})
+        environment_update = run_update_orchestration(version=str(meta.get('latest_version') or pac_version))
+        result.update({'ok': True, 'current_version': pac_version, 'latest_version': meta.get('latest_version'), 'release_url': meta.get('release_url'), 'download_url': download_url, 'download': download, 'environment_update': environment_update})
+        store.add_event(Event(
+            session_id='system',
+            type='update_environment_orchestrated' if environment_update.get('ok') else 'update_environment_needs_attention',
+            message='PAC update environment orchestration completed after release apply.' if environment_update.get('ok') else 'PAC update environment orchestration needs attention after release apply.',
+            data=environment_update,
+        ))
         if restart_after_update:
             schedule_local_restart(background_tasks, f'PAC local restart scheduled after applying release {meta.get("latest_version")}')
         return result

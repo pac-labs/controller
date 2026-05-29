@@ -9,6 +9,7 @@ from ..config import AppConfig
 from ..models import Session, Task, TaskStatus, RunnerJob, RunnerJobStatus, RunnerExecutionMode
 from ..agent_events import AgentEvents
 from ..runtime import command_policy
+from ..code_intelligence.language_servers import endpoint_script
 from ..store import store
 
 def _shell_single_quote(value: str) -> str:
@@ -77,6 +78,37 @@ def _runner_tool_command(tool: str, inp: dict[str, Any]) -> str | None:
         return None  # runner doesn't support ripgrep directly
     if tool == "fd":
         return None  # runner doesn't support fd directly
+    if tool in {"code_language_servers", "code_project_metadata", "code_lsp_status", "code_lsp_endpoint_prepare", "code_roslyn_analysis"}:
+        return endpoint_script(tool, inp)
+
+    if tool == "code_diagnostics":
+        path = str(inp.get("path") or ".").strip() or "."
+        language = str(inp.get("language") or "auto").strip().lower() or "auto"
+        run = "1" if bool(inp.get("run") or False) else "0"
+        timeout = max(5, min(int(inp.get("timeout") or 30), 120))
+        quoted = _shell_single_quote(path)
+        script_lines = [
+            "set -eu",
+            f"LANGUAGE={_shell_single_quote(language)}",
+            f"RUN={run}",
+            f"TIMEOUT={timeout}",
+            "echo '== code diagnostics environment =='",
+            "echo language=$LANGUAGE run=$RUN timeout=$TIMEOUT",
+            "echo '== tool availability =='",
+            "for binary in cargo python go npx dotnet rust-analyzer pyright-langserver pylsp gopls typescript-language-server tsserver csharp-ls omnisharp; do if command -v $binary >/dev/null 2>&1; then echo $binary=available; else echo $binary=missing; fi; done",
+            "echo '== project markers =='",
+            "find . -maxdepth 4 \\( -name Cargo.toml -o -name pyproject.toml -o -name requirements.txt -o -name package.json -o -name tsconfig.json -o -name go.mod -o -name '*.csproj' -o -name '*.sln' \\) | sed 's#^./##' | sort | head -80",
+            "if [ \"$RUN\" = \"1\" ]; then",
+            "  echo '== diagnostics output =='",
+            "  if { [ \"$LANGUAGE\" = auto ] || [ \"$LANGUAGE\" = rust ]; } && [ -f Cargo.toml ] && command -v cargo >/dev/null 2>&1; then timeout \"$TIMEOUT\" cargo check --message-format=json || true; fi",
+            "  if { [ \"$LANGUAGE\" = auto ] || [ \"$LANGUAGE\" = python ]; } && command -v python >/dev/null 2>&1; then timeout \"$TIMEOUT\" python -m compileall -q . || true; fi",
+            "  if { [ \"$LANGUAGE\" = auto ] || [ \"$LANGUAGE\" = go ]; } && [ -f go.mod ] && command -v go >/dev/null 2>&1; then timeout \"$TIMEOUT\" go test ./... || true; fi",
+            "  if { [ \"$LANGUAGE\" = auto ] || [ \"$LANGUAGE\" = typescript ]; } && [ -f package.json ] && command -v npx >/dev/null 2>&1; then timeout \"$TIMEOUT\" npx tsc --noEmit || true; fi",
+            "  if { [ \"$LANGUAGE\" = auto ] || [ \"$LANGUAGE\" = csharp ]; } && command -v dotnet >/dev/null 2>&1; then timeout \"$TIMEOUT\" dotnet build --no-restore || true; fi",
+            "fi",
+        ]
+        script = "\n".join(script_lines)
+        return f"cd {quoted} 2>/dev/null || exit 2; sh -lc {_shell_single_quote(script)}"
     return None
 
 
@@ -136,12 +168,12 @@ async def _run_tool_via_runner(session: Session, task: Task, tool: str, inp: dic
     return (f"{tool} timed out waiting for endpoint runner completion", False)
 
 
-async def _run_shell(session: Session, task: Task, command: str, config: AppConfig) -> tuple[str, bool]:
+async def _run_shell(session: Session, task: Task, command: str, config: AppConfig, *, pipeline_approved: bool = False) -> tuple[str, bool]:
     events = AgentEvents(session, task)
     decision, reason = command_policy(command, session, config)
     if decision == "deny":
         return f"DENIED: {reason}", False
-    if decision == "ask" and session.permission_profile != "full-control":
+    if decision == "ask" and session.permission_profile != "full-control" and not pipeline_approved:
         # Check auto-approve rules first
         from ..auto_approve import should_auto_approve
         approved, reason = should_auto_approve("shell", {"command": command})

@@ -1,0 +1,117 @@
+name: PAC expand diff pull request
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - '.pac/diffs/v*.diff'
+      - '.pac/diffs/v*.patch'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: pac-expand-diff-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  expand-diff:
+    name: Expand supplied diff into PR source changes
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout trusted workflow tools from main
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: main
+          path: tools
+          token: ${{ secrets.push_token || github.token }}
+          fetch-depth: 0
+
+      - name: Checkout pull request branch
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          path: controller
+          token: ${{ secrets.push_token || github.token }}
+          fetch-depth: 0
+
+      - name: Locate supplied diff
+        id: diff
+        shell: bash
+        working-directory: controller
+        run: |
+          set -euo pipefail
+          mapfile -t diffs < <(find .pac/diffs -maxdepth 1 -type f \( -name 'v*.diff' -o -name 'v*.patch' \) | sort)
+          if [ "${#diffs[@]}" -eq 0 ]; then
+            echo "No versioned diff remains in this PR; nothing to expand."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${#diffs[@]}" -ne 1 ]; then
+            echo "Expected exactly one versioned diff under .pac/diffs. Found ${#diffs[@]}." >&2
+            printf '%s\n' "${diffs[@]}" >&2
+            exit 1
+          fi
+          diff_file="${diffs[0]}"
+          base="$(basename "$diff_file")"
+          version="${base%.*}"
+          if ! [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Diff filename must be vMAJOR.MINOR.PATCH.diff or .patch, got: $base" >&2
+            exit 1
+          fi
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "path=controller/$diff_file" >> "$GITHUB_OUTPUT"
+          echo "repo_path=$diff_file" >> "$GITHUB_OUTPUT"
+          echo "version=${version#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate supplied diff
+        if: steps.diff.outputs.found == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/scripts/validate-pac-diff.py '${{ steps.diff.outputs.path }}'
+
+      - name: Apply supplied diff to PR branch
+        if: steps.diff.outputs.found == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/scripts/apply-pac-diff.py '${{ steps.diff.outputs.path }}' --repo controller
+
+      - name: Replace diff file with expanded source changes
+        if: steps.diff.outputs.found == 'true'
+        shell: bash
+        working-directory: controller
+        run: |
+          set -euo pipefail
+          version='${{ steps.diff.outputs.version }}'
+          git rm -f '${{ steps.diff.outputs.repo_path }}'
+          rmdir .pac/diffs .pac 2>/dev/null || true
+          git diff --name-only -- . ':!.pac/diffs/**' | sed 's/^/- /' > "changed_${version}.txt"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No expanded source changes were produced."
+            exit 1
+          fi
+          git config user.name "pac-diff-expander[bot]"
+          git config user.email "pac-diff-expander[bot]@users.noreply.github.com"
+          git commit -m "Expand PAC diff for v${version}"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+
+      - name: Comment on PR
+        if: steps.diff.outputs.found == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.push_token || github.token }}
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: 'Expanded the supplied PAC diff into normal source changes. The `.pac/diffs` input was removed from the branch. Once the PR is reviewed and approved, the approved-PR release workflow can merge it and create the next PAC release.'
+            });
