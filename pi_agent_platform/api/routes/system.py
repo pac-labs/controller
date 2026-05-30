@@ -40,8 +40,11 @@ def _version_tuple(value: str | None) -> tuple[int, ...]:
 
 def _event_reports_newer_update(data: dict[str, Any], current_version: str) -> bool:
     latest = str(data.get("latest_version") or "").strip()
-    if not data.get("has_update") or not latest:
+    if not (data.get("has_update") or data.get("can_apply_update")) or not latest:
         return False
+    comparison = str(data.get("version_comparison") or "").strip()
+    if comparison in {"local_version_ahead", "same_version_newer_release_build"}:
+        return True
     return _version_tuple(latest) > _version_tuple(current_version)
 
 

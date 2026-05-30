@@ -134,7 +134,7 @@ def create_updates_router(
     @router.get('/v1/updates/check')
     def check_for_updates(_auth: None = Depends(require_auth)) -> dict[str, Any]:
         meta = fetch_latest_release_metadata(pac_version)
-        store.add_event(Event(session_id='system', type='update_checked', message=meta.get('has_update') and f"Update available: v{meta.get('latest_version')}" or 'PAC release channel checked', data=meta))
+        store.add_event(Event(session_id='system', type='update_checked', message=(meta.get('has_update') or meta.get('can_apply_update')) and f"Release channel update available: v{meta.get('latest_version')}" or 'PAC release channel checked', data=meta))
         return meta
 
     @router.get('/v1/updates/environment-plan')
@@ -298,8 +298,14 @@ def create_updates_router(
                 'latest_version': meta.get('latest_version'),
                 'message': message,
             }
-        if not meta.get('has_update'):
-            return {'ok': False, 'current_version': pac_version, 'latest_version': meta.get('latest_version'), 'message': 'PAC is already up to date'}
+        if not (meta.get('has_update') or meta.get('can_apply_update')):
+            return {
+                'ok': False,
+                'current_version': pac_version,
+                'latest_version': meta.get('latest_version'),
+                'version_comparison': meta.get('version_comparison'),
+                'message': meta.get('update_reason') or 'PAC is already up to date',
+            }
         download_url = str(meta.get('download_url') or '').strip()
         if not download_url:
             message = 'Latest PAC release does not provide pac-full.zip'

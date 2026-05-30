@@ -111,8 +111,10 @@ function renderPacReleaseStatus(meta=null) {
     if (applyBtn) applyBtn.disabled = true;
     return;
   }
-    if (meta.has_update) {
-      status.textContent = `Latest release: v${meta.latest_version}`;
+    if (meta.has_update || meta.can_apply_update) {
+      const reason = meta.update_reason ? ` — ${meta.update_reason}` : '';
+      const comparison = meta.version_comparison === 'local_version_ahead' ? 'Release channel sync available' : (meta.version_comparison === 'same_version_newer_release_build' ? 'New release build available' : 'Latest release available');
+      status.textContent = `${comparison}: v${meta.latest_version}${reason}`;
       if (applyBtn) applyBtn.disabled = false;
       const currentVersion = meta.current_version || config?.version || config?.setup_status?.version || '';
       api(`/v1/updates/release-notes?from_version=${encodeURIComponent(currentVersion)}&to_version=${encodeURIComponent(meta.latest_version || '')}`)
@@ -132,7 +134,7 @@ function renderPacReleaseStatus(meta=null) {
         });
       return;
   }
-  status.textContent = `PAC is up to date${meta.latest_version ? ` at v${meta.latest_version}` : ''}.`;
+  status.textContent = `PAC is up to date${meta.latest_version ? ` at v${meta.latest_version}` : ''}${meta.update_reason ? `. ${meta.update_reason}` : '.'}`;
   if (applyBtn) applyBtn.disabled = true;
   if (meta.latest_version) {
     const currentVersion = meta.current_version || config?.version || config?.setup_status?.version || meta.latest_version;
@@ -180,7 +182,7 @@ async function checkPacRelease() {
 
 async function applyPacRelease() {
   const meta = window.__pacReleaseMeta || {};
-  if (!meta.has_update) return paneError('No PAC release update is currently available');
+  if (!(meta.has_update || meta.can_apply_update)) return paneError(meta.update_reason || 'No PAC release update is currently available');
   const btn = document.getElementById('applyPacRelease');
   const proceed = document.getElementById('updateConfirmProceed');
   const cancel = document.getElementById('updateConfirmCancel');

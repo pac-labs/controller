@@ -4,6 +4,7 @@ import json
 import os
 import re
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,104 @@ def _version_tuple(value: str | None) -> tuple[int, ...]:
         match = re.match(r"^(\d+)", token)
         parts.append(int(match.group(1)) if match else 0)
     return tuple(parts or [0])
+
+
+
+
+
+def _package_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _parse_timestamp(value: str | None) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except Exception:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _read_local_release_identity(current_version: str | None) -> dict[str, Any]:
+    """Return local release identity used for GitHub release comparison.
+
+    Direct local development can bump VERSION ahead of GitHub, or produce the same
+    semantic version before the workflow has built the official release assets.
+    The updater therefore cannot use semantic version ordering as the only signal.
+    MANIFEST.generated_at gives us a stable local build timestamp when available.
+    """
+    root = _package_root()
+    identity: dict[str, Any] = {
+        "version": str(current_version or "").strip().lstrip("v") or None,
+        "manifest_generated_at": None,
+        "manifest_path": str(root / "MANIFEST.json"),
+    }
+    manifest_path = root / "MANIFEST.json"
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return identity
+    if isinstance(data, dict):
+        identity["version"] = str(data.get("version") or identity.get("version") or "").strip().lstrip("v") or None
+        identity["manifest_generated_at"] = str(data.get("generated_at") or "").strip() or None
+        identity["file_count"] = len(data.get("files") or []) if isinstance(data.get("files"), list) else None
+    return identity
+
+
+def _release_decision(current_version: str | None, latest_version: str | None, *, published_at: str | None = None) -> dict[str, Any]:
+    current = str(current_version or "").strip().lstrip("v")
+    latest = str(latest_version or "").strip().lstrip("v")
+    local_identity = _read_local_release_identity(current)
+    current_tuple = _version_tuple(current)
+    latest_tuple = _version_tuple(latest)
+    local_generated = _parse_timestamp(local_identity.get("manifest_generated_at"))
+    release_published = _parse_timestamp(published_at)
+
+    if not latest:
+        return {
+            "comparison": "unknown",
+            "has_update": False,
+            "can_apply_update": False,
+            "update_reason": "release version unavailable",
+            "local_release_identity": local_identity,
+        }
+    if latest_tuple > current_tuple:
+        return {
+            "comparison": "remote_newer",
+            "has_update": True,
+            "can_apply_update": True,
+            "update_reason": "remote release version is newer",
+            "local_release_identity": local_identity,
+        }
+    if latest_tuple < current_tuple:
+        return {
+            "comparison": "local_version_ahead",
+            "has_update": True,
+            "can_apply_update": True,
+            "update_reason": "local development version is ahead of the GitHub release; apply will sync to the selected release channel",
+            "local_release_identity": local_identity,
+        }
+    if release_published and local_generated and release_published > local_generated:
+        return {
+            "comparison": "same_version_newer_release_build",
+            "has_update": True,
+            "can_apply_update": True,
+            "update_reason": "GitHub published a newer release build for the same version",
+            "local_release_identity": local_identity,
+        }
+    return {
+        "comparison": "current",
+        "has_update": False,
+        "can_apply_update": False,
+        "update_reason": "local install matches the latest release version",
+        "local_release_identity": local_identity,
+    }
 
 
 def _fetch_json(url: str, timeout: int = 15) -> dict[str, Any] | None:
@@ -61,7 +160,7 @@ def _body_changes(body: str) -> list[str]:
 def _compare_changes(current_version: str | None, latest_version: str | None) -> list[str]:
     current = str(current_version or "").strip().lstrip("v")
     latest = str(latest_version or "").strip().lstrip("v")
-    if not current or not latest or _version_tuple(latest) <= _version_tuple(current):
+    if not current or not latest or latest == current or _version_tuple(latest) <= _version_tuple(current):
         return []
     compare = _fetch_json(f"{GITHUB_COMPARE_API}/v{current}...v{latest}")
     if not compare:
@@ -136,15 +235,21 @@ def fetch_latest_release_metadata(current_version: str) -> dict[str, Any]:
     compare_changes = _compare_changes(current_version, latest_version)
     assets = _asset_map(release)
     download_url = (assets.get("full") or {}).get("download_url")
+    published_at = release.get("published_at")
+    decision = _release_decision(current_version, latest_version, published_at=published_at)
     return {
         "ok": True,
         "current_version": current_version,
         "latest_version": latest_version,
-        "has_update": bool(latest_version and _version_tuple(latest_version) > _version_tuple(current_version)),
+        "has_update": bool(decision.get("has_update")),
+        "can_apply_update": bool(decision.get("can_apply_update")),
+        "version_comparison": decision.get("comparison"),
+        "update_reason": decision.get("update_reason"),
+        "local_release_identity": decision.get("local_release_identity"),
         "release_url": release.get("html_url") or GITHUB_REPO_URL,
         "download_url": download_url,
         "assets": assets,
-        "published_at": release.get("published_at"),
+        "published_at": published_at,
         "tag": tag or None,
         "body": body[:20000] if body else None,
         "changes": body_changes,

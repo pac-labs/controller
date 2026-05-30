@@ -432,3 +432,9 @@ Default release targets:
 * `windows/amd64`
 
 When the Update Center applies a release, PAC also runs an environment orchestration phase. It downloads `RELEASE_BINARIES.json`, resolves and verifies the matching `pac-endpoint` and `pacctl` assets for the controller host platform, installs them into the local PAC binary cache, regenerates PAC/pi.dev tool instructions, and verifies the pi.dev runtime state. This keeps pi.dev/tool guidance aligned with the installed PAC environment without requiring bundled binaries.
+
+=== Release Channel Sync
+
+PAC update checks must not rely only on semantic version ordering. Local development builds can temporarily report a version that is equal to or higher than the latest GitHub Release. The Update Center therefore compares both semantic version and release identity.
+
+The release identity includes the local `MANIFEST.json` generation timestamp and the GitHub Release `published_at` timestamp. If the GitHub release is newer for the same version, or if the local development version is ahead of the release channel, PAC may offer a release-channel sync. This lets the operator apply the official GitHub-built source package and binary assets even when local direct development has temporarily advanced the local version number.

@@ -157,9 +157,12 @@
       setState('release', 'warn');
       return;
     }
-    if (meta.has_update) {
+    if (meta.has_update || meta.can_apply_update) {
       text('pacReleaseSummary', `v${meta.latest_version || 'available'}`);
-      text('pacReleaseSummaryHint', 'New release is ready to preview');
+      const hint = meta.version_comparison === 'local_version_ahead'
+        ? 'Release channel sync is available even though local dev version is higher'
+        : (meta.update_reason || 'New release is ready to preview');
+      text('pacReleaseSummaryHint', hint);
       setState('release', 'attention');
       return;
     }

@@ -1,6 +1,28 @@
 {
   "releases": [
     {
+      "version": "1.0.426",
+      "title": "Release channel sync for local development versions",
+      "date": "2026-05-30T00:30:00Z",
+      "summary": "Allow the Update Center to apply the official GitHub release channel even when the running local development build has the same or a higher semantic PAC version.",
+      "changes": [
+        "Added release decision metadata so update checks expose version_comparison, update_reason, can_apply_update, and local_release_identity.",
+        "Changed update checks to treat local_version_ahead and same_version_newer_release_build as applyable release-channel sync states.",
+        "Updated the release apply API so it no longer blocks applyable release-channel syncs when semantic version ordering alone would say there is no newer update.",
+        "Updated the Update Center UI to show release-channel sync availability when local direct development has advanced the local version ahead of GitHub Releases.",
+        "Documented the release-channel sync model and added it to the technical design notes."
+      ],
+      "files": [
+        "pi_agent_platform/updates/__init__.py",
+        "pi_agent_platform/api/routes/updates.py",
+        "pi_agent_platform/api/routes/system.py",
+        "pi_agent_platform/web/app/admin_updates.js",
+        "pi_agent_platform/web/app/update_center_runtime.js",
+        "docs/release-channel-sync-for-local-dev-versions-20260530.md",
+        "docs/PAC_Technical_Design_v0.2.adoc"
+      ]
+    },
+    {
       "version": "1.0.425",
       "title": "Update orchestrator and binary refresh",
       "date": "2026-05-30T00:05:00Z",
@@ -1327,5 +1349,5 @@
       ]
     }
   ],
-  "current_version": "1.0.425"
+  "current_version": "1.0.426"
 }

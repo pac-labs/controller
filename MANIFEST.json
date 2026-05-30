@@ -1,6 +1,6 @@
 {
-  "version": "1.0.425",
-  "generated_at": "2026-05-29T22:10:51.279398Z",
+  "version": "1.0.426",
+  "generated_at": "2026-05-30T08:02:47.862480Z",
   "files": [
     {
       "path": ".github/workflows/pac-expand-diff-pr.yml",
@@ -28,9 +28,14 @@
       "sha256": "a7b61e9989e18307fa9f4b4a041af4e4d1f24fea73136e55e4562f26c5338559"
     },
     {
+      "path": "MANIFEST.json",
+      "size": 107750,
+      "sha256": "ed83bc48252890b6e71f7775389de9a2b3723ea93931c83db352f4dca68de603"
+    },
+    {
       "path": "PAC_CHANGELOG.json",
-      "size": 91024,
-      "sha256": "e28580244e54655811754cfe66b56bbea19ec45e7595e9e49ccdd19601e5c692"
+      "size": 94562,
+      "sha256": "126e4e587d74a987acd35572bfada807d457d1bc7c17cfee2ad7827bd1eb1323"
     },
     {
       "path": "PAC_UPDATE_DIFF-1.0.376.diff",
@@ -268,19 +273,29 @@
       "sha256": "6c7e696a05f4d224b5a941b2f1aebe5a67403d79b79af69dc2a326010e285086"
     },
     {
+      "path": "PAC_UPDATE_DIFF-1.0.425.diff",
+      "size": 77199,
+      "sha256": "b0c5d364a0a68d3f560c13479cd2f9d2b21677ebaa8eb8c7dcd061d74c7ff8b3"
+    },
+    {
+      "path": "PAC_UPDATE_DIFF-1.0.426.diff",
+      "size": 40219,
+      "sha256": "6f8372fd8e49551f5d8bf7b03d5a24c8d52a6092e136ad897c0e6fa1c95d08f6"
+    },
+    {
       "path": "README.md",
-      "size": 17653,
-      "sha256": "16651b3ca88fdc496187614ab548d81ad92c247d3ec735baac238946e83a14b8"
+      "size": 18467,
+      "sha256": "c8a8493727331e3a4f4c214962a07c929627f81fc5d453d4a90060e356d1f26b"
     },
     {
       "path": "VERSION",
       "size": 8,
-      "sha256": "d40ddaed1a6fee7dc634242d6d77f4ecabff69e0333be00683f97914a5d14041"
+      "sha256": "43b9bb0c8e47de69f2281ea669ed4fb64a79a8af7d535d7cf4d5f119c57b76df"
     },
     {
       "path": "VERSION_CURRENT.md",
-      "size": 514,
-      "sha256": "bfb4c04dab99660e9c4a9825d76ca225fce25660434a0fe983d53b56a1e19c71"
+      "size": 40,
+      "sha256": "672b3036eacfcd0e9f19dba6e50bf35969a441f6fc300c3d9155247332be12f0"
     },
     {
       "path": "binaries/README.md",
@@ -524,8 +539,8 @@
     },
     {
       "path": "containers/pi-agent-harness/Dockerfile",
-      "size": 1282,
-      "sha256": "678650593be5b7d588a381adf7d414f4282d530e3dbf4c268941e15476d7a1a8"
+      "size": 1273,
+      "sha256": "4d3d925bff8d7b68712304dfc9bbfb87ab5af2dcd9fbe2ca93920ba8c5e22a4d"
     },
     {
       "path": "containers/pi-agent-harness/README.md",
@@ -591,11 +606,6 @@
       "path": "deploy/traefik/dynamic.yaml",
       "size": 339,
       "sha256": "db7ff94ed1f09134fe0707a6e57ca1d867d7b9ead39d88f4dc08f77f7fa7bbeb"
-    },
-    {
-      "path": "dist/release-binaries/RELEASE_BINARIES.json",
-      "size": 6149,
-      "sha256": "20d7bd9add188f8fbf249862237a4cc390dc1638df70c81013ae79eaa462fb5e"
     },
     {
       "path": "docs/PAC_AGENT_TOOL_PIPELINE_STATUS.md",
@@ -669,8 +679,8 @@
     },
     {
       "path": "docs/PAC_Technical_Design_v0.2.adoc",
-      "size": 16354,
-      "sha256": "9479beae062d55c0603db41cf19ebcfca5b3e9295fa44ece83ec097755fe3cfe"
+      "size": 18152,
+      "sha256": "641d5c43380e1b8970990ce2256516db72a8700a66f891f0d2f2494d7c2fdbe0"
     },
     {
       "path": "docs/agent-loop-intent-recovery-20260523.md",
@@ -869,8 +879,8 @@
     },
     {
       "path": "docs/pac-binary-and-workspace-agent-architecture-20260529.md",
-      "size": 12309,
-      "sha256": "4fabb8a4d0d4460570da1b08633b6dc7b492b360c876d2e1222e012210aea1b2"
+      "size": 12991,
+      "sha256": "608b8f9c16fa1401f0fd506ca41f86255ff4770ce9ffc19e4e2410f8c21f9588"
     },
     {
       "path": "docs/pac-component-atlas-20260523.md",
@@ -923,6 +933,11 @@
       "sha256": "ec169dcfa508864c0b83b50cb9d859a6185099bc06db6d3f6c1f60b07c0865be"
     },
     {
+      "path": "docs/release-channel-sync-for-local-dev-versions-20260530.md",
+      "size": 2232,
+      "sha256": "294209e2f08f4246a258acfb2c55c5295fd733154802bf81342313d6805224d7"
+    },
+    {
       "path": "docs/session-diagnostics-bundle.md",
       "size": 3369,
       "sha256": "36e14b99ed2f2223c22cbc9115f5888de7b764a82f7392292d9abbb41e90b07a"
@@ -951,6 +966,11 @@
       "path": "docs/ui-guided-create-design-rule.md",
       "size": 2006,
       "sha256": "89e77f2fba8f24e13d24c2e053dfb3c3a834cf25c6163519c5a4d1779222209d"
+    },
+    {
+      "path": "docs/update-orchestrator-and-agent-tool-refresh-20260529.md",
+      "size": 2419,
+      "sha256": "5657e720bdaf64ca6c4b29b814c5d4fb63fcdf13427c3a78603208d4e1822ac2"
     },
     {
       "path": "docs/windows-endpoint-remote-execution-20260523.md",
@@ -1134,8 +1154,8 @@
     },
     {
       "path": "pi_agent_platform/api/routes/system.py",
-      "size": 22090,
-      "sha256": "e82477e44fa9a605742de81c1734c344240926e6a0d00dc7e1b460a8754b4cc5"
+      "size": 22293,
+      "sha256": "c6b1ff68362e975edf76186391e3c2b4ec698c05068da1878da060f8ece249ec"
     },
     {
       "path": "pi_agent_platform/api/routes/ui.py",
@@ -1144,8 +1164,8 @@
     },
     {
       "path": "pi_agent_platform/api/routes/updates.py",
-      "size": 17346,
-      "sha256": "a36f721eea9bc445331a75c803a472e4a641c17bf1bc2ea3e55b2607a9ca3956"
+      "size": 19085,
+      "sha256": "713c0fd4520c44b69c0fd89c9d98a2e5d29b6acda7cf8451dc4cdf1e1659ccf7"
     },
     {
       "path": "pi_agent_platform/api/routes/version.py",
@@ -1738,6 +1758,16 @@
       "sha256": "944d2f06b023df6fc5d9cc817951dc77186390c5f28c7293c5e759fa54c28e1a"
     },
     {
+      "path": "pi_agent_platform/core/updates/__init__.py",
+      "size": 40,
+      "sha256": "eeb252be8aad5f4f625f6766725131f774c2b9c8e94f7e193c2a1fb6e1125c80"
+    },
+    {
+      "path": "pi_agent_platform/core/updates/orchestrator.py",
+      "size": 14294,
+      "sha256": "d4641356cd8da35a2b9f5d532d61a0b7360da3a0987baa184d5dff20d5a8e08c"
+    },
+    {
       "path": "pi_agent_platform/core/web_tools.py",
       "size": 6714,
       "sha256": "8022dfb73f125f30596b754cf42498bbbe510ef22f064196582497257b025150"
@@ -1779,13 +1809,13 @@
     },
     {
       "path": "pi_agent_platform/updates/__init__.py",
-      "size": 6887,
-      "sha256": "64b4e3f2ca45d6dce71ddf7247a31c619ee57f7b869c7e81e5a3a59fa125eb7a"
+      "size": 11458,
+      "sha256": "62eff8c6222ba99aca9d929dda305c173641221fcfb17060d3f4cc19a6162b55"
     },
     {
       "path": "pi_agent_platform/web/app/admin_updates.js",
-      "size": 20580,
-      "sha256": "01da3671f9a3b8399486773a4b856bc0c3004e9c78087ba9808754530184dde7"
+      "size": 21610,
+      "sha256": "5a1f4a6ebb29354d222f587ea4986f5ead0a667f5b07cdded14285427944bad8"
     },
     {
       "path": "pi_agent_platform/web/app/agent_context_forms.js",
@@ -2329,8 +2359,8 @@
     },
     {
       "path": "pi_agent_platform/web/app/update_center_runtime.js",
-      "size": 9135,
-      "sha256": "20c66ab6afc029f24440e154d717fca15b341a3897e0c1d0480f0000a503eb48"
+      "size": 11682,
+      "sha256": "00e8f489ac238eaa2ca1452b8e5fdf07cfaab1a5e090d5805b2a047e22cc4481"
     },
     {
       "path": "pi_agent_platform/web/app/update_confirm_overlay.js",
@@ -2484,8 +2514,8 @@
     },
     {
       "path": "pi_agent_platform/web/index.html",
-      "size": 132893,
-      "sha256": "cd4e0d643354d6df4245848f491eb3449ee82a253c20e82ea52d83ad18f261b0"
+      "size": 133622,
+      "sha256": "312a500efff9f9b12f822722f8d47baf54d35ee91cf5d63fd8fa49d840cbcecd"
     },
     {
       "path": "pi_agent_platform/web/styles/admin-components.css",
@@ -2920,7 +2950,7 @@
     {
       "path": "pyproject.toml",
       "size": 622,
-      "sha256": "cbcbf8d9cce66015056bb59a103192ecce23720e75c534160df63d46d006372d"
+      "sha256": "90a21d3838506747f6143918d6985cefe6495fb91758a5b3428a8f3a1e77c3a4"
     },
     {
       "path": "requirements.txt",
@@ -3019,8 +3049,8 @@
     },
     {
       "path": "scripts/validate-release-binary-pipeline.py",
-      "size": 2330,
-      "sha256": "704c794de47757db8f530731f27a5d2dada1ba118a82ca0e6d2935a820d210a8"
+      "size": 2507,
+      "sha256": "6bbaf82dcf58e5051a6df6c5445bd7aeb8795116cff1a7e2dc64bebfbecd4b84"
     },
     {
       "path": "vscode-extension/package.json",
@@ -3037,6 +3067,5 @@
       "size": 187,
       "sha256": "76d06af6343398d155bf42b9f0f924af863de3de04c9a92724a2590b6fc500fa"
     }
-  ],
-  "updated_at": "2026-05-30T00:05:00Z"
+  ]
 }
