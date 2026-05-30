@@ -12,6 +12,7 @@ from pi_agent_platform.core.config import AppConfig
 from pi_agent_platform.core.models import Event
 from pi_agent_platform.core.environment_debug_bundle import build_environment_debug_zip
 from pi_agent_platform.core.platform_debug_bundle import _json_bytes, _redact_text
+from pi_agent_platform.core.generated_file_housekeeping import prune_debug_bundles
 
 AuthDependency = Callable[..., Any]
 
@@ -54,6 +55,7 @@ def create_debug_bundles_router(
     @router.get('/v1/debug-bundles')
     def list_debug_bundles(_auth: Any = Depends(require_auth)) -> dict[str, Any]:
         root = _bundle_root(config)
+        prune_debug_bundles(root, keep_latest=1, max_age_hours=24, dry_run=False)
         candidates = []
         for path in root.glob('*.zip'):
             try:
@@ -77,6 +79,7 @@ def create_debug_bundles_router(
         _auth: Any = Depends(require_auth),
     ) -> dict[str, Any]:
         root = _bundle_root(config)
+        prune_debug_bundles(root, keep_latest=1, max_age_hours=24, dry_run=False)
         stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
         path = root / f'pac-environment-debug-{stamp}.zip'
         generation_error: str | None = None
@@ -110,6 +113,22 @@ def create_debug_bundles_router(
             data={'bundle': record, 'generation_error': generation_error},
         ))
         return {'bundle': record, 'ready': True, 'generation_error': generation_error}
+
+    @router.post('/v1/debug-bundles/cleanup')
+    def cleanup_debug_bundles(payload: dict[str, Any] | None = None, _auth: Any = Depends(require_auth)) -> dict[str, Any]:
+        payload = payload or {}
+        root = _bundle_root(config)
+        keep_latest = int(payload.get('keep_latest') or 1)
+        max_age_hours = int(payload.get('max_age_hours') or 24)
+        dry_run = bool(payload.get('dry_run') or False)
+        result = prune_debug_bundles(root, keep_latest=keep_latest, max_age_hours=max_age_hours, dry_run=dry_run)
+        store.add_event(Event(
+            session_id='system',
+            type='debug_bundles_cleanup_previewed' if dry_run else 'debug_bundles_cleaned',
+            message=f"Debug bundle cleanup {'previewed' if dry_run else 'completed'}: {result.get('deleted_count', 0)} bundle(s)",
+            data=result,
+        ))
+        return result
 
     @router.get('/v1/debug-bundles/{bundle_id}/download')
     def download_debug_bundle(bundle_id: str, _auth: Any = Depends(require_auth)) -> FileResponse:

@@ -16,6 +16,7 @@ from pi_agent_platform.core.platform_home import pacp_path
 from pi_agent_platform.core.update_preservation import TRACKED_ROOTS, build_backup_archive, generate_local_diff, list_generated_diffs
 from pi_agent_platform.updates import download_release_asset, download_release_package, fetch_latest_release_assets, fetch_latest_release_metadata
 from pi_agent_platform.core.updates.orchestrator import plan_update_orchestration, run_update_orchestration
+from pi_agent_platform.core.generated_file_housekeeping import prune_update_temp_files
 
 
 def create_updates_router(
@@ -118,6 +119,22 @@ def create_updates_router(
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f'Release asset is not JSON: {asset_key}') from exc
         return data if isinstance(data, dict) else {'value': data}
+
+    @router.post('/v1/updates/housekeeping')
+    def run_update_housekeeping(payload: dict[str, Any] | None = None, _auth: None = Depends(require_auth)) -> dict[str, Any]:
+        payload = payload or {}
+        result = prune_update_temp_files(
+            keep_latest_backups=int(payload.get('keep_latest_backups') or 3),
+            max_age_hours=int(payload.get('max_age_hours') or 48),
+            dry_run=bool(payload.get('dry_run') or False),
+        )
+        store.add_event(Event(
+            session_id='system',
+            type='update_temp_housekeeping_previewed' if result.get('dry_run') else 'update_temp_housekeeping_completed',
+            message=f"Update temp housekeeping {'previewed' if result.get('dry_run') else 'completed'}: {result.get('deleted_count', 0)} item(s)",
+            data=result,
+        ))
+        return result
 
     @router.get('/v1/updates/status')
     def get_updates_status(_auth: None = Depends(require_auth)) -> dict[str, Any]:

@@ -6,7 +6,7 @@ import platform
 import sys
 import traceback
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -128,10 +128,21 @@ def _safe_writestr(zf: zipfile.ZipFile, name: str, data: Any, errors: list[dict[
 def _safe_recent_logs(roots: list[Path], errors: list[dict[str, Any]]) -> list[Path]:
     logs = _safe_collect("recent_logs", errors, lambda: _iter_recent_logs(roots), [])
     safe_logs: list[Path] = []
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
     for path in logs:
         try:
-            if Path(path).exists() and Path(path).is_file():
-                safe_logs.append(Path(path))
+            candidate = Path(path)
+            # Environment support bundles are temporary resources. Avoid pulling
+            # old update-backup log tails into every newly generated bundle; they
+            # make downloads noisy and stale, and rollback backups have their own
+            # lifecycle.
+            if any(part.startswith("backup-app-") for part in candidate.parts):
+                continue
+            if not candidate.exists() or not candidate.is_file():
+                continue
+            if datetime.fromtimestamp(candidate.stat().st_mtime, timezone.utc) < cutoff:
+                continue
+            safe_logs.append(candidate)
         except Exception as exc:
             _capture_errors(errors, f"log_probe:{path}", exc)
     return safe_logs

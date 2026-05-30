@@ -438,3 +438,10 @@ When the Update Center applies a release, PAC also runs an environment orchestra
 PAC update checks must not rely only on semantic version ordering. Local development builds can temporarily report a version that is equal to or higher than the latest GitHub Release. The Update Center therefore compares both semantic version and release identity.
 
 The release identity includes the local `MANIFEST.json` generation timestamp and the GitHub Release `published_at` timestamp. If the GitHub release is newer for the same version, or if the local development version is ahead of the release channel, PAC may offer a release-channel sync. This lets the operator apply the official GitHub-built source package and binary assets even when local direct development has temporarily advanced the local version number.
+
+
+== Generated Download Housekeeping
+
+PAC treats built binaries, release-asset cache files, extracted update packages, and environment debug bundles as generated resources. They are not durable product state. The Downloads modal keeps generated binary artifacts tidy through a real housekeeping action that removes deprecated binary folders and stale duplicate platform builds, even when artifacts are unversioned. Environment debug bundles are temporary support downloads; PAC keeps the newest bundle, expires older bundles, and no longer includes log tails from old update-backup directories.
+
+See `docs/generated-download-housekeeping-20260530.md`.

@@ -613,6 +613,54 @@ def _version_sort_key(version: str) -> tuple[Any, ...]:
     return (0, version or '')
 
 
+
+
+_RELEASE_BINARY_PROJECTS = {'pac-endpoint', 'pacctl'}
+_DEPRECATED_BINARY_PROJECTS = {'pac-agent', 'pac-endpoint-runner', 'zed-binary'}
+
+
+def _artifact_platform_key(name: str, project: str | None = None) -> str:
+    """Return the OS/arch shape for a binary artifact so duplicate old builds can be pruned."""
+    text = Path(name or '').name
+    if text.lower().endswith('.exe'):
+        text = text[:-4]
+    if project and text.startswith(project + '-'):
+        text = text[len(project) + 1:]
+    match = re.search(r'(linux|darwin|windows|freebsd|openbsd|netbsd)[-_](amd64|arm64|arm|386|ppc64le|s390x)', text, flags=re.IGNORECASE)
+    if match:
+        return match.group(0).replace('_', '-').lower()
+    return text.lower()
+
+
+def _artifact_keep_priority(artifact: dict[str, Any], project: str) -> tuple[int, float, str]:
+    name = str(artifact.get('name') or '')
+    stem = name[:-4] if name.lower().endswith('.exe') else name
+    canonical = bool(re.match(rf'^{re.escape(project)}-(linux|darwin|windows|freebsd|openbsd|netbsd)[-_](amd64|arm64|arm|386|ppc64le|s390x)$', stem, flags=re.IGNORECASE))
+    return (1 if canonical else 0, float(artifact.get('modified_ts') or 0), name)
+
+
+def _artifact_record(project: str, path: Path, source_version: str | None = None) -> dict[str, Any]:
+    stat = path.stat()
+    version = _artifact_version(path.name, source_version)
+    raw_download_url = f'/v1/sources/binary-artifacts/{project}/{path.name}'
+    record: dict[str, Any] = {
+        'name': path.name,
+        'size': stat.st_size,
+        'version': version,
+        'modified_at': datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+        'modified_ts': stat.st_mtime,
+        'platform_key': _artifact_platform_key(path.name, project),
+        'download_url': raw_download_url,
+        'delete_url': f'/v1/sources/binary-artifacts/{project}/{path.name}',
+    }
+    if path.name.lower().endswith('.exe'):
+        record['raw_download_url'] = raw_download_url
+        record['download_url'] = f'{raw_download_url}?format=zip'
+        record['download_format'] = 'zip'
+        record['install_script_url'] = f'/v1/sources/binary-artifacts/{project}/{path.name}/install.ps1'
+    return record
+
+
 def _find_containerfile(folder: Path) -> Path:
     for name in ('Containerfile', 'Dockerfile', 'containerfile', 'dockerfile'):
         candidate = folder / name
@@ -785,39 +833,31 @@ def list_binary_artifacts(project: str | None = None) -> dict[str, Any]:
 
     projects = []
     for name in _project_names():
+        if not name:
+            continue
         root = base / name
         source_dir = source_base / name
         source_version = _binary_build_version(source_dir)
         artifacts = []
         versions: dict[str, dict[str, Any]] = {}
         if root.exists():
-            for item in sorted(root.iterdir()):
+            for item in sorted(root.iterdir(), key=lambda path: path.stat().st_mtime if path.exists() else 0, reverse=True):
                 if item.is_file():
-                    version = _artifact_version(item.name, source_version)
-                    raw_download_url = f'/v1/sources/binary-artifacts/{name}/{item.name}'
-                    download_url = raw_download_url
-                    artifact = {
-                        'name': item.name,
-                        'size': item.stat().st_size,
-                        'version': version,
-                        'download_url': download_url,
-                        'delete_url': f'/v1/sources/binary-artifacts/{name}/{item.name}',
-                    }
-                    if item.name.lower().endswith('.exe'):
-                        artifact['raw_download_url'] = raw_download_url
-                        artifact['download_url'] = f'{raw_download_url}?format=zip'
-                        artifact['download_format'] = 'zip'
-                        artifact['install_script_url'] = f'/v1/sources/binary-artifacts/{name}/{item.name}/install.ps1'
+                    artifact = _artifact_record(name, item, source_version)
                     artifacts.append(artifact)
-                    group = versions.setdefault(version, {'version': version, 'artifact_count': 0, 'bytes': 0})
+                    group = versions.setdefault(artifact['version'], {'version': artifact['version'], 'artifact_count': 0, 'bytes': 0, 'newest_modified_at': artifact.get('modified_at')})
                     group['artifact_count'] += 1
                     group['bytes'] += artifact['size']
-        version_list = sorted(versions.values(), key=lambda r: _version_sort_key(r['version']), reverse=True)
+                    if str(artifact.get('modified_at') or '') > str(group.get('newest_modified_at') or ''):
+                        group['newest_modified_at'] = artifact.get('modified_at')
+        version_list = sorted(versions.values(), key=lambda r: (_version_sort_key(r['version']), r.get('newest_modified_at') or ''), reverse=True)
         projects.append({
             'project': name,
             'source_path': f'binaries/{name}',
             'source_version': source_version,
             'has_source': source_dir.is_dir(),
+            'is_release_binary': name in _RELEASE_BINARY_PROJECTS,
+            'deprecated': name in _DEPRECATED_BINARY_PROJECTS or (not source_dir.is_dir() and name not in _RELEASE_BINARY_PROJECTS),
             'artifacts': artifacts,
             'versions': version_list,
             'artifact_count': len(artifacts),
@@ -842,27 +882,113 @@ def delete_binary_artifact(project: str, filename: str) -> dict[str, Any]:
     return {'ok': True, 'project': _canonical_binary_project(project), 'deleted': target.name, 'bytes': size}
 
 
+def _delete_binary_artifact_path(path: Path, *, project: str, dry_run: bool) -> dict[str, Any] | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    record = {
+        'project': project,
+        'name': path.name,
+        'version': _artifact_version(path.name, None),
+        'platform_key': _artifact_platform_key(path.name, project),
+        'size': stat.st_size,
+        'modified_at': datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+    }
+    if not dry_run:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return None
+    return record
+
+
 def prune_binary_artifacts(project: str | None = None, keep_versions: int = 1, dry_run: bool = False) -> dict[str, Any]:
+    """Prune generated binary downloads.
+
+    The old implementation only kept the newest semantic version. That failed for
+    local builds because current release assets are often named without a version
+    (`pacctl-linux-amd64`) and removed transitional components (`pac-agent`,
+    `zed-binary`) no longer have source folders. This implementation treats the
+    download area as generated cache: removed/deprecated projects are cleared,
+    stale versions are removed, and duplicate artifacts inside the kept version
+    are collapsed to the newest file per platform.
+    """
     ensure_source_library()
     keep_versions = max(1, int(keep_versions or 1))
     inventory = list_binary_artifacts(project).get('projects', [])
     deleted: list[dict[str, Any]] = []
     kept: list[dict[str, Any]] = []
+    notes: list[str] = []
+
     for proj in inventory:
-        version_order = [v['version'] for v in proj.get('versions', [])]
-        keep = set(version_order[:keep_versions])
-        for artifact in proj.get('artifacts', []):
-            record = {'project': proj['project'], 'name': artifact['name'], 'version': artifact.get('version'), 'size': artifact.get('size', 0)}
-            if artifact.get('version') in keep:
-                kept.append(record)
-                continue
+        project_name = str(proj.get('project') or '')
+        if not project_name:
+            continue
+        root = pacp_path('source-builds', 'binaries', project_name)
+        artifacts = list(proj.get('artifacts', []))
+        if not artifacts:
+            continue
+        deprecated_project = bool(proj.get('deprecated')) or project_name in _DEPRECATED_BINARY_PROJECTS
+        if deprecated_project and project is None:
+            notes.append(f'cleared deprecated binary artifact folder: {project_name}')
+            for artifact in artifacts:
+                deleted_record = _delete_binary_artifact_path(root / artifact['name'], project=project_name, dry_run=dry_run)
+                if deleted_record:
+                    deleted.append(deleted_record)
             if not dry_run:
                 try:
-                    binary_artifact_path(proj['project'], artifact['name']).unlink()
-                except FileNotFoundError:
+                    root.rmdir()
+                except OSError:
+                    pass
+            continue
+
+        version_order = [v['version'] for v in proj.get('versions', [])]
+        keep_versions_set = set(version_order[:keep_versions])
+        kept_version_artifacts: dict[str, list[dict[str, Any]]] = {}
+        for artifact in artifacts:
+            record = {
+                'project': project_name,
+                'name': artifact['name'],
+                'version': artifact.get('version'),
+                'platform_key': artifact.get('platform_key'),
+                'size': artifact.get('size', 0),
+                'modified_at': artifact.get('modified_at'),
+            }
+            if artifact.get('version') not in keep_versions_set:
+                deleted_record = _delete_binary_artifact_path(root / artifact['name'], project=project_name, dry_run=dry_run)
+                if deleted_record:
+                    deleted.append(deleted_record)
+                continue
+            kept_version_artifacts.setdefault(str(artifact.get('version') or 'unversioned'), []).append(artifact)
+            kept.append(record)
+
+        # If all artifacts are in a single unversioned/current version bucket, still
+        # remove duplicate old builds for the same platform/target. Keep the newest
+        # file per platform key; this makes the Downloads button actually reduce a
+        # noisy folder even when filenames do not carry semantic versions.
+        for version, version_artifacts in kept_version_artifacts.items():
+            newest_by_platform: dict[str, dict[str, Any]] = {}
+            for artifact in sorted(version_artifacts, key=lambda item: _artifact_keep_priority(item, project_name), reverse=True):
+                platform_key = str(artifact.get('platform_key') or artifact.get('name'))
+                if platform_key not in newest_by_platform:
+                    newest_by_platform[platform_key] = artifact
                     continue
-            deleted.append(record)
-    return {'ok': True, 'dry_run': dry_run, 'keep_versions': keep_versions, 'deleted_count': len(deleted), 'deleted_bytes': sum(int(r.get('size') or 0) for r in deleted), 'deleted': deleted, 'kept_count': len(kept)}
+                deleted_record = _delete_binary_artifact_path(root / artifact['name'], project=project_name, dry_run=dry_run)
+                if deleted_record:
+                    deleted.append(deleted_record)
+                    kept = [item for item in kept if not (item.get('project') == project_name and item.get('name') == artifact['name'])]
+
+    return {
+        'ok': True,
+        'dry_run': dry_run,
+        'keep_versions': keep_versions,
+        'deleted_count': len(deleted),
+        'deleted_bytes': sum(int(r.get('size') or 0) for r in deleted),
+        'deleted': deleted,
+        'kept_count': len(kept),
+        'notes': notes,
+    }
 
 # --- Online source/package update discovery ---------------------------------------
 

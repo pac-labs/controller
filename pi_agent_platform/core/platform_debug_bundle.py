@@ -126,7 +126,7 @@ def _iter_recent_logs(roots: list[Path], *, limit: int = 80) -> list[Path]:
         try:
             for pattern in _LOG_NAMES:
                 for path in root.rglob(pattern):
-                    if any(part in _SKIP_PARTS for part in path.parts):
+                    if any(part in _SKIP_PARTS or part.startswith('backup-app-') for part in path.parts):
                         continue
                     if not path.is_file() or path in seen:
                         continue

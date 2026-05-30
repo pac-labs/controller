@@ -172,10 +172,11 @@ async function deleteBinaryArtifact(project, filename) {
 async function pruneBinaryArtifacts(dryRun=false) {
   const project = selectedBinaryArtifactFilter || '';
   const label = project ? project : 'all binary folders';
-  if (!dryRun && !confirm(`Keep only the newest binary version for ${label} and delete older versions?`)) return;
+  if (!dryRun && !confirm(`Clean generated binary downloads for ${label}? This keeps the newest build per version/platform and removes stale deprecated artifacts.`)) return;
   const result = await api('/v1/sources/binary-artifacts/prune', {method:'POST', body:JSON.stringify({project, keep_versions:1, dry_run:dryRun})});
   const bytes = formatBytes(result.deleted_bytes || 0);
-  setSourceBuildHint(dryRun ? `Prune preview: ${result.deleted_count || 0} old file(s), ${bytes}.` : `Pruned ${result.deleted_count || 0} old file(s), ${bytes}.`, false);
+  const noteText = (result.notes || []).length ? ` Notes: ${(result.notes || []).join('; ')}` : '';
+  setSourceBuildHint(dryRun ? `Cleanup preview: ${result.deleted_count || 0} old file(s), ${bytes}.${noteText}` : `Cleaned ${result.deleted_count || 0} old file(s), ${bytes}.${noteText}`, false);
   await loadSourceBinaryArtifacts(project).catch(()=>{});
   await loadGlobalEvents(true).catch(()=>{});
 }

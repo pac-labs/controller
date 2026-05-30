@@ -101,9 +101,29 @@
     }
   }
 
+
+  async function cleanupEnvironmentDebugBundles(dryRun=false) {
+    if (typeof window.api !== 'function') return;
+    if (!dryRun && !confirm('Clear old generated environment debug bundles? The newest temporary bundle is kept for download.')) return;
+    statusText(dryRun ? 'Previewing debug bundle cleanup...' : 'Cleaning old debug bundles...', true);
+    try {
+      const result = await window.api('/v1/debug-bundles/cleanup', {
+        method: 'POST',
+        body: JSON.stringify({keep_latest: 1, max_age_hours: 24, dry_run: dryRun}),
+      });
+      statusText(`${dryRun ? 'Debug cleanup preview' : 'Debug cleanup complete'}: ${result.deleted_count || 0} old bundle(s), ${bytesLabel(result.deleted_bytes || 0)}.`, false);
+      await loadEnvironmentDebugBundles();
+      if (typeof window.loadGlobalEvents === 'function') window.loadGlobalEvents(true).catch(()=>{});
+    } catch (err) {
+      statusText(`Debug bundle cleanup failed: ${err.message}`, false);
+      if (typeof window.paneError === 'function') window.paneError('Debug bundle cleanup failed', err.message);
+    }
+  }
+
   function bind() {
     document.getElementById('generateEnvironmentDebugBundle')?.addEventListener('click', generateEnvironmentDebugBundle);
     document.getElementById('refreshEnvironmentDebugBundles')?.addEventListener('click', loadEnvironmentDebugBundles);
+    document.getElementById('cleanupEnvironmentDebugBundles')?.addEventListener('click', () => cleanupEnvironmentDebugBundles(false));
     document.getElementById('environmentDebugBundleList')?.addEventListener('click', (event) => {
       const button = event.target?.closest?.('.environment-debug-download');
       if (!button) return;
@@ -112,6 +132,7 @@
   }
 
   window.loadEnvironmentDebugBundles = loadEnvironmentDebugBundles;
+  window.cleanupEnvironmentDebugBundles = cleanupEnvironmentDebugBundles;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);
   else bind();
 })();

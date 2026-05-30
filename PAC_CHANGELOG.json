@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "version": "1.0.427",
+      "title": "Generated download housekeeping",
+      "date": "2026-05-30T10:15:00Z",
+      "summary": "Make Downloads housekeeping effective for generated binary artifacts and temporary debug/support bundles.",
+      "changes": [
+        "Changed binary artifact pruning so Keep newest only removes deprecated binary folders, stale versions, and duplicate unversioned platform builds instead of relying only on semantic version groups.",
+        "Added generated-file housekeeping helpers for debug bundles and update temporary/cache files.",
+        "Added a debug bundle cleanup API and a Clear old bundles action in the Downloads modal.",
+        "Environment and session debug bundles now skip old update-backup log tails so support downloads are focused on current runtime logs.",
+        "Added update temp housekeeping API for release asset cache, extracted packages, upload temp files, and old rollback backups.",
+        "Documented generated download retention policy in docs/generated-download-housekeeping-20260530.md."
+      ],
+      "not_done": [
+        "The Update Center has an API for update-temp housekeeping, but the UI does not yet expose a dedicated update-cache cleanup card.",
+        "Retention values are fixed defaults in this pass; configurable housekeeping policy can be added later."
+      ]
+    },
+    {
       "version": "1.0.426",
       "title": "Release channel sync for local development versions",
       "date": "2026-05-30T00:30:00Z",
@@ -1349,5 +1367,5 @@
       ]
     }
   ],
-  "current_version": "1.0.382"
+  "current_version": "1.0.427"
 }
