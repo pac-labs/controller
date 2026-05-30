@@ -445,3 +445,10 @@ The release identity includes the local `MANIFEST.json` generation timestamp and
 PAC treats built binaries, release-asset cache files, extracted update packages, and environment debug bundles as generated resources. They are not durable product state. The Downloads modal keeps generated binary artifacts tidy through a real housekeeping action that removes deprecated binary folders and stale duplicate platform builds, even when artifacts are unversioned. Environment debug bundles are temporary support downloads; PAC keeps the newest bundle, expires older bundles, and no longer includes log tails from old update-backup directories.
 
 See `docs/generated-download-housekeeping-20260530.md`.
+
+== Generated-file housekeeping
+
+PAC owns retention for generated update/download/debug/build artifacts. The controller runs a housekeeping pass on startup and after successful release update apply. Update Center also exposes preview and clean actions backed by `GET /v1/updates/housekeeping` and `POST /v1/updates/housekeeping`.
+
+Default retention keeps the newest debug bundle, newest update download, newest release asset cache, and two rollback backups. Extracted update folders, old bundled-binary outputs, stale binary cache, and app-tree build/cache directories are removed automatically so local development and repeated updates do not grow the runtime home indefinitely.
+

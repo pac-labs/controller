@@ -39,8 +39,11 @@ def validate_scripts() -> None:
     release_text = (ROOT / "scripts/generate-pac-release.py").read_text(encoding="utf-8")
     if "Run scripts/compile-release-binaries.py before scripts/generate-pac-release.py" not in release_text:
         fail("generate-pac-release.py must fail clearly when binaries were not compiled first")
-    if "must not contain bundled release binaries" not in release_text:
-        fail("generate-pac-release.py must validate source/update zips do not bundle binaries")
+    if "must not contain generated release output" not in release_text:
+        fail("generate-pac-release.py must validate source/update zips do not contain generated release output")
+    validator = ROOT / "scripts/validate-source-zip.py"
+    if not validator.exists():
+        fail("validate-source-zip.py is required for source/update artifact hygiene")
 
 
 def main() -> int:

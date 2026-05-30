@@ -1,6 +1,35 @@
 {
   "releases": [
     {
+      "version": "1.0.429",
+      "title": "Automatic generated-file housekeeping",
+      "date": "2026-05-30T11:55:00Z",
+      "summary": "PAC now cleans generated update/download/debug/build artifacts automatically on startup, after updates, and from Update Center.",
+      "changes": [
+        "Added a generated-file housekeeping service that runs on startup and after release updates.",
+        "Added GET/POST /v1/updates/housekeeping for status, preview, and cleanup.",
+        "Extended cleanup to update downloads, extracted updates, rollback backups, release asset cache, debug bundles, stale binary cache, old logs, and app-tree generated build/cache folders.",
+        "Added Update Center housekeeping controls with Preview cleanup and Clean now actions.",
+        "Added storage/category summaries and reclaimed-byte reporting so large growth categories are visible.",
+        "Documented the generated artifact retention policy."
+      ]
+    },
+    {
+      "version": "1.0.428",
+      "title": "Source zip artifact hygiene validation",
+      "date": "2026-05-30T11:30:00Z",
+      "summary": "Prevent generated release output from leaking into PAC source/update zips and add a reusable source zip validator.",
+      "changes": [
+        "Added scripts/validate-source-zip.py to fail source/update artifacts containing dist/, release-binaries/, removed binary source folders, __pycache__, or compiled Python files.",
+        "Strengthened scripts/generate-pac-release.py validation so source/update zips reject dist/ and nested release-binaries output, not only root release-binaries/.",
+        "Updated GitHub release workflow validation to run the source zip validator after packaging.",
+        "Regenerated the full source zip without the stray dist/release-binaries/RELEASE_BINARIES.json entry found in 1.0.427."
+      ],
+      "not_done": [
+        "This pass does not change runtime housekeeping behavior; it fixes packaging/audit issues found while checking the current zip."
+      ]
+    },
+    {
       "version": "1.0.427",
       "title": "Generated download housekeeping",
       "date": "2026-05-30T10:15:00Z",
@@ -1367,5 +1396,5 @@
       ]
     }
   ],
-  "current_version": "1.0.383"
+  "current_version": "1.0.429"
 }

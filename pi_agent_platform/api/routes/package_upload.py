@@ -9,6 +9,7 @@ from typing import Any, Callable
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 
 from pi_agent_platform.core.models import Event
+from pi_agent_platform.core.housekeeping_service import run_housekeeping_once
 
 
 def create_package_upload_router(
@@ -26,6 +27,7 @@ def create_package_upload_router(
     pip_install_editable: Callable[[Path], dict[str, Any]],
     write_runtime_run_script: Callable[[Path], dict[str, Any]],
     schedule_local_restart: Callable[[BackgroundTasks, str], None],
+    debug_bundle_root: Callable[[], Path] | None = None,
 ) -> APIRouter:
     router = APIRouter()
 
@@ -88,7 +90,12 @@ def create_package_upload_router(
         run_script_result = write_runtime_run_script(current_app_dir)
         marker = pacp_path('run', 'restart-required')
         marker.write_text(f'PAC update applied at {stamp}\nsource={upload_path}\nbackup={backup_dir}\n', encoding='utf-8')
-        store.add_event(Event(session_id='system', type='package_applied', message=f'Version package applied: {filename}. Restart required.', data={'upload_path': str(upload_path), 'backup_dir': str(backup_dir), 'copied': copied, 'pip': pip_result, 'run_script': run_script_result, 'restart_after_update': restart_after_update, 'preservation_archive': archive_meta, 'preservation_diff': diff_meta}))
+        housekeeping = None
+        try:
+            housekeeping = run_housekeeping_once(app_root=current_app_dir, debug_bundle_root=(debug_bundle_root() if callable(debug_bundle_root) else pacp_path('debug-bundles')), dry_run=False)
+        except Exception as exc:
+            housekeeping = {'ok': False, 'error': str(exc)}
+        store.add_event(Event(session_id='system', type='package_applied', message=f'Version package applied: {filename}. Restart required.', data={'upload_path': str(upload_path), 'backup_dir': str(backup_dir), 'copied': copied, 'pip': pip_result, 'run_script': run_script_result, 'restart_after_update': restart_after_update, 'preservation_archive': archive_meta, 'preservation_diff': diff_meta, 'housekeeping': housekeeping}))
         status = 'installed_restarting' if restart_after_update else 'installed_restart_required'
         if restart_after_update:
             schedule_local_restart(background_tasks, f'PAC local restart scheduled after applying version package: {filename}')
@@ -105,6 +112,7 @@ def create_package_upload_router(
             'restart_scheduled': restart_after_update,
             'preservation_archive': archive_meta,
             'preservation_diff': diff_meta,
+            'housekeeping': housekeeping,
         }
 
     return router

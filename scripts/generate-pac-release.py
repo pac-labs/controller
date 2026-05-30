@@ -265,8 +265,15 @@ def write_zip(out: Path) -> None:
             raise SystemExit(f"{out.name} missing required entries: {missing}")
         if not any(name.startswith("pi_agent_platform/") for name in names):
             raise SystemExit(f"{out.name} missing pi_agent_platform/")
-        if any(name.startswith("release-binaries/") for name in names):
-            raise SystemExit(f"{out.name} must not contain bundled release binaries")
+        forbidden = [
+            name for name in names
+            if name.startswith("release-binaries/")
+            or name.startswith("dist/")
+            or "/release-binaries/" in name
+        ]
+        if forbidden:
+            sample = ", ".join(sorted(forbidden)[:5])
+            raise SystemExit(f"{out.name} must not contain generated release output: {sample}")
 
 
 def copy_direct_binary_assets(release_binaries: list[dict[str, str]]) -> list[str]:

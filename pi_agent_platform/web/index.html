@@ -1130,6 +1130,16 @@
                     </div>
                     <div id="updateEnvironmentPlan" class="release-binary-manifest muted small-text">Environment update plan has not been loaded yet.</div>
                   </div>
+                  <div class="updates-archive-section housekeeping-panel">
+                    <div class="section-heading compact-heading">
+                      <div><h3>Housekeeping</h3><p class="muted">PAC automatically prunes generated update downloads, extracted updates, rollback copies, debug bundles, stale binary cache, and generated build/cache files.</p></div>
+                      <div class="button-row">
+                        <button id="previewHousekeeping" class="ghost-button mini-button" type="button">Preview cleanup</button>
+                        <button id="runHousekeeping" class="ghost-button mini-button" type="button">Clean now</button>
+                      </div>
+                    </div>
+                    <div id="housekeepingStatus" class="release-binary-manifest muted small-text">Housekeeping status has not been loaded yet.</div>
+                  </div>
                   <div class="updates-archive-section storage-health-panel">
                     <div class="section-heading compact-heading">
                       <div><h3>Storage health</h3><p class="muted">Embedded stores, release cache, artifacts, and configuration storage used by this controller.</p></div>

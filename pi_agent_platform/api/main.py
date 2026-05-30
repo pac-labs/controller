@@ -1608,6 +1608,26 @@ def _stop_mdns_advertiser() -> None:
     _MDNS_STATUS = {'state': 'stopped', 'message': 'mDNS stopped'}
 
 
+
+def _debug_bundle_root_path() -> Path:
+    root = Path(config.server.data_dir).expanduser() / 'debug-bundles'
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _start_generated_file_housekeeping(reason: str = 'startup') -> None:
+    try:
+        started = start_housekeeping_thread(
+            app_root=_app_dir(),
+            debug_bundle_root=_debug_bundle_root_path(),
+            store=store,
+            reason=reason,
+        )
+        if not started:
+            store.add_event(Event(session_id='system', type='housekeeping_skipped', message='PAC housekeeping is already running.', data={'reason': reason}))
+    except Exception as exc:
+        store.add_event(Event(session_id='system', type='housekeeping_failed', message=f'PAC housekeeping could not start: {exc}', data={'reason': reason, 'error': str(exc)}))
+
 @app.on_event('startup')
 def _startup_services() -> None:
     _ensure_tls_material()
@@ -1624,6 +1644,7 @@ def _startup_services() -> None:
     except Exception as exc:
         store.add_event(Event(session_id='system', type='directory_identity_sync_failed', message=f'Directory identity synchronization failed: {exc}', data={'error': str(exc)}))
     _start_mdns_advertiser()
+    _start_generated_file_housekeeping('startup')
 
 
 @app.on_event('shutdown')
@@ -3129,6 +3150,7 @@ app.include_router(create_package_upload_router(
     pip_install_editable=_pip_install_editable,
     write_runtime_run_script=_write_runtime_run_script,
     schedule_local_restart=_schedule_local_restart,
+    debug_bundle_root=_debug_bundle_root_path,
 ))
 
 
@@ -3930,6 +3952,7 @@ app.include_router(create_updates_router(
     pip_install_editable=_pip_install_editable,
     write_runtime_run_script=_write_runtime_run_script,
     schedule_local_restart=_schedule_local_restart,
+    debug_bundle_root=_debug_bundle_root_path,
 ))
 
 

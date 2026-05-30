@@ -119,14 +119,7 @@ jobs:
           unzip -t dist/pac-patch.zip
           unzip -t dist/pac-packages-seed.zip
           unzip -t dist/pac-binaries.zip
-          python3 - <<'PY'
-          import zipfile
-          for name in ('dist/pac-full.zip', 'dist/pac-patch.zip'):
-              with zipfile.ZipFile(name) as zf:
-                  bundled = [entry for entry in zf.namelist() if entry.startswith('release-binaries/')]
-              if bundled:
-                  raise SystemExit(f'{name} unexpectedly bundled release binaries')
-          PY
+          python3 scripts/validate-source-zip.py dist/pac-full.zip dist/pac-patch.zip
 
       - name: Commit release metadata to main
         shell: bash

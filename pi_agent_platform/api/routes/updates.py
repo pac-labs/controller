@@ -16,7 +16,8 @@ from pi_agent_platform.core.platform_home import pacp_path
 from pi_agent_platform.core.update_preservation import TRACKED_ROOTS, build_backup_archive, generate_local_diff, list_generated_diffs
 from pi_agent_platform.updates import download_release_asset, download_release_package, fetch_latest_release_assets, fetch_latest_release_metadata
 from pi_agent_platform.core.updates.orchestrator import plan_update_orchestration, run_update_orchestration
-from pi_agent_platform.core.generated_file_housekeeping import prune_update_temp_files
+from pi_agent_platform.core.generated_file_housekeeping import CleanupPolicy, housekeeping_status, prune_update_temp_files, run_generated_file_housekeeping
+from pi_agent_platform.core.housekeeping_service import housekeeping_state, run_housekeeping_once
 
 
 def create_updates_router(
@@ -38,6 +39,7 @@ def create_updates_router(
     pip_install_editable: Any,
     write_runtime_run_script: Any,
     schedule_local_restart: Any,
+    debug_bundle_root: Any | None = None,
 ) -> APIRouter:
     """PAC update, package archive, and local diff routes.
 
@@ -120,18 +122,44 @@ def create_updates_router(
             raise HTTPException(status_code=500, detail=f'Release asset is not JSON: {asset_key}') from exc
         return data if isinstance(data, dict) else {'value': data}
 
+    def _debug_bundle_root() -> Path:
+        if callable(debug_bundle_root):
+            return Path(debug_bundle_root())
+        if debug_bundle_root is not None:
+            return Path(debug_bundle_root)
+        return pacp_path('debug-bundles')
+
+    def _housekeeping_policy_from_payload(payload: dict[str, Any] | None = None) -> CleanupPolicy:
+        payload = payload or {}
+        return CleanupPolicy(
+            keep_debug_bundles=int(payload.get('keep_debug_bundles') or 1),
+            debug_bundle_max_age_hours=int(payload.get('debug_bundle_max_age_hours') or 24),
+            keep_update_backups=int(payload.get('keep_update_backups') or payload.get('keep_latest_backups') or 2),
+            keep_update_downloads=int(payload.get('keep_update_downloads') or 1),
+            keep_release_assets=int(payload.get('keep_release_assets') or 1),
+            update_temp_max_age_hours=int(payload.get('update_temp_max_age_hours') or payload.get('max_age_hours') or 24),
+            log_max_age_days=int(payload.get('log_max_age_days') or 7),
+            keep_binary_versions=int(payload.get('keep_binary_versions') or 1),
+        )
+
+    @router.get('/v1/updates/housekeeping')
+    def get_update_housekeeping_status(_auth: None = Depends(require_auth)) -> dict[str, Any]:
+        return housekeeping_state(app_root=app_dir(), debug_bundle_root=_debug_bundle_root())
+
     @router.post('/v1/updates/housekeeping')
     def run_update_housekeeping(payload: dict[str, Any] | None = None, _auth: None = Depends(require_auth)) -> dict[str, Any]:
         payload = payload or {}
-        result = prune_update_temp_files(
-            keep_latest_backups=int(payload.get('keep_latest_backups') or 3),
-            max_age_hours=int(payload.get('max_age_hours') or 48),
-            dry_run=bool(payload.get('dry_run') or False),
+        dry_run = bool(payload.get('dry_run') or False)
+        result = run_housekeeping_once(
+            app_root=app_dir(),
+            debug_bundle_root=_debug_bundle_root(),
+            dry_run=dry_run,
+            policy=_housekeeping_policy_from_payload(payload),
         )
         store.add_event(Event(
             session_id='system',
-            type='update_temp_housekeeping_previewed' if result.get('dry_run') else 'update_temp_housekeeping_completed',
-            message=f"Update temp housekeeping {'previewed' if result.get('dry_run') else 'completed'}: {result.get('deleted_count', 0)} item(s)",
+            type='housekeeping_previewed' if result.get('dry_run') else 'housekeeping_completed',
+            message=f"PAC housekeeping {'previewed' if result.get('dry_run') else 'completed'}: {result.get('deleted_count', 0)} item(s), {result.get('deleted_bytes', 0)} byte(s).",
             data=result,
         ))
         return result
@@ -353,8 +381,9 @@ def create_updates_router(
                 'download': download,
             }
         result = apply_version_package_from_path(target, target.name, restart_after_update=restart_after_update)
+        housekeeping = run_housekeeping_once(app_root=app_dir(), debug_bundle_root=_debug_bundle_root(), dry_run=False)
         environment_update = run_update_orchestration(version=str(meta.get('latest_version') or pac_version))
-        result.update({'ok': True, 'current_version': pac_version, 'latest_version': meta.get('latest_version'), 'release_url': meta.get('release_url'), 'download_url': download_url, 'download': download, 'environment_update': environment_update})
+        result.update({'ok': True, 'current_version': pac_version, 'latest_version': meta.get('latest_version'), 'release_url': meta.get('release_url'), 'download_url': download_url, 'download': download, 'housekeeping': housekeeping, 'environment_update': environment_update})
         store.add_event(Event(
             session_id='system',
             type='update_environment_orchestrated' if environment_update.get('ok') else 'update_environment_needs_attention',

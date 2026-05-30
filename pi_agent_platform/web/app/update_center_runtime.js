@@ -108,6 +108,60 @@
   }
 
 
+
+  function renderHousekeepingStatus(payload) {
+    const box = document.getElementById('housekeepingStatus');
+    if (!box) return;
+    const esc = window.escapeHtml || ((value) => String(value ?? ''));
+    const last = payload?.last_result || null;
+    const status = payload?.status || {};
+    const roots = status.roots || {};
+    const rootCards = Object.entries(roots).filter(([, entry]) => entry?.exists).map(([key, entry]) => {
+      const details = [formatBytes(entry.size_bytes), entry.zip_count !== undefined ? `${entry.zip_count} zip(s)` : '', entry.backup_count !== undefined ? `${entry.backup_count} backup(s)` : '', entry.extracted_count !== undefined ? `${entry.extracted_count} extracted` : ''].filter(Boolean).join(' · ');
+      return `<div class="release-binary-manifest-card"><b>${esc(key.replaceAll('_', ' '))}</b><span>${esc(details || entry.path || '')}</span></div>`;
+    }).join('');
+    const lastLine = last ? `<div class="muted small-text">Last run: ${esc(last.generated_at || last.started_at || 'unknown')} · ${esc(String(last.deleted_count || 0))} item(s) · ${esc(formatBytes(last.deleted_bytes || 0) || '0 B')} reclaimed${payload.running ? ' · running' : ''}</div>` : `<div class="muted small-text">No housekeeping run has been recorded in this process yet.</div>`;
+    box.innerHTML = `${lastLine}${rootCards ? `<div class="release-binary-manifest-grid">${rootCards}</div>` : '<div class="muted">No generated storage roots found yet.</div>'}`;
+  }
+
+  function renderHousekeepingResult(result, label='Housekeeping') {
+    const box = document.getElementById('housekeepingStatus');
+    if (!box) return;
+    const esc = window.escapeHtml || ((value) => String(value ?? ''));
+    const categories = Object.entries(result?.categories || {}).sort((a,b) => Number(b[1]?.bytes || 0) - Number(a[1]?.bytes || 0));
+    const cards = categories.map(([category, entry]) => `<div class="release-binary-manifest-card"><b>${esc(category.replaceAll('_', ' '))}</b><span>${esc(String(entry.count || 0))} item(s) · ${esc(formatBytes(entry.bytes || 0) || '0 B')}</span></div>`).join('');
+    box.innerHTML = `<div><b>${esc(label)}</b><span class="muted"> · ${esc(String(result?.deleted_count || 0))} item(s) · ${esc(formatBytes(result?.deleted_bytes || 0) || '0 B')} ${result?.dry_run ? 'would be reclaimed' : 'reclaimed'}</span></div>${cards ? `<div class="release-binary-manifest-grid">${cards}</div>` : '<div class="muted small-text">No generated files matched the cleanup policy.</div>'}`;
+  }
+
+  async function loadHousekeepingStatus() {
+    const box = document.getElementById('housekeepingStatus');
+    if (!box) return;
+    box.textContent = 'Loading housekeeping status…';
+    try {
+      const payload = await api('/v1/updates/housekeeping');
+      renderHousekeepingStatus(payload);
+    } catch (error) {
+      box.textContent = `Could not load housekeeping status: ${error.message || error}`;
+    }
+  }
+
+  async function runHousekeeping(dryRun=false) {
+    const box = document.getElementById('housekeepingStatus');
+    const button = document.getElementById(dryRun ? 'previewHousekeeping' : 'runHousekeeping');
+    if (!dryRun && !confirm('Clean generated PAC update/download/debug/build artifacts now? Newest rollback/download/debug items are kept.')) return;
+    if (button) button.disabled = true;
+    if (box) box.textContent = dryRun ? 'Previewing generated-file cleanup…' : 'Cleaning generated PAC files…';
+    try {
+      const result = await api('/v1/updates/housekeeping', {method:'POST', body: JSON.stringify({dry_run: dryRun})});
+      renderHousekeepingResult(result, dryRun ? 'Housekeeping preview' : 'Housekeeping complete');
+      if (typeof window.loadGlobalEvents === 'function') window.loadGlobalEvents(true).catch(()=>{});
+    } catch (error) {
+      if (box) box.textContent = `Housekeeping failed: ${error.message || error}`;
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
   function renderStorageHealth(payload) {
     const box = document.getElementById('storageHealthList');
     if (!box) return;
@@ -219,12 +273,15 @@
     document.getElementById('reloadReleaseAssets')?.addEventListener('click', loadReleaseAssets);
     document.getElementById('reloadStorageHealth')?.addEventListener('click', loadStorageHealth);
     document.getElementById('runUpdateEnvironment')?.addEventListener('click', runUpdateEnvironment);
+    document.getElementById('previewHousekeeping')?.addEventListener('click', () => runHousekeeping(true));
+    document.getElementById('runHousekeeping')?.addEventListener('click', () => runHousekeeping(false));
     if (document.getElementById('releaseAssetsList')) loadReleaseAssets().catch(()=>{});
     if (document.getElementById('storageHealthList')) loadStorageHealth().catch(()=>{});
+    if (document.getElementById('housekeepingStatus')) loadHousekeepingStatus().catch(()=>{});
     if (document.getElementById('updateEnvironmentPlan')) loadUpdateEnvironmentPlan().catch(()=>{});
   }
 
-  window.PacUpdateCenter = {refreshFromVersionInfo, refreshArchives, refreshRelease, loadReleaseAssets, renderReleaseAssets, loadBinaryManifest, renderBinaryManifest, loadStorageHealth, renderStorageHealth, loadUpdateEnvironmentPlan, renderUpdateEnvironment, runUpdateEnvironment};
+  window.PacUpdateCenter = {refreshFromVersionInfo, refreshArchives, refreshRelease, loadReleaseAssets, renderReleaseAssets, loadBinaryManifest, renderBinaryManifest, loadStorageHealth, renderStorageHealth, loadHousekeepingStatus, renderHousekeepingStatus, renderHousekeepingResult, loadUpdateEnvironmentPlan, renderUpdateEnvironment, runUpdateEnvironment};
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);
   else bind();
 })();

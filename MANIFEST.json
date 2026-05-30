@@ -1,6 +1,6 @@
 {
-  "version": "1.0.427",
-  "generated_at": "2026-05-30T10:18:00Z",
+  "version": "1.0.429",
+  "generated_at": "2026-05-30T11:35:04.254250+00:00",
   "files": [
     {
       "path": ".github/workflows/pac-expand-diff-pr.yml",
@@ -14,8 +14,8 @@
     },
     {
       "path": ".github/workflows/pac-release.yml",
-      "size": 7191,
-      "sha256": "091bfa4bb4a2101686333f1ad824d67ecfdafc097bd559cc69a4402655e2b021"
+      "size": 6883,
+      "sha256": "5022bed52896cac1e7a46e7f0e99a48f4f4efb0c9cfc866ff3bb8fd80ac66959"
     },
     {
       "path": ".github/workflows/seed-packages.yml",
@@ -29,18 +29,18 @@
     },
     {
       "path": "MANIFEST.json",
-      "size": 100618,
-      "sha256": "c34a276763bce241ccc9ae27c9ce689e2a15eee3ff2d14ccac347970bae5905b"
+      "size": 100986,
+      "sha256": "152a60ba4336498af0b1a2766be2232a2facfee0c2dab354b7d66a442dfed779"
     },
     {
       "path": "PAC_CHANGELOG.json",
-      "size": 95928,
-      "sha256": "a930901cd6c4b99af3abd7f54b5c9aa0e919fd3beb2945cc3c790c5628702e4c"
+      "size": 97947,
+      "sha256": "341224e590f631b7d06cf3135a2023a4f2170cd9abf09a54a4ee137afdc9fc28"
     },
     {
-      "path": "PAC_UPDATE_DIFF-1.0.427.diff",
-      "size": 46268,
-      "sha256": "d95fe998fa3fbb686eb13cb47545e64f1b293527190bee439fd110d65e87ec5a"
+      "path": "PAC_UPDATE_DIFF-1.0.429.diff",
+      "size": 90746,
+      "sha256": "d37dfae510cb77f82976a5a486fc5168200e638d0c847c4ad6a7cd80415a246c"
     },
     {
       "path": "README.md",
@@ -50,12 +50,12 @@
     {
       "path": "VERSION",
       "size": 8,
-      "sha256": "8f60a853f9818874b1abefb11ca235a5968a288a80acbf63bb7a8d245c8dbde3"
+      "sha256": "f5905a722756adde1ebf0eb3b38558d2bc53775829b1679ef2c84dcf2d74ed2c"
     },
     {
       "path": "VERSION_CURRENT.md",
       "size": 40,
-      "sha256": "707de84f049c1a53dce2fd119862f8add99b64855180dce3005c3f53c9f238b2"
+      "sha256": "9c99de46dd45560c7e0005898fe1a883a54b692fb0714816e719b9d449f982c1"
     },
     {
       "path": "binaries/README.md",
@@ -439,8 +439,8 @@
     },
     {
       "path": "docs/PAC_Technical_Design_v0.2.adoc",
-      "size": 18804,
-      "sha256": "4d37f6056c838469a4ec558407c13551b1d14bec4ea82ef54478b04c9a30e513"
+      "size": 19485,
+      "sha256": "fe8d7548b480795d0da86d64fbf1c0c4344f96c2d3151a7a9ab03d2abeed31f5"
     },
     {
       "path": "docs/agent-loop-intent-recovery-20260523.md",
@@ -461,6 +461,11 @@
       "path": "docs/agent-loop-timeout-and-event-noise-20260523.md",
       "size": 1998,
       "sha256": "791a7539b386a1718424e67e6943f337d91acc1a8ffae3fd4d661b36453df7ed"
+    },
+    {
+      "path": "docs/automatic-generated-file-housekeeping-20260530.md",
+      "size": 2320,
+      "sha256": "b29855725654c88db74640727ade35531e94b05e98677fb3ff418c321f2126b2"
     },
     {
       "path": "docs/codebase-migration-plan.md",
@@ -779,8 +784,8 @@
     },
     {
       "path": "github/workflows/pac-release.yml",
-      "size": 7191,
-      "sha256": "091bfa4bb4a2101686333f1ad824d67ecfdafc097bd559cc69a4402655e2b021"
+      "size": 6883,
+      "sha256": "5022bed52896cac1e7a46e7f0e99a48f4f4efb0c9cfc866ff3bb8fd80ac66959"
     },
     {
       "path": "github/workflows/seed-packages.yml",
@@ -824,8 +829,8 @@
     },
     {
       "path": "pi_agent_platform/api/main.py",
-      "size": 198010,
-      "sha256": "85a8f42c073b5551374ba3bc00d8029564b96f0b77a18f4e08488c5d791f9130"
+      "size": 198994,
+      "sha256": "4812d999cd5d05b3e36063028874bf820f2a9e67159e999119d4fc4069b66b6e"
     },
     {
       "path": "pi_agent_platform/api/routes/__init__.py",
@@ -874,8 +879,8 @@
     },
     {
       "path": "pi_agent_platform/api/routes/package_upload.py",
-      "size": 5716,
-      "sha256": "ca81e8e49629a38d910b3f2cfabc5a50c2add44d4ce25fa238d4d0580f52b7e5"
+      "size": 6251,
+      "sha256": "4598fa7913eec6017135cee9bbe12177ef9d19c606cf723274a5a5d83b504d23"
     },
     {
       "path": "pi_agent_platform/api/routes/playbooks.py",
@@ -929,8 +934,8 @@
     },
     {
       "path": "pi_agent_platform/api/routes/updates.py",
-      "size": 20024,
-      "sha256": "5bd161658636c46cafb42f13c93f424c60f01f98e390de999e1d23df5271561a"
+      "size": 21797,
+      "sha256": "d52d595ab5bb1e90c5323b33a6240545d7961e77bc5870202dac7d639ba37d77"
     },
     {
       "path": "pi_agent_platform/api/routes/version.py",
@@ -1329,8 +1334,13 @@
     },
     {
       "path": "pi_agent_platform/core/generated_file_housekeeping.py",
-      "size": 6259,
-      "sha256": "75fd52eb7c5b1ce8530cd47847780a7ef21da6d6bb2359fdf18876d59a8883ce"
+      "size": 18269,
+      "sha256": "b83a06a7ecac0115a3967d546a2ae4c940877de5aa5167af44beb8359e488d52"
+    },
+    {
+      "path": "pi_agent_platform/core/housekeeping_service.py",
+      "size": 3706,
+      "sha256": "4a51bfdb41a3890dd2d15834d170516b0aec2eda32dd1c6d16ab35fc09679c44"
     },
     {
       "path": "pi_agent_platform/core/letsencrypt_cert.py",
@@ -2129,8 +2139,8 @@
     },
     {
       "path": "pi_agent_platform/web/app/update_center_runtime.js",
-      "size": 11682,
-      "sha256": "00e8f489ac238eaa2ca1452b8e5fdf07cfaab1a5e090d5805b2a047e22cc4481"
+      "size": 16023,
+      "sha256": "aaa15585fbfff0465065f071861ce540afe1707d757ca3024393df0f5823b0c3"
     },
     {
       "path": "pi_agent_platform/web/app/update_confirm_overlay.js",
@@ -2284,8 +2294,8 @@
     },
     {
       "path": "pi_agent_platform/web/index.html",
-      "size": 133728,
-      "sha256": "a192f484232205896b5091d63d4f303dfdf9397d21c1437b208d649913a2819a"
+      "size": 134626,
+      "sha256": "198766ec9929625b2e14e9e00558a7abe40bcf506dee32bd79176b0da9823f7e"
     },
     {
       "path": "pi_agent_platform/web/styles/admin-components.css",
@@ -2720,7 +2730,7 @@
     {
       "path": "pyproject.toml",
       "size": 622,
-      "sha256": "01b8a9c58d84a3b39cc057bf242ad8456f9dfbee864eb604253c2e895e7bf2cf"
+      "sha256": "d27227789dad580c201f77556eb0522f6c4964e5a15aba493ca28263ed036aec"
     },
     {
       "path": "requirements.txt",
@@ -2774,8 +2784,8 @@
     },
     {
       "path": "scripts/generate-pac-release.py",
-      "size": 14527,
-      "sha256": "995c57059107ebf375d47d35d1f0a0c70834e55d3a688d710327869dbd5e5b8a"
+      "size": 14744,
+      "sha256": "7c5a3f9df3a559b50bc1cd1df65c045a1acae694d530448ad8a1930dae4b4a75"
     },
     {
       "path": "scripts/generate-package-repo.py",
@@ -2819,8 +2829,13 @@
     },
     {
       "path": "scripts/validate-release-binary-pipeline.py",
-      "size": 2507,
-      "sha256": "6bbaf82dcf58e5051a6df6c5445bd7aeb8795116cff1a7e2dc64bebfbecd4b84"
+      "size": 2697,
+      "sha256": "8c43c26bc0ca5ab8ba397f729ddca939821d355144ec6172d518921ed24fe956"
+    },
+    {
+      "path": "scripts/validate-source-zip.py",
+      "size": 2139,
+      "sha256": "7e9a1a961468a44590861de53f4b26f9df844772385242c0f8f7657baaa17d94"
     },
     {
       "path": "vscode-extension/package.json",
