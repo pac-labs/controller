@@ -19,6 +19,7 @@ from pi_agent_platform.core.runtime import git_diff, git_status, run_shell_task
 from pi_agent_platform.core.workspace_bootstrap import WorkspaceBootstrapError, ensure_workspace_materialized
 from pi_agent_platform.core.coding_session_readiness import CodingSessionReadinessError, prepare_coding_session
 from pi_agent_platform.core.agent_loop import run_agent_loop, execute_tool
+from pi_agent_platform.core.agent_loop_runner import run_agent_loop_safely
 from pi_agent_platform.core.session_commands import parse_session_slash_command, slash_help_text
 from pi_agent_platform.core.model_switch import model_options_text, switch_session_model
 from pi_agent_platform.core.subagents import spawn_pi_dev_subagent
@@ -480,9 +481,9 @@ def create_sessions_router(
             store.add_task(task)
             store.add_event(Event(session_id=session.id, task_id=task.id, type='agent_routing', message='Routed to session agent', data={'agent_profile': session.agent_profile, 'model': session.model, 'endpoint_id': task.metadata.get('runner_id'), 'requested_command': task.metadata.get('requested_command')}))
             if wait:
-                await run_agent_loop(session, task, config)
+                await run_agent_loop_safely(session, task, config)
             else:
-                background_tasks.add_task(run_agent_loop, session, task, config)
+                background_tasks.add_task(run_agent_loop_safely, session, task, config)
             return store.get_task(task.id) or task
 
         if target:
@@ -517,9 +518,9 @@ def create_sessions_router(
         else:
             task.metadata['agent_loop'] = True
             if wait:
-                await run_agent_loop(session, task, config)
+                await run_agent_loop_safely(session, task, config)
             else:
-                background_tasks.add_task(run_agent_loop, session, task, config)
+                background_tasks.add_task(run_agent_loop_safely, session, task, config)
         return store.get_task(task.id) or task
 
 
@@ -557,9 +558,9 @@ def create_sessions_router(
             return _queue_task_on_runner(session, task, target)
         if task.metadata.get('agent_loop') and not task.command:
             if wait:
-                await run_agent_loop(session, task, config)
+                await run_agent_loop_safely(session, task, config)
             else:
-                background_tasks.add_task(run_agent_loop, session, task, config)
+                background_tasks.add_task(run_agent_loop_safely, session, task, config)
         else:
             if wait:
                 await run_shell_task(session, task, config)

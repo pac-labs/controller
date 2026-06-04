@@ -118,6 +118,74 @@ class AgentEvents:
             },
         )
 
+    def context_pressure(
+        self,
+        *,
+        tokens: int,
+        input_budget_tokens: int,
+        checkpoint_threshold_tokens: int,
+        compaction_threshold_tokens: int,
+        fraction: float,
+        level: str,
+        source: str,
+        step: int | None = None,
+    ) -> None:
+        self.emit(
+            "context_pressure",
+            f"Context pressure: {level}",
+            {
+                "tokens": tokens,
+                "input_budget_tokens": input_budget_tokens,
+                "checkpoint_threshold_tokens": checkpoint_threshold_tokens,
+                "compaction_threshold_tokens": compaction_threshold_tokens,
+                "fraction": fraction,
+                "level": level,
+                "source": source,
+                "step": step,
+            },
+        )
+
+    def context_checkpoint_restored(self, *, summary_tokens: int) -> None:
+        self.emit(
+            "context_checkpoint_restored",
+            "Restored a saved context checkpoint summary into the active loop.",
+            {"summary_tokens": summary_tokens},
+        )
+
+    def context_checkpoint_summary(
+        self,
+        *,
+        step: int | None,
+        tokens: int,
+        input_budget_tokens: int,
+        threshold_tokens: int,
+        source: str,
+        summary: str,
+        forced: bool = False,
+    ) -> None:
+        data: dict[str, Any] = {
+            "step": step,
+            "tokens": tokens,
+            "input_budget_tokens": input_budget_tokens,
+            "threshold_tokens": threshold_tokens,
+            "source": source,
+            "summary": summary,
+        }
+        if forced:
+            data["forced"] = True
+        self.emit(
+            "context_checkpoint_summary",
+            "Generated a context checkpoint summary for loop continuity.",
+            data,
+        )
+
+    def context_checkpoint_summary_failed(self, error: str) -> None:
+        self.emit(
+            "context_checkpoint_summary_failed",
+            "Failed to generate a model checkpoint summary; PAC used a fallback summary.",
+            {"error": error},
+        )
+
 
     def model_stream_progress(
         self,
