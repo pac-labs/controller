@@ -592,6 +592,18 @@
       ]
     },
     {
+      "version": "1.0.394",
+      "date": "2026-06-05T17:20:00Z",
+      "summary": "Refine the models page layout and restore working llmfit recommendations.",
+      "changes": [
+        "Changed the Models page to use a compact inventory table instead of large stacked cards.",
+        "Renamed the model inventory Host column to Provider and removed provider-health/runtime noise from model rows.",
+        "Reworked the right-side recommendation panel into a wider compact provider/model/fit/score/action table.",
+        "Added inline Models actions for Browse providers, Marketplace, and Sync from provider, and hid the duplicate shell toolbar for this route.",
+        "Stopped passing unsupported --max-context and --force-runtime flags to llmfit recommend so advisor recommendations work again from the llmfit container image."
+      ]
+    },
+    {
       "version": "1.0.392",
       "date": "2026-05-28T17:45:00Z",
       "summary": "Sync endpoint-advertised tool schemas into the ToolPipeline and expose schema errors.",
@@ -1396,5 +1408,5 @@
       ]
     }
   ],
-  "current_version": "1.0.392"
+  "current_version": "1.0.394"
 }
