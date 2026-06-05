@@ -16,6 +16,29 @@ function groupedSessionsBy(field) {
 function recommendationCardHtml(level, title, body, detail = '') {
   return `<article class="recommendation-card compact ${escapeHtml(level)}"><h4>${escapeHtml(title)}</h4><p>${escapeHtml(body)}</p>${detail ? `<div class="muted small-text">${escapeHtml(detail)}</div>` : ''}</article>`;
 }
+
+function codingOpportunityCardHtml(item, kind) {
+  const provider = item.provider_name || item.provider?.name || '';
+  const modelId = item.model_id || '';
+  const score = Number(item.score || 0);
+  const quality = item.quality || 'candidate';
+  const fit = item.fit_reason || item.reason || '';
+  const quant = item.quantization || '';
+  const providerLabelText = provider ? `${provider}` : 'public candidate';
+  const actions = [];
+  if (kind === 'public') {
+    actions.push(`<button class="ghost-button mini-button" data-open-marketplace-candidate="${escapeHtml(modelId)}">Inspect</button>`);
+    if (provider) actions.push(`<button class="mini-button" data-download-marketplace-candidate="${escapeHtml(provider)}::${escapeHtml(modelId)}::${escapeHtml(quant)}">Download</button>`);
+  } else if (provider) {
+    actions.push(`<button class="mini-button" data-configure-live-candidate="${escapeHtml(provider)}::${escapeHtml(modelId)}">Configure</button>`);
+  }
+  return `<article class="recommendation-card compact ${quality === 'weak' ? 'warn' : 'info'}">
+    <h4>${escapeHtml(modelId)}</h4>
+    <p>${escapeHtml(`${providerLabelText} • ${quality} coding fit • score ${score.toFixed(1)}`)}</p>
+    ${fit ? `<div class="muted small-text">${escapeHtml(fit)}</div>` : ''}
+    ${actions.length ? `<div class="button-row compact-row recommendation-action-row">${actions.join('')}</div>` : ''}
+  </article>`;
+}
 async function renderUnconfiguredModelsPanelFromLive() {
   const target = document.getElementById('unconfiguredModelsList');
   if (!target) return;
@@ -61,7 +84,7 @@ async function renderUnconfiguredModelsPanelFromLive() {
     };
   });
 }
-function renderModelRecommendations() {
+async function renderModelRecommendations() {
   const panel = document.getElementById('modelsRecommendationsPanel');
   const body = document.getElementById('modelsRecommendationsBody');
   if (!panel || !body) return;
@@ -88,10 +111,65 @@ function renderModelRecommendations() {
   }
   const liveProviderModels = Object.entries(config.providers || {}).reduce((count, [providerName, provider]) => count + ((provider.cached_models || []).filter(model => !configuredModelMatchesProviderModel(providerName, model.id || model.name || model.model)).length), 0);
   if (liveProviderModels > 0) recommendations.push(recommendationCardHtml('info', 'Additional provider models are available', `${liveProviderModels} live model(s) are visible from connected providers but not configured in PAC yet.`, 'Browse providers to promote them into session models.'));
+  let advisor = null;
+  try {
+    advisor = await api('/v1/model-advisors/coding-opportunities');
+  } catch (error) {
+    advisor = {ok:false, error:error.message || String(error)};
+  }
+  if (advisor?.warning?.summary) {
+    recommendations.unshift(recommendationCardHtml(
+      advisor.warning.level || 'info',
+      advisor.warning.title || 'Coding model advice',
+      advisor.warning.summary || '',
+      advisor?.llmfit?.ok ? 'Backed by llmfit-aware selection.' : (advisor?.llmfit_status?.installed ? `llmfit unavailable: ${advisor?.llmfit?.error || advisor?.llmfit_status?.error || 'runtime error'}` : 'Falling back to provider inventory and public-model heuristics.')
+    ));
+  }
+  const localCards = (advisor?.local_candidates || []).slice(0, 2).map(item => codingOpportunityCardHtml(item, 'local'));
+  const publicCards = (advisor?.public_candidates || []).slice(0, 3).map(item => codingOpportunityCardHtml(item, 'public'));
   const visible = recommendations.slice(0, 4);
   const hiddenCount = Math.max(0, recommendations.length - visible.length);
-  body.innerHTML = (visible.join('') || '<div class="muted small-text">No adaptation recommendations right now.</div>') + (hiddenCount ? `<div class="muted small-text recommendation-summary">+ ${hiddenCount} more recommendation(s). Resolve current issues to reduce this list.</div>` : '');
+  body.innerHTML = [
+    visible.join('') || '<div class="muted small-text">No adaptation recommendations right now.</div>',
+    localCards.length ? `<div class="recommendation-summary"><b>Better local options</b></div>${localCards.join('')}` : '',
+    publicCards.length ? `<div class="recommendation-summary"><b>Public coding models worth adding</b></div>${publicCards.join('')}` : '',
+    hiddenCount ? `<div class="muted small-text recommendation-summary">+ ${hiddenCount} more recommendation(s). Resolve current issues to reduce this list.</div>` : '',
+  ].filter(Boolean).join('');
   panel.hidden = false;
+  body.querySelectorAll('[data-open-marketplace-candidate]').forEach(btn => {
+    btn.onclick = async () => {
+      const modelId = btn.dataset.openMarketplaceCandidate || '';
+      const input = document.getElementById('marketplaceModalQuery');
+      if (input) input.value = modelId;
+      openMarketplaceModal();
+      try {
+        const detail = await api(`/v1/models/marketplace/model/${encodeURIComponent(modelId)}`);
+        renderMarketplaceModalDetail(detail);
+      } catch (e) {
+        paneError('Marketplace details failed', e.message || String(e));
+      }
+    };
+  });
+  body.querySelectorAll('[data-download-marketplace-candidate]').forEach(btn => {
+    btn.onclick = async () => {
+      const [provider, modelId, quantization] = String(btn.dataset.downloadMarketplaceCandidate || '').split('::');
+      try {
+        const result = await api('/v1/models/marketplace/download', {
+          method:'POST',
+          body: JSON.stringify({model: modelId, provider, quantization: quantization || undefined}),
+        });
+        showInline('modelFormResult', {marketplace_download: result, provider, model: modelId, quantization});
+      } catch (e) {
+        paneError('Marketplace download failed', e.message || String(e));
+      }
+    };
+  });
+  body.querySelectorAll('[data-configure-live-candidate]').forEach(btn => {
+    btn.onclick = () => {
+      const [providerName, modelId] = String(btn.dataset.configureLiveCandidate || '').split('::');
+      openModelDraft(providerName, modelId);
+    };
+  });
 }
 function renderModelActiveSessionsPanel() {
   const target = document.getElementById('modelsActiveSessions');

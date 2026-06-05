@@ -4031,6 +4031,7 @@ app.include_router(create_providers_router(
 ))
 app.include_router(create_model_advisor_router(
     require_auth=require_auth,
+    config=config,
     require_resource_access=_require_resource_access,
 ))
 

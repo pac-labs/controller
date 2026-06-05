@@ -331,6 +331,11 @@ class AgentEvents:
     def task_failed(self, error: str) -> None:
         self.emit("task_failed", error)
 
+    def assistant_message(self, *, message: str, model: str | None = None, data: dict[str, Any] | None = None) -> None:
+        payload = self.assistant_data(model=model, **(data or {}))
+        payload["message"] = message
+        self.emit("assistant_message", message, payload)
+
     def auto_committed(self, result: dict[str, Any]) -> None:
         self.emit(
             "auto_committed",

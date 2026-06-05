@@ -29,6 +29,7 @@ from .agent_model_advisor import (
 )
 from .coding_model_upgrade import stash_pending_model_upgrade
 from .agent_planning_policy import should_skip_model_planning
+from .model_advisor import coding_session_advisory
 from .profiles import profile_context_name, profile_planner_context_name
 from .agent_response_parser import (
     _extract_json,
@@ -205,6 +206,27 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             message=f"Using {decision_model} for agent decisions because {session.model} is not configured as a structured agent-work model.",
             data={"executor_model": session.model, "decision_model": decision_model, "reason": model_selection.reason},
         )
+    advisory = None
+    if request_policy.needs_work_intent and not task.metadata.get("model_advisory_shown"):
+        try:
+            advisory = coding_session_advisory(config, session.model)
+        except Exception:
+            advisory = None
+        if advisory:
+            task.metadata["model_advisory_shown"] = True
+            task.metadata["model_advisory"] = advisory
+            store.add_task(task)
+            events.assistant_message(
+                message=str(advisory.get("message") or "").strip(),
+                model=decision_model,
+                data={
+                    "kind": "model_advisory",
+                    "current_model": advisory.get("current_model"),
+                    "local_candidates": advisory.get("local_candidates"),
+                    "public_candidates": advisory.get("public_candidates"),
+                    "source": advisory.get("source"),
+                },
+            )
     ctx = effective_context(config, decision_model, context_name)
     context_manager = AgentContextManager(session, task, config, model_name=decision_model, context_profile=context_name)
     events.agent_started(

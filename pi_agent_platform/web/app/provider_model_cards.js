@@ -91,7 +91,7 @@ function renderModels() {
   }
   equalizeModelCardHeights();
   requestAnimationFrame(equalizeModelCardHeights);
-  renderModelRecommendations();
+  renderModelRecommendations().catch(()=>{});
   renderUnconfiguredModelsPanelFromLive().catch(()=>{});
 }
 function equalizeModelCardHeights() {

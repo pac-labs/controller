@@ -14,7 +14,7 @@ def llmfit_status(*, timeout_seconds: float = 10.0) -> dict[str, Any]:
     binary = llmfit_binary()
     if not binary:
         return {"ok": False, "installed": False, "reason": "llmfit_not_installed"}
-    version = _run_jsonless([binary, "--version"], timeout_seconds=timeout_seconds)
+    version = _run_plain([binary, "--version"], timeout_seconds=timeout_seconds)
     system = _run_json([binary, "--json", "system"], timeout_seconds=timeout_seconds)
     return {
         "ok": bool(system.get("ok")),
@@ -22,7 +22,7 @@ def llmfit_status(*, timeout_seconds: float = 10.0) -> dict[str, Any]:
         "binary": binary,
         "version": version.get("output"),
         "system": system.get("payload") if system.get("ok") else None,
-        "system_error": None if system.get("ok") else system.get("error"),
+        "error": None if system.get("ok") else system.get("error"),
     }
 
 
@@ -78,7 +78,7 @@ def _run_json(command: list[str], *, timeout_seconds: float) -> dict[str, Any]:
         return {"ok": False, "error": f"Invalid llmfit JSON output: {output[-4000:]}"}
 
 
-def _run_jsonless(command: list[str], *, timeout_seconds: float) -> dict[str, Any]:
+def _run_plain(command: list[str], *, timeout_seconds: float) -> dict[str, Any]:
     try:
         completed = subprocess.run(
             command,
