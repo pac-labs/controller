@@ -39,6 +39,58 @@ function codingOpportunityCardHtml(item, kind) {
     ${actions.length ? `<div class="button-row compact-row recommendation-action-row">${actions.join('')}</div>` : ''}
   </article>`;
 }
+
+function codingOpportunityActionButtons(item, kind) {
+  const provider = item.provider_name || item.provider?.name || '';
+  const modelId = item.model_id || '';
+  const quant = item.quantization || '';
+  const actions = [];
+  if (kind === 'public') {
+    actions.push(`<button class="ghost-button mini-button model-advice-action" title="Inspect candidate" aria-label="Inspect candidate" data-open-marketplace-candidate="${escapeHtml(modelId)}">i</button>`);
+    if (provider) actions.push(`<button class="mini-button model-advice-action" title="Download to ${escapeHtml(provider)}" aria-label="Download to ${escapeHtml(provider)}" data-download-marketplace-candidate="${escapeHtml(provider)}::${escapeHtml(modelId)}::${escapeHtml(quant)}">↓</button>`);
+  } else if (provider) {
+    actions.push(`<button class="mini-button model-advice-action" title="Configure model" aria-label="Configure model" data-configure-live-candidate="${escapeHtml(provider)}::${escapeHtml(modelId)}">⚙</button>`);
+  }
+  return actions.join('');
+}
+
+function codingOpportunityRowHtml(item, kind) {
+  const provider = item.provider_name || item.provider?.name || '';
+  const modelId = item.model_id || '';
+  const score = Number(item.score || 0);
+  const quality = item.quality || 'candidate';
+  const fit = item.fit_reason || item.reason || '';
+  return `<tr class="${quality === 'weak' ? 'warn' : ''}">
+    <td>${escapeHtml(provider || 'public')}</td>
+    <td>
+      <div class="model-advice-name" title="${escapeHtml(modelId)}">${escapeHtml(modelId)}</div>
+      ${fit ? `<div class="muted small-text" title="${escapeHtml(fit)}">${escapeHtml(fit)}</div>` : ''}
+    </td>
+    <td>${escapeHtml(quality)}</td>
+    <td>${Number.isFinite(score) ? score.toFixed(1) : '-'}</td>
+    <td class="model-advice-actions-cell">${codingOpportunityActionButtons(item, kind) || '<span class="muted small-text">-</span>'}</td>
+  </tr>`;
+}
+
+function codingOpportunityTableHtml(title, items, kind) {
+  if (!items?.length) return '';
+  return `<section class="model-advice-table-wrap">
+    <div class="recommendation-summary"><b>${escapeHtml(title)}</b></div>
+    <table class="model-advice-table">
+      <thead>
+        <tr>
+          <th>Host</th>
+          <th>Model</th>
+          <th>Fit</th>
+          <th>Score</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>${items.map(item => codingOpportunityRowHtml(item, kind)).join('')}</tbody>
+    </table>
+  </section>`;
+}
+
 async function renderUnconfiguredModelsPanelFromLive() {
   const target = document.getElementById('unconfiguredModelsList');
   if (!target) return;
@@ -125,14 +177,14 @@ async function renderModelRecommendations() {
       advisor?.llmfit?.ok ? 'Backed by llmfit-aware selection.' : (advisor?.llmfit_status?.installed ? `llmfit unavailable: ${advisor?.llmfit?.error || advisor?.llmfit_status?.error || 'runtime error'}` : 'Falling back to provider inventory and public-model heuristics.')
     ));
   }
-  const localCards = (advisor?.local_candidates || []).slice(0, 2).map(item => codingOpportunityCardHtml(item, 'local'));
-  const publicCards = (advisor?.public_candidates || []).slice(0, 3).map(item => codingOpportunityCardHtml(item, 'public'));
+  const localTable = codingOpportunityTableHtml('Better local options', (advisor?.local_candidates || []).slice(0, 4), 'local');
+  const publicTable = codingOpportunityTableHtml('Public coding models worth adding', (advisor?.public_candidates || []).slice(0, 5), 'public');
   const visible = recommendations.slice(0, 4);
   const hiddenCount = Math.max(0, recommendations.length - visible.length);
   body.innerHTML = [
     visible.join('') || '<div class="muted small-text">No adaptation recommendations right now.</div>',
-    localCards.length ? `<div class="recommendation-summary"><b>Better local options</b></div>${localCards.join('')}` : '',
-    publicCards.length ? `<div class="recommendation-summary"><b>Public coding models worth adding</b></div>${publicCards.join('')}` : '',
+    localTable,
+    publicTable,
     hiddenCount ? `<div class="muted small-text recommendation-summary">+ ${hiddenCount} more recommendation(s). Resolve current issues to reduce this list.</div>` : '',
   ].filter(Boolean).join('');
   panel.hidden = false;

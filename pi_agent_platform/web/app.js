@@ -395,14 +395,25 @@ function summarizeModelResult(obj) {
   return obj?.message || obj?.status || 'Model action completed';
 }
 
+let modelFormResultTimer = null;
+
 function showInline(id, obj) {
   if (id === 'modelFormResult') {
     const message = summarizeModelResult(obj);
     emitUiEvent('model_action', message, obj);
     const el = document.getElementById(id);
     if (!el) return;
+    if (modelFormResultTimer) {
+      clearTimeout(modelFormResultTimer);
+      modelFormResultTimer = null;
+    }
     el.hidden = false;
     el.textContent = message;
+    modelFormResultTimer = setTimeout(() => {
+      el.textContent = '';
+      el.hidden = true;
+      modelFormResultTimer = null;
+    }, 9000);
     return;
   }
   const el = document.getElementById(id);
