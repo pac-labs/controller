@@ -1,4 +1,4 @@
-// Cross-surface provider/model insight panels.
+// Cross-surface provider/model insight panels for the models and provider pages.
 function groupedSessionsBy(field) {
   const rows = new Map();
   for (const session of (window.__pacSessions || [])) {
