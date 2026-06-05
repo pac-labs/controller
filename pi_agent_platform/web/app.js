@@ -366,12 +366,43 @@ function emitUiEvent(type, message, data=null) {
     });
   }
 }
+function summarizeModelResult(obj) {
+  if (typeof obj === 'string') return obj;
+  if (obj?.marketplace_download) {
+    const result = obj.marketplace_download || {};
+    const provider = obj.provider || result.provider || 'provider';
+    const model = obj.model || result.model || 'model';
+    const jobId = result.job_id ? ` (${result.job_id})` : '';
+    const status = result.status || 'queued';
+    return `Marketplace download ${status} on ${provider} for ${model}${jobId}`;
+  }
+  if (obj?.lmstudio_load) {
+    const result = obj.lmstudio_load || {};
+    const status = result.status || (result.ok ? 'loaded' : 'failed');
+    return `LM Studio load ${status}`;
+  }
+  if (obj?.lmstudio_unload) {
+    const result = obj.lmstudio_unload || {};
+    const status = result.status || (result.ok ? 'unloaded' : 'failed');
+    return `LM Studio unload ${status}`;
+  }
+  if (obj?.provider && obj?.model_id && obj?.pac_model_id) {
+    return `Configured PAC model ${obj.pac_model_id} for ${obj.provider}:${obj.model_id}`;
+  }
+  if (obj?.provider && obj?.synced_models?.length) {
+    return `Synced ${obj.synced_models.length} model(s) from ${obj.provider}`;
+  }
+  return obj?.message || obj?.status || 'Model action completed';
+}
+
 function showInline(id, obj) {
   if (id === 'modelFormResult') {
-    const message = typeof obj === 'string' ? obj : (obj?.message || obj?.status || 'Model action completed');
+    const message = summarizeModelResult(obj);
     emitUiEvent('model_action', message, obj);
     const el = document.getElementById(id);
-    if (el) { el.textContent = ''; el.hidden = true; }
+    if (!el) return;
+    el.hidden = false;
+    el.textContent = message;
     return;
   }
   const el = document.getElementById(id);
