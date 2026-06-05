@@ -698,7 +698,8 @@ def chat_complete(
                 "model": provider_model,
                 "messages": messages,
                 "max_tokens": min(max_tokens, model.max_output_tokens),
-                "temperature": model.extra.get("temperature", 0.2),
+                "temperature": model.extra.get("temperature", 0.0),
+                "top_p": model.extra.get("top_p", 1.0),
                 "stream": bool(
                     getattr(model.capabilities, "supports_streaming", True)
                     and (provider.type in {"lmstudio", "vllm"} or bool(model.extra.get("stream")))

@@ -35,6 +35,7 @@ from pi_agent_platform.core.config import AppConfig, ProviderConfig, AgentProfil
 from pi_agent_platform.api.routes.auth import create_auth_router, public_user, public_group
 from pi_agent_platform.api.routes.marketplace import create_marketplace_router
 from pi_agent_platform.api.routes.mcp import create_mcp_router
+from pi_agent_platform.api.routes.model_advisor import create_model_advisor_router
 from pi_agent_platform.api.routes.system import create_system_router
 from pi_agent_platform.api.routes.endpoints import create_endpoints_router
 from pi_agent_platform.api.routes.editor_bridge import create_editor_bridge_router
@@ -4026,6 +4027,10 @@ app.include_router(create_providers_router(
     ensure_controller_wrapper=_ensure_controller_wrapper,
     restart_controller_wrapper=_restart_controller_wrapper,
     refresh_local_runner_metadata=_refresh_local_runner_metadata,
+    require_resource_access=_require_resource_access,
+))
+app.include_router(create_model_advisor_router(
+    require_auth=require_auth,
     require_resource_access=_require_resource_access,
 ))
 

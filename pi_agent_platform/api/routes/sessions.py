@@ -34,6 +34,7 @@ from pi_agent_platform.core.agent_session_tools import (
     merge_agent_session_tools,
     requires_endpoint_advertisement,
 )
+from pi_agent_platform.core.coding_model_upgrade import maybe_apply_model_upgrade_reply
 
 
 create_session_for_internal_use: Callable[..., Session] | None = None
@@ -338,6 +339,27 @@ def create_sessions_router(
         _require_resource_access(_auth, resource_type, resource_id, 'write', reason='Send prompts or commands to this session', session_id=session.id)
 
         metadata = dict(payload.metadata or {})
+        upgrade_result = maybe_apply_model_upgrade_reply(config, store, session, payload.prompt)
+        if upgrade_result is not None:
+            task = Task(session_id=session_id, prompt=payload.prompt, metadata={**metadata, "coding_model_upgrade_reply": True})
+            task.status = TaskStatus.completed if upgrade_result.get("ok") else TaskStatus.failed
+            task.output = str(upgrade_result.get("message") or "")
+            if not upgrade_result.get("ok"):
+                task.error = task.output
+            store.add_task(task)
+            message_meta = {
+                'role': 'user',
+                'model': session.model,
+                'session_model': session.model,
+                'endpoint_id': session.metadata.get('preferred_endpoint'),
+                'endpoint_name': None,
+                'command': None,
+                'execution_mode': session.metadata.get('execution_mode'),
+                'stored': True,
+            }
+            store.add_event(Event(session_id=session_id, task_id=task.id, type='user_message', message=payload.prompt, data=message_meta))
+            store.add_event(Event(session_id=session_id, task_id=task.id, type='result', message=task.output, data={'role': 'assistant', 'model': session.model, 'agent_profile': session.agent_profile, 'coding_model_upgrade_reply': True}))
+            return task
         literal_tool_call = _parse_literal_tool_call(payload.prompt)
         parsed_slash = parse_session_slash_command(payload.prompt)
         if literal_tool_call and not parsed_slash:

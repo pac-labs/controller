@@ -20,7 +20,14 @@ from .agent_request_policy import classify_request
 from .agent_request_intent import resolve_request_intent, should_resolve_request_intent
 from .agent_work_contract import evaluate_tool_action as evaluate_work_contract_action
 from .agent_model_selection import resolve_agent_models, resolve_fallback_model
-from .agent_model_advisor import should_escalate_after_validation_failures
+from .agent_model_advisor import (
+    build_model_upgrade_message,
+    recommend_coding_model_upgrade,
+    should_escalate_after_validation_failures,
+    should_prompt_for_model_upgrade,
+    validation_failure_count,
+)
+from .coding_model_upgrade import stash_pending_model_upgrade
 from .agent_planning_policy import should_skip_model_planning
 from .profiles import profile_context_name, profile_planner_context_name
 from .agent_response_parser import (
@@ -964,6 +971,41 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
                             model_name=decision_model,
                             context_profile=context_name,
                         )
+                elif is_coding_session(session) and should_prompt_for_model_upgrade(
+                    task,
+                    fallback_used=decision_model_fallback_used,
+                ):
+                    current_models = [str(session.model or "").strip(), str(decision_model or "").strip()]
+                    recommendation = recommend_coding_model_upgrade(
+                        config,
+                        session,
+                        task,
+                        current_models=current_models,
+                    )
+                    stash_pending_model_upgrade(
+                        session,
+                        recommendation,
+                        current_models=[name for name in current_models if name],
+                        failure_count=validation_failure_count(task, window=12),
+                    )
+                    store.add_session(session)
+                    task.metadata["model_upgrade_prompted"] = True
+                    task.metadata["model_upgrade_recommendation"] = recommendation
+                    store.add_task(task)
+                    message = build_model_upgrade_message(
+                        recommendation,
+                        current_models=[name for name in current_models if name],
+                        failure_count=validation_failure_count(task, window=12),
+                    )
+                    task = await lifecycle.complete(
+                        message,
+                        reason="coding_model_upgrade_recommended",
+                        step=step,
+                        messages=messages,
+                        rolling_summary=context_manager.rolling_summary,
+                        checkpoint_output=message[:2000],
+                    )
+                    return task
                 events.doom_loop_detected(
                     message=doom_decision.message or "Doom loop detected; switching strategy.",
                     data=doom_decision.data or {},
