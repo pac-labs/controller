@@ -13,6 +13,15 @@ MISSING_FILE_PREFIXES = (
     "no such file or directory",
     "not a file:",
 )
+VALIDATION_FAILURE_MARKERS = (
+    "=== failures ===",
+    "short test summary info",
+    "failed ",
+    "no tests ran",
+    "assertionerror",
+    "typeerror:",
+    "modulenotfounderror",
+)
 
 
 @dataclass(slots=True)
@@ -73,6 +82,8 @@ def _outcome_class(tool: str, observation: str) -> str:
     text = str(observation or "").strip().lower()
     if _missing_file_outcome(tool, observation):
         return "missing_path"
+    if tool == "shell" and _looks_like_validation_failure(text):
+        return "validation_fail"
     if not text:
         return "empty_result"
     if text.startswith("denied:") or "permission denied" in text[:500]:
@@ -88,6 +99,16 @@ def _path_or_query(inp: dict[str, Any]) -> str:
         if value:
             return value[:240]
     return ""
+
+
+def _looks_like_validation_failure(text: str) -> bool:
+    lowered = str(text or "").lower()
+    return any(marker in lowered for marker in VALIDATION_FAILURE_MARKERS)
+
+
+def _failure_path(observation: str) -> str:
+    match = re.search(r"(?m)^([A-Za-z0-9_./-]+\.py):\d+:", str(observation or ""))
+    return str(match.group(1)) if match else ""
 
 
 def record_tool_result(task: Any, *, step: int, tool: str, inp: dict[str, Any], observation: str) -> dict[str, Any]:
@@ -107,6 +128,9 @@ def record_tool_result(task: Any, *, step: int, tool: str, inp: dict[str, Any], 
         "fingerprint": f"{family}:{outcome}:{_hash_input(inp or {})}",
         "pattern_fingerprint": f"{family}:{outcome}",
     }
+    failure_path = _failure_path(observation)
+    if failure_path:
+        entry["failure_path"] = failure_path
     history.append(entry)
     metadata["doom_loop_history"] = history[-24:]
     task.metadata = metadata
@@ -133,6 +157,12 @@ def _recovery_action(prompt: str, history: list[dict[str, Any]], task: Any) -> d
     count = int(metadata.get("doom_loop_recovery_count") or 0)
     metadata["doom_loop_recovery_count"] = count + 1
     task.metadata = metadata
+    last = history[-1] if history else {}
+    if str(last.get("outcome") or "") == "validation_fail":
+        failure_path = str(last.get("failure_path") or "").strip()
+        if failure_path:
+            return {"type": "tool_call", "tool": "read_file", "input": {"path": failure_path}}
+        return {"type": "tool_call", "tool": "find_code_paths", "input": {"query": _prompt_query(prompt, fallback="failing test implementation"), "max_results": 12}}
     if count % 3 == 0:
         return {"type": "tool_call", "tool": "workspace_manifest", "input": {}}
     if count % 3 == 1:

@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 
 from .config import AppConfig
 from .models import Session, Task
+from .coding_session_readiness import is_coding_session
+from .agent_model_advisor import order_coding_candidates
 
 if TYPE_CHECKING:
     from .agent_request_policy import AgentRequestPolicy
@@ -76,6 +78,7 @@ def resolve_fallback_model(
     current_model: str,
     *,
     require_structured: bool = False,
+    prefer_coding: bool = False,
 ) -> str:
     ranked_candidates: list[tuple[tuple[int, int, int], str]] = []
     for name in _candidate_models(session, task):
@@ -93,8 +96,13 @@ def resolve_fallback_model(
         if rank[0] < 0:
             continue
         ranked_candidates.append((rank, name))
-    ranked_candidates.sort(key=lambda item: item[0], reverse=True)
-    for _rank, candidate in ranked_candidates:
+    candidate_names = [item[1] for item in ranked_candidates]
+    ordered_names = (
+        order_coding_candidates(config, session, task, candidate_names)
+        if prefer_coding and is_coding_session(session)
+        else [name for _rank, name in sorted(ranked_candidates, key=lambda item: item[0], reverse=True)]
+    )
+    for candidate in ordered_names:
         if not require_structured or model_is_structured_agent_capable(config, candidate):
             return candidate
     return ""
@@ -137,8 +145,13 @@ def resolve_agent_models(
         if rank[0] < 0:
             continue
         ranked_candidates.append((rank, name))
-    ranked_candidates.sort(key=lambda item: item[0], reverse=True)
-    for _rank, candidate in ranked_candidates:
+    candidate_names = [item[1] for item in ranked_candidates]
+    ordered_names = (
+        order_coding_candidates(config, session, task, candidate_names)
+        if is_coding_session(session)
+        else [name for _rank, name in sorted(ranked_candidates, key=lambda item: item[0], reverse=True)]
+    )
+    for candidate in ordered_names:
         if candidate == executor_model:
             continue
         if model_is_structured_agent_capable(config, candidate):

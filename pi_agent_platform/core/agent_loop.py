@@ -20,6 +20,8 @@ from .agent_request_policy import classify_request
 from .agent_request_intent import resolve_request_intent, should_resolve_request_intent
 from .agent_work_contract import evaluate_tool_action as evaluate_work_contract_action
 from .agent_model_selection import resolve_agent_models, resolve_fallback_model
+from .agent_model_advisor import should_escalate_after_validation_failures
+from .agent_planning_policy import should_skip_model_planning
 from .profiles import profile_context_name, profile_planner_context_name
 from .agent_response_parser import (
     _extract_json,
@@ -396,51 +398,72 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
         )
     )
     if should_plan and not task.metadata.get("plan_generated"):
+        skip_model_plan, skip_reason = should_skip_model_planning(
+            config,
+            session,
+            planning_model=planning_model,
+            decision_model=decision_model,
+        )
         try:
-            planning_timeout_seconds = max(3, int(task.metadata.get("planning_timeout_seconds") or 12))
-            try:
-                plan_abandoned = False
-
-                def plan_progress(update: dict[str, Any]) -> None:
-                    events.model_stream_progress(
-                        model=planning_model,
-                        step=None,
-                        call_type="plan",
-                        chars=int(update.get("chars") or 0),
-                        preview=str(update.get("preview") or ""),
-                    )
-
-                def plan_abandoned_event() -> None:
-                    nonlocal plan_abandoned
-                    plan_abandoned = True
-                    events.agent_plan_timeout(model=planning_model, timeout_seconds=planning_timeout_seconds, fallback=True)
-                    events.model_call_abandoned(model=planning_model, call_type="plan", timeout_seconds=planning_timeout_seconds)
-
-                def plan_late_completed(success: bool) -> None:
-                    events.model_call_late_completed(model=planning_model, call_type="plan", success=success)
-
-                plan = await timing.around_async(
-                    "planning_model",
-                    "Planning model call was slow",
-                    generate_plan(
-                        config,
-                        model=planning_model,
-                        prompt=task.prompt,
-                        extra_context=[controller_guidance or "", controller_context or "", index_briefing or ""],
-                        session_id=session.id,
-                        task_id=task.id,
-                        progress_callback=plan_progress,
-                        timeout_seconds=planning_timeout_seconds,
-                        on_abandoned=plan_abandoned_event,
-                        on_late_completed=plan_late_completed,
-                    ),
-                    {"model": planning_model, "timeout_seconds": planning_timeout_seconds},
-                )
-                if plan_abandoned:
-                    plan = fallback_plan(task.prompt)
-            except asyncio.TimeoutError:
-                events.agent_plan_timeout(model=planning_model, timeout_seconds=planning_timeout_seconds, fallback=True)
+            if skip_model_plan:
                 plan = fallback_plan(task.prompt)
+                task.metadata["plan_generation_mode"] = "fallback_only"
+                task.metadata["plan_generation_reason"] = skip_reason
+                store.add_task(task)
+                events.emit(
+                    "agent_plan_skipped",
+                    "Skipped the extra planning model call and used the deterministic fallback plan.",
+                    {
+                        "model": planning_model,
+                        "reason": skip_reason,
+                        "coding_session": bool(session.metadata.get("coding_session")),
+                    },
+                )
+            else:
+                planning_timeout_seconds = max(3, int(task.metadata.get("planning_timeout_seconds") or 12))
+                try:
+                    plan_abandoned = False
+
+                    def plan_progress(update: dict[str, Any]) -> None:
+                        events.model_stream_progress(
+                            model=planning_model,
+                            step=None,
+                            call_type="plan",
+                            chars=int(update.get("chars") or 0),
+                            preview=str(update.get("preview") or ""),
+                        )
+
+                    def plan_abandoned_event() -> None:
+                        nonlocal plan_abandoned
+                        plan_abandoned = True
+                        events.agent_plan_timeout(model=planning_model, timeout_seconds=planning_timeout_seconds, fallback=True)
+                        events.model_call_abandoned(model=planning_model, call_type="plan", timeout_seconds=planning_timeout_seconds)
+
+                    def plan_late_completed(success: bool) -> None:
+                        events.model_call_late_completed(model=planning_model, call_type="plan", success=success)
+
+                    plan = await timing.around_async(
+                        "planning_model",
+                        "Planning model call was slow",
+                        generate_plan(
+                            config,
+                            model=planning_model,
+                            prompt=task.prompt,
+                            extra_context=[controller_guidance or "", controller_context or "", index_briefing or ""],
+                            session_id=session.id,
+                            task_id=task.id,
+                            progress_callback=plan_progress,
+                            timeout_seconds=planning_timeout_seconds,
+                            on_abandoned=plan_abandoned_event,
+                            on_late_completed=plan_late_completed,
+                        ),
+                        {"model": planning_model, "timeout_seconds": planning_timeout_seconds},
+                    )
+                    if plan_abandoned:
+                        plan = fallback_plan(task.prompt)
+                except asyncio.TimeoutError:
+                    events.agent_plan_timeout(model=planning_model, timeout_seconds=planning_timeout_seconds, fallback=True)
+                    plan = fallback_plan(task.prompt)
         except Exception as exc:
             task = await lifecycle.fail(f"Planning model call failed: {exc}", messages=messages)
             return task
@@ -904,6 +927,43 @@ async def run_agent_loop(session: Session, task: Task, config: AppConfig) -> Tas
             )
             store.add_task(task)
             if doom_decision.detected:
+                if (
+                    is_coding_session(session)
+                    and not decision_model_fallback_used
+                    and should_escalate_after_validation_failures(task)
+                ):
+                    fallback_model = resolve_fallback_model(
+                        config,
+                        session,
+                        task,
+                        decision_model,
+                        require_structured=True,
+                        prefer_coding=True,
+                    )
+                    if fallback_model and fallback_model != decision_model:
+                        previous_model = decision_model
+                        decision_model = fallback_model
+                        decision_model_fallback_used = True
+                        task.metadata["effective_decision_model"] = fallback_model
+                        task.metadata["decision_model_reason"] = f"coding_validation_fallback:{previous_model}->{fallback_model}"
+                        store.add_task(task)
+                        events.model_routing_issue(
+                            message=f"{previous_model} repeated failed validation; retrying coding decisions with {fallback_model}.",
+                            data={
+                                "reason": "coding_validation_fallback",
+                                "previous_decision_model": previous_model,
+                                "decision_model": fallback_model,
+                                "doom_loop_reason": doom_decision.reason,
+                            },
+                        )
+                        ctx = effective_context(config, decision_model, context_name)
+                        context_manager = AgentContextManager(
+                            session,
+                            task,
+                            config,
+                            model_name=decision_model,
+                            context_profile=context_name,
+                        )
                 events.doom_loop_detected(
                     message=doom_decision.message or "Doom loop detected; switching strategy.",
                     data=doom_decision.data or {},

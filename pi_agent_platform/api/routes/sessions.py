@@ -29,6 +29,11 @@ from pi_agent_platform.core.profiles import can_use_profile, profile_context_nam
 from pi_agent_platform.core.diagnostics_bundle import build_session_diagnostics, build_session_diagnostics_zip
 from pi_agent_platform.core.platform_debug_bundle import build_platform_debug_zip
 from pi_agent_platform.core.model_metrics import model_metrics
+from pi_agent_platform.core.agent_session_tools import (
+    is_known_agent_tool,
+    merge_agent_session_tools,
+    requires_endpoint_advertisement,
+)
 
 
 create_session_for_internal_use: Callable[..., Session] | None = None
@@ -201,9 +206,13 @@ def create_sessions_router(
             payload.metadata['endpoint_locked'] = True
 
         selected_tools = list(payload.tools or [])
-        if payload.metadata.get('agent_enabled') and 'printing_press' in config.tools and 'printing_press' not in selected_tools:
-            selected_tools = [*selected_tools, 'printing_press']
-        unknown_tools = [t for t in selected_tools if t not in config.tools]
+        if payload.metadata.get('agent_enabled'):
+            selected_tools = merge_agent_session_tools(
+                config,
+                selected_tools,
+                coding_session=bool(coding_session or storage_bound_session),
+            )
+        unknown_tools = [t for t in selected_tools if not is_known_agent_tool(config, t)]
         if unknown_tools:
             raise HTTPException(status_code=400, detail=f'Unknown tools: {unknown_tools}')
         preferred_endpoint = payload.metadata.get('preferred_endpoint')
@@ -211,7 +220,10 @@ def create_sessions_router(
             endpoint = store.get_runner(preferred_endpoint)
             endpoint_tools = (endpoint.metadata.get('agent_tools', []) if endpoint else [])
             if endpoint_tools:
-                missing_on_endpoint = [t for t in selected_tools if t not in endpoint_tools]
+                missing_on_endpoint = [
+                    t for t in selected_tools
+                    if requires_endpoint_advertisement(config, t) and t not in endpoint_tools
+                ]
                 if missing_on_endpoint:
                     raise HTTPException(status_code=400, detail=f'Endpoint does not provide selected tools: {missing_on_endpoint}')
 
