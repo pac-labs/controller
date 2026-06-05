@@ -6,19 +6,47 @@ import subprocess
 from typing import Any
 
 
+LLMFIT_IMAGE = "ghcr.io/alexsjones/llmfit:0.9.30"
+
+
 def llmfit_binary() -> str | None:
     return shutil.which("llmfit")
 
 
+def llmfit_container_runtime() -> str | None:
+    for candidate in ("podman", "docker"):
+        if shutil.which(candidate):
+            return candidate
+    return None
+
+
 def llmfit_status(*, timeout_seconds: float = 10.0) -> dict[str, Any]:
-    binary = llmfit_binary()
+    source = _preferred_source()
+    if source["kind"] == "container":
+        version = _run_plain(_container_command(["--version"]), timeout_seconds=timeout_seconds)
+        system = _run_json(_container_command(["--json", "system"]), timeout_seconds=timeout_seconds)
+        return {
+            "ok": bool(system.get("ok")),
+            "installed": True,
+            "source": "container",
+            "runtime": source.get("runtime"),
+            "image": LLMFIT_IMAGE,
+            "binary": None,
+            "version": version.get("output"),
+            "system": system.get("payload") if system.get("ok") else None,
+            "error": None if system.get("ok") else system.get("error"),
+        }
+    binary = source.get("binary")
     if not binary:
-        return {"ok": False, "installed": False, "reason": "llmfit_not_installed"}
+        return {"ok": False, "installed": False, "reason": "llmfit_not_installed", "source": "missing"}
     version = _run_plain([binary, "--version"], timeout_seconds=timeout_seconds)
     system = _run_json([binary, "--json", "system"], timeout_seconds=timeout_seconds)
     return {
         "ok": bool(system.get("ok")),
         "installed": True,
+        "source": "binary",
+        "runtime": None,
+        "image": None,
         "binary": binary,
         "version": version.get("output"),
         "system": system.get("payload") if system.get("ok") else None,
@@ -34,9 +62,40 @@ def llmfit_recommendations(
     force_runtime: str | None = None,
     timeout_seconds: float = 20.0,
 ) -> dict[str, Any]:
-    binary = llmfit_binary()
+    source = _preferred_source()
+    if source["kind"] == "container":
+        command = _container_command([
+            "recommend",
+            "--json",
+            "--use-case",
+            use_case,
+            "--limit",
+            str(max(1, min(limit, 10))),
+        ])
+        if max_context:
+            command.extend(["--max-context", str(max_context)])
+        if force_runtime:
+            command.extend(["--force-runtime", force_runtime])
+        result = _run_json(command, timeout_seconds=timeout_seconds)
+        return {
+            "ok": bool(result.get("ok")),
+            "installed": True,
+            "source": "container",
+            "runtime": source.get("runtime"),
+            "image": LLMFIT_IMAGE,
+            "binary": None,
+            "command": command,
+            "use_case": use_case,
+            "limit": limit,
+            "max_context": max_context,
+            "force_runtime": force_runtime,
+            "recommendations": _normalize_recommendations(result.get("payload")),
+            "raw": result.get("payload") if result.get("ok") else None,
+            "error": None if result.get("ok") else result.get("error"),
+        }
+    binary = source.get("binary")
     if not binary:
-        return {"ok": False, "installed": False, "reason": "llmfit_not_installed"}
+        return {"ok": False, "installed": False, "reason": "llmfit_not_installed", "source": "missing"}
     command = [binary, "recommend", "--json", "--use-case", use_case, "--limit", str(max(1, min(limit, 10)))]
     if max_context:
         command = [binary, "--max-context", str(max_context), *command[1:]]
@@ -46,6 +105,9 @@ def llmfit_recommendations(
     return {
         "ok": bool(result.get("ok")),
         "installed": True,
+        "source": "binary",
+        "runtime": None,
+        "image": None,
         "binary": binary,
         "command": command,
         "use_case": use_case,
@@ -56,6 +118,27 @@ def llmfit_recommendations(
         "raw": result.get("payload") if result.get("ok") else None,
         "error": None if result.get("ok") else result.get("error"),
     }
+
+
+def _preferred_source() -> dict[str, Any]:
+    runtime = llmfit_container_runtime()
+    if runtime:
+        return {"kind": "container", "runtime": runtime}
+    binary = llmfit_binary()
+    if binary:
+        return {"kind": "binary", "binary": binary}
+    return {"kind": "missing"}
+
+
+def _container_command(args: list[str]) -> list[str]:
+    runtime = llmfit_container_runtime()
+    if not runtime:
+        raise RuntimeError("No container runtime found for llmfit")
+    command = [runtime, "run", "--rm", "--pull=missing", LLMFIT_IMAGE]
+    if runtime == "podman":
+        command.insert(2, "--quiet")
+    command.extend(args)
+    return command
 
 
 def _run_json(command: list[str], *, timeout_seconds: float) -> dict[str, Any]:
