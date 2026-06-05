@@ -1,110 +1,131 @@
-// Configured model card grid and live provider model list rendering.
+// Configured model inventory and live provider model list rendering.
+function modelTableAction(label, icon, attrs = '', extraClass = '') {
+  const classes = ['model-icon-action', extraClass].filter(Boolean).join(' ');
+  return `<button type="button" class="${classes}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}" ${attrs}>${icon}</button>`;
+}
+
 function renderModels() {
   const el = document.getElementById('models');
   if (!el) return;
-  el.className = 'model-card-grid model-card-grid-compact';
+  el.className = 'model-inventory-wrap';
   const models = Object.entries(config.models || {});
   if (!models.length) {
     el.innerHTML = '<div class="muted">No configured models yet. Add one from Marketplace or Browse providers.</div>';
   } else {
-    el.innerHTML = '';
-    for (const [name, model] of models) {
+    const rows = models.map(([name, model]) => {
       const availability = modelAvailability(name);
       const provider = config.providers?.[model.provider || ''];
       const health = providerHealthSummary(model.provider || '', provider || {});
       const sessionCount = (window.__pacSessions || []).filter(item => item.model === name).length;
-      const card = document.createElement('article');
-      card.className = 'model-card model-overview-card model-overview-compact clickable-row';
-      const runtime = model.extra?.lmstudio_runtime || {};
-      const caps = modelCapabilityPills(model);
       const displayName = modelDisplayName(name, model);
       const stableId = modelStableId(name, model);
       const modelFunction = model.extra?.function || inferModelFunction(model.provider, model.model || displayName || name);
       const providerName = providerLabel(model.provider || '-');
       const modelId = model.model || '-';
-      const identityPills = [
-        modelPill(modelStatusGlyph(availability.ok), availability.ok ? 'available' : 'attention', availability.ok ? 'ok-pill' : 'warn-pill'),
-        provider?.type ? modelPill('provider', provider.type) : '',
-        modelPill('role', modelFunction),
-        modelPill('sessions', sessionCount || 0),
-      ].filter(Boolean).join('');
-      const capacityPills = [
-        modelPill('ctx', compactTokenNumber(model.context_window)),
-        modelPill('out', compactTokenNumber(model.max_output_tokens)),
-        model.capabilities?.reasoning ? modelPill('reasoning', model.capabilities.reasoning) : '',
-        modelPill('provider', providerName),
-        pricePill('in', model.input_price_per_million),
-        pricePill('out$', model.output_price_per_million),
-      ].filter(Boolean).join('');
-      card.innerHTML = `<div class="provider-card-head model-card-head-compact"><div class="provider-title-block model-title-block"><h3 title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</h3><span class="muted" title="${escapeHtml(stableId)}">PAC id: ${escapeHtml(stableId)}</span><span class="muted" title="${escapeHtml(providerLabel(model.provider || '-'))}">${escapeHtml(providerLabel(model.provider || '-'))}</span></div><span class="model-status-icon ${availability.ok ? 'ok-text' : 'warn-text'}" title="${escapeHtml(availability.ok ? 'Available' : availability.reason)}">${modelStatusGlyph(availability.ok)}</span></div>
-        <div class="model-id-line"><span class="model-id-label">provider id</span><code title="${escapeHtml(modelId)}">${escapeHtml(modelId)}</code></div>
-        <div class="provider-pill-list model-identity-pills">${identityPills}</div>
-        <div class="provider-health-strip model-provider-health"><span class="pill ${escapeHtml(health.klass)}">${escapeHtml(health.pill)}</span><span class="small-text" title="${escapeHtml(health.detail)}">${escapeHtml(health.detail)}</span></div>
-        ${caps ? `<div class="provider-pill-list model-cap-list">${caps}</div>` : ''}
-        <div class="provider-pill-list model-capacity-pills">${capacityPills}</div>
-        <div class="muted small-text model-card-note">${escapeHtml(availability.ok ? `Configured for ${modelFunction} work.` : `Issue: ${availability.reason}`)}</div>
-        ${provider?.type === 'lmstudio' ? `<div class="model-runtime-strip compact-runtime-strip"><span>LM Studio</span><span>ctx ${escapeHtml(compactTokenNumber(runtime.context_length || model.context_window || '-'))}</span><span>gpu ${escapeHtml(runtime.gpu_offload || 'default')}</span><span>batch ${escapeHtml(runtime.eval_batch_size || runtime.batch_size || 'default')}</span><span>temp ${escapeHtml(runtime.temperature ?? 'default')}</span></div>` : ''}`;
-      card.onclick = () => openModelModal(name);
-      const actions = document.createElement('div');
-      actions.className = 'model-card-actions compact-model-actions model-card-icon-actions';
-      const makeIconAction = (label, icon, className, handler) => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = `model-icon-action ${className || ''}`.trim();
-        button.setAttribute('aria-label', label);
-        button.title = label;
-        button.textContent = icon;
-        button.onclick = handler;
-        return button;
-      };
-      const edit = makeIconAction('Edit model configuration', '✎', '', ev => { ev.stopPropagation(); openModelModal(name); });
-      const test = makeIconAction('Test model', '▶', '', async ev => { ev.stopPropagation(); const r = await api(`/v1/models/${name}/test`, {method:'POST'}); showInline('modelFormResult', {model:name, ...r}); });
-      actions.appendChild(edit);
-      actions.appendChild(test);
-      if (!model.read_only) {
-        const del = makeIconAction('Delete model configuration', '×', 'danger-action', async ev => {
-          ev.stopPropagation();
-          if (!confirm(`Delete model '${displayName}'`)) return;
-          const r = await api(`/v1/models/${name}`, {method:'DELETE'});
-          if (r?.ok) {
-            if (config.models && Object.prototype.hasOwnProperty.call(config.models, name)) delete config.models[name];
-            card.classList.add('is-removing');
-            setTimeout(() => { renderModels(); }, 120);
-            await loadGlobalEvents(true).catch(()=>{});
-          } else {
-            alert(r?.error || (r?.detail ? r.detail : 'Delete failed'));
-          }
-        });
-        actions.appendChild(del);
-      }
+      const reasoning = model.capabilities?.reasoning ? ` / reasoning ${model.capabilities.reasoning}` : '';
+      const stateText = availability.ok ? health.detail : availability.reason;
+      const actions = [
+        modelTableAction('Edit model configuration', '✎', `data-edit-model="${escapeHtml(name)}"`),
+        modelTableAction('Test model', '▶', `data-test-model="${escapeHtml(name)}"`),
+      ];
       if (provider?.type === 'lmstudio') {
-        const inspect = makeIconAction('Inspect LM Studio model runtime', '◉', '', ev => { ev.stopPropagation(); inspectLmStudioModelByName(name).catch(e => alert(e.message)); });
-        const load = makeIconAction('Load model in LM Studio', '⇧', '', ev => { ev.stopPropagation(); loadLmStudioModelByName(name).catch(e => alert(e.message)); });
-        const unload = makeIconAction('Unload model from LM Studio', '⇩', '', ev => { ev.stopPropagation(); unloadLmStudioModelByName(name).catch(e => alert(e.message)); });
-        actions.appendChild(inspect);
-        actions.appendChild(load);
-        actions.appendChild(unload);
+        actions.push(modelTableAction('Inspect LM Studio runtime', '◉', `data-inspect-model="${escapeHtml(name)}"`));
+        actions.push(modelTableAction('Load model in LM Studio', '⇧', `data-load-model="${escapeHtml(name)}"`));
+        actions.push(modelTableAction('Unload model from LM Studio', '⇩', `data-unload-model="${escapeHtml(name)}"`));
       }
-      card.appendChild(actions);
-      el.appendChild(card);
-    }
+      if (!model.read_only) actions.push(modelTableAction('Delete model configuration', '×', `data-delete-model="${escapeHtml(name)}"`, 'danger-action'));
+      return `<tr class="${availability.ok ? '' : 'warn'}">
+        <td>
+          <button type="button" class="link-button model-table-name" data-edit-model="${escapeHtml(name)}" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</button>
+          <div class="muted small-text" title="${escapeHtml(stableId)}">${escapeHtml(stableId)}</div>
+        </td>
+        <td><code title="${escapeHtml(modelId)}">${escapeHtml(modelId)}</code></td>
+        <td>${escapeHtml(providerName)}</td>
+        <td>${escapeHtml(`${modelFunction}${reasoning}`)}</td>
+        <td>
+          <span class="pill ${escapeHtml(availability.ok ? health.klass : 'warn-pill')}">${escapeHtml(availability.ok ? health.pill : 'attention')}</span>
+          <div class="muted small-text" title="${escapeHtml(stateText)}">${escapeHtml(stateText)}</div>
+        </td>
+        <td>${escapeHtml(compactTokenNumber(model.context_window || '-'))}</td>
+        <td>${escapeHtml(compactTokenNumber(model.max_output_tokens || '-'))}</td>
+        <td>${escapeHtml(String(sessionCount || 0))}</td>
+        <td class="model-table-actions-cell">${actions.join('')}</td>
+      </tr>`;
+    }).join('');
+    el.innerHTML = `<table class="model-inventory-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Provider model</th>
+          <th>Host</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Ctx</th>
+          <th>Out</th>
+          <th>Sessions</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
   }
-  equalizeModelCardHeights();
-  requestAnimationFrame(equalizeModelCardHeights);
+  bindModelInventoryActions(el);
   renderModelRecommendations().catch(()=>{});
   renderUnconfiguredModelsPanelFromLive().catch(()=>{});
 }
-function equalizeModelCardHeights() {
-  const cards = Array.from(document.querySelectorAll('#models .model-overview-card'));
-  if (!cards.length) return;
-  cards.forEach(card => { card.style.minHeight = ''; });
-  const maxHeight = Math.ceil(Math.max(...cards.map(card => card.getBoundingClientRect().height)));
-  if (maxHeight > 0) cards.forEach(card => { card.style.minHeight = `${maxHeight}px`; });
+
+function bindModelInventoryActions(root) {
+  root.querySelectorAll('[data-edit-model]').forEach((btn) => {
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      openModelModal(btn.getAttribute('data-edit-model') || '');
+    };
+  });
+  root.querySelectorAll('[data-test-model]').forEach((btn) => {
+    btn.onclick = async (ev) => {
+      ev.stopPropagation();
+      const modelName = btn.getAttribute('data-test-model') || '';
+      const result = await api(`/v1/models/${modelName}/test`, {method:'POST'});
+      showInline('modelFormResult', {model:modelName, ...result});
+    };
+  });
+  root.querySelectorAll('[data-delete-model]').forEach((btn) => {
+    btn.onclick = async (ev) => {
+      ev.stopPropagation();
+      const modelName = btn.getAttribute('data-delete-model') || '';
+      const model = config.models?.[modelName] || {};
+      const label = modelDisplayName(modelName, model);
+      if (!confirm(`Delete model '${label}'`)) return;
+      const result = await api(`/v1/models/${modelName}`, {method:'DELETE'});
+      if (result?.ok) {
+        if (config.models && Object.prototype.hasOwnProperty.call(config.models, modelName)) delete config.models[modelName];
+        renderModels();
+        await loadGlobalEvents(true).catch(()=>{});
+      } else {
+        alert(result?.error || (result?.detail ? result.detail : 'Delete failed'));
+      }
+    };
+  });
+  root.querySelectorAll('[data-inspect-model]').forEach((btn) => {
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      inspectLmStudioModelByName(btn.getAttribute('data-inspect-model') || '').catch(e => alert(e.message));
+    };
+  });
+  root.querySelectorAll('[data-load-model]').forEach((btn) => {
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      loadLmStudioModelByName(btn.getAttribute('data-load-model') || '').catch(e => alert(e.message));
+    };
+  });
+  root.querySelectorAll('[data-unload-model]').forEach((btn) => {
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      unloadLmStudioModelByName(btn.getAttribute('data-unload-model') || '').catch(e => alert(e.message));
+    };
+  });
 }
-window.addEventListener('resize', () => {
-  clearTimeout(window.__pacModelCardHeightTimer);
-  window.__pacModelCardHeightTimer = setTimeout(equalizeModelCardHeights, 120);
-});
+
 async function renderLiveModels() {
   const live = document.getElementById('modelsLive');
   if (!live) return;
