@@ -1,4 +1,4 @@
-// Configured model inventory and live provider model list rendering.
+// Configured model inventory rendering for the models page.
 function modelTableAction(label, icon, attrs = '', extraClass = '') {
   const classes = ['model-icon-action', extraClass].filter(Boolean).join(' ');
   return `<button type="button" class="${classes}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}" ${attrs}>${icon}</button>`;
