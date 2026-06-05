@@ -72,10 +72,6 @@ def llmfit_recommendations(
             "--limit",
             str(max(1, min(limit, 10))),
         ])
-        if max_context:
-            command.extend(["--max-context", str(max_context)])
-        if force_runtime:
-            command.extend(["--force-runtime", force_runtime])
         result = _run_json(command, timeout_seconds=timeout_seconds)
         return {
             "ok": bool(result.get("ok")),
@@ -97,10 +93,6 @@ def llmfit_recommendations(
     if not binary:
         return {"ok": False, "installed": False, "reason": "llmfit_not_installed", "source": "missing"}
     command = [binary, "recommend", "--json", "--use-case", use_case, "--limit", str(max(1, min(limit, 10)))]
-    if max_context:
-        command = [binary, "--max-context", str(max_context), *command[1:]]
-    if force_runtime:
-        command.extend(["--force-runtime", force_runtime])
     result = _run_json(command, timeout_seconds=timeout_seconds)
     return {
         "ok": bool(result.get("ok")),

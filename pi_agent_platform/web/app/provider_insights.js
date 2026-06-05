@@ -17,39 +17,16 @@ function recommendationCardHtml(level, title, body, detail = '') {
   return `<article class="recommendation-card compact ${escapeHtml(level)}"><h4>${escapeHtml(title)}</h4><p>${escapeHtml(body)}</p>${detail ? `<div class="muted small-text">${escapeHtml(detail)}</div>` : ''}</article>`;
 }
 
-function codingOpportunityCardHtml(item, kind) {
-  const provider = item.provider_name || item.provider?.name || '';
-  const modelId = item.model_id || '';
-  const score = Number(item.score || 0);
-  const quality = item.quality || 'candidate';
-  const fit = item.fit_reason || item.reason || '';
-  const quant = item.quantization || '';
-  const providerLabelText = provider ? `${provider}` : 'public candidate';
-  const actions = [];
-  if (kind === 'public') {
-    actions.push(`<button class="ghost-button mini-button" data-open-marketplace-candidate="${escapeHtml(modelId)}">Inspect</button>`);
-    if (provider) actions.push(`<button class="mini-button" data-download-marketplace-candidate="${escapeHtml(provider)}::${escapeHtml(modelId)}::${escapeHtml(quant)}">Download</button>`);
-  } else if (provider) {
-    actions.push(`<button class="mini-button" data-configure-live-candidate="${escapeHtml(provider)}::${escapeHtml(modelId)}">Configure</button>`);
-  }
-  return `<article class="recommendation-card compact ${quality === 'weak' ? 'warn' : 'info'}">
-    <h4>${escapeHtml(modelId)}</h4>
-    <p>${escapeHtml(`${providerLabelText} • ${quality} coding fit • score ${score.toFixed(1)}`)}</p>
-    ${fit ? `<div class="muted small-text">${escapeHtml(fit)}</div>` : ''}
-    ${actions.length ? `<div class="button-row compact-row recommendation-action-row">${actions.join('')}</div>` : ''}
-  </article>`;
-}
-
 function codingOpportunityActionButtons(item, kind) {
   const provider = item.provider_name || item.provider?.name || '';
   const modelId = item.model_id || '';
   const quant = item.quantization || '';
   const actions = [];
   if (kind === 'public') {
-    actions.push(`<button class="ghost-button mini-button model-advice-action" title="Inspect candidate" aria-label="Inspect candidate" data-open-marketplace-candidate="${escapeHtml(modelId)}">i</button>`);
-    if (provider) actions.push(`<button class="mini-button model-advice-action" title="Download to ${escapeHtml(provider)}" aria-label="Download to ${escapeHtml(provider)}" data-download-marketplace-candidate="${escapeHtml(provider)}::${escapeHtml(modelId)}::${escapeHtml(quant)}">↓</button>`);
+    actions.push(`<button class="ghost-button mini-button model-advice-action" title="Inspect candidate" aria-label="Inspect candidate" data-open-marketplace-candidate="${escapeHtml(modelId)}">&#9432;</button>`);
+    if (provider) actions.push(`<button class="mini-button model-advice-action" title="Download to ${escapeHtml(provider)}" aria-label="Download to ${escapeHtml(provider)}" data-download-marketplace-candidate="${escapeHtml(provider)}::${escapeHtml(modelId)}::${escapeHtml(quant)}">&#8595;</button>`);
   } else if (provider) {
-    actions.push(`<button class="mini-button model-advice-action" title="Configure model" aria-label="Configure model" data-configure-live-candidate="${escapeHtml(provider)}::${escapeHtml(modelId)}">⚙</button>`);
+    actions.push(`<button class="mini-button model-advice-action" title="Configure model" aria-label="Configure model" data-configure-live-candidate="${escapeHtml(provider)}::${escapeHtml(modelId)}">&#9881;</button>`);
   }
   return actions.join('');
 }
@@ -79,7 +56,7 @@ function codingOpportunityTableHtml(title, items, kind) {
     <table class="model-advice-table">
       <thead>
         <tr>
-          <th>Host</th>
+          <th>Provider</th>
           <th>Model</th>
           <th>Fit</th>
           <th>Score</th>
@@ -136,14 +113,13 @@ async function renderUnconfiguredModelsPanelFromLive() {
     };
   });
 }
+
 async function renderModelRecommendations() {
   const panel = document.getElementById('modelsRecommendationsPanel');
   const body = document.getElementById('modelsRecommendationsBody');
   if (!panel || !body) return;
   const recommendations = [];
   const models = Object.entries(config.models || {});
-  const endpoints = window.__pacEndpoints || [];
-  const sessions = window.__pacSessions || [];
   if (!models.length) {
     const enabledProviders = Object.entries(config.providers || {}).filter(([_, provider]) => provider.enabled !== false);
     if (enabledProviders.length) recommendations.push(recommendationCardHtml('info', 'No configured session models', 'Create at least one model from the live provider inventory so profiles and sessions can use it.', 'Use Browse providers or Marketplace from the Models area.'));
@@ -151,18 +127,13 @@ async function renderModelRecommendations() {
   for (const [name, model] of models) {
     const availability = modelAvailability(name);
     const provider = config.providers?.[model.provider || ''];
-    const endpoint = endpoints.find(item => item.id === model.runs_on);
-    const sessionCount = sessions.filter(item => item.model === name).length;
-    if (!availability.ok) recommendations.push(recommendationCardHtml('warn', `${name} is not currently available`, availability.reason || 'The provider is not returning this model.', `${providerLabel(model.provider || '-')}${sessionCount ? ` - ${sessionCount} session(s) reference it` : ''}`));
+    if (!availability.ok) recommendations.push(recommendationCardHtml('warn', `${name} is not currently available`, availability.reason || 'The provider is not returning this model.', `${providerLabel(model.provider || '-')}`));
     if (provider?.type === 'lmstudio') {
       const runtime = model.extra?.lmstudio_runtime || {};
-      if (!runtime.gpu_offload && (endpoint?.capabilities?.gpu?.available || endpoint?.capabilities?.gpu?.devices?.length)) recommendations.push(recommendationCardHtml('info', `Tune ${name} for GPU use`, 'A GPU-capable endpoint is available, but the LM Studio runtime fields are still mostly default.', 'Review GPU offload, context, and batch sizing in the model form.'));
       if (runtime.context_length && model.context_window && Number(runtime.context_length) < Number(model.context_window)) recommendations.push(recommendationCardHtml('warn', `LM Studio load window is shorter for ${name}`, 'PAC is configured to expect a larger context window than the LM Studio runtime will load.', 'Raise the runtime context length or lower the configured model context to keep behavior consistent.'));
       if (!runtime.context_length && model.context_window) recommendations.push(recommendationCardHtml('info', `Set an explicit LM Studio load window for ${name}`, 'The model has a configured PAC context window, but the LM Studio load runtime still relies on implicit defaults.', 'Set the runtime context length so load behavior is predictable.'));
     }
   }
-  const liveProviderModels = Object.entries(config.providers || {}).reduce((count, [providerName, provider]) => count + ((provider.cached_models || []).filter(model => !configuredModelMatchesProviderModel(providerName, model.id || model.name || model.model)).length), 0);
-  if (liveProviderModels > 0) recommendations.push(recommendationCardHtml('info', 'Additional provider models are available', `${liveProviderModels} live model(s) are visible from connected providers but not configured in PAC yet.`, 'Browse providers to promote them into session models.'));
   let advisor = null;
   try {
     advisor = await api('/v1/model-advisors/coding-opportunities');
@@ -174,7 +145,7 @@ async function renderModelRecommendations() {
       advisor.warning.level || 'info',
       advisor.warning.title || 'Coding model advice',
       advisor.warning.summary || '',
-      advisor?.llmfit?.ok ? 'Backed by llmfit-aware selection.' : (advisor?.llmfit_status?.installed ? `llmfit unavailable: ${advisor?.llmfit?.error || advisor?.llmfit_status?.error || 'runtime error'}` : 'Falling back to provider inventory and public-model heuristics.')
+      advisor?.llmfit?.ok ? 'Backed by llmfit-aware selection.' : 'Using PAC model-fit heuristics.'
     ));
   }
   const localTable = codingOpportunityTableHtml('Better local options', (advisor?.local_candidates || []).slice(0, 4), 'local');
@@ -223,6 +194,7 @@ async function renderModelRecommendations() {
     };
   });
 }
+
 function renderModelActiveSessionsPanel() {
   const target = document.getElementById('modelsActiveSessions');
   if (!target) return;
@@ -233,6 +205,7 @@ function renderModelActiveSessionsPanel() {
   }
   target.innerHTML = Array.from(grouped.entries()).sort((a,b) => b[1].count - a[1].count).map(([name, info]) => `<div class="inline-browser-row"><div><b>${escapeHtml(name)}</b><div class="muted small-text">${info.running} running - ${info.failed} failed</div></div><span class="pill">${info.count} session(s)</span></div>`).join('');
 }
+
 async function renderProvidersLivePanel() {
   const target = document.getElementById('providersLive');
   if (!target) return;
@@ -250,6 +223,7 @@ async function renderProvidersLivePanel() {
   }
   target.innerHTML = sections.join('');
 }
+
 function renderProfileUsagePanel() {
   const target = document.getElementById('profilesUsage');
   if (!target) return;
@@ -267,6 +241,7 @@ function renderProfileUsagePanel() {
     return `<div class="inline-browser-row"><div><b>${escapeHtml(display)}</b><div class="muted small-text">${escapeHtml(contextProfile)} - ${escapeHtml(profile.permission_profile || '-')} - ${escapeHtml(visibility)}</div></div><span class="pill">${usage.count} session(s)</span></div>`;
   }).join('');
 }
+
 function renderWorkspaceActivityPanel() {
   const target = document.getElementById('workspacesActive');
   if (!target) return;

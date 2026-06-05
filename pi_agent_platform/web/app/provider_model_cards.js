@@ -23,17 +23,17 @@ function renderModels() {
       const providerName = providerLabel(model.provider || '-');
       const modelId = model.model || '-';
       const reasoning = model.capabilities?.reasoning ? ` / reasoning ${model.capabilities.reasoning}` : '';
-      const stateText = availability.ok ? health.detail : availability.reason;
+      const stateText = availability.ok ? '' : availability.reason;
       const actions = [
-        modelTableAction('Edit model configuration', '✎', `data-edit-model="${escapeHtml(name)}"`),
-        modelTableAction('Test model', '▶', `data-test-model="${escapeHtml(name)}"`),
+        modelTableAction('Edit model configuration', '&#9998;', `data-edit-model="${escapeHtml(name)}"`),
+        modelTableAction('Test model', '&#9654;', `data-test-model="${escapeHtml(name)}"`),
       ];
       if (provider?.type === 'lmstudio') {
-        actions.push(modelTableAction('Inspect LM Studio runtime', '◉', `data-inspect-model="${escapeHtml(name)}"`));
-        actions.push(modelTableAction('Load model in LM Studio', '⇧', `data-load-model="${escapeHtml(name)}"`));
-        actions.push(modelTableAction('Unload model from LM Studio', '⇩', `data-unload-model="${escapeHtml(name)}"`));
+        actions.push(modelTableAction('Inspect LM Studio runtime', '&#9711;', `data-inspect-model="${escapeHtml(name)}"`));
+        actions.push(modelTableAction('Load model in LM Studio', '&#8679;', `data-load-model="${escapeHtml(name)}"`));
+        actions.push(modelTableAction('Unload model from LM Studio', '&#8681;', `data-unload-model="${escapeHtml(name)}"`));
       }
-      if (!model.read_only) actions.push(modelTableAction('Delete model configuration', '×', `data-delete-model="${escapeHtml(name)}"`, 'danger-action'));
+      if (!model.read_only) actions.push(modelTableAction('Delete model configuration', '&times;', `data-delete-model="${escapeHtml(name)}"`, 'danger-action'));
       return `<tr class="${availability.ok ? '' : 'warn'}">
         <td>
           <button type="button" class="link-button model-table-name" data-edit-model="${escapeHtml(name)}" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</button>
@@ -44,7 +44,7 @@ function renderModels() {
         <td>${escapeHtml(`${modelFunction}${reasoning}`)}</td>
         <td>
           <span class="pill ${escapeHtml(availability.ok ? health.klass : 'warn-pill')}">${escapeHtml(availability.ok ? health.pill : 'attention')}</span>
-          <div class="muted small-text" title="${escapeHtml(stateText)}">${escapeHtml(stateText)}</div>
+          ${stateText ? `<div class="muted small-text" title="${escapeHtml(stateText)}">${escapeHtml(stateText)}</div>` : ''}
         </td>
         <td>${escapeHtml(compactTokenNumber(model.context_window || '-'))}</td>
         <td>${escapeHtml(compactTokenNumber(model.max_output_tokens || '-'))}</td>
@@ -52,12 +52,16 @@ function renderModels() {
         <td class="model-table-actions-cell">${actions.join('')}</td>
       </tr>`;
     }).join('');
-    el.innerHTML = `<table class="model-inventory-table">
+    el.innerHTML = `<div class="model-local-actions">
+      <button type="button" class="ghost-button mini-button" id="modelsBrowseProvidersInline">Browse providers</button>
+      <button type="button" class="ghost-button mini-button" id="modelsMarketplaceInline">Marketplace</button>
+      <button type="button" class="ghost-button mini-button" id="modelsSyncInline">Sync from provider</button>
+    </div><table class="model-inventory-table">
       <thead>
         <tr>
           <th>Name</th>
           <th>Provider model</th>
-          <th>Host</th>
+          <th>Provider</th>
           <th>Role</th>
           <th>Status</th>
           <th>Ctx</th>
@@ -72,9 +76,14 @@ function renderModels() {
   bindModelInventoryActions(el);
   renderModelRecommendations().catch(()=>{});
   renderUnconfiguredModelsPanelFromLive().catch(()=>{});
+  const toolbar = document.getElementById('pacPageToolbar');
+  if (toolbar) toolbar.hidden = true;
 }
 
 function bindModelInventoryActions(root) {
+  document.getElementById('modelsBrowseProvidersInline')?.addEventListener('click', () => document.getElementById('showUnconfigModels')?.click());
+  document.getElementById('modelsMarketplaceInline')?.addEventListener('click', () => document.getElementById('openMarketplaceModal')?.click());
+  document.getElementById('modelsSyncInline')?.addEventListener('click', () => document.getElementById('syncModelProviderBtn')?.click());
   root.querySelectorAll('[data-edit-model]').forEach((btn) => {
     btn.onclick = (ev) => {
       ev.stopPropagation();

@@ -19,7 +19,7 @@
   display:none;
 }
 #models-tab .split-admin-layout{
-  grid-template-columns:minmax(0,1fr) minmax(380px,520px);
+  grid-template-columns:minmax(0,1fr) minmax(440px,620px);
 }
 #models-tab .split-main,
 #models-tab .split-side,
@@ -142,6 +142,12 @@
 .model-inventory-wrap{
   overflow:auto;
 }
+.model-local-actions{
+  display:flex;
+  gap:.45rem;
+  flex-wrap:wrap;
+  margin:0 0 .8rem;
+}
 .model-inventory-table{
   width:100%;
   border-collapse:collapse;
@@ -173,6 +179,11 @@
 .model-table-name{
   font-weight:700;
   text-align:left;
+  background:transparent !important;
+  border:0 !important;
+  box-shadow:none !important;
+  padding:0 !important;
+  color:inherit !important;
 }
 .model-inventory-table code{
   display:inline-block;
@@ -300,7 +311,7 @@
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
-  max-width:180px;
+  max-width:240px;
 }
 .model-advice-actions-cell{
   white-space:nowrap;
